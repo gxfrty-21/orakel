@@ -1,0 +1,11 @@
+# Orakel Trading-Engine — Laufzeit-Abhängigkeiten
+# Installation: python -m venv .venv && .venv/bin/pip install -r requirements.txt
+fastapi>=0.115
+uvicorn[standard]>=0.30
+jinja2>=3.1
+pandas>=2.2
+numpy>=1.26
+# Nur unter Windows installierbar (Paper-Trading gegen MetaTrader 5):
+# MetaTrader5>=5.0.45
+# Tests
+pytest>=8.0

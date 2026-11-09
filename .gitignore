@@ -1,0 +1,16 @@
+.venv/
+artifacts/
+__pycache__/
+*.pyc
+.pytest_cache/
+daten/*.csv
+orakel.db
+orakel.db-journal
+orakel.db-wal
+orakel.db-shm
+vault/
+dashboard.json
+*.log
+.env
+backups/
+orakel-umzug*

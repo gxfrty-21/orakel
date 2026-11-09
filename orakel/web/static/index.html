@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orakel · Trading-Agenten</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307090c'/%3E%3Ccircle cx='16' cy='16' r='8' fill='none' stroke='%235fe0c8' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <span class="brand">ORAKEL <b>/</b> TRADING-AGENTEN</span>
+    <span class="chip" id="cMode"><span class="dot"></span>–</span>
+    <span class="chip" id="cRisk">Risiko: –</span>
+    <span class="chip" id="cAge">Stand: –</span>
+    <span class="sp"></span>
+    <button class="toggle main" id="runBtn">Lauf starten</button>
+  </header>
+
+  <div class="banner b-none" id="banner"><b>KEIN LAUF</b>Noch keine Daten. Auf «Lauf starten» klicken.</div>
+
+  <nav class="side" aria-label="Bereiche">
+    <button class="nav on" data-v="overview"><b>Übersicht</b><small>Konto, Entscheide, Ereignisse</small></button>
+    <button class="nav" data-v="risk"><b>Risiko &amp; Daten</b><small>Grenzen, Qualität, Live-Sperre</small></button>
+    <button class="nav" data-v="lab"><b>Lab</b><small>Validierung jeder Strategie</small></button>
+    <button class="nav" data-v="strat"><b>Strategien</b><small>Bestandene Auswahl</small></button>
+    <button class="nav" data-v="research"><b>Research</b><small>Ablauf der Engine</small></button>
+    <button class="nav" data-v="globe"><b>Weltkugel</b><small>Intelligence-Netzwerk</small></button>
+    <button class="nav" data-v="ship"><b>Raumschiff</b><small>Abteilungen und Agenten</small></button>
+    <button class="nav" data-v="spider"><b>Spider</b><small>Quellen und Erkenntnisse</small></button>
+    <button class="nav" data-v="kb"><b>Wissensbank</b><small>Schlüsse aus Ergebnissen</small></button>
+    <button class="nav" data-v="agents"><b>Agentenraum</b><small>Wer hat was getan</small></button>
+    <button class="nav" data-v="konf"><b>Konferenz</b><small>Mitternachtsprotokoll</small></button>
+  </nav>
+
+  <main>
+    <section class="view" id="v-overview">
+      <div><h1>Übersicht</h1><p class="sub">Zustand des letzten Laufs. Jede Zahl stammt aus der Fakten-Datenbank. Fehlt eine Grundlage, steht «–».</p></div>
+      <div class="kpis" id="ovKpis"></div>
+      <div class="grid2">
+        <div class="panel"><div class="ph">Entscheide<span class="sp"></span><span class="tag" id="planTag"></span></div><div class="list" id="planList"></div></div>
+        <div class="panel"><div class="ph">Ausgewählte Strategien<span class="sp"></span><span class="tag" id="selTag"></span></div><div class="list" id="selList"></div></div>
+      </div>
+      <div class="panel"><div class="ph">Fehler und Ereignisse<span class="sp"></span><span class="tag">neueste zuerst</span></div><div class="list scroll" id="events"></div></div>
+    </section>
+
+    <section class="view" id="v-risk" hidden>
+      <div><h1>Risiko &amp; Daten</h1><p class="sub">Das Risikomanagement ist unabhängig. Es prüft jeden Kauf und stoppt den Handel bei Datenfehlern oder überschrittenen Grenzen. Verkäufe bauen Risiko ab und bleiben immer erlaubt.</p></div>
+      <div class="panel" id="riskStatus"></div>
+      <div class="panel"><div class="ph">Risikogrenzen<span class="sp"></span><span class="tag">aus config.toml</span></div><div class="tw" id="riskLimits"></div></div>
+      <div class="panel"><div class="ph">Datenqualität<span class="sp"></span><span class="tag" id="dqTag"></span></div><div class="tw" id="dq"></div></div>
+      <div class="grid2">
+        <div class="panel"><div class="ph">Kosten-Annahmen im Backtest</div><div class="tw" id="costs"></div></div>
+        <div class="panel"><div class="ph">Live-Handel</div><div class="card" id="live"></div></div>
+      </div>
+    </section>
+
+    <section class="view" id="v-lab" hidden>
+      <div class="head"><div><h1>Lab</h1><p class="sub">Jede Strategie wird auf denselben Kerzen geprüft: Trainingsteil, ungesehener Teil, Walk-Forward, Monte-Carlo, Nachbar-Parameter und Zufallsvergleich. Bestanden hat nur, wer alle Regeln erfüllt.</p></div>
+        <div class="tabs" id="labTabs">
+          <button class="tab on" data-f="all">Alle</button>
+          <button class="tab" data-f="bestanden">Bestanden</button>
+          <button class="tab" data-f="abgelehnt">Abgelehnt</button>
+          <button class="tab" data-f="zu wenig Daten">Zu wenig Daten</button>
+        </div></div>
+      <div class="kpis" id="labKpis"></div>
+      <div class="grid2b">
+        <div class="panel"><div class="ph">Geprüfte Kandidaten<span class="sp"></span><span class="tag">Zahl = Profit Factor ungesehen</span></div><div class="list scroll" id="labList"></div></div>
+        <div class="panel" id="labDetail"></div>
+      </div>
+    </section>
+
+    <section class="view" id="v-strat" hidden>
+      <div><h1>Strategien</h1><p class="sub">Nur Strategien, die der Richter bestanden hat. Gibt es keine, wird nicht gehandelt — das ist ein Ergebnis, kein Fehler.</p></div>
+      <div class="grid2b">
+        <div class="panel"><div class="ph">Bestanden<span class="sp"></span><span class="tag">★ = ausgewählt</span></div><div class="list" id="stratList"></div></div>
+        <div class="panel" id="stratDetail"></div>
+      </div>
+    </section>
+
+    <section class="view" id="v-research" hidden>
+      <div><h1>Research</h1><p class="sub">Der Ablauf ist fest. Keine Stufe darf übersprungen werden, und die KI ändert keine Regel.</p></div>
+      <div class="grid2"><div class="panel"><div class="ph">Ablauf<span class="sp"></span><span class="tag">Zahlen aus dem letzten Lauf</span></div><div class="list" id="flow"></div></div>
+      <div class="panel"><div class="ph">Grundsätze</div><div class="card" id="principles"></div></div></div>
+    </section>
+
+    <section class="view" id="v-kb" hidden>
+      <div><h1>Wissensbank</h1><p class="sub">Gespeichert wird nur, was nachprüfbar ist: Validierungen, Entscheide und Ereignisse. Daraus zieht die Research-Abteilung ihre Schlüsse.</p></div>
+      <div class="panel"><div class="ph">Strategietypen<span class="sp"></span><span class="tag" id="libTag"></span></div><div class="tw" id="types"></div></div>
+      <div class="grid2">
+        <div class="panel"><div class="ph">Bisherige Entscheide</div><div class="list scroll" id="decList"></div></div>
+        <div class="panel"><div class="ph">Vault</div><div class="card" id="vaultInfo"></div></div>
+      </div>
+    </section>
+
+    <section class="view" id="v-agents" hidden>
+      <div><h1>Agentenraum</h1><p class="sub">Acht Abteilungen, je zehn Agenten mit eigener Aufgabe. Jeder Eintrag ist ein echter Lauf mit Ergebnis aus der Datenbank — keine Dekoration.</p></div>
+      <div class="tabs" id="depTabs"></div>
+      <div class="grid2b">
+        <div class="panel"><div class="ph">Agenten<span class="sp"></span><span class="tag" id="agTag"></span></div><div class="list scroll" id="agList"></div></div>
+        <div class="panel"><div class="ph">Letzte Aktivität</div><div class="list scroll" id="agRuns"></div></div>
+      </div>
+    </section>
+
+    <section class="view" id="v-konf" hidden>
+      <div><h1>Mitternachtskonferenz</h1><p class="sub">Täglich um 00:00 (Europe/Zurich). Verpasste Konferenzen werden beim nächsten Start nachgeholt. Es entsteht kein künstlicher Konsens.</p></div>
+      <div id="konfBody"></div>
+    </section>
+    <section class="view globe-view" id="v-globe" hidden>
+      <div class="globe-head">
+        <div>
+          <span class="globe-kicker">GLOBAL INTELLIGENCE / LIVE GRAPH</span>
+          <h1>Weltkugel</h1>
+          <p class="sub">Das zentrale Informationsnetz des Orakels. Quellen, Erkenntnisse, Forschungsaufträge und Abteilungen werden aus der Fakten-Datenbank gespeist — die Kugel ist die sichtbare Struktur, keine Dekoration.</p>
+        </div>
+        <div class="globe-actions">
+          <div class="globe-window" id="globeWindow" role="group" aria-label="Zeitraum für Graph und Aktivität">
+            <button type="button" class="g-window is-active" data-window="24h" aria-pressed="true" aria-label="Zeitraum 24 Stunden">24 h</button>
+            <button type="button" class="g-window" data-window="7d" aria-pressed="false" aria-label="Zeitraum 7 Tage">7 Tage</button>
+            <button type="button" class="g-window" data-window="30d" aria-pressed="false" aria-label="Zeitraum 30 Tage">30 Tage</button>
+          </div>
+          <div class="globe-mode" id="globeMode"><span class="g-live-dot"></span><span><b>LIVE</b><small id="globeModeDetail">System verbunden</small></span></div>
+        </div>
+      </div>
+      <div class="globe-panel" id="globePanel">
+        <div class="globe-grid">
+          <aside class="globe-rail" aria-label="Eingehende Informationsquellen">
+            <div class="globe-rail-head"><span>EINGEHENDE QUELLEN</span><b id="globeSourceTotal">–</b></div>
+            <div class="globe-rail-list" id="globeSources"></div>
+            <div class="globe-rail-foot"><span class="g-signal"></span><span id="globeSourceCount">–</span> verbunden</div>
+          </aside>
+          <div class="globe-stage" id="globeStage" tabindex="0" aria-label="Interaktive 3D-Weltkugel. Ziehen zum Drehen, scrollen zum Zoomen, Knoten anklicken.">
+            <canvas id="globeCanvas"></canvas>
+            <div class="globe-hud-top">
+              <div class="globe-hud-kicker">ORAKEL / INTELLIGENCE CORE</div>
+              <div class="globe-activity" id="globeActivity">–</div>
+              <div class="globe-activity-detail" id="globeActivityDetail"></div>
+            </div>
+            <div class="globe-hud-stats">
+              <span><small>KNOTEN</small><b id="globeNodeCount">–</b></span>
+              <span><small>VERBINDUNGEN</small><b id="globeEdgeCount">–</b></span>
+              <span><small>QUELLEN</small><b id="globeSourceCountTop">–</b></span>
+            </div>
+            <div class="globe-tooltip" id="globeTooltip" hidden></div>
+            <div class="globe-detail" id="globeDetail" hidden></div>
+            <div class="globe-empty" id="globeEmpty" hidden></div>
+            <div class="globe-hint" id="globeHint">ZIEHEN ZUM DREHEN · SCROLLEN ZUM ZOOMEN · KNOTEN ANKLICKEN</div>
+            <div class="globe-controls">
+              <button type="button" class="g-control" id="globeReset">Ansicht zurücksetzen</button>
+              <button type="button" class="g-control" id="globeToggleSpin">Rotation pausieren</button>
+            </div>
+          </div>
+          <aside class="globe-rail globe-rail-right" aria-label="Verarbeitende Abteilungen">
+            <div class="globe-rail-head"><span>ABTEILUNGEN</span><b id="globeDeptTotal">–</b></div>
+            <div class="globe-rail-list" id="globeDepartments"></div>
+            <div class="globe-rail-foot"><span class="g-signal"></span>Datenfluss zum Core</div>
+          </aside>
+        </div>
+        <div class="globe-dock">
+          <div class="globe-legend" id="globeLegend"></div>
+          <div class="globe-meta" id="globeMeta">–</div>
+        </div>
+      </div>
+      <div class="globe-lower">
+        <div class="panel"><div class="ph">Märkte<span class="sp"></span><span class="tag" id="globeTag"></span></div><div class="tw" id="globeTable"></div></div>
+        <div class="panel"><div class="ph">Korrelationen<span class="sp"></span><span class="tag" id="korrTag">letzte 500 Kerzen</span></div><div class="tw" id="globeKorr"></div></div>
+      </div>
+    </section>
+
+    <section class="view" id="v-ship" hidden>
+      <div><h1>Raumschiff</h1><p class="sub">Acht Abteilungen, je zehn Agenten. Jeder Raum zeigt, was im letzten Lauf tatsächlich passiert ist. Raum anklicken.</p></div>
+      <div class="deck" id="deck"></div>
+      <div class="grid2">
+        <div class="panel"><div class="ph">Abteilung<span class="sp"></span><span class="tag" id="roomTag"></span></div><div class="list scroll" id="roomAgents"></div></div>
+        <div class="panel"><div class="ph">Rohrpost<span class="sp"></span><span class="tag">letzte Ergebnisse</span></div><div class="list scroll" id="roomRuns"></div></div>
+      </div>
+    </section>
+
+    <section class="view" id="v-spider" hidden>
+      <div class="head"><div><h1>Spider Intelligence</h1><p class="sub">RSS-Quellen, robots.txt geprüft, Abruflimits eingehalten. Volltext nur bei freigegebenen Seiten. Jede Erkenntnis behält Quelle und Qualitätsheuristik.</p></div>
+        <button class="toggle main" id="spiderBtn">Recherche starten</button></div>
+      <div class="kpis" id="spiderKpis"></div>
+      <div class="grid2">
+        <div class="panel"><div class="ph">Zuletzt gelesen<span class="sp"></span><span class="tag" id="spiderTag"></span></div><div class="list scroll" id="spiderList"></div></div>
+        <div class="panel"><div class="ph">Quellenqualität<span class="sp"></span><span class="tag">aus echten Läufen</span></div><div class="tw" id="spiderQuellen"></div></div>
+      </div>
+      <div class="grid2">
+        <div class="panel"><div class="ph">Forschungsaufträge<span class="sp"></span><span class="tag" id="intelTag"></span></div><div class="list scroll" id="intelAuftraege"></div></div>
+        <div class="panel"><div class="ph">Weiterleitungen</div><div class="list scroll" id="intelWeiter"></div></div>
+      </div>
+    </section>
+  </main>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

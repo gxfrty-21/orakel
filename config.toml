@@ -1,0 +1,132 @@
+# Orakel Trading-Engine — zentrale Konfiguration
+# Alle Grenzen gelten im Backtest UND im Paper-Trading (derselbe Code, Regel 8).
+
+[basis]
+start_kapital = 100000.0
+waehrung = "USD"
+zeitzone = "Europe/Zurich"
+daten_ordner = "daten"
+vault_ordner = "vault"
+db_pfad = "orakel.db"
+datenquelle = "synthetisch"        # synthetisch | csv   (MT5 liefert auf Windows der mt5_broker)
+bars_pro_jahr = 24960              # M15, 24h-Markt; nur für Sharpe-Skalierung
+
+[risiko]
+# --- deine Vorgaben ---
+risk_per_trade_pct = 1.0           # 1 % des Kontos bis zum Stop
+max_drawdown_pct = 10.0            # Not-Stop: ab 10 % Drawdown wird der Handel gestoppt
+max_open_positions = 15            # harte Obergrenze gleichzeitig offener Positionen
+# --- konservative Zusatzdeckel (jederzeit änderbar) ---
+# Tagesverlust bewusst gleich dem Not-Stop: keine zusätzliche, versteckte Grenze.
+max_daily_loss_pct = 10.0
+max_gross_exposure_pct = 100.0     # 100 % = kein Hebel
+max_position_pct = 20.0
+min_cash_pct = 10.0
+max_korrelation = 0.85            # Sperre: Kauf wird abgelehnt über diesem Wert
+# Kerzen für die Korrelationsrechnung (M15: 500 ≈ 5 Handelstage) — gleiche Basis wie die Weltkugel
+correlation_lookback = 500
+atr_stop_multiple = 2.0
+
+[kosten]
+commission_per_share = 0.005
+min_commission = 1.0
+slippage_bps = 2.0
+
+[daten]
+min_kerzen = 1200
+max_luecke_pct = 5.0
+max_sprung_pct = 25.0
+max_alter_tage = 5
+
+[validierung]
+train_anteil = 0.7
+walk_forward_fenster = 3
+monte_carlo_laeufe = 300
+zufallslaeufe = 20
+min_trades = 25
+min_profit_factor = 1.15
+min_sharpe = 0.3
+max_drawdown_oos_pct = 10.0
+min_robustheit = 0.5
+max_zufall_p = 0.10
+max_kandidaten = 12
+
+[research]
+# Parameter-Raster: nur hier freigegebene Bausteine. Keine KI erfindet Parameter.
+ema_fast = [10, 20]
+ema_slow = [50, 100]
+donchian = [20, 40, 55]
+rsi_buy = [30, 35]
+rsi_exit = [60, 70]
+roc_period = [20, 40]
+
+[paper]
+order_freigabe = false             # false = Probelauf (Standard). Keine echten Orders.
+broker = "csv"                     # csv | mock | mt5  (mt5 nur unter Windows)
+takt_sekunden = 60                 # Abstand des Paper-Takts im Dauerbetrieb
+takt_aktiv = false                 # true = Takt startet mit "orakel serve"
+
+[unternehmen]
+# Phase 1: Profile, Queue, Policy. Standardmäßig aus, damit der bestehende
+# Paper-Takt unverändert bleibt. Explizit starten mit:
+#   python -m orakel unternehmen
+aktiv = false
+max_worker = 4
+max_tasks_pro_tag = 250
+allow_tests = false                 # H3 darf keinen pytest-Subprozess starten
+
+[spider]
+aktiv = true
+max_artikel_pro_lauf = 24
+max_notizen_pro_lauf = 8
+min_qualitaet = 0.35
+timeout_sekunden = 10
+min_abstand_sekunden = 1.5          # Höflichkeit pro Host
+user_agent = "OrakelResearchBot/0.1 (Paper-Trading-Forschung; kontaktloser Einzelbetrieb)"
+max_seiten_pro_lauf = 6             # Volltext-Analyse: höchstens 6 Seiten je Lauf
+max_text_zeichen = 6000             # Grössenlimit je analysierter Seite
+max_auftraege_pro_lauf = 3          # Forschungsaufträge je Lauf
+max_weiterleitungen_pro_lauf = 6
+
+# Nur frei zugängliche RSS-Quellen. robots.txt wird vor jedem Abruf geprüft.
+[[spider.quelle]]
+name = "Federal Reserve Press"
+url = "https://www.federalreserve.gov/feeds/press_all.xml"
+typ = "notenbank"
+gewicht = 0.95
+
+[[spider.quelle]]
+name = "EZB Press"
+url = "https://www.ecb.europa.eu/rss/press.html"
+typ = "notenbank"
+gewicht = 0.95
+
+[[spider.quelle]]
+name = "BBC Business"
+url = "https://feeds.bbci.co.uk/news/business/rss.xml"
+typ = "nachrichten"
+gewicht = 0.75
+
+[[spider.quelle]]
+name = "SEC Press"
+url = "https://www.sec.gov/news/pressreleases.rss"
+typ = "unternehmensbericht"
+gewicht = 0.9
+
+[[spider.quelle]]
+name = "arXiv q-fin.TR"
+url = "https://export.arxiv.org/rss/q-fin.TR"
+typ = "wissenschaft"
+gewicht = 0.9
+
+[[spider.quelle]]
+name = "Yahoo Finance"
+url = "https://finance.yahoo.com/news/rssindex"
+typ = "markt"
+gewicht = 0.6
+
+[[spider.quelle]]
+name = "Investing.com Märkte"
+url = "https://www.investing.com/rss/news_25.rss"
+typ = "markt"
+gewicht = 0.6

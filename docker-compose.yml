@@ -1,0 +1,36 @@
+services:
+  orakel:
+    build: .
+    restart: unless-stopped
+    init: true
+    environment:
+      PORT: "3000"
+      ORAKEL_DATA: /data
+      ORAKEL_AUTH_USER: ${ORAKEL_AUTH_USER:?ORAKEL_AUTH_USER fehlt in .env}
+      ORAKEL_AUTH_PASS: ${ORAKEL_AUTH_PASS:?ORAKEL_AUTH_PASS fehlt in .env}
+      ORAKEL_TAKT: ${ORAKEL_TAKT:-0}
+    volumes:
+      - orakel_data:/data
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      orakel:
+        condition: service_healthy
+    environment:
+      ORAKEL_DOMAIN: ${ORAKEL_DOMAIN:?ORAKEL_DOMAIN fehlt in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  orakel_data:
+  caddy_data:
+  caddy_config:

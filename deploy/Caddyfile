@@ -1,0 +1,10 @@
+{$ORAKEL_DOMAIN} {
+	encode gzip zstd
+	reverse_proxy orakel:3000
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+}
