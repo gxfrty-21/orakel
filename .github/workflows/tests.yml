@@ -50,7 +50,28 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          load: true
           push: false
           tags: orakel:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Startet das gebaute Image und prüft den offenen Health-Endpunkt.
+      - name: Container starten und /api/health prüfen
+        run: |
+          docker run --detach --name orakel-smoke --publish 3000:3000 orakel:ci
+          for versuch in $(seq 1 30); do
+            if antwort=$(curl --silent --show-error --fail http://127.0.0.1:3000/api/health) \
+               && python3 -c 'import json,sys; sys.exit(0 if json.loads(sys.argv[1]).get("ok") is True else 1)' "$antwort"; then
+              echo "Health-Check ok nach ${versuch} Versuch(en): $antwort"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Health-Check fehlgeschlagen"
+          docker logs orakel-smoke
+          exit 1
+
+      - name: Container entfernen
+        if: always()
+        run: docker rm --force orakel-smoke
