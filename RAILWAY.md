@@ -91,6 +91,48 @@ blieb bei 34 Artikeln/28.086 Trades.
 - TLS und öffentliche URL kommen von Railway.
 - Der Container hört auf `PORT`; der Healthcheck nutzt denselben Port.
 
+## Deploy nur bei grüner CI
+
+Railway kann ein Deployment zurückhalten, bis die GitHub-Actions-Läufe des
+Commits fertig sind. Dann geht kein Commit mit roten Tests live, und die
+laufende Version bleibt erreichbar.
+
+### Einmalig einschalten
+
+Voraussetzungen:
+
+- Der Service ist mit dem GitHub-Repository verbunden (Autodeploy), nicht nur
+  per CLI befüllt.
+- Ein Projektmitglied hat Schreibzugriff auf das Repository.
+- Ein Workflow läuft auf `push` in den Deploy-Branch. `.github/workflows/tests.yml`
+  macht das mit `on: push: branches: [main]`.
+
+Dann im Dashboard: Service → **Settings** → **Wait for CI** einschalten. Fehlt
+der Schalter, zuerst die aktualisierten GitHub-Berechtigungen der Railway-App
+bestätigen (GitHub → Settings → Applications → Railway → Configure).
+
+### Verhalten
+
+| Fall | Ergebnis |
+|---|---|
+| alle Workflows grün | Deployment startet, Healthcheck `/api/health` entscheidet über den Wechsel |
+| ein Workflow rot | Deployment `SKIPPED`, die laufende Version bleibt aktiv |
+| Workflow abgebrochen | blockiert nur, wenn kein anderer Workflow des Commits grün war |
+| nach 2 Stunden nicht fertig | Deployment wird übersprungen |
+
+Railway bewertet den Abschluss ganzer Workflow-Läufe, nicht einzelne Jobs, und
+ignoriert Checks anderer GitHub-Apps. Für Schritte, die **vor** jedem Deploy
+laufen müssen (Migrationen), reicht Wait for CI allein nicht.
+
+Der Docker-Job der CI baut dasselbe Image wie Railway. Ein kaputtes `Dockerfile`
+oder ein fehlendes Paket fällt damit vor dem Deploy auf; der Smoke-Test im
+Container prüft zusätzlich Start, Health und Login-Schutz.
+
+Warum kein eigener `railway up`-Workflow: Er würde mit dem Autodeploy um
+denselben Service konkurrieren (zwei Builds pro Push) und bräuchte einen
+Projekt-Token als Repository-Secret. Wait for CI nutzt den vorhandenen
+GitHub-Weg und braucht keine Zugangsdaten.
+
 ## Wichtig: `railway.json` ist Legacy
 
 `railway.json` liegt im Projekt, weil es für diese Variante angefordert wurde.

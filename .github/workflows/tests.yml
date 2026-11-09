@@ -1,7 +1,10 @@
 name: Tests
 
+# Nur main löst nach einem Push aus; Railway erkennt daran sein "Wait for CI".
+# Feature-Branches laufen über pull_request.
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
