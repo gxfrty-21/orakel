@@ -31,3 +31,15 @@ jobs:
       # Als Modul aufrufen, damit das Repo-Root für "import orakel" im Pfad liegt.
       - name: Tests ausführen
         run: python -m pytest -q
+
+  # Stellt sicher, dass das Dockerfile inklusive Seed-DB weiterhin baut.
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: Image bauen
+        run: docker build --tag orakel:ci .
