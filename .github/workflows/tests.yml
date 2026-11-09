@@ -56,21 +56,37 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Startet das gebaute Image und prüft den offenen Health-Endpunkt.
-      - name: Container starten und /api/health prüfen
+      # Startet das Image mit aktiviertem Login: Health muss offen bleiben,
+      # / muss ohne Zugangsdaten 401 liefern.
+      - name: Container starten, Health und Login-Schutz prüfen
         run: |
-          docker run --detach --name orakel-smoke --publish 3000:3000 orakel:ci
+          docker run --detach --name orakel-smoke --publish 3000:3000 \
+            --env ORAKEL_AUTH_USER=orakel --env ORAKEL_AUTH_PASS=geheim \
+            orakel:ci
+
+          gesund=0
           for versuch in $(seq 1 30); do
             if antwort=$(curl --silent --show-error --fail http://127.0.0.1:3000/api/health) \
                && python3 -c 'import json,sys; sys.exit(0 if json.loads(sys.argv[1]).get("ok") is True else 1)' "$antwort"; then
               echo "Health-Check ok nach ${versuch} Versuch(en): $antwort"
-              exit 0
+              gesund=1
+              break
             fi
             sleep 2
           done
-          echo "Health-Check fehlgeschlagen"
-          docker logs orakel-smoke
-          exit 1
+          if [ "$gesund" -ne 1 ]; then
+            echo "Health-Check fehlgeschlagen"
+            docker logs orakel-smoke
+            exit 1
+          fi
+
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:3000/)
+          if [ "$status" != "401" ]; then
+            echo "Erwartet HTTP 401 für /, erhalten $status"
+            docker logs orakel-smoke
+            exit 1
+          fi
+          echo "Login-Schutz ok: GET / ohne Zugangsdaten -> HTTP 401"
 
       - name: Container entfernen
         if: always()
