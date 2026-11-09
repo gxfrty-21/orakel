@@ -130,7 +130,10 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         return {"ok": True, "letzter_lauf": db.zustand("letzter_lauf"),
                 "halt": db.zustand("risiko_stopp"),
                 "paper_tick": db.zustand("paper_letzter_tick"),
-                "artikel": db.artikel_statistik()["gesamt"]}
+                "artikel": db.artikel_statistik()["gesamt"],
+                # Railway setzt den SHA bei Deploys aus GitHub; die Nachprüfung
+                # nach dem Deploy vergleicht ihn mit dem erwarteten Commit.
+                "commit": os.environ.get("RAILWAY_GIT_COMMIT_SHA") or None}
 
     @app.post("/api/lauf")
     def starte_lauf(modus: str = "backtest", spider: bool = False) -> JSONResponse:

@@ -133,6 +133,26 @@ denselben Service konkurrieren (zwei Builds pro Push) und bräuchte einen
 Projekt-Token als Repository-Secret. Wait for CI nutzt den vorhandenen
 GitHub-Weg und braucht keine Zugangsdaten.
 
+### Nachprüfung nach dem Deploy
+
+Ein grüner CI-Lauf heißt noch nicht, dass der Commit auch ausgeliefert wird.
+`.github/workflows/deploy-check.yml` hängt sich an jeden erfolgreichen
+`Tests`-Lauf auf `main` und prüft die Produktion:
+
+- `/api/health` muss als `commit` genau den Push-Commit nennen. Der Wert kommt
+  aus `RAILWAY_GIT_COMMIT_SHA`, das Railway bei Deploys aus GitHub selbst setzt
+  — dafür war das Feld `commit` in `/api/health` nötig.
+- Gewartet wird bis zu 13 Minuten, danach ist der Lauf rot. Der Job braucht
+  keinen Token; `/api/health` ist ohne Login erreichbar.
+- Zusätzlich: `ok: true`, eine Artikelzahl über 0 (fängt ein leeres Volume ab)
+  und `/` ohne Zugangsdaten muss `401` liefern.
+
+Der Lauf beantwortet damit die Frage „ist der Deploy wirklich durch?“. Rot wird
+er auch dann, wenn ein Commit absichtlich nicht deployt wird oder der
+Autodeploy aus ist — das ist gewollt. Bei einem Deploy über die CLI fehlt
+`RAILWAY_GIT_COMMIT_SHA`; dann schlägt die Nachprüfung an, obwohl die App
+läuft. Für diesen Service ist GitHub der einzige Deploy-Weg.
+
 ## Wichtig: `railway.json` ist Legacy
 
 `railway.json` liegt im Projekt, weil es für diese Variante angefordert wurde.

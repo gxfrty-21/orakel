@@ -1,0 +1,89 @@
+name: Deploy-Nachprüfung
+
+# Läuft nach jedem erfolgreichen "Tests"-Lauf auf main und prüft, ob genau
+# dieser Commit auf Railway wirklich ausgeliefert wird. Kein Token nötig:
+# /api/health ist ohne Login erreichbar und nennt den laufenden Commit.
+on:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-check
+  cancel-in-progress: true
+
+jobs:
+  live:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      BASIS: https://orakel-production-fb18.up.railway.app
+
+    steps:
+      - name: Erwarteten Commit bestimmen
+        id: soll
+        run: |
+          sha="${{ github.event.workflow_run.head_sha }}"
+          if [ -z "$sha" ]; then
+            sha="${{ github.sha }}"
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Erwartet: ${sha:0:12}"
+
+      - name: Warten, bis dieser Commit ausgeliefert wird
+        run: |
+          python3 - "$BASIS" "${{ steps.soll.outputs.sha }}" <<'PY'
+          import json
+          import sys
+          import time
+          import urllib.request
+
+          basis, soll = sys.argv[1], sys.argv[2]
+          kurz = soll[:12]
+          for versuch in range(1, 41):
+              letzte = ""
+              try:
+                  with urllib.request.urlopen(basis + "/api/health", timeout=15) as antwort:
+                      daten = json.load(antwort)
+                  letzte = str(daten.get("commit") or "")
+              except Exception as fehler:
+                  print(f"Versuch {versuch}: keine Antwort ({fehler})")
+              if letzte[:12] == kurz:
+                  print(f"Live nach {versuch * 20} s: commit={letzte}")
+                  with open("health.json", "w", encoding="utf-8") as datei:
+                      json.dump(daten, datei)
+                  raise SystemExit(0)
+              else:
+                  print(f"Versuch {versuch}: erwartet {kurz}, live {letzte or 'unbekannt'}")
+              time.sleep(20)
+          print(f"::error::Nach 13 Minuten läuft {kurz} nicht auf {basis}")
+          raise SystemExit(1)
+          PY
+
+      - name: Health, Datenbestand und Login prüfen
+        run: |
+          python3 - <<'PY'
+          import json
+
+          with open("health.json", encoding="utf-8") as datei:
+              daten = json.load(datei)
+          if daten.get("ok") is not True:
+              raise SystemExit(f"Health meldet kein ok: {daten}")
+          artikel = daten.get("artikel")
+          print(f"health ok=true, artikel={artikel}, commit={daten.get('commit')}")
+          if not isinstance(artikel, int) or artikel <= 0:
+              raise SystemExit(f"Unerwartete Artikelzahl: {artikel!r}")
+          PY
+          status=$(curl --silent --max-time 15 --output /dev/null \
+            --write-out '%{http_code}' "$BASIS/")
+          if [ "$status" != "401" ]; then
+            echo "::error::/ ohne Zugangsdaten liefert $status statt 401"
+            exit 1
+          fi
+          echo "Login-Schutz aktiv: / ohne Zugangsdaten -> HTTP 401"
