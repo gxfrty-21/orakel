@@ -88,6 +88,15 @@ jobs:
           fi
           echo "Login-Schutz ok: GET / ohne Zugangsdaten -> HTTP 401"
 
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --user orakel:geheim http://127.0.0.1:3000/)
+          if [ "$status" != "200" ]; then
+            echo "Erwartet HTTP 200 für / mit Zugangsdaten, erhalten $status"
+            docker logs orakel-smoke
+            exit 1
+          fi
+          echo "Login ok: GET / mit Zugangsdaten -> HTTP 200"
+
       - name: Container entfernen
         if: always()
         run: docker rm --force orakel-smoke
