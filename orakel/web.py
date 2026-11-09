@@ -129,8 +129,10 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     @app.get("/api/nexus/status")
     def nexus_status() -> JSONResponse:
         cfg = load_config(cfg_pfad)
-        return JSONResponse(gesamt_status(HttpCache(cfg.db_pfad), lade_register()),
-                            headers={"Cache-Control": "no-store"})
+        daten = gesamt_status(HttpCache(cfg.db_pfad), lade_register())
+        # Letzter Nachtlauf samt Warnstatus; None, solange keiner lief.
+        daten["nacht"] = Facts(cfg.db_pfad).zustand("nexus_nacht")
+        return JSONResponse(daten, headers={"Cache-Control": "no-store"})
 
     @app.get("/api/health")
     def health() -> dict[str, Any]:

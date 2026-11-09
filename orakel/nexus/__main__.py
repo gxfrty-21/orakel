@@ -74,9 +74,12 @@ def _nacht(args: argparse.Namespace) -> int:
         domain=args.domain,
         limit=args.limit,
         behalten_tage=args.behalten_tage,
+        warnung_url=args.warnung_url,
+        warnung_art=args.warnung_art,
+        ping_url=args.ping_url,
     )
     print(json.dumps(bericht, ensure_ascii=False, indent=2))
-    return 0 if bericht.get("fehler", 0) < bericht.get("faellig", 0) else 1
+    return 0 if bericht.get("ok") else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -105,6 +108,10 @@ def main(argv: list[str] | None = None) -> int:
     nacht.add_argument("--backup-ordner", default="backups")
     nacht.add_argument("--behalten-tage", type=int, default=14)
     nacht.add_argument("--domain", default=os.environ.get("ORAKEL_DOMAIN") or None)
+    nacht.add_argument("--warnung-url", default=os.environ.get("ORAKEL_WARNUNG_URL") or None)
+    nacht.add_argument("--warnung-art", choices=("json", "text"),
+                       default=os.environ.get("ORAKEL_WARNUNG_ART", "json"))
+    nacht.add_argument("--ping-url", default=os.environ.get("ORAKEL_PING_URL") or None)
     nacht.add_argument("--limit", type=int, default=None)
     nacht.set_defaults(funktion=_nacht)
 

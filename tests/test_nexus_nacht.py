@@ -20,10 +20,13 @@ JETZT = datetime(2026, 11, 9, 2, 30, tzinfo=timezone.utc)
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):
+    ereignisse: list[tuple[str, str, str]] = []
+
     def log_message(self, *args):
         return
 
     def do_GET(self):  # noqa: N802
+        type(self).ereignisse.append(("GET", self.path, ""))
         if self.path == "/feed.xml":
             body = FEED
             self.send_response(200)
@@ -31,13 +34,28 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+        elif self.path == "/ping":
+            self.send_response(200)
+            self.end_headers()
+        elif self.path == "/fehler":
+            self.send_response(500)
+            self.end_headers()
         else:
             self.send_response(404)
             self.end_headers()
 
+    def do_POST(self):  # noqa: N802
+        laenge = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(laenge) if laenge else b""
+        type(self).ereignisse.append(
+            ("POST", self.path, body.decode("utf-8", "replace")))
+        self.send_response(200)
+        self.end_headers()
+
 
 @pytest.fixture
 def server():
+    _Handler.ereignisse = []
     httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -132,3 +150,67 @@ def test_dns_pruefung_meldet_fehler_statt_ausnahme():
     ergebnis = dns_und_tls("example.invalid", timeout=2)
     assert ergebnis["ok"] is False
     assert "DNS" in (ergebnis.get("fehler") or "")
+
+
+def _register(tmp_path: Path, url: str) -> Path:
+    pfad = tmp_path / "register.toml"
+    pfad.write_text(
+        f'''[[quelle]]
+id = "q"
+name = "Q"
+typ = "rss"
+url = "{url}"
+land = "DE"
+sprache = "de"
+thema = "test"
+intervall_minuten = 30
+''',
+        encoding="utf-8",
+    )
+    return pfad
+
+
+def _nacht(tmp_path: Path, register: Path, **abweichung):
+    db = tmp_path / "orakel.db"
+    abrufer = Abrufer(HttpCache(db), "Test/1.0", min_abstand_sekunden=0)
+    basis = dict(register_pfad=register, backup_ordner=tmp_path / "backups",
+                 jetzt=JETZT, abrufer=abrufer)
+    basis.update(abweichung)
+    return nachtlauf(db, **basis)
+
+
+def test_erfolg_sendet_ping_ohne_warnung(server, tmp_path):
+    bericht = _nacht(tmp_path, _register(tmp_path, f"{server}/feed.xml"),
+                     warnung_url=f"{server}/warnung", ping_url=f"{server}/ping")
+    assert bericht["ok"] is True
+    assert ("GET", "/ping", "") in _Handler.ereignisse
+    assert not any(pfad == "/warnung" for _, pfad, _ in _Handler.ereignisse)
+
+
+def test_fehler_sendet_warnung_und_fail_ping(server, tmp_path):
+    bericht = _nacht(tmp_path, _register(tmp_path, f"{server}/fehler"),
+                     warnung_url=f"{server}/warnung", ping_url=f"{server}/ping")
+    assert bericht["ok"] is False
+    assert any(pfad == "/warnung" for _, pfad, _ in _Handler.ereignisse)
+    assert ("POST", "/ping/fail", "") in _Handler.ereignisse
+
+
+def test_warnung_als_text_fuer_ntfy(server, tmp_path):
+    _nacht(tmp_path, _register(tmp_path, f"{server}/fehler"),
+           warnung_url=f"{server}/warnung", warnung_art="text")
+    body = next(b for _, pfad, b in _Handler.ereignisse if pfad == "/warnung")
+    assert "Nachtlauf fehlgeschlagen" in body
+    assert not body.startswith("{")
+
+
+def test_unerreichbare_warnung_bricht_den_lauf_nicht_ab(server, tmp_path):
+    bericht = _nacht(tmp_path, _register(tmp_path, f"{server}/fehler"),
+                     warnung_url="http://127.0.0.1:1/warnung")
+    assert bericht["warnung"]["gesendet"] is False
+    assert bericht["backup"]["integrity"] == "ok"
+
+
+def test_ohne_warnungs_url_wird_das_ehrlich_gemeldet(server, tmp_path):
+    bericht = _nacht(tmp_path, _register(tmp_path, f"{server}/fehler"))
+    assert bericht["warnung"]["gesendet"] is False
+    assert "keine Warnungs-URL" in bericht["warnung"]["grund"]

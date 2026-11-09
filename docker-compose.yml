@@ -9,6 +9,10 @@ services:
       ORAKEL_AUTH_USER: ${ORAKEL_AUTH_USER:?ORAKEL_AUTH_USER fehlt in .env}
       ORAKEL_AUTH_PASS: ${ORAKEL_AUTH_PASS:?ORAKEL_AUTH_PASS fehlt in .env}
       ORAKEL_TAKT: ${ORAKEL_TAKT:-0}
+      # Beide optional. URLs sind Secrets und gehören nur in die .env.
+      ORAKEL_WARNUNG_URL: ${ORAKEL_WARNUNG_URL:-}
+      ORAKEL_WARNUNG_ART: ${ORAKEL_WARNUNG_ART:-json}
+      ORAKEL_PING_URL: ${ORAKEL_PING_URL:-}
     volumes:
       - orakel_data:/data
     expose:

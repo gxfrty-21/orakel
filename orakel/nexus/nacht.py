@@ -15,6 +15,7 @@ aktuell und protokolliert ehrlich, was er gesehen hat.
 
 from __future__ import annotations
 
+import json
 import socket
 import sqlite3
 import ssl
@@ -122,6 +123,62 @@ def dns_und_tls(domain: str, timeout: float = 10.0) -> dict[str, object]:
     return ergebnis
 
 
+def _sende(url: str, body: bytes | None, content_type: str,
+           methode: str, timeout: float) -> tuple[bool, str | None]:
+    """Sendet eine Meldung. Gibt (erfolg, fehlername) zurück, wirft nie."""
+    try:
+        anfrage = urllib.request.Request(
+            url, data=body, method=methode,
+            headers={"Content-Type": content_type,
+                     "User-Agent": "OrakelNexus/0.1 (Nachtlauf)"},
+        )
+        with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:
+            return 200 <= int(antwort.status) < 300, None
+    except Exception as exc:
+        return False, type(exc).__name__
+
+
+def _warnung_text(bericht: dict[str, object]) -> str:
+    teile = [
+        f"Orakel-Nachtlauf fehlgeschlagen: {bericht.get('fehler', 0)} Fehler "
+        f"bei {bericht.get('faellig', 0)} Quellen."
+    ]
+    backup = bericht.get("backup")
+    if isinstance(backup, dict) and backup.get("fehler"):
+        teile.append(f"Backup: {backup['fehler']}.")
+    domain = bericht.get("domain")
+    if isinstance(domain, dict) and not domain.get("ok"):
+        teile.append(f"Domain: {domain.get('fehler', 'unbekannt')}.")
+    teile.append(f"Zeit: {bericht.get('zeit')}.")
+    return " ".join(teile)
+
+
+def _warnung_senden(url: str, bericht: dict[str, object], art: str,
+                    timeout: float) -> dict[str, object]:
+    text = _warnung_text(bericht)
+    if art == "text":
+        # ntfy und einfache Webhooks erwarten reinen Text.
+        body = text.encode("utf-8")
+        ctype = "text/plain; charset=utf-8"
+    else:
+        # Slack/Mattermost lesen "text", Discord "content".
+        body = json.dumps({"text": text, "content": text, "ok": False,
+                           "zeit": bericht.get("zeit"),
+                           "fehler": bericht.get("fehler", 0)}).encode("utf-8")
+        ctype = "application/json"
+    erfolg, fehler = _sende(url, body, ctype, "POST", timeout)
+    return {"gesendet": erfolg, "fehler": fehler}
+
+
+def _ping_senden(url: str, ok: bool, timeout: float) -> dict[str, object]:
+    """Dead-man's-Switch: Erfolg = GET, Fehler = POST /fail, wie bei Healthchecks."""
+    ziel = url if ok else url.rstrip("/") + "/fail"
+    methode = "GET" if ok else "POST"
+    erfolg, fehler = _sende(ziel, None if ok else b"", "text/plain", methode, timeout)
+    # Die URL selbst ist ein Secret und landet bewusst nicht im Bericht.
+    return {"gesendet": erfolg, "fehler": fehler, "art": "ok" if ok else "fail"}
+
+
 def nachtlauf(
     db_pfad: str | Path,
     register_pfad: str | Path | None = None,
@@ -132,6 +189,10 @@ def nachtlauf(
     behalten_tage: int = STANDARD_BEHALTEN_TAGE,
     jetzt: datetime | None = None,
     abrufer: Abrufer | None = None,
+    warnung_url: str | None = None,
+    warnung_art: str = "json",
+    ping_url: str | None = None,
+    timeout: float = 10.0,
 ) -> dict[str, object]:
     db_pfad = Path(db_pfad)
     jetzt = jetzt or datetime.now(timezone.utc)
@@ -178,18 +239,6 @@ def nachtlauf(
         "hinweis": "Noch keine Speicherung in artikel; das ist Phase 2.",
     }
 
-    try:
-        datenbank = Facts(db_pfad)
-        datenbank.ereignis(
-            "info" if zaehler.fehler == 0 else "warnung", "Nexus",
-            f"Nachtlauf: {zaehler.faellig} fällig, {zaehler.abgerufen} abgerufen, "
-            f"{zaehler.unveraendert} unverändert, {zaehler.meldungen} Meldungen, "
-            f"{zaehler.fehler} Fehler",
-        )
-        datenbank.zustand_setzen("nexus_nacht", bericht)
-    except Exception as exc:
-        bericht["zustand_fehler"] = type(exc).__name__
-
     if backup_ordner:
         try:
             bericht["backup"] = _backup(db_pfad, Path(backup_ordner), jetzt, behalten_tage)
@@ -198,5 +247,34 @@ def nachtlauf(
 
     if domain:
         bericht["domain"] = dns_und_tls(domain)
+
+    backup = bericht.get("backup")
+    backup_fehler = isinstance(backup, dict) and bool(backup.get("fehler"))
+    domain = bericht.get("domain")
+    domain_fehler = isinstance(domain, dict) and not domain.get("ok")
+    bericht["ok"] = zaehler.fehler == 0 and not backup_fehler and not domain_fehler
+    bericht["warnung_noetig"] = not bericht["ok"]
+
+    if not bericht["ok"]:
+        if warnung_url:
+            bericht["warnung"] = _warnung_senden(warnung_url, bericht, warnung_art, timeout)
+        else:
+            bericht["warnung"] = {"gesendet": False,
+                                  "grund": "keine Warnungs-URL konfiguriert"}
+    if ping_url:
+        bericht["ping"] = _ping_senden(ping_url, bool(bericht["ok"]), timeout)
+
+    # Erst jetzt speichern: Der Zustand muss ok, Warnung und Ping enthalten.
+    try:
+        datenbank = Facts(db_pfad)
+        datenbank.ereignis(
+            "info" if bericht["ok"] else "warnung", "Nexus",
+            f"Nachtlauf: {zaehler.faellig} fällig, {zaehler.abgerufen} abgerufen, "
+            f"{zaehler.unveraendert} unverändert, {zaehler.meldungen} Meldungen, "
+            f"{zaehler.fehler} Fehler, ok={bericht['ok']}",
+        )
+        datenbank.zustand_setzen("nexus_nacht", bericht)
+    except Exception as exc:
+        bericht["zustand_fehler"] = type(exc).__name__
 
     return bericht

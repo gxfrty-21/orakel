@@ -92,7 +92,63 @@ Die Ausgabe ist JSON und nennt `faellig`, `abgerufen`, `unveraendert`,
 
 ---
 
-## 5. Grenzen und Risiken
+## 5. Warnung bei Ausfall
+
+Der Lauf allein reicht nicht: Wer nicht hinsieht, merkt einen Ausfall nicht.
+Deshalb gibt es drei Stufen.
+
+### Stufe 1 — Exit-Code und Status
+
+Der Befehl endet mit `1`, sobald etwas fehlschlägt. `systemd` markiert die
+Unit als `failed`. Der letzte Bericht steht unter
+`zustand["nexus_nacht"]` und erscheint in `GET /api/nexus/status` als Feld
+`nacht` — inklusive `ok`, `fehler`, Backup-Status und Warnung.
+
+### Stufe 2 — Webhook (Fehlerfall)
+
+`ORAKEL_WARNUNG_URL` in der `.env` setzen. Der Lauf sendet nur bei Fehlern,
+nie im Normalbetrieb.
+
+| Ziel | `ORAKEL_WARNUNG_ART` | Beispiel-URL |
+|---|---|---|
+| Slack, Mattermost | `json` | `https://hooks.slack.com/services/…` |
+| Discord | `json` | `https://discord.com/api/webhooks/…` |
+| ntfy | `text` | `https://ntfy.sh/mein-thema` |
+| eigener Endpunkt | `json` oder `text` | beliebige https-URL |
+
+Die Nachricht enthält nur Zähler, Backup- und Domain-Status — keine
+Feed-Inhalte. Die URL selbst wird **nicht** im Bericht oder Log gespeichert.
+
+### Stufe 3 — Dead man's switch (auch Host-Ausfall)
+
+Ein Webhook kann nicht melden, wenn die VM aus ist. Dafür `ORAKEL_PING_URL`
+auf einen Healthchecks-Check zeigen lassen (kostenlos, z. B.
+<https://healthchecks.io>):
+
+| Lauf | Anfrage |
+|---|---|
+| Erfolg | `GET <ping-url>` |
+| Fehler | `POST <ping-url>/fail` |
+
+Bleibt der Ping aus, alarmiert der Dienst nach der eingestellten Frist per
+E-Mail — auch dann, wenn der Nachtlauf gar nicht starten konnte.
+
+### Einrichten
+
+```bash
+# /srv/orakel/.env ergänzen (nicht committen)
+ORAKEL_WARNUNG_URL=https://ntfy.sh/orakel-xyz
+ORAKEL_WARNUNG_ART=text
+ORAKEL_PING_URL=https://hc-ping.com/DEINE-UUID
+
+cd /srv/orakel && docker compose up -d   # Container übernimmt die Variablen
+docker compose exec -T orakel python -m orakel.nexus nacht --limit 1 --backup-ordner /data/backups
+```
+
+Ohne konfigurierte URL bleibt der Bericht ehrlich: `warnung.gesendet: false`
+mit dem Grund `keine Warnungs-URL konfiguriert`.
+
+## 6. Grenzen und Risiken
 
 | Punkt | Ehrliche Einordnung |
 |---|---|
