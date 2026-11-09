@@ -13,6 +13,10 @@ und ohne die laufende Instanz vorher abzuschalten.
 > und — real — die Hacker-News-API. **Nicht** geprüft: Caddy-Validierung
 > (Docker-Daemon im Sandbox gesperrt), ein echter Railway-Export, ein echter
 > Oracle-Start. Diese drei Punkte bleiben bis zum ersten Lauf offen.
+>
+> **Nachtlauf/Healthchecks:** Installer und systemd-Units sind vorbereitet und
+> lokal geprüft, aber nicht auf einer Oracle-VM ausgeführt; siehe
+> [NACHTBETRIEB.md](NACHTBETRIEB.md).
 
 ---
 
@@ -142,6 +146,21 @@ Passwort anzeigen:
 sudo grep ORAKEL_AUTH_PASS /srv/orakel/.env
 ```
 
+### 4.1 Nachtlauf und Healthchecks
+
+Nach dem Bootstrap den täglichen Nachtlauf installieren:
+
+```bash
+cd /srv/orakel
+sudo git pull --ff-only
+sudo bash scripts/oracle-nacht-install.sh
+```
+
+Der Installer fragt die Healthchecks-Ping-URL verdeckt ab, schreibt sie nach
+`.env` (chmod 600), installiert Timer und Fail-Unit und startet einen ersten
+Lauf. Check-Einstellungen (Period 1 Tag, Grace 2 Stunden) und Prüfbefehle:
+[NACHTBETRIEB.md](NACHTBETRIEB.md) Abschnitt 3.
+
 **Bewusst unverändert:** `ORAKEL_TAKT=0`. Der Takt ist Paper-Trading und war
 auf Railway aus; die Recherche bekommt ihren Zeitplan erst in Phase 8. Wer ihn
 jetzt will, setzt `ORAKEL_TAKT=1` und startet den Container neu.
@@ -200,6 +219,10 @@ startet neu und prüft den Healthcheck inklusive Artikelzahl.
 curl -i https://DOMAIN/api/health          # 200, ohne Login
 curl -i https://DOMAIN/                    # 401, ohne Login
 curl -iu orakel:PASSWORT https://DOMAIN/   # 200
+
+# Nachtlauf
+systemctl list-timers orakel-nacht.timer --no-pager
+systemctl status orakel-nacht.service --no-pager
 ```
 
 Im Dashboard prüfen: Artikelzahl, Vault-Notizen, Paper-Trading-Historie.
@@ -241,7 +264,8 @@ verbrennt. Sinnvoll sind:
 
 - **echte** periodische Arbeit (Spider-Lauf, Phase 8) statt künstlicher Last,
 - tägliches Backup außerhalb der VM (`scp` oder Object Storage),
-- Monitoring, das einen Ausfall meldet (Phase 8),
+- Monitoring, das einen Ausfall meldet: der Nachtlauf pingt Healthchecks
+  (siehe [NACHTBETRIEB.md](NACHTBETRIEB.md)),
 - Neuerstellung in Minuten, weil der Stack hostneutral ist.
 
 Ein 24/7-SLA gibt es bei 0 € nicht. Wer es braucht, zahlt 5 $/Monat.

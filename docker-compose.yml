@@ -6,6 +6,8 @@ services:
     environment:
       PORT: "3000"
       ORAKEL_DATA: /data
+      # Für den DNS/TLS-Check des Nachtlaufs im Container.
+      ORAKEL_DOMAIN: ${ORAKEL_DOMAIN:-}
       ORAKEL_AUTH_USER: ${ORAKEL_AUTH_USER:?ORAKEL_AUTH_USER fehlt in .env}
       ORAKEL_AUTH_PASS: ${ORAKEL_AUTH_PASS:?ORAKEL_AUTH_PASS fehlt in .env}
       ORAKEL_TAKT: ${ORAKEL_TAKT:-0}

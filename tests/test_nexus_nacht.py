@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import http.server
+import os
+import shutil
 import sqlite3
+import subprocess
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -215,6 +218,62 @@ def test_unerreichbare_warnung_bricht_den_lauf_nicht_ab(server, tmp_path):
                      warnung_url="http://127.0.0.1:1/warnung")
     assert bericht["warnung"]["gesendet"] is False
     assert bericht["backup"]["integrity"] == "ok"
+
+
+# ---------- systemd/Healthchecks-Einrichtung ----------
+
+WURZEL = Path(__file__).resolve().parents[1]
+FAIL_SKRIPT = WURZEL / "deploy" / "orakel-nacht-fail.sh"
+
+
+def test_nacht_unit_hat_timeout_und_onfailure():
+    text = (WURZEL / "deploy" / "orakel-nacht.service").read_text(encoding="utf-8")
+    assert "Type=oneshot" in text
+    assert "TimeoutStartSec=2700" in text
+    assert "OnFailure=orakel-nacht-fail.service" in text
+    # Domain und Ping-URL kommen aus der Container-Umgebung, nicht aus ExecStart.
+    assert "EnvironmentFile" not in text
+    assert "--domain" not in text
+
+
+def test_compose_gibt_domain_an_den_nachtlauf():
+    text = (WURZEL / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "ORAKEL_DOMAIN: ${ORAKEL_DOMAIN:-}" in text
+
+
+def test_nacht_timer_laeuft_taeglich_und_persistent():
+    text = (WURZEL / "deploy" / "orakel-nacht.timer").read_text(encoding="utf-8")
+    assert "OnCalendar=*-*-* 02:30:00 Europe/Zurich" in text
+    assert "Persistent=true" in text
+    assert "Unit=orakel-nacht.service" in text
+
+
+def test_fail_unit_nutzt_skript_und_env_datei():
+    text = (WURZEL / "deploy" / "orakel-nacht-fail.service").read_text(encoding="utf-8")
+    assert "EnvironmentFile=-/srv/orakel/.env" in text
+    assert "ExecStart=/srv/orakel/deploy/orakel-nacht-fail.sh" in text
+
+
+def test_fail_skript_sendet_fail_ping(server):
+    if not shutil.which("curl"):
+        pytest.skip("curl fehlt")
+    env = {**os.environ, "ORAKEL_PING_URL": f"{server}/ping"}
+    subprocess.run(["sh", str(FAIL_SKRIPT)], env=env, check=True, timeout=30)
+    assert ("POST", "/ping/fail", "") in _Handler.ereignisse
+
+
+def test_fail_skript_ohne_url_ist_still(server):
+    env = {k: v for k, v in os.environ.items() if k != "ORAKEL_PING_URL"}
+    ergebnis = subprocess.run(["sh", str(FAIL_SKRIPT)], env=env,
+                              capture_output=True, text=True, timeout=10)
+    assert ergebnis.returncode == 0
+    assert not _Handler.ereignisse
+
+
+def test_installer_ist_ausfuehrbar():
+    skript = WURZEL / "scripts" / "oracle-nacht-install.sh"
+    assert skript.is_file()
+    assert os.access(skript, os.X_OK)
 
 
 def test_ohne_warnungs_url_wird_das_ehrlich_gemeldet(server, tmp_path):

@@ -1,0 +1,11 @@
+[Unit]
+Description=Orakel Nachtlauf: Healthchecks-Fehlerping
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Die URL steht nur in /srv/orakel/.env (chmod 600), nie in ExecStart.
+EnvironmentFile=-/srv/orakel/.env
+ExecStart=/srv/orakel/deploy/orakel-nacht-fail.sh
+TimeoutStartSec=45s

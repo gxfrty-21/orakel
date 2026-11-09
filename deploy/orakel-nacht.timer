@@ -1,10 +1,11 @@
 [Unit]
-Description=Täglicher Orakel-Nachtlauf um 02:30 Uhr
+Description=Täglicher Orakel-Nachtlauf um 02:30 Uhr (Europe/Zurich)
 
 [Timer]
-OnCalendar=*-*-* 02:30:00
+OnCalendar=*-*-* 02:30:00 Europe/Zurich
 Persistent=true
 RandomizedDelaySec=600
+AccuracySec=1min
 Unit=orakel-nacht.service
 
 [Install]

@@ -1,13 +1,19 @@
 [Unit]
 Description=Orakel Nachtlauf (Quellen, Backup, DNS/TLS)
 Documentation=file:///srv/orakel/docs/spider/NACHTBETRIEB.md
-After=docker.service
+After=network-online.target docker.service
+Wants=network-online.target docker.service
 Requires=docker.service
+# Auch ein ausgefallener Container oder ein systemd-Timeout meldet sich.
+OnFailure=orakel-nacht-fail.service
 
 [Service]
 Type=oneshot
 WorkingDirectory=/srv/orakel
-# Liest ORAKEL_DOMAIN aus der .env des Projekts; das Passwort wird nicht verwendet.
-EnvironmentFile=/srv/orakel/.env
-ExecStart=/usr/bin/docker compose exec -T orakel python -m orakel.nexus nacht --db /data/orakel.db --backup-ordner /data/backups --domain ${ORAKEL_DOMAIN}
+# ORAKEL_DOMAIN und ORAKEL_PING_URL kommen aus der Container-Umgebung
+# (docker-compose.yml liest sie aus /srv/orakel/.env). Keine Secrets in ExecStart.
+ExecStart=/usr/bin/docker compose exec -T orakel python -m orakel.nexus nacht --db /data/orakel.db --backup-ordner /data/backups
 Nice=10
+# 47 Quellen mit Rate-Limit und Timeouts brauchen deutlich länger als 90 s.
+TimeoutStartSec=2700
+TimeoutStopSec=30s
