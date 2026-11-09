@@ -196,6 +196,17 @@ def jetzt() -> str:
     return datetime.now(timezone.utc).astimezone().replace(microsecond=0).isoformat()
 
 
+COMPANY_SCHEMA_VERSION = 1
+MIGRATIONS_ORDNER = Path(__file__).with_name("migrations")
+
+
+def _company_schema_laden() -> str:
+    pfad = MIGRATIONS_ORDNER / "001_company.sql"
+    if not pfad.exists():
+        raise FileNotFoundError(f"Company-Migration fehlt: {pfad}")
+    return pfad.read_text(encoding="utf-8")
+
+
 class Facts:
     """Fakten-Datenbank. Jede Zahl im Dashboard stammt von hier."""
 
@@ -204,6 +215,11 @@ class Facts:
         self.pfad.parent.mkdir(parents=True, exist_ok=True)
         with self.conn() as c:
             c.executescript(SCHEMA_SQL)
+            version = int(c.execute("PRAGMA user_version").fetchone()[0])
+            if version < COMPANY_SCHEMA_VERSION:
+                # Additive Migration: bestehende Tabellen und Zeilen bleiben unberührt.
+                c.executescript(_company_schema_laden())
+                c.execute(f"PRAGMA user_version = {COMPANY_SCHEMA_VERSION}")
 
     @contextmanager
     def conn(self) -> Iterator[sqlite3.Connection]:

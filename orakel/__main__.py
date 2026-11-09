@@ -77,6 +77,32 @@ def cmd_konferenz(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_unternehmen(args: argparse.Namespace) -> int:
+    from .company.runtime import CompanyRuntime
+    from .company.store import CompanyStore
+
+    cfg = _cfg(args.config)
+    db = Facts(cfg.db_pfad)
+    store = CompanyStore(db)
+    store.sync_roster()
+    if args.status:
+        s = store.stats()
+        print(f"Profile: {s['profile']}")
+        print("Abteilungen: " + ", ".join(f"{k}:{v}" for k, v in s['abteilungen'].items()))
+        print("Tasks: " + ", ".join(f"{k}:{v}" for k, v in sorted(s['tasks'].items())))
+        print(f"Audit-Kette: {'ok' if s['audit_ok'] else 'defekt'}")
+        return 0
+    ergebnis = CompanyRuntime(cfg, db, store=store).run(max_tasks=args.max_tasks)
+    print(f"Company-Lauf {ergebnis['tag']}: {ergebnis['profile']} Profile, "
+          f"{ergebnis['tasks_erzeugt']} Tagesaufgaben, "
+          f"{ergebnis['tasks_verarbeitet']} verarbeitet, "
+          f"{ergebnis['dauer_sekunden']} s")
+    print("Status: " + ", ".join(f"{k}:{v}" for k, v in sorted(ergebnis['states'].items())))
+    print(f"Audit-Kette: {'ok' if ergebnis['audit_ok'] else 'defekt'} · "
+          f"Paper-only: {'ja' if ergebnis['paper_only'] else 'NEIN'}")
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     cfg = _cfg(args.config)
     db = Facts(cfg.db_pfad)
@@ -199,6 +225,11 @@ def main(argv: list[str] | None = None) -> int:
 
     st = sub.add_parser("status", help="Zustand aus der Fakten-Datenbank")
     st.set_defaults(func=cmd_status)
+
+    u = sub.add_parser("unternehmen", help="Company-Schicht: 103 Profile, Queue, Policy")
+    u.add_argument("--status", action="store_true", help="nur Profile und Queue anzeigen")
+    u.add_argument("--max-tasks", type=int, default=None, help="Lauf begrenzen (Test/Demo)")
+    u.set_defaults(func=cmd_unternehmen)
 
     sa = sub.add_parser("stopp-aufheben", help="Handelsstopp nach Prüfung aufheben")
     sa.add_argument("--bestaetigen", action="store_true")

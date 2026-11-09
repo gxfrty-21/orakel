@@ -62,6 +62,13 @@ def konferenz_nachholen(cfg: Config, db: Facts) -> dict[str, Any] | None:
     return agents.konferenz(db, _kontext(cfg, db), erzwungen=True)
 
 
+def unternehmen_takt(cfg: Config, db: Facts, max_tasks: int | None = None) -> dict[str, Any]:
+    """Ein Company-Lauf; nur bei aktivierter Unternehmensschicht aufgerufen."""
+    from .company.runtime import CompanyRuntime
+
+    return CompanyRuntime(cfg, db).run(max_tasks=max_tasks)
+
+
 def takt_schritt(cfg: Config, db: Facts, mit_spider: bool = False) -> dict[str, Any]:
     ergebnis: dict[str, Any] = {}
     try:
@@ -85,6 +92,12 @@ def takt_schritt(cfg: Config, db: Facts, mit_spider: bool = False) -> dict[str, 
         ergebnis["intel"] = {**netz.verarbeite(ids), **netz.lernschleife()}
     except Exception as exc:
         db.ereignis("fehler", "Takt", f"Intelligence fehlgeschlagen: {exc}")
+    if cfg.abschnitt("unternehmen").get("aktiv", False):
+        try:
+            ergebnis["unternehmen"] = unternehmen_takt(cfg, db)
+        except Exception as exc:
+            db.ereignis("fehler", "Takt", f"Company-Schicht fehlgeschlagen: {exc}")
+            ergebnis["unternehmen"] = {"fehler": str(exc)}
     return ergebnis
 
 

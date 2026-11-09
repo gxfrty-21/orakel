@@ -173,4 +173,4 @@ Die Freigabe für Phase 1 wurde erteilt. Die folgenden Fragen betreffen Phase 2�
 Die Antworten auf diese Fragen sind die Freigabe für die nächsten Phasen. Der
 aktuelle Arbeitsstand liegt in `orakel/company/` und
 `orakel/migrations/001_company.sql`; die Planung bleibt die Referenz für die
-weitere Umsetzung. Ein Git-Commit wurde für Phase 1 noch nicht erstellt.
+weitere Umsetzung. Phase 1 ist implementiert, getestet und committet.
