@@ -17,6 +17,9 @@ from .db import Facts
 from .globe import STANDARD_ZEITRAUM, baue_globe
 from .intel import IntelNetz, auftrag_aendern, weiterleitung_aendern
 from .knowledge import Vault
+from .nexus.abruf import HttpCache
+from .nexus.quellen import lade_register
+from .nexus.status import gesamt_status
 from .paper import tick
 from .pipeline import lauf as engine_lauf
 from .report import baue_bericht
@@ -121,6 +124,12 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     def globe(zeitraum: str = STANDARD_ZEITRAUM) -> JSONResponse:
         cfg = load_config(cfg_pfad)
         return JSONResponse(baue_globe(cfg, Facts(cfg.db_pfad), zeitraum=zeitraum),
+                            headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/nexus/status")
+    def nexus_status() -> JSONResponse:
+        cfg = load_config(cfg_pfad)
+        return JSONResponse(gesamt_status(HttpCache(cfg.db_pfad), lade_register()),
                             headers={"Cache-Control": "no-store"})
 
     @app.get("/api/health")

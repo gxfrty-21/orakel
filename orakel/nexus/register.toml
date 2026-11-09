@@ -1,0 +1,493 @@
+# Nexus-Quellenregister — Stand 9. November 2026
+#
+# Alle RSS-Einträge wurden real abgerufen: HTTP 200, valides XML und
+# mindestens ein Eintrag. Zwei Kandidaten fielen raus, weil sie leer waren
+# (arxiv-cs-ai, bis-press); IMF, World Bank und Les Échos antworteten mit
+# 404/403.
+#
+# Typen: rss | json_api | oauth | csv
+# land:  ISO-3166-1 alpha-2 oder INT
+# sprache: ISO-639-1
+
+[[quelle]]
+id = "ecb-press"
+name = "EZB Pressemitteilungen"
+typ = "rss"
+url = "https://www.ecb.europa.eu/rss/press.html"
+land = "EU"
+sprache = "en"
+thema = "notenbank"
+gewicht = 0.95
+intervall_minuten = 20
+
+[[quelle]]
+id = "ecb-blog"
+name = "EZB Blog"
+typ = "rss"
+url = "https://www.ecb.europa.eu/rss/blog.html"
+land = "EU"
+sprache = "en"
+thema = "geldpolitik"
+gewicht = 0.85
+
+[[quelle]]
+id = "fed-press"
+name = "Federal Reserve Press"
+typ = "rss"
+url = "https://www.federalreserve.gov/feeds/press_all.xml"
+land = "US"
+sprache = "en"
+thema = "notenbank"
+gewicht = 0.95
+intervall_minuten = 20
+
+[[quelle]]
+id = "fed-monetary"
+name = "Federal Reserve Geldpolitik"
+typ = "rss"
+url = "https://www.federalreserve.gov/feeds/press_monetary.xml"
+land = "US"
+sprache = "en"
+thema = "geldpolitik"
+gewicht = 0.95
+intervall_minuten = 20
+
+[[quelle]]
+id = "boe-news"
+name = "Bank of England News"
+typ = "rss"
+url = "https://www.bankofengland.co.uk/rss/news"
+land = "GB"
+sprache = "en"
+thema = "notenbank"
+gewicht = 0.95
+intervall_minuten = 20
+
+[[quelle]]
+id = "boj-news"
+name = "Bank of Japan News"
+typ = "rss"
+url = "https://www.boj.or.jp/en/rss/whatsnew.xml"
+land = "JP"
+sprache = "en"
+thema = "notenbank"
+gewicht = 0.95
+intervall_minuten = 20
+
+[[quelle]]
+id = "who-news"
+name = "WHO News"
+typ = "rss"
+url = "https://www.who.int/rss-feeds/news-english.xml"
+land = "CH"
+sprache = "en"
+thema = "gesundheit"
+gewicht = 0.9
+intervall_minuten = 60
+
+[[quelle]]
+id = "un-news"
+name = "UN News"
+typ = "rss"
+url = "https://news.un.org/feed/subscribe/en/news/all/rss.xml"
+land = "US"
+sprache = "en"
+thema = "nachrichten"
+gewicht = 0.9
+intervall_minuten = 60
+
+[[quelle]]
+id = "bbc-business"
+name = "BBC Business"
+typ = "rss"
+url = "https://feeds.bbci.co.uk/news/business/rss.xml"
+land = "GB"
+sprache = "en"
+thema = "markt"
+gewicht = 0.8
+
+[[quelle]]
+id = "bbc-world"
+name = "BBC World"
+typ = "rss"
+url = "https://feeds.bbci.co.uk/news/world/rss.xml"
+land = "GB"
+sprache = "en"
+thema = "nachrichten"
+gewicht = 0.8
+
+[[quelle]]
+id = "guardian-business"
+name = "Guardian Business"
+typ = "rss"
+url = "https://www.theguardian.com/uk/business/rss"
+land = "GB"
+sprache = "en"
+thema = "markt"
+gewicht = 0.8
+
+[[quelle]]
+id = "guardian-world"
+name = "Guardian World"
+typ = "rss"
+url = "https://www.theguardian.com/world/rss"
+land = "GB"
+sprache = "en"
+thema = "nachrichten"
+gewicht = 0.8
+
+[[quelle]]
+id = "nyt-business"
+name = "New York Times Business"
+typ = "rss"
+url = "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml"
+land = "US"
+sprache = "en"
+thema = "markt"
+gewicht = 0.8
+
+[[quelle]]
+id = "nyt-world"
+name = "New York Times World"
+typ = "rss"
+url = "https://rss.nytimes.com/services/xml/rss/nyt/World.xml"
+land = "US"
+sprache = "en"
+thema = "nachrichten"
+gewicht = 0.8
+
+[[quelle]]
+id = "cnbc-top"
+name = "CNBC Top Stories"
+typ = "rss"
+url = "https://www.cnbc.com/id/100003114/device/rss/rss.html"
+land = "US"
+sprache = "en"
+thema = "markt"
+gewicht = 0.75
+
+[[quelle]]
+id = "marketwatch"
+name = "MarketWatch Top Stories"
+typ = "rss"
+url = "https://feeds.content.dowjones.io/public/rss/mw_topstories"
+land = "US"
+sprache = "en"
+thema = "markt"
+gewicht = 0.75
+
+[[quelle]]
+id = "wsj-markets"
+name = "Wall Street Journal Markets"
+typ = "rss"
+url = "https://feeds.a.dj.com/rss/RSSMarketsMain.xml"
+land = "US"
+sprache = "en"
+thema = "markt"
+gewicht = 0.85
+
+[[quelle]]
+id = "ft-home"
+name = "Financial Times Startseite"
+typ = "rss"
+url = "https://www.ft.com/rss/home"
+land = "GB"
+sprache = "en"
+thema = "markt"
+gewicht = 0.85
+
+[[quelle]]
+id = "aljazeera"
+name = "Al Jazeera"
+typ = "rss"
+url = "https://www.aljazeera.com/xml/rss/all.xml"
+land = "QA"
+sprache = "en"
+thema = "nachrichten"
+gewicht = 0.75
+
+[[quelle]]
+id = "dw-en"
+name = "Deutsche Welle Englisch"
+typ = "rss"
+url = "https://rss.dw.com/rdf/rss-en-all"
+land = "DE"
+sprache = "en"
+thema = "nachrichten"
+gewicht = 0.85
+
+[[quelle]]
+id = "tagesschau"
+name = "Tagesschau"
+typ = "rss"
+url = "https://www.tagesschau.de/xml/rss2/"
+land = "DE"
+sprache = "de"
+thema = "nachrichten"
+gewicht = 0.85
+
+[[quelle]]
+id = "spiegel"
+name = "Spiegel Schlagzeilen"
+typ = "rss"
+url = "https://www.spiegel.de/schlagzeilen/index.rss"
+land = "DE"
+sprache = "de"
+thema = "nachrichten"
+gewicht = 0.8
+
+[[quelle]]
+id = "zeit"
+name = "Zeit Online"
+typ = "rss"
+url = "https://newsfeed.zeit.de/index"
+land = "DE"
+sprache = "de"
+thema = "nachrichten"
+gewicht = 0.8
+
+[[quelle]]
+id = "faz"
+name = "FAZ Aktuell"
+typ = "rss"
+url = "https://www.faz.net/rss/aktuell/"
+land = "DE"
+sprache = "de"
+thema = "markt"
+gewicht = 0.85
+
+[[quelle]]
+id = "sz-top"
+name = "Süddeutsche Topthemen"
+typ = "rss"
+url = "https://rss.sueddeutsche.de/rss/Topthemen"
+land = "DE"
+sprache = "de"
+thema = "nachrichten"
+gewicht = 0.8
+
+[[quelle]]
+id = "handelsblatt"
+name = "Handelsblatt Schlagzeilen"
+typ = "rss"
+url = "https://www.handelsblatt.com/contentexport/feed/schlagzeilen"
+land = "DE"
+sprache = "de"
+thema = "markt"
+gewicht = 0.85
+
+[[quelle]]
+id = "ntv"
+name = "n-tv"
+typ = "rss"
+url = "https://www.n-tv.de/rss"
+land = "DE"
+sprache = "de"
+thema = "nachrichten"
+gewicht = 0.75
+
+[[quelle]]
+id = "heise"
+name = "heise online"
+typ = "rss"
+url = "https://www.heise.de/rss/heise-atom.xml"
+land = "DE"
+sprache = "de"
+thema = "technologie"
+gewicht = 0.8
+
+[[quelle]]
+id = "derstandard"
+name = "Der Standard"
+typ = "rss"
+url = "https://www.derstandard.at/rss"
+land = "AT"
+sprache = "de"
+thema = "nachrichten"
+gewicht = 0.8
+
+[[quelle]]
+id = "orf"
+name = "ORF News"
+typ = "rss"
+url = "https://rss.orf.at/news.xml"
+land = "AT"
+sprache = "de"
+thema = "nachrichten"
+gewicht = 0.8
+
+[[quelle]]
+id = "nzz"
+name = "Neue Zürcher Zeitung"
+typ = "rss"
+url = "https://www.nzz.ch/recent.rss"
+land = "CH"
+sprache = "de"
+thema = "nachrichten"
+gewicht = 0.85
+
+[[quelle]]
+id = "lemonde"
+name = "Le Monde"
+typ = "rss"
+url = "https://www.lemonde.fr/rss/une.xml"
+land = "FR"
+sprache = "fr"
+thema = "nachrichten"
+gewicht = 0.85
+
+[[quelle]]
+id = "elpais"
+name = "El País"
+typ = "rss"
+url = "https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada"
+land = "ES"
+sprache = "es"
+thema = "nachrichten"
+gewicht = 0.8
+
+[[quelle]]
+id = "ansa"
+name = "ANSA"
+typ = "rss"
+url = "https://www.ansa.it/sito/ansait_rss.xml"
+land = "IT"
+sprache = "it"
+thema = "nachrichten"
+gewicht = 0.8
+
+[[quelle]]
+id = "corriere"
+name = "Corriere della Sera"
+typ = "rss"
+url = "https://www.corriere.it/rss/homepage.xml"
+land = "IT"
+sprache = "it"
+thema = "nachrichten"
+gewicht = 0.8
+
+[[quelle]]
+id = "arstechnica"
+name = "Ars Technica"
+typ = "rss"
+url = "https://feeds.arstechnica.com/arstechnica/index"
+land = "US"
+sprache = "en"
+thema = "technologie"
+gewicht = 0.75
+
+[[quelle]]
+id = "techcrunch"
+name = "TechCrunch"
+typ = "rss"
+url = "https://techcrunch.com/feed/"
+land = "US"
+sprache = "en"
+thema = "technologie"
+gewicht = 0.7
+
+[[quelle]]
+id = "mit-tr"
+name = "MIT Technology Review"
+typ = "rss"
+url = "https://www.technologyreview.com/feed/"
+land = "US"
+sprache = "en"
+thema = "technologie"
+gewicht = 0.8
+
+[[quelle]]
+id = "nature"
+name = "Nature"
+typ = "rss"
+url = "https://www.nature.com/nature.rss"
+land = "GB"
+sprache = "en"
+thema = "wissenschaft"
+gewicht = 0.9
+intervall_minuten = 60
+
+[[quelle]]
+id = "science-news"
+name = "Science News"
+typ = "rss"
+url = "https://www.science.org/rss/news_current.xml"
+land = "US"
+sprache = "en"
+thema = "wissenschaft"
+gewicht = 0.9
+intervall_minuten = 60
+
+[[quelle]]
+id = "arxiv-econ"
+name = "arXiv Economics"
+typ = "rss"
+url = "https://export.arxiv.org/rss/econ.GN"
+land = "US"
+sprache = "en"
+thema = "wissenschaft"
+gewicht = 0.85
+intervall_minuten = 120
+
+[[quelle]]
+id = "ourworldindata"
+name = "Our World in Data"
+typ = "rss"
+url = "https://ourworldindata.org/atom.xml"
+land = "GB"
+sprache = "en"
+thema = "statistik"
+gewicht = 0.9
+intervall_minuten = 60
+
+[[quelle]]
+id = "eia"
+name = "US Energy Information Administration"
+typ = "rss"
+url = "https://www.eia.gov/rss/todayinenergy.xml"
+land = "US"
+sprache = "en"
+thema = "energie"
+gewicht = 0.9
+intervall_minuten = 60
+
+[[quelle]]
+id = "coindesk"
+name = "CoinDesk"
+typ = "rss"
+url = "https://www.coindesk.com/arc/outboundfeeds/rss/"
+land = "US"
+sprache = "en"
+thema = "krypto"
+gewicht = 0.6
+
+[[quelle]]
+id = "scmp"
+name = "South China Morning Post"
+typ = "rss"
+url = "https://www.scmp.com/rss/91/feed"
+land = "HK"
+sprache = "en"
+thema = "nachrichten"
+gewicht = 0.7
+
+[[quelle]]
+id = "xinhua-en"
+name = "Xinhua Englisch"
+typ = "rss"
+url = "https://english.news.cn/rss/worldrss.xml"
+land = "CN"
+sprache = "en"
+thema = "nachrichten"
+gewicht = 0.65
+
+[[quelle]]
+id = "hn-top"
+name = "Hacker News Top Stories"
+typ = "json_api"
+url = "https://hacker-news.firebaseio.com/v0/topstories.json"
+land = "US"
+sprache = "en"
+thema = "technologie"
+gewicht = 0.7
+intervall_minuten = 15
