@@ -148,7 +148,26 @@ docker compose exec -T orakel python -m orakel.nexus nacht --limit 1 --backup-or
 Ohne konfigurierte URL bleibt der Bericht ehrlich: `warnung.gesendet: false`
 mit dem Grund `keine Warnungs-URL konfiguriert`.
 
-## 6. Grenzen und Risiken
+## 6. Dashboard
+
+`GET /api/nexus/status` liefert den letzten Lauf unter `nacht`: `ok`,
+`warnung_noetig`, `warnung`, `ping`, `backup.erstellt` und die Zähler. Im
+Spider-Tab steht dafür die Karte **Nachtbetrieb**:
+
+| Anzeige | Quelle |
+|---|---|
+| Status OK/Warnung | `nacht.ok` |
+| Laufzeit | `nacht.zeit` |
+| Quellen | `faellig`, `abgerufen`, `unveraendert` |
+| Meldungen und Fehler | `meldungen`, `fehler` |
+| Backup-Zeitpunkt | `backup.erstellt` |
+| Integrität und Größe | `backup.integrity`, `backup.bytes` |
+| Warnung und Ping | `warnung.gesendet`, `ping.gesendet` |
+
+Ohne gespeicherten Lauf steht dort „Noch kein Nachtlauf“ — keine erfundene
+Zahl. Die Karte lädt beim Öffnen des Spider-Tabs neu.
+
+## 7. Grenzen und Risiken
 
 | Punkt | Ehrliche Einordnung |
 |---|---|

@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from orakel.db import Facts
 from orakel.nexus.abruf import Abrufer, CacheEintrag, HttpCache
 from orakel.nexus.nacht import _backup, dns_und_tls, ist_faellig, nachtlauf
 
@@ -142,6 +143,7 @@ def test_backup_entfernt_alte_dateien(tmp_path):
 
     ergebnis = _backup(db, ordner, JETZT, behalten_tage=1)
     assert ergebnis["integrity"] == "ok"
+    assert ergebnis["erstellt"].startswith("2026-11-09")
     assert "orakel-2020-01-01.db" in ergebnis["entfernt"]
     assert not alt.exists()
 
@@ -193,6 +195,11 @@ def test_fehler_sendet_warnung_und_fail_ping(server, tmp_path):
     assert bericht["ok"] is False
     assert any(pfad == "/warnung" for _, pfad, _ in _Handler.ereignisse)
     assert ("POST", "/ping/fail", "") in _Handler.ereignisse
+    # Das Dashboard liest genau diesen Zustand — er muss ok und Warnung enthalten.
+    zustand = Facts(tmp_path / "orakel.db").zustand("nexus_nacht")
+    assert zustand["ok"] is False
+    assert zustand["warnung"]["gesendet"] is True
+    assert zustand["backup"]["erstellt"]
 
 
 def test_warnung_als_text_fuer_ntfy(server, tmp_path):

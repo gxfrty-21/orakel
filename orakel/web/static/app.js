@@ -4,6 +4,7 @@ const $ = s => document.querySelector(s);
 const COL = { accent:'#5fe0c8', amber:'#e8b45a', good:'#62d68a', bad:'#e2616b', blue:'#8fb8ff', dim:'#55606d' };
 let R = null, current = 'overview', labFilter = 'all', labSel = 0, stratSel = 0, depSel = 'A';
 let globe3d = null, globeFailed = false, globeWindow = '24h', globeRequest = 0, globeAbort = null, globeLoading = null;
+let nachtDaten = null, nachtFehler = null;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = (v,d=2) => (v==null||isNaN(v)) ? '–' : Number(v).toLocaleString('de-CH',{minimumFractionDigits:d,maximumFractionDigits:d});
 const pct = (v,d=1) => v==null ? '–' : num(v,d)+' %';
@@ -418,7 +419,69 @@ function renderShip(){
 }
 
 /* ---------- Spider + Intelligence ---------- */
+async function ladeNacht(){
+  if(!$('#nachtKpis')) return;
+  try {
+    const r = await fetch('/api/nexus/status', {cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    nachtDaten = await r.json();
+    nachtFehler = null;
+  } catch(e) {
+    nachtDaten = null;
+    nachtFehler = String(e.message || e);
+  }
+  zeichneNacht();
+}
+
+const zeitKurz = s => esc(String(s || '').replace('T',' ').slice(0,16)) || '–';
+const groesse = b => b == null ? '–' : (Number(b) >= 1048576
+  ? num(Number(b)/1048576,2) + ' MB' : num(Number(b)/1024,0) + ' KB');
+
+function zeichneNacht(){
+  if(!$('#nachtKpis')) return;
+  if(nachtFehler){
+    $('#nachtTag').innerHTML = '<span class="dn">nicht erreichbar</span>';
+    $('#nachtKpis').innerHTML = '';
+    $('#nachtDetail').innerHTML = `<div class="nacht-status">Status nicht geladen: ${esc(nachtFehler)}.</div>`;
+    return;
+  }
+  const n = nachtDaten?.nacht;
+  if(!n){
+    $('#nachtTag').textContent = 'kein Lauf';
+    $('#nachtKpis').innerHTML = '';
+    $('#nachtDetail').innerHTML = '<div class="nacht-status">Noch kein Nachtlauf gespeichert. Einrichtung: <span class="code">docs/spider/NACHTBETRIEB.md</span></div>';
+    return;
+  }
+  const ok = n.ok === true;
+  const b = n.backup || {};
+  $('#nachtTag').innerHTML = ok ? '<span class="up">OK</span>' : '<span class="dn">WARNUNG</span>';
+  const kp = [
+    ['Status', ok ? '<span class="up">OK</span>' : '<span class="dn">Warnung</span>', 'Lauf ' + zeitKurz(n.zeit)],
+    ['Quellen', num(n.faellig,0), `${num(n.abgerufen,0)} abgerufen · ${num(n.unveraendert,0)} unverändert`],
+    ['Meldungen', num(n.meldungen,0), `${num(n.fehler,0)} Fehler`],
+    ['Backup', b.erstellt ? zeitKurz(b.erstellt) : '–', b.integrity ? `Integrität ${esc(b.integrity)} · ${groesse(b.bytes)}` : 'kein Backup'],
+  ];
+  $('#nachtKpis').innerHTML = kp.map(q=>`<div class="kpi"><div class="l">${q[0]}</div><div class="v">${q[1]}</div><div class="n">${q[2]}</div></div>`).join('');
+
+  const teile = [];
+  if(ok){
+    teile.push('<span class="pill">OK</span> Alle fälligen Quellen ohne Fehler.');
+  } else {
+    const w = n.warnung || {};
+    teile.push('<span class="pill r">WARNUNG</span>');
+    if(w.gesendet) teile.push('Warnung gesendet.');
+    else if(w.grund) teile.push('Nicht gesendet: ' + esc(w.grund) + '.');
+    else if(w.fehler) teile.push('Nicht gesendet: ' + esc(w.fehler) + '.');
+  }
+  if(n.ping) teile.push(n.ping.gesendet ? 'Ping gesendet.' : 'Ping nicht gesendet' + (n.ping.fehler ? ' (' + esc(n.ping.fehler) + ')' : '') + '.');
+  if(b.pfad) teile.push(`Backup: <span class="code">${esc(String(b.pfad).split('/').pop())}</span>`);
+  if(b.entfernt?.length) teile.push(`${b.entfernt.length} alte Backups entfernt.`);
+  if(n.domain) teile.push(`Domain: ${n.domain.ok ? 'ok' : esc(n.domain.fehler || 'Fehler')}${n.domain.tage_rest != null ? ' · Zertifikat ' + num(n.domain.tage_rest,0) + ' Tage' : ''}.`);
+  $('#nachtDetail').innerHTML = `<div class="nacht-status">${teile.join(' ')}</div>`;
+}
+
 function renderSpider(){
+  ladeNacht();
   const sp = R.spider || {};
   const stat = sp.statistik || {};
   const artikel = sp.artikel || [];

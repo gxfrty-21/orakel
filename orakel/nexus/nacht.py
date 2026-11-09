@@ -86,7 +86,8 @@ def _backup(db_pfad: Path, ordner: Path, jetzt: datetime,
             entfernt.append(datei.name)
 
     return {"pfad": str(ziel), "bytes": ziel.stat().st_size,
-            "integrity": integrity, "entfernt": entfernt}
+            "integrity": integrity, "erstellt": jetzt.isoformat(timespec="seconds"),
+            "entfernt": entfernt}
 
 
 def dns_und_tls(domain: str, timeout: float = 10.0) -> dict[str, object]:
