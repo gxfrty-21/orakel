@@ -332,16 +332,18 @@ aufsetzen können.
 
 ---
 
-## 8. Offene Entscheidungen
+## 8. Entscheidungen (9. November 2026)
 
-1. **Sprachmodell:** ohne (regelbasiert, 0 €), lokal (Ollama, mehr RAM) oder
-   später bezahlt? Diese Entscheidung bestimmt Qualität und Kosten.
-2. **Hosting:** Railway Hobby (5 $/Monat) oder kostenlose VM? Ohne Entscheidung
-   kein 24/7.
-3. **Reddit/Community-Zugang:** OAuth-App anlegen (kostenlos, aber Registrierung)
-   oder auf Feeds und Hacker News beschränken?
-4. **Umfang Phase 7:** voll begehbarer Nexus-Raum oder zunächst eine feste
-   Kamera auf Spinne + Fläche + Globus?
+1. **Sprachmodell:** Start **ohne** LLM, regelbasiert, 0 €. Ein lokales Modell
+   wird über eine Provider-Schnittstelle vorbereitet, aber nicht eingebaut.
+2. **Hosting:** zuerst kostenlos (Oracle Always Free bevorzugt). Railway Hobby
+   (5 $/Monat) nur nach gemeinsamer Entscheidung.
+3. **Community-Zugang:** RSS + Hacker News. Reddit-OAuth bleibt als spätere
+   Erweiterung eingeplant.
+4. **3D:** feste Kamera auf Spinne, Recherchefläche und Globus; der begehbare
+   Nexus-Raum folgt später.
+
+Details, Kosten und Grenzen: [PHASE-0-PLAN.md](PHASE-0-PLAN.md).
 
 ---
 
