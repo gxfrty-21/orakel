@@ -1,0 +1,2 @@
+Wegwerf-Datei, um den pull_request-Trigger der CI zu prüfen.
+Wird nicht gemergt.
