@@ -3,7 +3,8 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    ORAKEL_SEED_DB=/app/seed/orakel-seed.db
 
 WORKDIR /data
 
@@ -12,6 +13,8 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY orakel /app/orakel
 COPY config.toml /app/config.toml
+# Seed-DB für den Erststart; der Entrypoint importiert sie nur in ein leeres Volume.
+COPY seed /app/seed
 COPY docker-entrypoint.sh /usr/local/bin/orakel-entrypoint
 
 RUN chmod 755 /usr/local/bin/orakel-entrypoint \

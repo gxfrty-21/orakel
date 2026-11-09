@@ -18,3 +18,5 @@ DEPLOY.md
 RAILWAY.md
 railway.json
 .railway
+seed/*.db-wal
+seed/*.db-shm

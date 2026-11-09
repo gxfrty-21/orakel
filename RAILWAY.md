@@ -18,9 +18,9 @@ Deployed am 8. November 2026:
 - Service: `orakel` (`1f8e2304-31d5-4c7e-80b3-8010ee2d969e`)
 - Volume: `orakel-volume` (`241709d8-4eb6-40c9-8163-a28edb58b3ed`),
   Mount `/data`, 500 MB
-- Letztes Deployment: `83388636-c0b5-4c41-b45a-cd8a75a3a2b8` — `SUCCESS`
-  (Redeploy des vorherigen Images nach der Datenwiederherstellung;
-  Zeitfilter 24 h / 7 Tage / 30 Tage für Graph und Aktivität)
+- Letztes Deployment: `0c6a45b6-9c0f-4ea7-94d8-db6b89d5eeda` — `SUCCESS`
+  (Build aus dem Workspace mit Seed-Schritt; Zeitfilter 24 h / 7 Tage / 30 Tage
+  für Graph und Aktivität)
 - Domain: Target Port `3000`, TLS von Railway
 - Graph-API: `/api/globe?zeitraum=24h|7d|30d`; ungültige Werte fallen auf `24h`
   zurück. Der Markt-Snapshot bleibt die aktuelle Live-Ansicht.
@@ -59,6 +59,28 @@ Hinweis: Der Volume-Dateizugriff (`railway volume files`) läuft über die
 laufende Instanz. Bei gestopptem Dienst bricht er mit `Failed to initialize
 SFTP session` ab — deshalb wird zuerst neu deployt und dann auf einen
 separaten Pfad hochgeladen und im Container getauscht.
+
+### Seed beim Erststart
+
+Das Image enthält eine Seed-DB unter `/app/seed/orakel-seed.db` (`COPY seed`
+im `Dockerfile`). `docker-entrypoint.sh` ruft vor dem Serverstart
+`python -m orakel.seed` auf. Der Schritt importiert nur, wenn die Zieldatei
+fehlt oder keine Kerndaten enthält; vorhandene Daten bleiben unangetastet, eine
+alte leere DB wird als `orakel.db.leer-<zeitstempel>` gesichert. Bei
+beschädigtem Ziel oder fehlendem Seed läuft der Start unverändert weiter,
+allerdings mit deutlicher Logzeile.
+
+Der Seed wird nicht automatisch aktuell gehalten — nach größeren Datenständen
+neu bauen (siehe `seed/README.md`) und deployen. Ob er gegriffen hat, zeigt
+`railway logs`: `orakel-seed: Seed orakel-seed.db (...) importiert ...` oder
+`orakel-seed: ... enthält Daten ... – nichts importiert`.
+
+Im Deployment `0c6a45b6` geprüft: Der Startlog meldet für die bestehende DB
+`enthält Daten (artikel=34, …) – nichts importiert`; ein Import auf einem
+Scratch-Pfad im Container (`/data/seed-probe`, danach gelöscht) ergab
+`integrity ok`, 34 Artikel, 28.086 Trades, `user_version 1`, keine
+`seed-tmp`-Reste, und ein zweiter Lauf importierte nichts. Die Produktions-DB
+blieb bei 34 Artikeln/28.086 Trades.
 
 ## Unterschiede zur VPS-Variante
 
