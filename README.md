@@ -1,5 +1,7 @@
 # Orakel Trading-Engine
 
+[![CI: Tests](https://github.com/gxfrty-21/orakel/actions/workflows/tests.yml/badge.svg)](https://github.com/gxfrty-21/orakel/actions/workflows/tests.yml)
+
 Daytrading-System mit MetaTrader-5-Anbindung, Richter, Paper-Trading und Web-Dashboard.
 Grundlage ist dein Meister-Prompt (Abschnitte 1–12) und dein Orakel-Design.
 
