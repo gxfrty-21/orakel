@@ -1,0 +1,11 @@
+[Unit]
+Description=Täglicher Orakel-Nachtlauf um 02:30 Uhr
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+RandomizedDelaySec=600
+Unit=orakel-nacht.service
+
+[Install]
+WantedBy=timers.target

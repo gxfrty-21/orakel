@@ -1,18 +1,16 @@
-"""CLI: ``python -m orakel.nexus status`` und ``... hole``.
-
-``hole`` ruft echte Quellen ab und zeigt, was ankommt. Es speichert noch keine
-Artikel in der Fakten-DB — das kommt mit der Dubletten-Erkennung in Phase 2.
-"""
+"""CLI: ``python -m orakel.nexus status|hole|nacht``."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 
 from .abruf import Abrufer, HttpCache
 from .feeds import parse_feed
 from .hackernews import meldungen as hn_meldungen
+from .nacht import nachtlauf
 from .quellen import lade_register
 from .status import gesamt_status
 
@@ -68,6 +66,19 @@ def _hole(args: argparse.Namespace) -> int:
     return 1 if fehler and not gesamt else 0
 
 
+def _nacht(args: argparse.Namespace) -> int:
+    bericht = nachtlauf(
+        args.db,
+        register_pfad=args.register,
+        backup_ordner=args.backup_ordner,
+        domain=args.domain,
+        limit=args.limit,
+        behalten_tage=args.behalten_tage,
+    )
+    print(json.dumps(bericht, ensure_ascii=False, indent=2))
+    return 0 if bericht.get("fehler", 0) < bericht.get("faellig", 0) else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m orakel.nexus")
     unter = parser.add_subparsers(dest="befehl", required=True)
@@ -87,6 +98,15 @@ def main(argv: list[str] | None = None) -> int:
     hole.add_argument("--abstand", type=float, default=1.0)
     hole.add_argument("--user-agent", default="OrakelNexus/0.1 (Feed-Abruf)")
     hole.set_defaults(funktion=_hole)
+
+    nacht = unter.add_parser("nacht", help="Nachtlauf: fällige Quellen, Backup, DNS/TLS")
+    nacht.add_argument("--db", default="orakel.db")
+    nacht.add_argument("--register", default=None)
+    nacht.add_argument("--backup-ordner", default="backups")
+    nacht.add_argument("--behalten-tage", type=int, default=14)
+    nacht.add_argument("--domain", default=os.environ.get("ORAKEL_DOMAIN") or None)
+    nacht.add_argument("--limit", type=int, default=None)
+    nacht.set_defaults(funktion=_nacht)
 
     args = parser.parse_args(argv)
     return int(args.funktion(args))

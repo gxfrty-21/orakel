@@ -1,0 +1,13 @@
+[Unit]
+Description=Orakel Nachtlauf (Quellen, Backup, DNS/TLS)
+Documentation=file:///srv/orakel/docs/spider/NACHTBETRIEB.md
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/orakel
+# Liest ORAKEL_DOMAIN aus der .env des Projekts; das Passwort wird nicht verwendet.
+EnvironmentFile=/srv/orakel/.env
+ExecStart=/usr/bin/docker compose exec -T orakel python -m orakel.nexus nacht --db /data/orakel.db --backup-ordner /data/backups --domain ${ORAKEL_DOMAIN}
+Nice=10

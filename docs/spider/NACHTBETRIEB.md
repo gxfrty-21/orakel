@@ -1,0 +1,117 @@
+# Nachtbetrieb — was automatisch läuft und was nicht
+
+**Stand:** 9. November 2026
+**Grundlage:** `orakel/nexus/nacht.py` · `deploy/orakel-nacht.service` ·
+`deploy/orakel-nacht.timer`
+
+---
+
+## 1. Die ehrliche Grenze
+
+**Ich, der Assistent, laufe nicht über Nacht.** Ich bin an diesen Chat
+gebunden: Wenn er geschlossen ist, arbeite ich nicht weiter, und ich kann mich
+nicht selbst wecken.
+
+**Das Orakel kann es.** Der Nachtlauf ist ein Programm im Container, das ein
+systemd-Timer auf dem Host startet — unabhängig davon, ob ein Chat offen ist.
+Das ist der einzige Weg, „automatisch über Nacht" ehrlich umzusetzen.
+
+Was der Nachtlauf **nicht** kann: Entscheidungen treffen, ein Oracle-Konto
+anlegen, DNS-Einträge setzen, einen Railway-Export auslösen oder neue,
+unbekannte Aufgaben erfinden. Jede neue Aufgabe muss einmal eingeplant werden.
+
+---
+
+## 2. Was um 02:30 Uhr wirklich passiert
+
+| Schritt | Inhalt | Wirkung |
+|---|---|---|
+| 1 | Fällige Quellen bestimmen | Cache-Metadaten: `abgerufen_am` + `intervall_minuten` |
+| 2 | Abruf mit `If-None-Match` / `If-Modified-Since` | unveränderte Quellen: `304`, kein Body, kein Parsen |
+| 3 | Neue Antworten parsen | Meldungen zählen (RSS 2.0, RDF, Atom) |
+| 4 | Ereignis und Zustand schreiben | `ereignisse`, `zustand["nexus_nacht"]` |
+| 5 | SQLite-Backup | `backups/orakel-JJJJ-MM-TT.db`, `integrity_check` |
+| 6 | Backups aufräumen | älter als 14 Tage werden gelöscht |
+| 7 | Optional DNS/TLS | A/AAAA, Zertifikatsablauf, `/api/health` |
+
+**Noch nicht:** Die Meldungen werden nicht in `artikel` gespeichert. Ohne
+Dubletten-Erkennung entstünden Doppelzeilen. Das ist Phase 2 und wird dann in
+den Nachtlauf eingehängt.
+
+Der Lauf ist damit ehrlich beschrieben: Er hält Cache und Backup aktuell und
+protokolliert, was er gesehen hat — er erfindet keine Erkenntnisse.
+
+---
+
+## 3. Einrichten (auf der Oracle-VM)
+
+Voraussetzungen: Projekt liegt unter `/srv/orakel`, Container laufen
+(`docker compose up -d`), `.env` enthält `ORAKEL_DOMAIN`.
+
+```bash
+cd /srv/orakel
+sudo cp deploy/orakel-nacht.service deploy/orakel-nacht.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now orakel-nacht.timer
+```
+
+Prüfen:
+
+```bash
+systemctl list-timers orakel-nacht.timer
+sudo systemctl start orakel-nacht.service   # einmal sofort
+journalctl -u orakel-nacht.service -n 50 --no-pager
+```
+
+Der Timer hat `Persistent=true`: War die VM um 02:30 aus, läuft der Nachtlauf
+beim nächsten Start nach.
+
+### Alternative ohne systemd
+
+```cron
+30 2 * * * cd /srv/orakel && /usr/bin/docker compose exec -T orakel python -m orakel.nexus nacht --db /data/orakel.db --backup-ordner /data/backups >> /var/log/orakel-nacht.log 2>&1
+```
+
+---
+
+## 4. Manuell prüfen
+
+```bash
+# im Container
+docker compose exec -T orakel python -m orakel.nexus status --db /data/orakel.db
+docker compose exec -T orakel python -m orakel.nexus nacht --db /data/orakel.db \
+  --backup-ordner /data/backups --domain "$ORAKEL_DOMAIN" --limit 5
+
+# auf dem Host
+ls -lh /var/lib/docker/volumes/orakel_orakel_data/_data/backups/
+```
+
+Die Ausgabe ist JSON und nennt `faellig`, `abgerufen`, `unveraendert`,
+`fehler`, `meldungen`, den Backup-Pfad mit `integrity` und — falls gesetzt —
+`domain` mit `tage_rest`.
+
+---
+
+## 5. Grenzen und Risiken
+
+| Punkt | Ehrliche Einordnung |
+|---|---|
+| Backup-Ort | liegt im Docker-Volume, also auf derselben VM. Gegen Verlust der VM hilft nur eine Kopie außerhalb (`scp`, Object Storage) — Phase 8. |
+| Container aus | `docker compose exec` schlägt fehl; `restart: unless-stopped` deckt Abstürze ab, nicht ein manuell gestopptes Projekt. |
+| Oracle-Idle | Der Nachtlauf erzeugt echte Last, aber keine Dauerlast. Die Idle-Reclamation bleibt ein Risiko. |
+| Domain-Prüfung | läuft nur, wenn `ORAKEL_DOMAIN` gesetzt ist. Auf Railway gibt es kein Zertifikat im Container; dort ist der Check sinnlos. |
+| Kosten | 0 €. Keine kostenpflichtigen Dienste. |
+| Fehlermeldungen | landen im Bericht und in `ereignisse`; der Timer selbst schweigt. Wer alarmiert werden will, braucht Phase 8 (Monitoring). |
+
+---
+
+## 6. Was ich nicht automatisch machen kann
+
+Diese Dinge brauchen dich oder einen Zugang, den ich nicht habe:
+
+- Oracle-Konto und Instanz anlegen (Kreditkarte, Verifikation).
+- DNS-Eintrag bei DuckDNS oder Cloudflare setzen.
+- Railway-Export starten (Railway-Login).
+- Entscheiden, ob Railway nach der Migration gestoppt wird.
+- Neue Aufgaben in den Nachtlauf aufnehmen — das muss einmal programmiert
+  werden, danach läuft es.
