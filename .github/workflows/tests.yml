@@ -41,5 +41,16 @@ jobs:
       - name: Repository auschecken
         uses: actions/checkout@v4
 
+      - name: Buildx einrichten
+        uses: docker/setup-buildx-action@v3
+
+      # Layer-Cache aus dem GitHub-Actions-Cache; mode=max cached auch die
+      # pip-install-Schicht, nicht nur das Basis-Image.
       - name: Image bauen
-        run: docker build --tag orakel:ci .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: orakel:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
