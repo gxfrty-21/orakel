@@ -128,10 +128,45 @@ Der Docker-Job der CI baut dasselbe Image wie Railway. Ein kaputtes `Dockerfile`
 oder ein fehlendes Paket fällt damit vor dem Deploy auf; der Smoke-Test im
 Container prüft zusätzlich Start, Health und Login-Schutz.
 
-Warum kein eigener `railway up`-Workflow: Er würde mit dem Autodeploy um
-denselben Service konkurrieren (zwei Builds pro Push) und bräuchte einen
-Projekt-Token als Repository-Secret. Wait for CI nutzt den vorhandenen
-GitHub-Weg und braucht keine Zugangsdaten.
+### Zwei Wege zum Deploy nach grüner CI
+
+| Weg | Voraussetzung | Ablauf |
+|---|---|---|
+| GitHub-Quelle + Wait for CI | Service ist mit dem Repository verbunden | Railway baut den Commit selbst, sobald die CI grün ist |
+| `Deploy`-Workflow | `RAILWAY_TOKEN` als Repository-Secret | GitHub Actions ruft `railway up` auf, nachdem `Tests` grün ist |
+
+Beide Wege schließen sich aus: Mit verbundener GitHub-Quelle würde der
+Workflow denselben Commit ein zweites Mal hochladen. Ohne Quellverbindung ist
+der Workflow der einzige automatische Weg — so ist der Service heute
+aufgesetzt.
+
+#### Deploy per Workflow (`RAILWAY_TOKEN`)
+
+`.github/workflows/deploy.yml` läuft nach jedem erfolgreichen `Tests`-Lauf auf
+`main` und auf Knopfdruck über „Run workflow“:
+
+1. Es prüft, dass `RAILWAY_TOKEN` gesetzt ist, und bricht sonst mit einer
+   Anleitung ab.
+2. Es checkt genau den Commit des Tests-Laufs aus.
+3. `railway up --ci --service orakel` lädt ihn hoch und streamt den Build.
+
+Einmalig einrichten:
+
+1. Railway → Projekt → **Settings → Tokens** → Project Token für das
+   Environment `production` erzeugen.
+2. GitHub → Repository → **Settings → Secrets and variables → Actions** →
+   `RAILWAY_TOKEN` anlegen. Der Wert bleibt in Railway und GitHub, nie im
+   Repository.
+3. Service-Name prüfen: `SERVICE` im Workflow steht auf `orakel`.
+
+Der Token ist ein Projekt-Token, kein Account-Token; er kann deployen und
+Logs lesen, sonst nichts. Er gehört nicht in eine Datei, nicht in einen Branch
+und nicht in eine Chat-Antwort. Fehlt er, bleibt der Deploy-Job rot — das ist
+die gewollte Erinnerung, dass der automatische Deploy noch nicht scharf ist.
+
+Die Nachprüfung (`deploy-check.yml`) läuft parallel zum Deploy und wartet bis
+zu 13 Minuten auf den Commit. Sie wird also grün, sobald `railway up`
+fertig ist, und rot, wenn der Deploy scheitert.
 
 ### Nachprüfung nach dem Deploy
 

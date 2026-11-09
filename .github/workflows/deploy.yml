@@ -1,0 +1,55 @@
+name: Deploy
+
+# Deployt nach jedem erfolgreichen "Tests"-Lauf auf main nach Railway.
+# Braucht keinen GitHub-Quellbezug im Railway-Service, nur das Repository-Secret
+# RAILWAY_TOKEN (Project Token). Ohne Token bricht der Job mit Anleitung ab.
+on:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: railway-deploy
+
+jobs:
+  railway:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SERVICE: orakel
+
+    steps:
+      - name: Token prüfen
+        env:
+          TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::RAILWAY_TOKEN fehlt. Project Token in Railway unter Project Settings → Tokens erzeugen und im Repository unter Settings → Secrets and variables → Actions als RAILWAY_TOKEN ablegen."
+            exit 1
+          fi
+          echo "Railway-Token vorhanden (${#TOKEN} Zeichen)."
+
+      - name: Commit auschecken
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 1
+
+      - name: Railway CLI installieren
+        run: |
+          npm install --global @railway/cli
+          railway --version
+
+      - name: Nach Railway deployen
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          commit=$(git rev-parse --short HEAD)
+          echo "Deploye $commit an Service $SERVICE"
+          railway up --ci --service "$SERVICE" --message "CI $commit"
