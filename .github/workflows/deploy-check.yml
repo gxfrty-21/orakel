@@ -21,7 +21,7 @@ concurrency:
 jobs:
   live:
     if: github.event_name == 'workflow_dispatch' || github.event.deployment_status.state == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       BASIS: https://orakel-production-fb18.up.railway.app
