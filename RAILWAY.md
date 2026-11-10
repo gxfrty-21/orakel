@@ -22,6 +22,8 @@ Deployed am 8. November 2026:
   (Build aus dem Workspace mit Seed-Schritt; Zeitfilter 24 h / 7 Tage / 30 Tage
   für Graph und Aktivität)
 - Domain: Target Port `3000`, TLS von Railway
+- Deploy-Weg: Ziel ist GitHub-Quelle mit „Wait for CI“; Project Tokens setzen
+  eine bezahlte Subscription voraus und sind hier nicht im Einsatz.
 - Graph-API: `/api/globe?zeitraum=24h|7d|30d`; ungültige Werte fallen auf `24h`
   zurück. Der Markt-Snapshot bleibt die aktuelle Live-Ansicht.
 
@@ -107,9 +109,13 @@ Voraussetzungen:
 - Ein Workflow läuft auf `push` in den Deploy-Branch. `.github/workflows/tests.yml`
   macht das mit `on: push: branches: [main]`.
 
-Dann im Dashboard: Service → **Settings** → **Wait for CI** einschalten. Fehlt
-der Schalter, zuerst die aktualisierten GitHub-Berechtigungen der Railway-App
-bestätigen (GitHub → Settings → Applications → Railway → Configure).
+1. Railway-Projekt öffnen → Service `orakel` → **Settings → Source →
+   Connect Repo** → Repository `gxfrty-21/orakel`, Branch `main`.
+2. Danach im selben Service **Settings → Wait for CI** einschalten. Fehlt der
+   Schalter, zuerst die aktualisierten GitHub-Berechtigungen der Railway-App
+   bestätigen (GitHub → Settings → Applications → Railway → Configure).
+3. Kein `RAILWAY_TOKEN` und kein Project Token nötig. Project Tokens setzen
+   eine aktive bezahlte Subscription voraus und werden hier nicht verwendet.
 
 ### Verhalten
 
@@ -128,65 +134,37 @@ Der Docker-Job der CI baut dasselbe Image wie Railway. Ein kaputtes `Dockerfile`
 oder ein fehlendes Paket fällt damit vor dem Deploy auf; der Smoke-Test im
 Container prüft zusätzlich Start, Health und Login-Schutz.
 
-### Zwei Wege zum Deploy nach grüner CI
+### Ein Weg: GitHub-Quelle + Wait for CI
 
-| Weg | Voraussetzung | Ablauf |
-|---|---|---|
-| GitHub-Quelle + Wait for CI | Service ist mit dem Repository verbunden | Railway baut den Commit selbst, sobald die CI grün ist |
-| `Deploy`-Workflow | `RAILWAY_TOKEN` als Repository-Secret | GitHub Actions ruft `railway up` auf, nachdem `Tests` grün ist |
+| Voraussetzung | Ablauf |
+|---|---|
+| Service ist mit `gxfrty-21/orakel` verbunden, Branch `main` | Railway baut den Commit selbst, sobald `Tests` grün ist |
 
-Beide Wege schließen sich aus: Mit verbundener GitHub-Quelle würde der
-Workflow denselben Commit ein zweites Mal hochladen. Ohne Quellverbindung ist
-der Workflow der einzige automatische Weg — so ist der Service heute
-aufgesetzt.
-
-#### Deploy per Workflow (`RAILWAY_TOKEN`)
-
-`.github/workflows/deploy.yml` läuft nach jedem erfolgreichen `Tests`-Lauf auf
-`main` und auf Knopfdruck über „Run workflow“:
-
-1. Es prüft, dass `RAILWAY_TOKEN` gesetzt ist, und bricht sonst mit einer
-   Anleitung ab.
-2. Es checkt genau den Commit des Tests-Laufs aus.
-3. `railway up --ci --service orakel` lädt ihn hoch und streamt den Build.
-
-Einmalig einrichten:
-
-1. Railway → Projekt → **Settings → Tokens** → Project Token für das
-   Environment `production` erzeugen.
-2. GitHub → Repository → **Settings → Secrets and variables → Actions** →
-   `RAILWAY_TOKEN` anlegen. Der Wert bleibt in Railway und GitHub, nie im
-   Repository.
-3. Service-Name prüfen: `SERVICE` im Workflow steht auf `orakel`.
-
-Der Token ist ein Projekt-Token, kein Account-Token; er kann deployen und
-Logs lesen, sonst nichts. Er gehört nicht in eine Datei, nicht in einen Branch
-und nicht in eine Chat-Antwort. Fehlt er, bleibt der Deploy-Job rot — das ist
-die gewollte Erinnerung, dass der automatische Deploy noch nicht scharf ist.
-
-Die Nachprüfung (`deploy-check.yml`) läuft parallel zum Deploy und wartet bis
-zu 13 Minuten auf den Commit. Sie wird also grün, sobald `railway up`
-fertig ist, und rot, wenn der Deploy scheitert.
+Der tokenbasierte `Deploy`-Workflow wurde entfernt. `.github/workflows/deploy.yml`
+gibt es nicht mehr; GitHub Actions lädt den Commit nicht mehr selbst hoch.
+Damit gibt es auch keinen Job, der ohne `RAILWAY_TOKEN` rot wird. Project Tokens
+setzen eine aktive bezahlte Subscription voraus; dieser Weg wird nicht mehr
+verwendet.
 
 ### Nachprüfung nach dem Deploy
 
 Ein grüner CI-Lauf heißt noch nicht, dass der Commit auch ausgeliefert wird.
-`.github/workflows/deploy-check.yml` hängt sich an jeden erfolgreichen
-`Tests`-Lauf auf `main` und prüft die Produktion:
+`.github/workflows/deploy-check.yml` läuft nach einem erfolgreichen
+Railway-Deployment (`deployment_status: success`) und prüft die Produktion:
 
-- `/api/health` muss als `commit` genau den Push-Commit nennen. Der Wert kommt
-  aus `RAILWAY_GIT_COMMIT_SHA`, das Railway bei Deploys aus GitHub selbst setzt
-  — dafür war das Feld `commit` in `/api/health` nötig.
+- `/api/health` muss als `commit` genau den ausgelieferten Commit nennen. Der
+  Wert kommt aus `RAILWAY_GIT_COMMIT_SHA`, das Railway bei Deploys aus GitHub
+  selbst setzt — dafür war das Feld `commit` in `/api/health` nötig.
 - Gewartet wird bis zu 13 Minuten, danach ist der Lauf rot. Der Job braucht
   keinen Token; `/api/health` ist ohne Login erreichbar.
 - Zusätzlich: `ok: true`, eine Artikelzahl über 0 (fängt ein leeres Volume ab)
   und `/` ohne Zugangsdaten muss `401` liefern.
 
-Der Lauf beantwortet damit die Frage „ist der Deploy wirklich durch?“. Rot wird
-er auch dann, wenn ein Commit absichtlich nicht deployt wird oder der
-Autodeploy aus ist — das ist gewollt. Bei einem Deploy über die CLI fehlt
-`RAILWAY_GIT_COMMIT_SHA`; dann schlägt die Nachprüfung an, obwohl die App
-läuft. Für diesen Service ist GitHub der einzige Deploy-Weg.
+Der Lauf beantwortet damit die Frage „ist der Deploy wirklich durch?“. Er startet
+erst nach dem Deploy und blockiert deshalb nicht Railways „Wait for CI“. Bei
+einem manuellen CLI-Deploy ohne GitHub-Status läuft er nicht; dann fehlt auch
+`RAILWAY_GIT_COMMIT_SHA`. Für diesen Service ist GitHub der einzige automatische
+Deploy-Weg.
 
 ## Wichtig: `railway.json` ist Legacy
 

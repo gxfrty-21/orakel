@@ -1,13 +1,14 @@
 name: Deploy-Nachprüfung
 
-# Läuft nach jedem erfolgreichen "Tests"-Lauf auf main und prüft, ob genau
-# dieser Commit auf Railway wirklich ausgeliefert wird. Kein Token nötig:
-# /api/health ist ohne Login erreichbar und nennt den laufenden Commit.
+# Läuft nach einem erfolgreichen Railway-Deployment (GitHub-Quelle) und prüft,
+# ob genau dieser Commit ausgeliefert wird. Kein Token nötig: /api/health ist
+# ohne Login erreichbar und nennt den laufenden Commit.
+#
+# Nicht an den Tests-Lauf hängen: Railway wartet bei "Wait for CI" auf die
+# Workflows des Commits; eine Nachprüfung, die auf den Deploy wartet, würde sich
+# sonst selbst blockieren.
 on:
-  workflow_run:
-    workflows: [Tests]
-    types: [completed]
-    branches: [main]
+  deployment_status:
   workflow_dispatch:
 
 permissions:
@@ -19,7 +20,7 @@ concurrency:
 
 jobs:
   live:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' || github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -29,7 +30,7 @@ jobs:
       - name: Erwarteten Commit bestimmen
         id: soll
         run: |
-          sha="${{ github.event.workflow_run.head_sha }}"
+          sha="${{ github.event.deployment.sha }}"
           if [ -z "$sha" ]; then
             sha="${{ github.sha }}"
           fi
