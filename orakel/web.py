@@ -22,6 +22,7 @@ from .nexus.graph import ZEITRAEUME, graph_auffrischen, graph_daten
 from .nexus.kalibrierung import kalibrierung_auffrischen, prognose_anlegen
 from .nexus.missionen import Missionen
 from .nexus.quellen import lade_register
+from .nexus.raum import raum_daten
 from .nexus.status import gesamt_status
 from .paper import tick
 from .pipeline import lauf as engine_lauf
@@ -229,6 +230,19 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         graph_auffrischen(db)
         return JSONResponse(graph_daten(db, zeitraum),
                             headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/nexus/raum")
+    def nexus_raum(zeitraum: str = "7d") -> JSONResponse:
+        cfg = load_config(cfg_pfad)
+        if zeitraum not in ZEITRAEUME:
+            return JSONResponse(
+                {"ok": False, "fehler": f"Unbekannter Zeitraum: {zeitraum}"},
+                status_code=400,
+            )
+        return JSONResponse(
+            raum_daten(Facts(cfg.db_pfad), zeitraum),
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.get("/api/nexus/kalibrierung")
     def nexus_kalibrierung() -> JSONResponse:

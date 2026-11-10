@@ -125,11 +125,12 @@ Web-Takt ausgeführt; sie entstehen nicht automatisch aus erfundenen Fragen.
 
 ### 2.7 Tests
 
-Aktuell **168 Tests grün**, darunter `tests/test_spider.py` (Parsing, Dubletten,
+Aktuell **181 Tests grün**, darunter `tests/test_spider.py` (Parsing, Dubletten,
 robots.txt-Verbot, Qualitätsstrafe, Volltext, Symbolzuordnung),
 `tests/test_intel.py` (Themen, Weiterleitungen, Auftragsfelder, Lernschleife),
-`tests/test_globe.py` und `tests/test_nexus_missionen.py` (Neustart, Retry,
-Dead-Letter, Lease, Priorität, 15 Rollen, Gegenargumente, Übergabe).
+`tests/test_globe.py`, `tests/test_nexus_missionen.py` (Neustart, Retry,
+Dead-Letter, Lease, Priorität, 15 Rollen, Gegenargumente, Übergabe) und
+`tests/test_nexus_raum.py` (echte 3D-Aktivität, leerer Raum, Zeitfilter).
 
 ### 2.8 Was der Auftrag zusätzlich verlangt
 
@@ -268,23 +269,27 @@ POST /api/nexus/mission        Mission anlegen
 GET  /api/nexus/missionen      Liste mit Fortschritt
 GET  /api/nexus/mission/{id}   Detail + Bericht
 GET  /api/nexus/status         Kennzahlen (Quellen, Länder, Sprachen, Warnungen)
-GET  /api/nexus/graph?zeitraum Knoten/Kanten für die 3D-Ansicht
+GET  /api/nexus/graph?zeitraum Knoten/Kanten des Wissensgraphen
+GET  /api/nexus/raum?zeitraum  Graph, echte Ereignisse und Aktivitätsstatus
 GET  /api/nexus/warnungen      Priorisierte Hinweise
 ```
 
 Alle Kennzahlen kommen aus SQLite. Kein Feld ist berechnet, ohne dass die
 Quelle mitgeliefert wird.
 
-### 4.5 3D-Kopplung
+### 4.5 3D-Kopplung — umgesetzt
 
-Neue Datei `orakel/web/static/nexus3d.js`, Ansicht `#v-nexus`:
+`orakel/web/static/nexus3d.js`, Ansicht `#v-nexus`:
 
-- Raum mit holografischer Fläche und Globus (bestehende `globe3d.js`-Daten).
-- Spinne: Körper + acht Beine, IK, ruhiger Idle-Zustand.
-- Animation ausschließlich aus `/api/nexus/status` und `/api/nexus/graph`:
-  Beinbewegung nur bei laufenden Aufgaben, Aufleuchten nur bei neuen
-  Erkenntnissen, sonst Ruhe.
-- Bildschirme im Raum zeigen dieselben Zahlen wie die API — keine Dekoration.
+- Raum mit holografischer Fläche, zentraler Plattform und zwei Screens.
+- Spinne: Körper, Kopf, Augen und acht zweigliedrige Beine mit ruhigem
+  Idle-Zustand.
+- Animation ausschließlich aus `/api/nexus/raum`: Beinbewegung nur bei
+  laufenden Missionen/Aufgaben, Aufleuchten nur bei neuen Knoten-IDs nach einem
+  echten Refresh, sonst Ruhe.
+- Screens zeigen dieselben Knoten-, Kanten- und Ereigniszahlen wie die API —
+  keine Dekoration.
+- Leerer Graph bleibt leer; die Spinne sitzt ruhig, ohne Demo-Knoten.
 
 ---
 
@@ -298,22 +303,24 @@ Neue Datei `orakel/web/static/nexus3d.js`, Ansicht `#v-nexus`:
 | **4** | Missionen, Queue, Retry, Fortschritt, API + UI-Liste | 3 T | Mission läuft Ende-zu-Ende, auch nach Neustart |
 | **5** | 15 Agentenrollen, Gegenargument-Agent, Berichte | 3–4 T | Bericht je Mission mit Gegenargumenten |
 | **6** | Wissensgraph persistiert, Prognosekontrolle mit Trefferquote | 3 T | Graph aus DB, Kalibrierung sichtbar |
-| **7** | 3D-Nexus mit Spinne, an echte Events gekoppelt | 4–6 T | Blick in den Raum zeigt echten Zustand |
+| **7** | 3D-Nexus mit Spinne, an echte Events gekoppelt | **umgesetzt** | Blick in den Raum zeigt echten Zustand |
 | **8** | Dauerbetrieb: Zeitplan, Backoff, Ressourcenlimits, Monitoring | 2 T | 24 h Lauf ohne Eingriff, Logs auswertbar |
 
-**Summe: 21–25 Arbeitstage.** Phase 7 ist der größte Einzelposten und bewusst
-zuletzt — eine schöne Hülle ohne echte Daten wäre genau die verbotene
-Dekoration.
+**Summe: 21–25 Arbeitstage.** Phase 7 war der größte Einzelposten — eine
+schöne Hülle ohne echte Daten wäre genau die verbotene Dekoration. Sie liest
+jetzt ausschließlich den persistierten Graphen und echte Ereigniszeitpunkte.
 
-**Stand 10. November 2026:** Phasen 1–6 sind lokal umgesetzt und getestet
+**Stand 10. November 2026:** Phasen 1–7 sind lokal umgesetzt und getestet
 (siehe [PHASE-1.md](PHASE-1.md), [PHASE-2.md](PHASE-2.md),
 [PHASE-3.md](PHASE-3.md), [PHASE-4.md](PHASE-4.md),
-[PHASE-5.md](PHASE-5.md), [PHASE-6.md](PHASE-6.md)). Phase 5 liefert 15
-deterministische Prüfrollen, Gegenargumente sowie die Vault-/Intel-Übergabe.
-Phase 6 persistiert den Wissensgraph und prüft manuelle sowie importierte
-Prognosen gegen echte M15-Kerzen. Die **3D feste Kamera** aus dem ursprünglichen
-Phasenplan ist damit noch nicht umgesetzt; sie bleibt Phase 7. Auf der Oracle-VM
-läuft noch der alte Stand; die Migration ist vorbereitet, aber nicht ausgeführt.
+[PHASE-5.md](PHASE-5.md), [PHASE-6.md](PHASE-6.md),
+[PHASE-7.md](PHASE-7.md)). Phase 5 liefert 15 deterministische Prüfrollen,
+Gegenargumente sowie die Vault-/Intel-Übergabe. Phase 6 persistiert den
+Wissensgraph und prüft manuelle sowie importierte Prognosen gegen echte
+M15-Kerzen. Phase 7 zeigt den Graphen im 3D-Nexus mit fester Kamera und einer
+Spinne, deren Beine ausschließlich bei laufender Arbeit bewegt werden. Auf der
+Oracle-VM läuft noch der alte Stand; die Migration ist vorbereitet, aber nicht
+ausgeführt.
 
 ---
 

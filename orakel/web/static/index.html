@@ -7,7 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307090c'/%3E%3Ccircle cx='16' cy='16' r='8' fill='none' stroke='%235fe0c8' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/static/style.css?v=7">
+<link rel="stylesheet" href="/static/style.css?v=8">
 </head>
 <body>
 <div class="app">
@@ -29,6 +29,7 @@
     <button class="nav" data-v="strat"><b>Strategien</b><small>Bestandene Auswahl</small></button>
     <button class="nav" data-v="research"><b>Research</b><small>Ablauf der Engine</small></button>
     <button class="nav" data-v="globe"><b>Weltkugel</b><small>Intelligence-Netzwerk</small></button>
+    <button class="nav" data-v="nexus"><b>Nexus</b><small>3D-Raum und Spinne</small></button>
     <button class="nav" data-v="ship"><b>Raumschiff</b><small>Abteilungen und Agenten</small></button>
     <button class="nav" data-v="spider"><b>Spider</b><small>Quellen und Erkenntnisse</small></button>
     <button class="nav" data-v="kb"><b>Wissensbank</b><small>Schlüsse aus Ergebnissen</small></button>
@@ -170,6 +171,70 @@
       </div>
     </section>
 
+    <section class="view nexus-view" id="v-nexus" hidden>
+      <div class="nexus-head">
+        <div>
+          <span class="nexus-kicker">NEXUS / 3D-RAUM · LIVE GRAPH</span>
+          <h1>Nexus-Raum</h1>
+          <p class="sub">Die Spinne sitzt im Kern des persistierten Wissensgraphen. Knoten und Kanten kommen aus SQLite; die Beine bewegen sich nur, wenn eine Mission oder Aufgabe tatsächlich läuft. Sonst bleibt der Raum ruhig.</p>
+        </div>
+        <div class="nexus-actions">
+          <div class="nexus-window" id="nexusWindow" role="group" aria-label="Zeitraum für den Nexus-Raum">
+            <button type="button" class="n-window" data-window="24h" aria-pressed="false">24 h</button>
+            <button type="button" class="n-window is-active" data-window="7d" aria-pressed="true">7 Tage</button>
+            <button type="button" class="n-window" data-window="30d" aria-pressed="false">30 Tage</button>
+            <button type="button" class="n-window" data-window="alle" aria-pressed="false">Alle</button>
+          </div>
+          <div class="nexus-mode" id="nexusMode">
+            <span class="n-live-dot"></span>
+            <span><b id="nexusModeLabel">WIRD GELADEN</b><small id="nexusModeDetail">Raum wird verbunden</small></span>
+          </div>
+        </div>
+      </div>
+      <div class="nexus-panel">
+        <div class="nexus-grid">
+          <aside class="nexus-rail" aria-label="Graphknoten im Nexus-Raum">
+            <div class="nexus-rail-head"><span>GRAPHKNOTEN</span><b id="nexusNodeTotal">–</b></div>
+            <div class="nexus-rail-list" id="nexusNodes"><div class="nexus-rail-empty">Graph wird geladen.</div></div>
+            <div class="nexus-rail-foot"><span class="n-signal"></span><span id="nexusGraphHint">–</span></div>
+          </aside>
+          <div class="nexus-stage" id="nexusStage" tabindex="0" aria-label="Feste 3D-Ansicht des Nexus-Raums. Knoten anklicken oder mit der Tastatur fokussieren.">
+            <canvas id="nexusCanvas"></canvas>
+            <div class="nexus-hud-top">
+              <div class="nexus-hud-kicker">NEXUS / SPIDER CORE</div>
+              <div class="nexus-activity" id="nexusActivity">–</div>
+              <div class="nexus-activity-detail" id="nexusActivityDetail"></div>
+            </div>
+            <div class="nexus-hud-stats">
+              <span><small>KNOTEN</small><b id="nexusStatNodes">–</b></span>
+              <span><small>KANTEN</small><b id="nexusStatEdges">–</b></span>
+              <span><small>LAUFEND</small><b id="nexusStatRunning">–</b></span>
+            </div>
+            <div class="nexus-tooltip" id="nexusTooltip" hidden></div>
+            <div class="nexus-empty" id="nexusEmpty" hidden></div>
+            <div class="nexus-hint" id="nexusHint">FESTE KAMERA · BEINE BEWEGEN SICH NUR BEI LAUFENDER ARBEIT</div>
+            <div class="nexus-controls">
+              <button type="button" class="n-control" id="nexusReset">Ansicht zurücksetzen</button>
+              <button type="button" class="n-control" id="nexusPause">Bewegung pausieren</button>
+            </div>
+          </div>
+          <aside class="nexus-rail nexus-rail-right" aria-label="Echte Aktivität im Nexus">
+            <div class="nexus-rail-head"><span>AKTIVITÄT</span><b id="nexusEventTotal">–</b></div>
+            <div class="nexus-rail-list nexus-events" id="nexusEvents"><div class="nexus-rail-empty">Aktivität wird geladen.</div></div>
+            <div class="nexus-rail-foot"><span class="n-signal"></span>Echte Zeitstempel</div>
+          </aside>
+        </div>
+        <div class="nexus-dock">
+          <div class="nexus-legend" id="nexusLegend"></div>
+          <div class="nexus-meta" id="nexusMeta">–</div>
+        </div>
+      </div>
+      <div class="nexus-lower">
+        <div class="panel"><div class="ph">Raumvertrag<span class="sp"></span><span class="tag">keine Dekoration</span></div><div class="card nexus-contract" id="nexusContract"></div></div>
+        <div class="panel"><div class="ph">Knotenverteilung<span class="sp"></span><span class="tag" id="nexusTypeTag">–</span></div><div class="tw" id="nexusTypes"></div></div>
+      </div>
+    </section>
+
     <section class="view" id="v-ship" hidden>
       <div><h1>Raumschiff</h1><p class="sub">Acht Abteilungen, je zehn Agenten. Jeder Raum zeigt, was im letzten Lauf tatsächlich passiert ist. Raum anklicken.</p></div>
       <div class="deck" id="deck"></div>
@@ -255,6 +320,6 @@
     </section>
   </main>
 </div>
-<script src="/static/app.js?v=7"></script>
+<script src="/static/app.js?v=9"></script>
 </body>
 </html>

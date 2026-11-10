@@ -215,6 +215,7 @@ visuell geprüft, weil die Playwright-Viewport-Steuerung mit einem internen
 
 ## 7. Nächster Schritt
 
-Phase 7: 3D-Nexus mit Spinne, ausschließlich an echte Graph- und
-Aktivitätsdaten gekoppelt. Vorher muss die UI von Phase 6 visuell geprüft
-werden; die Datenschicht steht.
+Phase 7 ist umgesetzt: Der 3D-Nexus zeigt den persistierten Graphen und echte
+Aktivität, ohne Demo-Knoten. Details und Grenzen stehen in
+[PHASE-7.md](PHASE-7.md). Als Nächstes folgt Phase 8 (Dauerbetrieb,
+Zeitplan, Backoff, Ressourcenlimits und Monitoring).
