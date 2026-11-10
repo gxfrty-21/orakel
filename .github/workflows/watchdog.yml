@@ -1,0 +1,118 @@
+name: Orakel Watchdog
+
+# Externer Dead-man's-Check außerhalb von Railway. Der öffentliche
+# Health-Endpunkt nennt den letzten Takt; ein alter oder fehlender Takt öffnet
+# ein GitHub-Issue. Nach der Erholung wird das Issue automatisch geschlossen.
+#
+# GitHub kann geplante Läufe verzögern. Der Workflow ergänzt den
+# Railway-Healthcheck, ersetzt aber keinen vollständigen Dead-man's-Switch.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: orakel-watchdog
+  cancel-in-progress: false
+
+jobs:
+  takt:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      ORAKEL_HEALTH_URL: https://orakel-production-fb18.up.railway.app/api/health
+      ORAKEL_WATCHDOG_MAX_AGE_SECONDS: "300"
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Takt prüfen
+        id: check
+        run: |
+          set +e
+          python -m orakel.watchdog --json > watchdog.json
+          rc=$?
+          cat watchdog.json || true
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          # Der Workflow entscheidet unten über rot/grün; dieser Schritt soll
+          # die Ergebnisdatei auch bei einem Fehler weiterreichen.
+          exit 0
+
+      - name: Issue-Text erzeugen
+        if: steps.check.outputs.rc != '0'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          daten = json.loads(Path("watchdog.json").read_text(encoding="utf-8"))
+
+          def wert(name: str) -> str:
+              wert = daten.get(name)
+              return "–" if wert is None or wert == "" else str(wert)
+
+          text = "\n".join([
+              "Der externe Orakel-Watchdog hat den Takt als nicht laufend erkannt.",
+              "",
+              f"- Grund: `{wert('reason')}`",
+              f"- Detail: {wert('detail')}",
+              f"- Taktstatus: `{wert('status')}`",
+              f"- Letzter Takt: `{wert('letzter_takt')}`",
+              f"- Takt-Alter: `{wert('takt_alter_sekunden')} s` "
+              f"(Limit `{wert('max_alter_sekunden')} s`)",
+              f"- Warnungen: `{wert('warnungen')}`",
+              f"- Commit: `{wert('commit')}`",
+              f"- Geprüft: `{wert('checked_at')}`",
+              f"- Health: {wert('health_url')}",
+              "",
+              "Der Workflow bleibt rot, bis der Takt wieder frisch ist. "
+              "Dann wird dieses Issue automatisch geschlossen.",
+          ])
+          Path("watchdog-body.md").write_text(text + "\n", encoding="utf-8")
+          print(text)
+          PY
+
+      - name: Alarm-Issue anlegen
+        if: steps.check.outputs.rc != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "[Watchdog] Orakel-Takt steht"
+        run: |
+          issue=$(gh issue list --state open \
+            --search "$TITLE in:title" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$issue" ]; then
+            echo "Alarm-Issue #$issue ist bereits offen."
+          else
+            gh issue create --title "$TITLE" --body-file watchdog-body.md
+          fi
+
+      - name: Erholung melden
+        if: steps.check.outputs.rc == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "[Watchdog] Orakel-Takt steht"
+        run: |
+          issue=$(gh issue list --state open \
+            --search "$TITLE in:title" \
+            --json number --jq '.[0].number // empty')
+          if [ -z "$issue" ]; then
+            echo "Kein offenes Alarm-Issue."
+            exit 0
+          fi
+          detail=$(python -c 'import json; print(json.load(open("watchdog.json"))["detail"])')
+          gh issue close "$issue" --comment "Der externe Watchdog sieht den Takt wieder als frisch: $detail"
+
+      - name: Workflow bei Störung rot
+        if: steps.check.outputs.rc != '0'
+        run: exit 1
