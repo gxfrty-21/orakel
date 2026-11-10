@@ -461,7 +461,7 @@ class Missionen:
               or ["- Keine Gegenargumente ableitbar; siehe Datenlage."]),
             "",
             f"Prüfrollen: {len(agenten)} deterministische Rollen, "
-            f"{len(rollen_befunde)} Befund(e).",
+            f"{_menge(len(rollen_befunde), 'Befund', 'Befunde')}.",
             "",
             "Offene Fragen:",
             *[f"- {zeile}" for zeile in offene],
@@ -554,9 +554,12 @@ class Missionen:
         updated["rolle"] = "weitergabe"
         updated["weitergabe"] = {"intel": intel, "vault": vault,
                                  "abteilung": abteilung, "generiert": self._iso(jetzt)}
+        intel_label = {"uebergeben": "übergeben",
+                       "bereits_uebergeben": "bereits übergeben"}.get(
+                           str(intel["status"]), str(intel["status"]))
         updated["text"] = (str(bericht.get("text") or "")
                            + "\n\nWeitergabe:\n"
-                           + f"- IntelNetz: {intel['status']} ({intel.get('kennung', '—')})\n"
+                           + f"- IntelNetz: {intel_label} ({intel.get('kennung', '—')})\n"
                            + f"- Vault: {vault['status']}"
                            + (f" ({vault['pfad']})" if vault.get("pfad") else ""))
         return updated

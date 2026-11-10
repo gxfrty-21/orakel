@@ -527,7 +527,7 @@ function zeichneMissionen(d){
   $('#missionTag').textContent = `${num(st.gesamt,0)} Missionen`;
   $('#missionKpis').innerHTML = [
     ['Missionen', num(st.gesamt,0), `${num(st.tasks?.erledigt,0)} Aufgaben erledigt`],
-    ['Laufend', num(ns.laufend,0), `${num(ns.offen,0)} offen`],
+    ['Offen / laufend', num((ns.offen ?? 0) + (ns.laufend ?? 0),0), `${num(ns.laufend ?? 0,0)} laufend`],
     ['Abgeschlossen', num(ns.abgeschlossen,0), 'mit Bericht'],
     ['Fortschritt', `${num(st.fortschritt,0)} %`, 'Durchschnitt aller Missionen'],
   ].map(q=>`<div class="kpi"><div class="l">${q[0]}</div><div class="v">${q[1]}</div><div class="n">${q[2]}</div></div>`).join('');
@@ -543,7 +543,7 @@ function zeichneMissionen(d){
       <div class="mission-meta"><small>${num(m.erledigt,0)} / ${num(m.tasks,0)} Aufgaben${m.fehlgeschlagen ? ' · ' + num(m.fehlgeschlagen,0) + ' fehlgeschlagen' : ''}</small>
         <span class="mission-actions">
           ${m.status !== 'abgeschlossen' ? `<button class="toggle" data-mission-lauf="1">Weiterarbeiten</button>` : ''}
-          ${m.bericht_vorhanden ? `<button class="toggle" data-mission-bericht="1">Bericht</button>` : ''}
+          ${m.bericht_vorhanden ? `<button class="toggle" data-mission-bericht="1" aria-expanded="false">Bericht</button>` : ''}
         </span></div>
       <pre class="mission-report" hidden></pre>
     </div>`;
@@ -746,16 +746,25 @@ if (missionList) missionList.addEventListener('click', async e => {
   }
   const berichtBtn = e.target.closest('[data-mission-bericht]');
   if(!berichtBtn) return;
+  const pre = box.querySelector('.mission-report');
+  if(pre && !pre.hidden){
+    pre.hidden = true;
+    pre.textContent = '';
+    berichtBtn.textContent = 'Bericht';
+    berichtBtn.setAttribute('aria-expanded', 'false');
+    return;
+  }
   berichtBtn.disabled = true;
   try{
     const r = await fetch('/api/nexus/mission/' + encodeURIComponent(kennung), {cache:'no-store'});
     const d = await r.json();
     if(!d.ok) throw new Error(d.fehler || 'Bericht konnte nicht geladen werden');
     const bericht = d.mission?.bericht || {};
-    const pre = box.querySelector('.mission-report');
     if(pre){
       pre.textContent = bericht.text || bericht.fehler || 'Kein Bericht gespeichert.';
       pre.hidden = false;
+      berichtBtn.textContent = 'Schließen';
+      berichtBtn.setAttribute('aria-expanded', 'true');
     }
   }catch(err){
     missionFehler(err.message);
@@ -795,6 +804,8 @@ lade();
 // sonst gehen Eingaben nach acht Sekunden verloren.
 setInterval(() => {
   if (document.querySelector('details.ordEdit[open]')) return;
+  // Ein geöffneter Missionsbericht darf nicht unter dem Leser verschwinden.
+  if (document.querySelector('.mission-report:not([hidden])')) return;
   const a = document.activeElement;
   if (a && /^(SELECT|TEXTAREA|INPUT)$/.test(a.tagName)) return;
   lade();

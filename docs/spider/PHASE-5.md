@@ -171,6 +171,9 @@ Zusätzlich:
 - CLI und HTTP werden mit einer temporären Datenbank geprüft; die Mission
   durchläuft fünf Aufgaben und schreibt eine Vault-Notiz sowie eine
   Intel-Weiterleitung.
+- Missionen-Karte und Bericht werden im Cloud-Browser bei 432 px Breite geprüft.
+  Der Bericht bleibt nach dem 8-Sekunden-Refresh offen, ist schließbar und
+  erzeugt keinen horizontalen Seitenüberlauf.
 
 ---
 
@@ -184,8 +187,10 @@ Zusätzlich:
 - **Ein SQLite-Worker.** Mehrere verteilte Worker sind nicht getestet.
 - **Keine 3D-Ansicht.** Die feste 3D-Kamera/der Nexus-Raum bleibt außerhalb
   dieser Phase; zuerst müssen echte Missionsdaten und echte Aktivität da sein.
-- **UI nicht visuell geprüft.** Die Darstellung des erweiterten Berichts wurde
-  per API/Syntax geprüft, nicht in einem Browser begutachtet.
+- **UI im Browser geprüft.** Missionen-Karte und Bericht wurden bei 432 px
+  Breite im Cloud-Browser geprüft. Der Bericht bleibt nach dem
+  8-Sekunden-Refresh offen, ist über „Schließen“ wieder schließbar und erzeugt
+  keinen horizontalen Seitenüberlauf; langer Text scrollt im Bericht selbst.
 - **Oracle-VM.** Dort läuft weiterhin der alte Stand, bis du pullst und den
   Takt neu startest.
 

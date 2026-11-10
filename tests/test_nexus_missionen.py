@@ -81,6 +81,8 @@ def test_mission_laeuft_ueber_neustart_und_schreibt_bericht(tmp_path):
     assert "bestätigt" in fertig["bericht"]["text"]
     assert "Gegenargumente" in fertig["bericht"]["text"]
     assert "Prüfrollen: 15" in fertig["bericht"]["text"]
+    assert "1 Befund" in fertig["bericht"]["text"]
+    assert "IntelNetz: übergeben" in fertig["bericht"]["text"]
     assert fertig["bericht"]["kennzahlen"]["claims"] == 1
     assert fertig["bericht"]["kennzahlen"]["hosts"] == 2
     assert len(fertig["bericht"]["agenten"]) == 15

@@ -214,9 +214,9 @@ Testdaten als echte Erkenntnisse ausgegeben.
   Intel-Weiterleitung noch eine Vault-Notiz; das ist Absicht, keine Panne.
 - **Vault/Intel sind real, aber keine neue Recherche.** Sie verteilen den
   vorhandenen Bericht; sie rufen keine Quellen ab und ändern keine Regeln.
-- **UI nicht visuell geprüft.** Die Karte und die Handler sind eingebaut, aber
-  in diesem Lauf nur per `node --check` und HTTP-Smoke-Test geprüft, nicht im
-  Browser angesehen.
+- **UI im Browser geprüft.** Missionen-Karte und Bericht wurden im Cloud-Browser
+  bei 432 px Breite geprüft; der Bericht bleibt offen, ist schließbar und
+  scrollt bei langem Text intern, ohne die Seite horizontal zu sprengen.
 - **Keine echten Orders, keine Regeländerungen.** Missionen ändern weder
   Handelsregeln noch Sicherheitsgrenzen.
 
