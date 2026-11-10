@@ -59,13 +59,14 @@ Erkenntnisse.
 
 ### Missionen im Takt
 
-Phase 4 ergänzt eine persistente Missionen-Queue. Ist der Web-Takt aktiv
-(`paper.takt_aktiv = true`), führt `scheduler.takt_schritt` bei jedem Takt
-höchstens fünf fällige Missionen-Aufgaben aus. Ohne aktiven Takt laufen
-Missionen nur über `POST /api/nexus/mission/{kennung}/lauf` oder die CLI
+Die Phasen 4 und 5 ergänzen eine persistente Missionen-Queue mit fünf Aufgaben
+(`lage`, `pruefung`, `gegenargument`, `bericht`, `weitergabe`). Ist der
+Web-Takt aktiv (`paper.takt_aktiv = true`), führt `scheduler.takt_schritt` bei
+jedem Takt höchstens fünf fällige Missionen-Aufgaben aus. Ohne aktiven Takt
+laufen Missionen nur über `POST /api/nexus/mission/{kennung}/lauf` oder die CLI
 `python -m orakel.nexus mission-lauf`. Der Nachtlauf selbst legt keine
 Missionen an; es gibt keinen Generator, der sich Fragen ausdenkt. Details:
-[PHASE-4.md](PHASE-4.md).
+[PHASE-4.md](PHASE-4.md) und [PHASE-5.md](PHASE-5.md).
 
 ---
 

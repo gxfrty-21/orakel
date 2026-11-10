@@ -11,20 +11,24 @@
 
 Eine Mission ist eine persistente, nachvollziehbare Arbeitskette auf den
 Kernaussagen aus Phase 3. Es gibt keinen LLM-Aufruf und keine erfundenen
-Agenten. Jede Mission wird in drei Aufgaben zerlegt:
+Agenten. Phase 4 legte die ersten drei Aufgaben an; Phase 5 erweitert dieselbe
+Kette auf fünf Aufgaben:
 
 | Aufgabe | Arbeit | Ergebnis |
 |---|---|---|
 | `lage` | passende gespeicherte Kernaussagen über Suchbegriffe finden | Claim-IDs, Suchbegriffe, Hinweis auf Datenlücke |
 | `pruefung` | Belege, unabhängige Hosts, Widersprüche und Prüfbedarf sammeln | Prüfbericht je Claim |
-| `bericht` | Belastbarkeit und offene Fragen formulieren | Text und strukturierter JSON-Bericht |
+| `gegenargument` | 15 Prüfrollen und den Gegenargument-Agenten ausführen | Alternativerklärungen und Rollenbefunde |
+| `bericht` | Belastbarkeit, Gegenargumente und offene Fragen formulieren | Text und strukturierter JSON-Bericht |
+| `weitergabe` | Bericht an IntelNetz und Vault übergeben | Weiterleitungskennung und Vault-Pfad |
 
 Die Suche ist bewusst **Stichwortsuche**, keine Semantik. Gibt es keine
 Suchbegriffe, werden die zwölf belastbarsten gespeicherten Claims gezeigt. Gibt
 es Suchbegriffe, aber keinen Treffer, endet die Mission mit einer ausdrücklichen
 Datenlücke — nicht mit einer erfundenen Antwort.
 
-Beispiel für einen Bericht:
+Beispiel für einen Phase-4-Bericht (Phase 5 ergänzt Gegenargumente,
+Prüfrollen und Weitergabe):
 
 ```text
 Mission MS-20261110-0001 — EZB Leitzins
@@ -162,8 +166,8 @@ Hinweis; ohne Claim endet der Bericht als Datenlücke.
 
 ## 6. Tests und Prüfungen
 
-**167 Tests grün** (10. November 2026). Neu:
-`tests/test_nexus_missionen.py` mit fünf Tests:
+**168 Tests grün** (10. November 2026). Die Missionstests umfassen sechs
+Fälle:
 
 1. Mission läuft über einen simulierten Prozessneustart weiter und schreibt
    einen Bericht mit zwei unabhängigen Hosts.
@@ -171,6 +175,10 @@ Hinweis; ohne Claim endet der Bericht als Datenlücke.
 3. Fehler → Backoff → zweiter Fehler → Dead-Letter; Folgeschritte blockiert.
 4. Abgelaufene Lease wird nach einem simulierten Absturz zurückgeholt.
 5. Höhere Priorität wird vor der Erstellungsreihenfolge ausgeführt.
+6. Gegenargumente benennen Widerspruch und Kopie.
+
+Seit Phase 5 kommen 15 Prüfrollen, Gegenargumente, Vault- und Intel-Übergabe
+hinzu; Details: [PHASE-5.md](PHASE-5.md).
 
 Zusätzlich geprüft:
 
@@ -179,7 +187,7 @@ Zusätzlich geprüft:
 - CLI-Anlage und -Lauf mit einer temporären Datenbank: Mission
   `abgeschlossen`, Fortschritt `100`,
 - HTTP-Smoke-Test mit `uvicorn` und temporärer Datenbank: Anlegen, Lauf über
-  drei Aufgaben, Detailbericht, Liste und `/api/nexus/status` erfolgreich.
+  fünf Aufgaben, Detailbericht, Liste und `/api/nexus/status` erfolgreich.
 
 Der lokale Root-Bestand `orakel.db` hatte zum Prüfzeitpunkt 34 Artikel, aber
 keine `nexus_meldungen`/`nexus_claims`. Die CLI-Mission lief deshalb korrekt
@@ -197,15 +205,15 @@ Testdaten als echte Erkenntnisse ausgegeben.
 - **Kein eigener Wahrheitsbegriff.** Der Bericht wiederholt Status und
   Unsicherheit aus Phase 3. `bestätigt` heißt weiterhin nur: mindestens zwei
   unabhängige Original-Hosts und genug Belege nach der dortigen Heuristik.
-- **Keine 15 Agentenrollen und kein Gegenargument-Agent.** Das ist Phase 5.
-  Die drei Aufgaben sind deterministische Worker-Schritte, keine simulierten
-  Persönlichkeiten.
+- **15 Prüfrollen, keine Modellagenten.** Die Rollen in Phase 5 sind
+  deterministische Prüfungen, keine simulierten Persönlichkeiten.
 - **Ein Prozess.** Die Queue ist für einen lokalen SQLite-Worker gebaut. Mehrere
   gleichzeitige Worker sind nicht getestet; `BEGIN IMMEDIATE` schützt die
   Lease-Vergabe, ersetzt aber keinen verteilten Scheduler.
-- **Keine Vault-Notiz und keine Intel-Weiterleitung.** Der Bericht bleibt in
-  SQLite und ist über API/UI sichtbar. Die Übergabe an Vault und IntelNetz ist
-  Phase 5.
+- **Übergabe nur mit Kernaussage.** Ohne Claim erzeugt die Mission weder eine
+  Intel-Weiterleitung noch eine Vault-Notiz; das ist Absicht, keine Panne.
+- **Vault/Intel sind real, aber keine neue Recherche.** Sie verteilen den
+  vorhandenen Bericht; sie rufen keine Quellen ab und ändern keine Regeln.
 - **UI nicht visuell geprüft.** Die Karte und die Handler sind eingebaut, aber
   in diesem Lauf nur per `node --check` und HTTP-Smoke-Test geprüft, nicht im
   Browser angesehen.
@@ -216,8 +224,8 @@ Testdaten als echte Erkenntnisse ausgegeben.
 
 ## 8. Nächster Schritt
 
-Phase 5: deterministische Agentenrollen, Gegenargument-Agent und Berichte mit
-Gegenquellen. Die Missionen-Queue aus Phase 4 ist die Ausführungsschicht; die
-Berichte müssen danach um Gegenargumente, ausdrückliche Alternativerklärungen
-und eine Vault-/Intel-Übergabe erweitert werden. Auf der Oracle-VM läuft
-weiterhin der alte Stand, bis dort gepullt und der Takt neu gestartet wird.
+Phase 5 ist umgesetzt: 15 Prüfrollen, Gegenargument-Agent, Vault- und
+Intel-Übergabe. Siehe [PHASE-5.md](PHASE-5.md). Als Nächstes folgen
+Wissensgraph und Prognosekontrolle (Phase 6); die 3D-Darstellung bleibt bewusst
+später. Auf der Oracle-VM läuft weiterhin der alte Stand, bis dort gepullt und
+der Takt neu gestartet wird.

@@ -94,7 +94,8 @@ def takt_schritt(cfg: Config, db: Facts, mit_spider: bool = False) -> dict[str, 
     except Exception as exc:
         db.ereignis("fehler", "Takt", f"Intelligence fehlgeschlagen: {exc}")
     try:
-        ergebnis["missionen"] = Missionen(db).weiterarbeiten(max_tasks=5)
+        ergebnis["missionen"] = Missionen(
+            db, vault=Vault(cfg.vault_ordner)).weiterarbeiten(max_tasks=5)
     except Exception as exc:
         db.ereignis("fehler", "Takt", f"Missionen fehlgeschlagen: {exc}")
         ergebnis["missionen"] = {"fehler": str(exc)}

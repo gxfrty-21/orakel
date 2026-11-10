@@ -22,9 +22,9 @@ Obsidian-kompatiblen Vault, einen aus echten Daten abgeleiteten Globus und eine
 Company-Schicht mit 103 Profilen, Queue, Policy und Audit-Kette.
 
 Was fehlt, ist vor allem **Breite** (mehr Länder, Sprachen, Quellentypen),
-**Textverständnis** (Ähnlichkeit, Sprache, Widersprüche), **Missionen**
-(Zerlegung, Queue, Fortschritt), **Gedächtnis als Graph** und die **3D-Spinne im
-Nexus-Raum**.
+**Textverständnis** (Ähnlichkeit, Sprache, Widersprüche), **Gedächtnis als
+Graph** und die **3D-Spinne im Nexus-Raum**. Missionen mit Zerlegung, Queue,
+Fortschritt, Gegenargumenten und Übergabe sind inzwischen gebaut.
 
 Der entscheidende ehrliche Punkt: Ohne Sprachmodell bleibt die „Intelligenz"
 regelbasiert. Sie kann Quellen zählen, gruppieren, widersprüchliche Zahlen
@@ -118,17 +118,18 @@ Mitternachtskonferenz, Spider **einmal** beim Start, Intel-Netz bei jedem Takt,
 Company-Schicht optional. `POST /api/spider` startet einen Lauf manuell.
 
 **Für den Nexus relevant:** Der Nachtlauf hat einen systemd-Zeitplan. Seit
-Phase 4 gibt es zusätzlich eine persistente Missionen-Queue mit Lease, Retry
-und Wiederaufnahme nach einem Neustart. Missionen werden über API/CLI oder den
+den Phasen 4/5 gibt es zusätzlich eine persistente Missionen-Queue mit fünf
+Aufgaben, Lease, Retry, Gegenargumenten, Vault- und Intel-Übergabe sowie
+Wiederaufnahme nach einem Neustart. Missionen werden über API/CLI oder den
 Web-Takt ausgeführt; sie entstehen nicht automatisch aus erfundenen Fragen.
 
 ### 2.7 Tests
 
-Aktuell **167 Tests grün**, darunter `tests/test_spider.py` (Parsing, Dubletten,
+Aktuell **168 Tests grün**, darunter `tests/test_spider.py` (Parsing, Dubletten,
 robots.txt-Verbot, Qualitätsstrafe, Volltext, Symbolzuordnung),
 `tests/test_intel.py` (Themen, Weiterleitungen, Auftragsfelder, Lernschleife),
 `tests/test_globe.py` und `tests/test_nexus_missionen.py` (Neustart, Retry,
-Dead-Letter, Lease, Priorität).
+Dead-Letter, Lease, Priorität, 15 Rollen, Gegenargumente, Übergabe).
 
 ### 2.8 Was der Auftrag zusätzlich verlangt
 
@@ -139,8 +140,9 @@ Dead-Letter, Lease, Priorität).
 | Textähnlichkeit, kopierte Meldungen | nur Titel-Hash | klein (SimHash/MinHash) |
 | Desinformations-Heuristiken | nur Sensationswörter | klein–mittel |
 | Prioritätsstufen KRITISCH/HOCH/MITTEL/NIEDRIG | nur Relevanz 0–1 | klein |
-| Missionen mit Zerlegung und Fortschritt | persistent, drei Schritte (Phase 4) | erledigt |
-| Gegenargument-Agent | Feld „Risiko" im Auftrag | mittel |
+| Missionen mit Zerlegung und Fortschritt | persistent, fünf Schritte (Phase 4+5) | erledigt |
+| Gegenargument-Agent | regelbasiert, eigene Rollen (Phase 5) | erledigt |
+| 15 Agentenrollen | 15 deterministische Prüfrollen (Phase 5) | erledigt |
 | Wissensgraph | abgeleitet, nicht persistiert | mittel |
 | Prognosekontrolle mit Trefferquote | Lernschleife ohne Statistik | klein–mittel |
 | 3D-Spinne + Nexus-Raum | 2D-Deck, Three.js-Globus | **groß** |
@@ -216,14 +218,15 @@ Neues Paket `orakel/nexus/`, additiv, ohne bestehende Pfade zu brechen:
 | `dedup.py` | SimHash über Shingles, Cluster kopierter Meldungen |
 | `bewertung.py` | Quellenreputation aus tatsächlichen Ergebnissen, Bestätigungsgrad |
 | `missionen.py` | Mission → Teilaufgaben → Queue, Priorität, Retry, Fortschritt |
-| `agenten.py` | 15 deterministische Rollen, jede mit eigenem Protokoll |
+| `rollen.py` | 15 deterministische Prüfrollen, jede mit eigenem Protokoll |
 | `gegenargument.py` | Gegenquellen, Alternativerklärungen, Schwachstellen |
 | `graph.py` | persistierte Knoten/Kanten, Zeitverlauf, Vault-Sync |
 | `kalibrierung.py` | Trefferquote, Brier-Score, Fehleranalyse |
 | `api.py` | FastAPI-Router für Missionen, Status, Graph, Warnungen |
 
 Der bestehende `Spider` bleibt der Abruf-Kern; `nexus/` erweitert ihn, statt ihn
-zu ersetzen. `IntelNetz` bleibt das Routing; Missionen nutzen es.
+zu ersetzen. `IntelNetz` bleibt das Routing; Missionen schreiben ihre Übergabe
+in dieselbe Weiterleitungstabelle `intel_weiterleitungen`.
 
 ### 4.2 Neue Tabellen
 
@@ -247,14 +250,15 @@ Datenspeicher.
 ### 4.3 Ablauf einer Mission
 
 1. **Annahme:** Auftrag per API oder Zeitplan, Mission erhält `MS-…`.
-2. **Zerlegung:** Mission → Teilaufgaben (Quellen suchen, lesen, prüfen,
-   bestätigen, widersprechen, verknüpfen, berichten).
+2. **Zerlegung:** Mission → `lage`, `pruefung`, `gegenargument`, `bericht`,
+   `weitergabe` (fünf persistente Aufgaben).
 3. **Ausführung:** Worker nehmen Aufgaben mit Lease; Retry mit Backoff;
    Dead-Letter nach n Versuchen.
 4. **Prüfung:** `bewertung` und `gegenargument` prüfen jede Kernaussage.
-5. **Bericht:** Mission erhält einen Abschlussbericht mit Quellen, Unsicherheit
-   und offenen Fragen — als Vault-Notiz und API-Antwort.
-6. **Weitergabe:** `IntelNetz.weiterleiten` an die zuständige Abteilung.
+5. **Bericht:** Mission erhält einen Abschlussbericht mit Quellen, Unsicherheit,
+   Gegenargumenten und offenen Fragen — als API-Antwort.
+6. **Weitergabe:** Intel-Weiterleitung an die zuständige Abteilung und
+   Vault-Notiz; ohne Kernaussage bewusst keine Übergabe.
 7. **Nachkontrolle:** `kalibrierung` prüft später, ob die Einschätzung stimmte.
 
 ### 4.4 API (Ergänzung, keine Änderung bestehender Routen)
@@ -301,11 +305,13 @@ Neue Datei `orakel/web/static/nexus3d.js`, Ansicht `#v-nexus`:
 zuletzt — eine schöne Hülle ohne echte Daten wäre genau die verbotene
 Dekoration.
 
-**Stand 10. November 2026:** Phasen 1–4 sind lokal umgesetzt und getestet
+**Stand 10. November 2026:** Phasen 1–5 sind lokal umgesetzt und getestet
 (siehe [PHASE-1.md](PHASE-1.md), [PHASE-2.md](PHASE-2.md),
-[PHASE-3.md](PHASE-3.md), [PHASE-4.md](PHASE-4.md)). Phase 4 liefert die
-persistente Missionen-Queue, aber noch nicht die 15 Agentenrollen oder den
-Gegenargument-Agenten. Auf der Oracle-VM läuft noch der alte Stand; die
+[PHASE-3.md](PHASE-3.md), [PHASE-4.md](PHASE-4.md),
+[PHASE-5.md](PHASE-5.md)). Phase 5 liefert 15 deterministische Prüfrollen,
+Gegenargumente sowie die Vault-/Intel-Übergabe. Die **3D feste Kamera** aus dem
+ursprünglichen Phasenplan ist damit noch nicht umgesetzt; sie bleibt nach den
+echten Missionsdaten. Auf der Oracle-VM läuft noch der alte Stand; die
 Migration ist vorbereitet, aber nicht ausgeführt.
 
 ---

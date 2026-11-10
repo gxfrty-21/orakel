@@ -2,7 +2,7 @@
 
 Eine Mission ist eine kleine, nachvollziehbare Arbeitskette:
 
-``lage`` → ``pruefung`` → ``bericht``
+``lage`` → ``pruefung`` → ``gegenargument`` → ``bericht`` → ``weitergabe``
 
 Die Schritte laufen auf gespeicherten Kernaussagen aus Phase 3. Es gibt keinen
 LLM-Aufruf, keinen erfundenen Agenten und keinen künstlichen Fortschritt. Jede
@@ -12,16 +12,29 @@ Backoff erneut versucht und nach dem letzten Versuch als Dead-Letter markiert.
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from ..db import Facts
+from ..knowledge import Vault
+from .gegenargument import lauf as gegenargumente_lauf
+from .rollen import lauf as rollen_lauf
 
 PRIORITAETEN = ("niedrig", "mittel", "hoch", "kritisch")
-ROLLEN = ("lage", "pruefung", "bericht")
+ROLLEN = ("lage", "pruefung", "gegenargument", "bericht", "weitergabe")
 STATUS_RANG = {"bestätigt": 0, "teilweise": 1, "widersprüchlich": 2,
                "unbestätigt": 3}
+ABTEILUNG_NEXUS = {
+    "strategie": "Labor",
+    "risiko": "Risikomanagement",
+    "wissenschaft": "Forschungsabteilung",
+    "unternehmen": "Trading Floor",
+    "makro": "Trading Floor",
+    "markt": "Trading Floor",
+    "allgemein": "Wissenszentrum",
+}
 STOPPWOERTER = {
     "aber", "alle", "auch", "auf", "aus", "bei", "bitte", "das", "dem", "den",
     "der", "des", "die", "dies", "eine", "einer", "eines", "für", "hat", "haben",
@@ -74,9 +87,11 @@ class Missionen:
         max_versuche: int = 3,
         lease_sekunden: int = 300,
         backoff_sekunden: int = 30,
+        vault: Vault | None = None,
         jetzt_funktion: Callable[[], datetime] | None = None,
     ) -> None:
         self.db = db
+        self.vault = vault
         self.max_versuche = max(1, int(max_versuche))
         self.lease_sekunden = max(1, int(lease_sekunden))
         self.backoff_sekunden = max(1, int(backoff_sekunden))
@@ -117,7 +132,11 @@ class Missionen:
              "max_versuche": self.max_versuche},
             {"rolle": "pruefung", "ziel": "Belege, unabhängige Quellen und Widersprüche prüfen",
              "max_versuche": self.max_versuche},
-            {"rolle": "bericht", "ziel": "Belastbarkeit und offene Fragen berichten",
+            {"rolle": "gegenargument", "ziel": "Alternativerklärungen und 15 Prüfrollen ausführen",
+             "max_versuche": self.max_versuche},
+            {"rolle": "bericht", "ziel": "Belastbarkeit, Gegenargumente und offene Fragen berichten",
+             "max_versuche": self.max_versuche},
+            {"rolle": "weitergabe", "ziel": "Bericht in Vault und IntelNetz übergeben",
              "max_versuche": self.max_versuche},
         ]
         return self.db.nexus_mission_anlegen(
@@ -153,7 +172,8 @@ class Missionen:
             zaehler["ausgefuehrt"] += 1
             try:
                 ergebnis = self._aufgabe(task, mission, jetzt)
-                bericht = ergebnis if task["rolle"] == "bericht" else None
+                bericht = (ergebnis if task["rolle"] in ("bericht", "weitergabe")
+                           else None)
                 self.db.nexus_task_erledigt(
                     int(task["id"]), ergebnis, bericht, self._iso(jetzt))
                 zaehler["erledigt"] += 1
@@ -187,8 +207,12 @@ class Missionen:
             return self._lage(mission)
         if rolle == "pruefung":
             return self._pruefung(task)
+        if rolle == "gegenargument":
+            return self._gegenargument(task, jetzt)
         if rolle == "bericht":
             return self._bericht(task, jetzt)
+        if rolle == "weitergabe":
+            return self._weitergabe(task, jetzt)
         raise ValueError(f"Unbekannte Missionrolle: {rolle}")
 
     def _lage(self, mission: dict[str, Any]) -> dict[str, Any]:
@@ -270,6 +294,9 @@ class Missionen:
                 "quelle_id": str(beleg["quelle_id"]),
                 "aussage": str(beleg["aussage"]),
                 "richtung": str(beleg["richtung"]),
+                "wert": beleg["wert"],
+                "einheit": str(beleg["einheit"] or ""),
+                "negiert": bool(beleg["negiert"]),
                 "ist_kopie": bool(beleg["ist_kopie"]),
                 "reputation": float(beleg["reputation"]),
             })
@@ -309,6 +336,7 @@ class Missionen:
         }
         return {
             "rolle": "pruefung",
+            "lage": lage,
             "kennzahlen": kennzahlen,
             "claims": geprueft,
             "widersprueche": [
@@ -321,8 +349,41 @@ class Missionen:
             "hinweis": lage.get("hinweis") or "",
         }
 
-    def _bericht(self, task: dict[str, Any], jetzt: datetime) -> dict[str, Any]:
+    def _gegenargument(self, task: dict[str, Any], jetzt: datetime) -> dict[str, Any]:
         pruefung = self._vorher(task)
+        lage = pruefung.get("lage") or {}
+        gegen = gegenargumente_lauf(lage, pruefung)
+        rollen = rollen_lauf(
+            self.db,
+            {"kennung": task.get("mission_kennung"), "titel": task.get("titel")},
+            lage, pruefung, gegen["gegenargumente"], jetzt,
+        )
+        return {
+            "rolle": "gegenargument",
+            "pruefung": pruefung,
+            "lage": lage,
+            "gegenargumente": gegen["gegenargumente"],
+            "anzahl_gegenargumente": gegen["anzahl"],
+            "agenten": rollen["agenten"],
+            "befunde": rollen["befunde"],
+            "befundzahl": rollen["befundzahl"],
+            "grundlage": gegen["grundlage"],
+            "generiert": self._iso(jetzt),
+        }
+
+    def _bericht(self, task: dict[str, Any], jetzt: datetime) -> dict[str, Any]:
+        gegen = self._vorher(task)
+        if "pruefung" in gegen:
+            pruefung = gegen.get("pruefung") or {}
+            gegenargumente = gegen.get("gegenargumente") or []
+            agenten = gegen.get("agenten") or []
+            rollen_befunde = gegen.get("befunde") or []
+        else:
+            # Noch offene Mission aus Phase 4: Der Vorgänger ist direkt die Prüfung.
+            pruefung = gegen
+            gegenargumente = []
+            agenten = []
+            rollen_befunde = []
         claims = pruefung.get("claims") or []
         widersprueche = pruefung.get("widersprueche") or []
         kz = dict(pruefung.get("kennzahlen") or {})
@@ -376,6 +437,9 @@ class Missionen:
             "hosts": int(kz.get("hosts") or 0),
             "widersprueche": int(kz.get("widersprueche") or 0),
             "offene_fragen": len(offene),
+            "gegenargumente": len(gegenargumente),
+            "pruefrollen": len(agenten),
+            "pruefrollen_befunde": len(rollen_befunde),
         }
         titel = str(task.get("titel") or "")
         auftrag = str(task.get("auftrag") or "")
@@ -392,6 +456,13 @@ class Missionen:
             "Befunde:",
             *[f"- {zeile}" for zeile in befunde],
             "",
+            "Gegenargumente:",
+            *([f"- [{g['schwere']}] {g['text']}" for g in gegenargumente[:8]]
+              or ["- Keine Gegenargumente ableitbar; siehe Datenlage."]),
+            "",
+            f"Prüfrollen: {len(agenten)} deterministische Rollen, "
+            f"{len(rollen_befunde)} Befund(e).",
+            "",
             "Offene Fragen:",
             *[f"- {zeile}" for zeile in offene],
             "",
@@ -402,9 +473,90 @@ class Missionen:
             "rolle": "bericht",
             "kennzahlen": kennzahlen,
             "befunde": befunde,
+            "gegenargumente": gegenargumente,
+            "agenten": agenten,
             "offene_fragen": offene,
             "claims": claims,
             "widersprueche": widersprueche,
             "generiert": self._iso(jetzt),
             "text": text[:12000],
         }
+
+    def _bestehende_weitergabe(self, kennung: str) -> dict[str, Any] | None:
+        """Idempotenz nach einem Absturz zwischen Intel-Schreiben und Task-Abschluss."""
+        for zeile in self.db.intel_weiterleitungen(2000):
+            try:
+                bezug = json.loads(zeile["bezug"] or "{}")
+            except (TypeError, ValueError):
+                continue
+            if isinstance(bezug, dict) and bezug.get("mission") == kennung:
+                return dict(zeile)
+        return None
+
+    def _weitergabe(self, task: dict[str, Any], jetzt: datetime) -> dict[str, Any]:
+        bericht = self._vorher(task)
+        if not bericht:
+            raise ValueError("Kein Bericht für die Weitergabe vorhanden")
+        kennung = str(task.get("mission_kennung") or "")
+        titel = str(task.get("titel") or "")
+        claims = bericht.get("claims") or []
+        if not claims:
+            updated = dict(bericht)
+            updated["rolle"] = "weitergabe"
+            updated["weitergabe"] = {
+                "intel": {"status": "keine_weitergabe",
+                          "grund": "Keine Kernaussage; keine vorgetäuschte Aktivität"},
+                "vault": {"status": "keine_weitergabe",
+                          "grund": "Keine Kernaussage für eine Notiz"},
+                "abteilung": "—", "generiert": self._iso(jetzt),
+            }
+            updated["text"] = (str(bericht.get("text") or "")
+                               + "\n\nWeitergabe: keine — die Datenlücke wurde "
+                               "nicht als Erkenntnis an Intel oder Vault gesendet.")
+            return updated
+        thema = str(claims[0].get("thema") or "allgemein")
+        abteilung = ABTEILUNG_NEXUS.get(thema, "Wissenszentrum")
+        bestehend = self._bestehende_weitergabe(kennung)
+        if bestehend is not None:
+            intel = {"status": "bereits_uebergeben", "kennung": str(bestehend["kennung"]),
+                     "abteilung": str(bestehend["an"])}
+        else:
+            tag = jetzt.strftime("%Y%m%d")
+            nummer = self.db.intel_weiterleitung_zaehler(tag) + 1
+            kennung_intel = f"WL-{tag}-{nummer:04d}"
+            bezug = {
+                "mission": kennung,
+                "titel": titel,
+                "thema": thema,
+                "claims": [int(c["id"]) for c in claims if c.get("id") is not None],
+                "status": (bericht.get("kennzahlen") or {}),
+                "gegenargumente": len(bericht.get("gegenargumente") or []),
+            }
+            self.db.intel_weiterleitung_speichern(
+                kennung_intel, "B:Spider Intelligence", abteilung,
+                f"Mission {kennung}: {titel}"[:200], bezug,
+            )
+            intel = {"status": "uebergeben", "kennung": kennung_intel,
+                     "abteilung": abteilung}
+        if self.vault is None:
+            vault = {"status": "nicht_konfiguriert",
+                     "grund": "Kein Vault-Pfad an Missionen übergeben"}
+        else:
+            pfad = self.vault.notiz(
+                "wissen", f"{kennung} {titel}",
+                f"**Mission:** {kennung}\n\n{bericht.get('text') or ''}",
+                tags=["nexus", "mission", thema, "gegenargument"],
+                quelle=f"mission:{kennung}",
+                verlinkt=[str(c.get("claim_key") or "") for c in claims],
+            )
+            vault = {"status": "geschrieben", "pfad": str(pfad)}
+        updated = dict(bericht)
+        updated["rolle"] = "weitergabe"
+        updated["weitergabe"] = {"intel": intel, "vault": vault,
+                                 "abteilung": abteilung, "generiert": self._iso(jetzt)}
+        updated["text"] = (str(bericht.get("text") or "")
+                           + "\n\nWeitergabe:\n"
+                           + f"- IntelNetz: {intel['status']} ({intel.get('kennung', '—')})\n"
+                           + f"- Vault: {vault['status']}"
+                           + (f" ({vault['pfad']})" if vault.get("pfad") else ""))
+        return updated

@@ -187,6 +187,10 @@ wird so gebaut, dass sie später durch eine freie Navigation ersetzt werden kann
 | **3** | Quellenreputation, Bestätigung, Widersprüche | 2–3 Tage |
 | **4** | Missionen, Queue, Fortschritt, API | 3 Tage |
 | **5** | Agentenrollen, Gegenargument-Agent, **3D feste Kamera** | 4 Tage |
+
+**Stand 10. November 2026:** Agentenrollen, Gegenargument-Agent und
+Vault-/Intel-Übergabe sind umgesetzt; die 3D-Kamera bleibt offen, bis echte
+Missionsdaten vorliegen. Siehe [PHASE-5.md](PHASE-5.md).
 | **6** | Wissensgraph, Prognosekontrolle | 3 Tage |
 | **7** | begehbarer Nexus | 4–6 Tage |
 | **8** | Dauerbetrieb, Backoff, Limits, Monitoring | 2 Tage |

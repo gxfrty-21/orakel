@@ -184,7 +184,8 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
             return JSONResponse({"ok": False, "fehler": "Ungültiger JSON-Body"},
                                 status_code=400)
         try:
-            mission = Missionen(Facts(cfg.db_pfad)).anlegen(
+            mission = Missionen(Facts(cfg.db_pfad),
+                                vault=Vault(cfg.vault_ordner)).anlegen(
                 str(daten.get("titel") or ""), str(daten.get("auftrag") or ""),
                 str(daten.get("prioritaet") or "mittel"),
             )
@@ -204,7 +205,8 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                                 status_code=404)
         grenze = max(1, min(int(max_tasks), 50))
         try:
-            ergebnis = Missionen(db).weiterarbeiten(max_tasks=grenze, kennung=kennung)
+            ergebnis = Missionen(db, vault=Vault(cfg.vault_ordner)).weiterarbeiten(
+                max_tasks=grenze, kennung=kennung)
         except Exception as exc:
             db.ereignis("fehler", "Mission", f"{kennung} konnte nicht laufen: {exc}")
             return JSONResponse({"ok": False, "fehler": type(exc).__name__},

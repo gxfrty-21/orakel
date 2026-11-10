@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from orakel.db import Facts
+from orakel.knowledge import Vault
+from orakel.nexus.gegenargument import lauf as gegenargumente_lauf
 from orakel.nexus.missionen import Missionen
 
 ZEIT = datetime(2026, 11, 10, 9, 0, tzinfo=timezone.utc)
@@ -47,32 +49,50 @@ def _db_mit_claim(tmp_path) -> Facts:
 
 def test_mission_laeuft_ueber_neustart_und_schreibt_bericht(tmp_path):
     db = _db_mit_claim(tmp_path)
-    missionen = Missionen(db, jetzt_funktion=lambda: ZEIT)
+    vault = Vault(tmp_path / "vault")
+    missionen = Missionen(db, vault=vault, jetzt_funktion=lambda: ZEIT)
     mission = missionen.anlegen(
         "EZB Leitzins", "Prüfe die aktuelle Datenlage zum Leitzins der EZB.",
     )
 
     assert mission["kennung"].startswith("MS-20261110-")
-    assert [t["rolle"] for t in mission["tasks"]] == ["lage", "pruefung", "bericht"]
+    assert [t["rolle"] for t in mission["tasks"]] == [
+        "lage", "pruefung", "gegenargument", "bericht", "weitergabe",
+    ]
     erster = missionen.weiterarbeiten(max_tasks=1)
     assert erster["erledigt"] == 1
     zwischenstand = db.nexus_mission(mission["kennung"])
     assert zwischenstand["status"] == "offen"
-    assert zwischenstand["fortschritt"] == 33
-    assert [t["status"] for t in zwischenstand["tasks"]] == ["erledigt", "offen", "offen"]
+    assert zwischenstand["fortschritt"] == 20
+    assert [t["status"] for t in zwischenstand["tasks"]] == [
+        "erledigt", "offen", "offen", "offen", "offen",
+    ]
 
     # Neue Instanz = simulierter Prozessneustart. Erledigte Arbeit wird nicht wiederholt.
-    neustart = Missionen(db, jetzt_funktion=lambda: ZEIT + timedelta(seconds=5))
+    neustart = Missionen(db, vault=vault,
+                         jetzt_funktion=lambda: ZEIT + timedelta(seconds=5))
     rest = neustart.weiterarbeiten(max_tasks=10)
-    assert rest["erledigt"] == 2
+    assert rest["erledigt"] == 4
     fertig = db.nexus_mission(mission["kennung"])
     assert fertig["status"] == "abgeschlossen"
     assert fertig["fortschritt"] == 100
     assert all(t["status"] == "erledigt" for t in fertig["tasks"])
     assert "EZB Leitzins" in fertig["bericht"]["text"]
     assert "bestätigt" in fertig["bericht"]["text"]
+    assert "Gegenargumente" in fertig["bericht"]["text"]
+    assert "Prüfrollen: 15" in fertig["bericht"]["text"]
     assert fertig["bericht"]["kennzahlen"]["claims"] == 1
     assert fertig["bericht"]["kennzahlen"]["hosts"] == 2
+    assert len(fertig["bericht"]["agenten"]) == 15
+    assert fertig["bericht"]["kennzahlen"]["gegenargumente"] >= 1
+    assert fertig["bericht"]["weitergabe"]["intel"]["status"] == "uebergeben"
+    assert fertig["bericht"]["weitergabe"]["vault"]["status"] == "geschrieben"
+    notizen = list((tmp_path / "vault" / "70-Wissen").glob("*.md"))
+    assert notizen
+    assert "Gegenargumente" in notizen[0].read_text(encoding="utf-8")
+    assert any(row["an"] == "Trading Floor" for row in db.intel_weiterleitungen())
+    assert not any(b["art"] == "rollenfehler"
+                   for a in fertig["bericht"]["agenten"] for b in a["befunde"])
 
 
 def test_mission_ohne_passende_claims_ist_eine_datenluecke(tmp_path):
@@ -89,6 +109,8 @@ def test_mission_ohne_passende_claims_ist_eine_datenluecke(tmp_path):
     assert "Keine passende Kernaussage" in fertig["bericht"]["text"]
     assert "keine Entwarnung" in fertig["bericht"]["text"]
     assert fertig["bericht"]["claims"] == []
+    assert fertig["bericht"]["weitergabe"]["intel"]["status"] == "keine_weitergabe"
+    assert db.intel_weiterleitungen() == []
 
 
 def test_fehler_mit_backoff_und_dead_letter(tmp_path, monkeypatch):
@@ -125,7 +147,7 @@ def test_fehler_mit_backoff_und_dead_letter(tmp_path, monkeypatch):
     fertig = db.nexus_mission(mission["kennung"])
     assert fertig["status"] == "fehlgeschlagen"
     assert [t["status"] for t in fertig["tasks"]] == [
-        "fehlgeschlagen", "blockiert", "blockiert",
+        "fehlgeschlagen", "blockiert", "blockiert", "blockiert", "blockiert",
     ]
     assert "Mission abgebrochen" in fertig["bericht"]["text"]
 
@@ -155,6 +177,25 @@ def test_abgelaufene_lease_wird_nach_neustart_zurueckgeholt(tmp_path):
     task = db.nexus_mission(mission["kennung"])["tasks"][0]
     assert task["status"] == "erledigt"
     assert task["versuche"] == 2
+
+
+def test_gegenargumente_benennen_alternativerklaerungen():
+    lage = {"auswahl": "stichwort"}
+    pruefung = {"claims": [{
+        "id": 7, "kernaussage": "EZB senkt den Leitzins", "quellen": 1,
+        "belege_detail": [{
+            "ist_kopie": 1, "wert": 4.5, "einheit": "%", "reputation": 0.7,
+        }],
+        "widersprueche": [{
+            "grund": "Richtung widersprüchlich", "quelle_a": "a.example",
+            "quelle_b": "b.example",
+        }],
+    }]}
+    ergebnis = gegenargumente_lauf(lage, pruefung)
+    texte = " ".join(g["text"] for g in ergebnis["gegenargumente"])
+    assert "Gegenposition" in texte
+    assert "Kopien" in texte
+    assert "keine neuen Quellen" in ergebnis["grundlage"]
 
 
 def test_prioritaet_kommt_vor_erstellungsreihenfolge(tmp_path):

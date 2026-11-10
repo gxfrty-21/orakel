@@ -8,6 +8,7 @@ import os
 import sys
 
 from ..db import Facts
+from ..knowledge import Vault
 from .abruf import Abrufer, HttpCache
 from .bewertung import claims_auffrischen
 from .feeds import parse_feed
@@ -94,7 +95,7 @@ def _bewertung(args: argparse.Namespace) -> int:
 
 
 def _mission(args: argparse.Namespace) -> int:
-    missionen = Missionen(Facts(args.db))
+    missionen = Missionen(Facts(args.db), vault=Vault(args.vault))
     try:
         mission = missionen.anlegen(args.titel, args.auftrag, args.prioritaet)
     except ValueError as exc:
@@ -121,7 +122,7 @@ def _mission_lauf(args: argparse.Namespace) -> int:
         print(json.dumps({"ok": False, "fehler": f"Unbekannte Mission: {args.kennung}"},
                          ensure_ascii=False, indent=2))
         return 2
-    ergebnis = Missionen(db).weiterarbeiten(args.max, args.kennung)
+    ergebnis = Missionen(db, vault=Vault(args.vault)).weiterarbeiten(args.max, args.kennung)
     print(json.dumps({"ok": True, **ergebnis}, ensure_ascii=False, indent=2))
     return 0
 
@@ -166,6 +167,7 @@ def main(argv: list[str] | None = None) -> int:
 
     mission = unter.add_parser("mission", help="Mission anlegen und optional starten")
     mission.add_argument("--db", default="orakel.db")
+    mission.add_argument("--vault", default=os.environ.get("ORAKEL_VAULT", "vault"))
     mission.add_argument("--titel", required=True)
     mission.add_argument("--auftrag", required=True)
     mission.add_argument("--prioritaet", choices=("niedrig", "mittel", "hoch", "kritisch"),
@@ -181,6 +183,7 @@ def main(argv: list[str] | None = None) -> int:
 
     mission_lauf = unter.add_parser("mission-lauf", help="Fällige Missionen ausführen")
     mission_lauf.add_argument("--db", default="orakel.db")
+    mission_lauf.add_argument("--vault", default=os.environ.get("ORAKEL_VAULT", "vault"))
     mission_lauf.add_argument("--kennung", default=None)
     mission_lauf.add_argument("--max", type=int, default=10)
     mission_lauf.set_defaults(funktion=_mission_lauf)

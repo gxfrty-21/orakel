@@ -183,8 +183,9 @@ Artikelbasis, keine gemessene Trefferquote.
 
 ## 7. Nächster Schritt
 
-Phase 4 ist umgesetzt: Die Claims sind die Eingabe für persistente Missionen
-mit drei Aufgaben, Lease, Retry und Bericht. Siehe [PHASE-4.md](PHASE-4.md).
-Die Missionen rufen keine neuen Quellen ab und ersetzen keine Semantik. Auf der
-Oracle-VM läuft weiterhin der alte Stand, bis dort gepullt und der Nachtlauf
-neu gestartet wird.
+Die Phasen 4 und 5 sind umgesetzt: Die Claims sind die Eingabe für persistente
+Missionen mit fünf Aufgaben, Lease, Retry, Gegenargumenten und Bericht. Siehe
+[PHASE-4.md](PHASE-4.md) und [PHASE-5.md](PHASE-5.md). Die Missionen rufen
+keine neuen Quellen ab und ersetzen keine Semantik. Auf der Oracle-VM läuft
+weiterhin der alte Stand, bis dort gepullt und der Nachtlauf neu gestartet
+wird.
