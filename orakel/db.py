@@ -132,6 +132,27 @@ CREATE TABLE IF NOT EXISTS artikel (
 CREATE INDEX IF NOT EXISTS ix_artikel_hash ON artikel(titel_hash);
 CREATE INDEX IF NOT EXISTS ix_artikel_geholt ON artikel(geholt);
 
+-- Nexus: jede Meldung, auch Kopien. artikel_id zeigt auf das Original.
+CREATE TABLE IF NOT EXISTS nexus_meldungen (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    meldung_key TEXT NOT NULL UNIQUE,
+    artikel_id INTEGER NOT NULL,
+    cluster_id TEXT NOT NULL,
+    simhash TEXT NOT NULL,
+    sprache TEXT NOT NULL,
+    sprache_konfidenz REAL NOT NULL DEFAULT 0,
+    sprache_methode TEXT NOT NULL DEFAULT '',
+    ist_original INTEGER NOT NULL DEFAULT 1,
+    quelle_id TEXT NOT NULL,
+    titel TEXT NOT NULL,
+    zusammenfassung TEXT NOT NULL DEFAULT '',
+    url TEXT NOT NULL,
+    abgerufen_am TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_nexus_cluster ON nexus_meldungen(cluster_id);
+CREATE INDEX IF NOT EXISTS ix_nexus_artikel ON nexus_meldungen(artikel_id);
+CREATE INDEX IF NOT EXISTS ix_nexus_sprache ON nexus_meldungen(sprache);
+
 -- Spider Intelligence: analysierter Volltext je Artikel
 CREATE TABLE IF NOT EXISTS intel_inhalte (
     artikel_id INTEGER PRIMARY KEY,
@@ -419,6 +440,79 @@ class Facts:
                 "SELECT quelle, COUNT(*) n FROM artikel GROUP BY quelle ORDER BY n DESC LIMIT 10"
             )]
         return {"gesamt": gesamt, "typen": nach_typ, "quellen": nach_quelle}
+
+    def artikel_id_by_url_oder_hash(self, url: str, titel_hash: str) -> int | None:
+        """Findet ein bereits vorhandenes Original, ohne es erneut zu speichern."""
+        with self.conn() as c:
+            zeile = c.execute(
+                "SELECT id FROM artikel WHERE url=? OR titel_hash=? LIMIT 1",
+                (url, titel_hash),
+            ).fetchone()
+        return int(zeile["id"]) if zeile else None
+
+    # ---------- Nexus: Meldungen und Dubletten ----------
+    def nexus_meldung(self, meldung_key: str) -> sqlite3.Row | None:
+        with self.conn() as c:
+            return c.execute(
+                "SELECT * FROM nexus_meldungen WHERE meldung_key=?", (meldung_key,)
+            ).fetchone()
+
+    def nexus_meldung_speichern(
+        self, meldung_key: str, artikel_id: int, cluster_id: str, simhash: str,
+        sprache: str, konfidenz: float, methode: str, ist_original: bool,
+        quelle_id: str, titel: str, zusammenfassung: str, url: str,
+        abgerufen_am: str,
+    ) -> bool:
+        """Speichert eine Meldung. False = key war schon vorhanden."""
+        with self.conn() as c:
+            cur = c.execute(
+                "INSERT INTO nexus_meldungen(meldung_key,artikel_id,cluster_id,simhash,"
+                "sprache,sprache_konfidenz,sprache_methode,ist_original,quelle_id,"
+                "titel,zusammenfassung,url,abgerufen_am)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(meldung_key) DO NOTHING",
+                (meldung_key, int(artikel_id), cluster_id, simhash, sprache,
+                 float(konfidenz), methode, int(ist_original), quelle_id, titel,
+                 zusammenfassung, url, abgerufen_am),
+            )
+            return bool(cur.rowcount)
+
+    def nexus_originale(self) -> list[sqlite3.Row]:
+        with self.conn() as c:
+            return list(c.execute(
+                "SELECT meldung_key, artikel_id, cluster_id, simhash, titel, "
+                "zusammenfassung FROM nexus_meldungen WHERE ist_original=1 ORDER BY id"
+            ))
+
+    def nexus_meldungen(self, limit: int = 100) -> list[sqlite3.Row]:
+        with self.conn() as c:
+            return list(c.execute(
+                "SELECT * FROM nexus_meldungen ORDER BY id DESC LIMIT ?", (limit,)
+            ))
+
+    def nexus_statistik(self) -> dict[str, Any]:
+        with self.conn() as c:
+            gesamt = int(c.execute(
+                "SELECT COUNT(*) n FROM nexus_meldungen").fetchone()["n"])
+            originale = int(c.execute(
+                "SELECT COUNT(*) n FROM nexus_meldungen WHERE ist_original=1"
+            ).fetchone()["n"])
+            cluster = int(c.execute(
+                "SELECT COUNT(DISTINCT cluster_id) n FROM nexus_meldungen"
+            ).fetchone()["n"])
+            nach_sprache = [dict(r) for r in c.execute(
+                "SELECT sprache, COUNT(*) n FROM nexus_meldungen "
+                "GROUP BY sprache ORDER BY n DESC, sprache"
+            )]
+        dubletten = gesamt - originale
+        return {
+            "gesamt": gesamt,
+            "originale": originale,
+            "dubletten": dubletten,
+            "dublettenquote": round(dubletten / gesamt, 3) if gesamt else 0.0,
+            "cluster": cluster,
+            "nach_sprache": nach_sprache,
+        }
 
     def artikel_by_ids(self, ids: Sequence[int]) -> list[sqlite3.Row]:
         if not ids:

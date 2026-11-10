@@ -5,12 +5,12 @@ wiederkehrende, echte Arbeit:
 
 1. Quellen abrufen, deren Intervall abgelaufen ist (Cache-Metadaten).
 2. Unveränderte Quellen über 304 überspringen, ohne sie neu zu parsen.
-3. Ein konsistentes SQLite-Backup ziehen und prüfen.
-4. Optional DNS, TLS-Zertifikat und Health-Endpunkt der eigenen Domain prüfen.
+3. Meldungen speichern: Sprache schätzen, SimHash berechnen, Kopien gruppieren.
+4. Ein konsistentes SQLite-Backup ziehen und prüfen.
+5. Optional DNS, TLS-Zertifikat und Health-Endpunkt der eigenen Domain prüfen.
 
-Er speichert noch **keine** Artikel in der Fakten-DB — das kommt mit der
-Dubletten-Erkennung in Phase 2. Bis dahin hält der Lauf Cache und Backup
-aktuell und protokolliert ehrlich, was er gesehen hat.
+Der Lauf speichert Originale in ``artikel`` und jede Meldung in
+``nexus_meldungen``. Er behauptet nicht, den Inhalt verstanden zu haben.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from ..db import Facts
 from .abruf import Abrufer, CacheEintrag, HttpCache
 from .feeds import parse_feed
 from .quellen import Quelle, lade_register
+from .speicher import MeldungSpeicher
 
 STANDARD_BACKUP_ORDNER = Path("backups")
 STANDARD_BEHALTEN_TAGE = 14
@@ -40,6 +41,10 @@ class _Zaehler:
     unveraendert: int = 0
     fehler: int = 0
     meldungen: int = 0
+    gespeichert: int = 0
+    dubletten: int = 0
+    wiederholungen: int = 0
+    speicher_fehler: int = 0
 
 
 def ist_faellig(eintrag: CacheEintrag | None, intervall_minuten: int,
@@ -147,6 +152,8 @@ def _warnung_text(bericht: dict[str, object]) -> str:
     backup = bericht.get("backup")
     if isinstance(backup, dict) and backup.get("fehler"):
         teile.append(f"Backup: {backup['fehler']}.")
+    if bericht.get("speicher_fehler"):
+        teile.append(f"Speicherung: {bericht['speicher_fehler']} Fehler.")
     domain = bericht.get("domain")
     if isinstance(domain, dict) and not domain.get("ok"):
         teile.append(f"Domain: {domain.get('fehler', 'unbekannt')}.")
@@ -208,14 +215,17 @@ def nachtlauf(
     if limit is not None:
         faellig = faellig[:limit]
 
+    datenbank = Facts(db_pfad)
+    speicher = MeldungSpeicher(datenbank)
+    zeit = jetzt.isoformat(timespec="seconds")
     zaehler = _Zaehler(faellig=len(faellig))
     detail: list[dict[str, object]] = []
     for quelle in faellig:
         ergebnis = abrufer.hole(quelle)
-        anzahl = 0
+        meldungen = []
         if ergebnis.ok and ergebnis.inhalt:
             try:
-                anzahl = len(parse_feed(ergebnis.inhalt, quelle))
+                meldungen = parse_feed(ergebnis.inhalt, quelle)
             except Exception as exc:
                 ergebnis.fehler = f"Parse: {type(exc).__name__}"
         if ergebnis.status == 304:
@@ -224,20 +234,52 @@ def nachtlauf(
             zaehler.abgerufen += 1
         if not ergebnis.ok:
             zaehler.fehler += 1
-        zaehler.meldungen += anzahl
+
+        gespeichert = dubletten = wiederholungen = speicher_fehler = 0
+        speicher_fehler_typ: str | None = None
+        for meldung in meldungen:
+            try:
+                ergebnis_speicher = speicher.speichere(
+                    meldung, quelle, abgerufen_am=zeit)
+            except Exception as exc:
+                speicher_fehler += 1
+                speicher_fehler_typ = type(exc).__name__
+                continue
+            if ergebnis_speicher.status == "neu":
+                gespeichert += 1
+            elif ergebnis_speicher.status == "dublette":
+                dubletten += 1
+            elif ergebnis_speicher.status == "wiederholung":
+                wiederholungen += 1
+            else:
+                speicher_fehler += 1
+                speicher_fehler_typ = ergebnis_speicher.fehler
+
+        zaehler.meldungen += len(meldungen)
+        zaehler.gespeichert += gespeichert
+        zaehler.dubletten += dubletten
+        zaehler.wiederholungen += wiederholungen
+        zaehler.speicher_fehler += speicher_fehler
         detail.append({"id": quelle.id, "status": ergebnis.status,
-                       "meldungen": anzahl, "fehler": ergebnis.fehler,
-                       "ms": ergebnis.dauer_ms})
+                       "meldungen": len(meldungen), "gespeichert": gespeichert,
+                       "dubletten": dubletten, "wiederholungen": wiederholungen,
+                       "speicher_fehler": speicher_fehler,
+                       "speicher_fehler_typ": speicher_fehler_typ,
+                       "fehler": ergebnis.fehler, "ms": ergebnis.dauer_ms})
 
     bericht: dict[str, object] = {
-        "zeit": jetzt.isoformat(timespec="seconds"),
+        "zeit": zeit,
         "faellig": zaehler.faellig,
         "abgerufen": zaehler.abgerufen,
         "unveraendert": zaehler.unveraendert,
         "fehler": zaehler.fehler,
         "meldungen": zaehler.meldungen,
+        "gespeichert": zaehler.gespeichert,
+        "dubletten": zaehler.dubletten,
+        "wiederholungen": zaehler.wiederholungen,
+        "speicher_fehler": zaehler.speicher_fehler,
         "quellen": detail,
-        "hinweis": "Noch keine Speicherung in artikel; das ist Phase 2.",
+        "hinweis": "Meldungen werden in artikel gespeichert; SimHash gruppiert Kopien.",
     }
 
     if backup_ordner:
@@ -253,7 +295,8 @@ def nachtlauf(
     backup_fehler = isinstance(backup, dict) and bool(backup.get("fehler"))
     domain = bericht.get("domain")
     domain_fehler = isinstance(domain, dict) and not domain.get("ok")
-    bericht["ok"] = zaehler.fehler == 0 and not backup_fehler and not domain_fehler
+    bericht["ok"] = (zaehler.fehler == 0 and zaehler.speicher_fehler == 0
+                     and not backup_fehler and not domain_fehler)
     bericht["warnung_noetig"] = not bericht["ok"]
 
     if not bericht["ok"]:
@@ -267,12 +310,13 @@ def nachtlauf(
 
     # Erst jetzt speichern: Der Zustand muss ok, Warnung und Ping enthalten.
     try:
-        datenbank = Facts(db_pfad)
         datenbank.ereignis(
             "info" if bericht["ok"] else "warnung", "Nexus",
             f"Nachtlauf: {zaehler.faellig} fällig, {zaehler.abgerufen} abgerufen, "
             f"{zaehler.unveraendert} unverändert, {zaehler.meldungen} Meldungen, "
-            f"{zaehler.fehler} Fehler, ok={bericht['ok']}",
+            f"{zaehler.gespeichert} gespeichert, {zaehler.dubletten} Dubletten, "
+            f"{zaehler.wiederholungen} Wiederholungen, {zaehler.fehler} Fehler, "
+            f"ok={bericht['ok']}",
         )
         datenbank.zustand_setzen("nexus_nacht", bericht)
     except Exception as exc:

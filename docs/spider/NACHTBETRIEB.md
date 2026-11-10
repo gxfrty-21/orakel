@@ -39,18 +39,20 @@ steht). `Persistent=true` holt einen verpassten Lauf beim nächsten Start nach.
 |---|---|---|
 | 1 | Fällige Quellen bestimmen | Cache-Metadaten: `abgerufen_am` + `intervall_minuten` |
 | 2 | Abruf mit `If-None-Match` / `If-Modified-Since` | unveränderte Quellen: `304`, kein Body, kein Parsen |
-| 3 | Neue Antworten parsen | Meldungen zählen (RSS 2.0, RDF, Atom) |
-| 4 | Ereignis und Zustand schreiben | `ereignisse`, `zustand["nexus_nacht"]` |
-| 5 | SQLite-Backup | `backups/orakel-JJJJ-MM-TT.db`, `integrity_check` |
-| 6 | Backups aufräumen | älter als 14 Tage werden gelöscht |
-| 7 | Optional DNS/TLS | A/AAAA, Zertifikatsablauf, `/api/health` |
+| 3 | Neue Antworten parsen | Meldungen zählen (RSS 2.0, RDF, Atom), Sprache schätzen, SimHash berechnen |
+| 4 | Speichern und gruppieren | Original in `artikel`, jede Meldung in `nexus_meldungen` |
+| 5 | Ereignis und Zustand schreiben | `ereignisse`, `zustand["nexus_nacht"]` |
+| 6 | SQLite-Backup | `backups/orakel-JJJJ-MM-TT.db`, `integrity_check` |
+| 7 | Backups aufräumen | älter als 14 Tage werden gelöscht |
+| 8 | Optional DNS/TLS | A/AAAA, Zertifikatsablauf, `/api/health` |
 
-**Noch nicht:** Die Meldungen werden nicht in `artikel` gespeichert. Ohne
-Dubletten-Erkennung entstünden Doppelzeilen. Das ist Phase 2 und wird dann in
-den Nachtlauf eingehängt.
+**Was noch nicht:** Volltextanalyse, Entitäten, Claims und Quellenreputation.
+Der Lauf speichert die Meldung, erkennt Kopien über SimHash und hält jede
+Meldung mit Quelle und Sprache fest. Er behauptet nicht, den Inhalt verstanden
+zu haben.
 
-Der Lauf ist damit ehrlich beschrieben: Er hält Cache und Backup aktuell und
-protokolliert, was er gesehen hat — er erfindet keine Erkenntnisse.
+Der Lauf ist damit ehrlich beschrieben: Er hält Artikel, Cache und Backup
+aktuell und protokolliert, was er gesehen hat — er erfindet keine Erkenntnisse.
 
 ---
 
@@ -216,7 +218,8 @@ Spider-Tab steht dafür die Karte **Nachtbetrieb**:
 | Status OK/Warnung | `nacht.ok` |
 | Laufzeit | `nacht.zeit` |
 | Quellen | `faellig`, `abgerufen`, `unveraendert` |
-| Meldungen und Fehler | `meldungen`, `fehler` |
+| Meldungen, gespeichert, Kopien | `meldungen`, `gespeichert`, `dubletten` |
+| Fehler | `fehler`, `speicher_fehler` |
 | Backup-Zeitpunkt | `backup.erstellt` |
 | Integrität und Größe | `backup.integrity`, `backup.bytes` |
 | Warnung und Ping | `warnung.gesendet`, `ping.gesendet` |

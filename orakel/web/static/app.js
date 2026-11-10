@@ -458,7 +458,7 @@ function zeichneNacht(){
   const kp = [
     ['Status', ok ? '<span class="up">OK</span>' : '<span class="dn">Warnung</span>', 'Lauf ' + zeitKurz(n.zeit)],
     ['Quellen', num(n.faellig,0), `${num(n.abgerufen,0)} abgerufen · ${num(n.unveraendert,0)} unverändert`],
-    ['Meldungen', num(n.meldungen,0), `${num(n.fehler,0)} Fehler`],
+    ['Meldungen', num(n.meldungen,0), `${num(n.gespeichert,0)} gespeichert · ${num(n.dubletten,0)} Kopien · ${num(n.fehler,0)} Fehler`],
     ['Backup', b.erstellt ? zeitKurz(b.erstellt) : '–', b.integrity ? `Integrität ${esc(b.integrity)} · ${groesse(b.bytes)}` : 'kein Backup'],
   ];
   $('#nachtKpis').innerHTML = kp.map(q=>`<div class="kpi"><div class="l">${q[0]}</div><div class="v">${q[1]}</div><div class="n">${q[2]}</div></div>`).join('');

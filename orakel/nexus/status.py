@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ..db import Facts
 from .abruf import HttpCache
 from .quellen import Quelle, statistik
 
@@ -20,5 +21,13 @@ def cache_status(cache: HttpCache) -> dict[str, object]:
     return daten
 
 
-def gesamt_status(cache: HttpCache, quellen: list[Quelle]) -> dict[str, object]:
-    return {"ok": True, "register": register_status(quellen), "cache": cache_status(cache)}
+def gesamt_status(cache: HttpCache, quellen: list[Quelle],
+                  db: Facts | None = None) -> dict[str, object]:
+    daten: dict[str, object] = {
+        "ok": True,
+        "register": register_status(quellen),
+        "cache": cache_status(cache),
+    }
+    if db is not None:
+        daten["meldungen"] = db.nexus_statistik()
+    return daten

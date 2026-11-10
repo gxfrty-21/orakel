@@ -20,6 +20,19 @@ FEED = b"""<?xml version="1.0"?><rss version="2.0"><channel>
 <item><title>Nachtmeldung</title><link>https://example.com/n/1</link></item>
 </channel></rss>"""
 
+FEED_DUBLETTEN = b"""<?xml version="1.0"?><rss version="2.0"><channel>
+<item>
+  <title>EZB laesst Leitzins unveraendert</title>
+  <link>https://example.com/n/a</link>
+  <description>Die EZB laesst den Leitzins unveraendert.</description>
+</item>
+<item>
+  <title>EZB laesst Leitzins unveraendert</title>
+  <link>https://example.com/n/b</link>
+  <description>Die EZB laesst den Leitzins unveraendert.</description>
+</item>
+</channel></rss>"""
+
 JETZT = datetime(2026, 11, 9, 2, 30, tzinfo=timezone.utc)
 
 
@@ -31,8 +44,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802
         type(self).ereignisse.append(("GET", self.path, ""))
-        if self.path == "/feed.xml":
-            body = FEED
+        if self.path in ("/feed.xml", "/dubletten.xml"):
+            body = FEED if self.path == "/feed.xml" else FEED_DUBLETTEN
             self.send_response(200)
             self.send_header("Content-Type", "application/rss+xml")
             self.send_header("Content-Length", str(len(body)))
@@ -124,12 +137,46 @@ intervall_minuten = 30
     assert bericht["faellig"] == 1
     assert bericht["abgerufen"] == 1
     assert bericht["meldungen"] == 1
+    assert bericht["gespeichert"] == 1
     assert bericht["fehler"] == 0
     assert bericht["quellen"][0]["id"] == "faellig"
+    assert Facts(db).artikel_statistik()["gesamt"] == 1
 
     backup = bericht["backup"]
     assert backup["integrity"] == "ok"
     assert Path(backup["pfad"]).exists()
+
+
+def test_nachtlauf_speichert_original_und_erkennt_kopie(server, tmp_path):
+    bericht = _nacht(tmp_path, _register(tmp_path, f"{server}/dubletten.xml"))
+
+    assert bericht["meldungen"] == 2
+    assert bericht["gespeichert"] == 1
+    assert bericht["dubletten"] == 1
+    assert bericht["speicher_fehler"] == 0
+
+    db = Facts(tmp_path / "orakel.db")
+    assert db.artikel_statistik()["gesamt"] == 1
+    statistik = db.nexus_statistik()
+    assert statistik["gesamt"] == 2
+    assert statistik["originale"] == 1
+    assert statistik["dubletten"] == 1
+    assert statistik["dublettenquote"] == 0.5
+
+
+def test_zweiter_lauf_erzeugt_keine_neue_zeile(server, tmp_path):
+    register = _register(tmp_path, f"{server}/feed.xml")
+    erster = _nacht(tmp_path, register)
+    assert erster["gespeichert"] == 1
+
+    # Cache-Zeitpunkt liegt real in der Gegenwart; ein Lauf eine Stunde später
+    # ist wieder fällig und sieht dieselbe Meldung erneut.
+    spaeter = datetime.now(timezone.utc) + timedelta(hours=1)
+    zweiter = _nacht(tmp_path, register, jetzt=spaeter)
+    assert zweiter["meldungen"] == 1
+    assert zweiter["wiederholungen"] == 1
+    assert zweiter["gespeichert"] == 0
+    assert Facts(tmp_path / "orakel.db").artikel_statistik()["gesamt"] == 1
 
 
 def test_backup_entfernt_alte_dateien(tmp_path):

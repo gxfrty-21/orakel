@@ -7,6 +7,7 @@ import json
 import os
 import sys
 
+from ..db import Facts
 from .abruf import Abrufer, HttpCache
 from .feeds import parse_feed
 from .hackernews import meldungen as hn_meldungen
@@ -18,7 +19,8 @@ from .status import gesamt_status
 def _status(args: argparse.Namespace) -> int:
     quellen = lade_register(args.register)
     cache = HttpCache(args.db)
-    print(json.dumps(gesamt_status(cache, quellen), ensure_ascii=False, indent=2))
+    daten = gesamt_status(cache, quellen, Facts(args.db))
+    print(json.dumps(daten, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -102,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
     hole.add_argument("--user-agent", default="OrakelNexus/0.1 (Feed-Abruf)")
     hole.set_defaults(funktion=_hole)
 
-    nacht = unter.add_parser("nacht", help="Nachtlauf: fällige Quellen, Backup, DNS/TLS")
+    nacht = unter.add_parser("nacht", help="Nachtlauf: Meldungen speichern, Backup, DNS/TLS")
     nacht.add_argument("--db", default="orakel.db")
     nacht.add_argument("--register", default=None)
     nacht.add_argument("--backup-ordner", default="backups")
