@@ -124,8 +124,9 @@ tests/           Risiko, Backtest, Daten, Bericht
 2. **Spider Intelligence**: Netz-Recherche mit Quellenprüfung, robots.txt und Limits.
 3. **Weltkugel und Raumschiff**: interaktive 2D-Welt (der Meister-Prompt erlaubt 2D,
    wenn 3D mit den Ressourcen nicht sinnvoll ist), an echte Daten gekoppelt.
-4. **Dauerbetrieb aktivieren**: Plan und Monitoring sind gebaut; auf dem Zielhost
-   fehlen noch `ORAKEL_TAKT=1`, ein echter Soak und ein externer Watchdog.
+4. **Dauerbetrieb aktivieren**: `ORAKEL_TAKT=1` ist gesetzt; der 24-Stunden-Soak
+   läuft. Der externe Watchdog ist in `.github/workflows/watchdog.yml` angelegt
+   und prüft nach dem Push auf `main` den Takt alle fünf Minuten.
 5. **Selbstlernen**: Auswertung abgeschlossener Trades inkl. Fehleranalyse.
 
 ## Grundsätze im Code

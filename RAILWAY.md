@@ -174,8 +174,15 @@ Der Takt bleibt standardmäßig aus. Zum Aktivieren im Railway-Service
 und Ressourcenwerten liegt hinter dem Login unter `/api/betrieb`.
 
 Der Railway-Healthcheck bleibt bewusst nur auf HTTP 200. Ein Job im Backoff
-darf keinen Container-Neustart-Loop auslösen. Ein echter 24-Stunden-Soak und
-ein externer Watchdog für den Takt stehen noch aus.
+darf keinen Container-Neustart-Loop auslösen. Ein echter 24-Stunden-Soak steht
+noch aus.
+
+Der externe Watchdog ist als GitHub-Actions-Workflow in
+`.github/workflows/watchdog.yml` angelegt. Nach dem Push auf den Default-Branch
+prüft er alle fünf Minuten `/api/health`, öffnet bei einem Taktalter über 300
+Sekunden oder einem Status ungleich `laeuft` ein GitHub-Issue und schließt es
+nach der Erholung wieder. GitHub kann geplante Läufe verzögern; der Watchdog
+ergänzt den Railway-Healthcheck, ersetzt ihn aber nicht.
 
 ## Wichtig: `railway.json` ist Legacy
 
