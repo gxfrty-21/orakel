@@ -12,6 +12,7 @@ from . import agents
 from .config import Config, RisikoGrenzen
 from .db import Facts
 from .intel import IntelNetz
+from .nexus.missionen import Missionen
 from .paper import tick
 from .spider import Spider
 from .knowledge import Vault
@@ -92,6 +93,11 @@ def takt_schritt(cfg: Config, db: Facts, mit_spider: bool = False) -> dict[str, 
         ergebnis["intel"] = {**netz.verarbeite(ids), **netz.lernschleife()}
     except Exception as exc:
         db.ereignis("fehler", "Takt", f"Intelligence fehlgeschlagen: {exc}")
+    try:
+        ergebnis["missionen"] = Missionen(db).weiterarbeiten(max_tasks=5)
+    except Exception as exc:
+        db.ereignis("fehler", "Takt", f"Missionen fehlgeschlagen: {exc}")
+        ergebnis["missionen"] = {"fehler": str(exc)}
     if cfg.abschnitt("unternehmen").get("aktiv", False):
         try:
             ergebnis["unternehmen"] = unternehmen_takt(cfg, db)

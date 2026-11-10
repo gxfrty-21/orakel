@@ -229,6 +229,48 @@ CREATE TABLE IF NOT EXISTS nexus_widersprueche (
 );
 CREATE INDEX IF NOT EXISTS ix_nexus_wid_claim ON nexus_widersprueche(claim_id);
 
+-- Nexus Phase 4: Missionen und persistente Aufgabequeue.
+-- Eine Mission ist eine echte Arbeitskette, keine Demo: Der Worker leitet
+-- Kernaussagen ab, prüft Belege und schreibt einen nachvollziehbaren Bericht.
+CREATE TABLE IF NOT EXISTS nexus_missionen (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kennung TEXT NOT NULL UNIQUE,
+    titel TEXT NOT NULL,
+    auftrag TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'offen',
+    prioritaet TEXT NOT NULL DEFAULT 'mittel',
+    fortschritt INTEGER NOT NULL DEFAULT 0,
+    erstellt TEXT NOT NULL,
+    gestartet TEXT,
+    beendet TEXT,
+    bericht TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS ix_nexus_mission_status ON nexus_missionen(status);
+CREATE INDEX IF NOT EXISTS ix_nexus_mission_erstellt ON nexus_missionen(erstellt);
+
+-- status: offen | laufend | erledigt | fehlgeschlagen | blockiert
+CREATE TABLE IF NOT EXISTS nexus_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mission_id INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    rolle TEXT NOT NULL,
+    ziel TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'offen',
+    versuche INTEGER NOT NULL DEFAULT 0,
+    max_versuche INTEGER NOT NULL DEFAULT 3,
+    lease_bis TEXT,
+    faellig_am TEXT NOT NULL,
+    ergebnis TEXT NOT NULL DEFAULT '',
+    fehler TEXT NOT NULL DEFAULT '',
+    abhaengig_von INTEGER,
+    erstellt TEXT NOT NULL,
+    aktualisiert TEXT NOT NULL,
+    UNIQUE(mission_id, position),
+    FOREIGN KEY(mission_id) REFERENCES nexus_missionen(id)
+);
+CREATE INDEX IF NOT EXISTS ix_nexus_task_mission ON nexus_tasks(mission_id, position);
+CREATE INDEX IF NOT EXISTS ix_nexus_task_queue ON nexus_tasks(status, faellig_am, lease_bis);
+
 -- Spider Intelligence: analysierter Volltext je Artikel
 CREATE TABLE IF NOT EXISTS intel_inhalte (
     artikel_id INTEGER PRIMARY KEY,
@@ -291,6 +333,13 @@ CREATE TABLE IF NOT EXISTS intel_quellen (
 
 def jetzt() -> str:
     return datetime.now(timezone.utc).astimezone().replace(microsecond=0).isoformat()
+
+
+def _json_wert(text: str, standard: Any = None) -> Any:
+    try:
+        return json.loads(text)
+    except (TypeError, ValueError):
+        return standard
 
 
 COMPANY_SCHEMA_VERSION = 1
@@ -705,6 +754,311 @@ class Facts:
             "quellen": quellen,
             "bestaetigungsgrad": round(float(grad or 0.0), 3),
         }
+
+    # ---------- Nexus Phase 4: Missionen, Queue und Retry ----------
+    def nexus_mission_zaehler(self, tag: str) -> int:
+        with self.conn() as c:
+            r = c.execute("SELECT COUNT(*) n FROM nexus_missionen WHERE kennung LIKE ?",
+                          (f"MS-{tag}-%",)).fetchone()
+        return int(r["n"])
+
+    def nexus_mission_kennung_existiert(self, kennung: str) -> bool:
+        with self.conn() as c:
+            return c.execute("SELECT 1 FROM nexus_missionen WHERE kennung=? LIMIT 1",
+                             (kennung,)).fetchone() is not None
+
+    def nexus_mission_anlegen(
+        self, kennung: str, titel: str, auftrag: str, prioritaet: str,
+        tasks: Sequence[dict[str, Any]], erstellt: str,
+    ) -> dict[str, Any]:
+        """Legt Mission und Aufgabenkette in einer Transaktion an."""
+        with self.conn() as c:
+            cur = c.execute(
+                "INSERT INTO nexus_missionen(kennung,titel,auftrag,status,prioritaet,"
+                "fortschritt,erstellt,bericht) VALUES (?,?,?,'offen',?,0,?,'')",
+                (kennung, titel, auftrag, prioritaet, erstellt),
+            )
+            mission_id = int(cur.lastrowid or 0)
+            vorgaenger: int | None = None
+            for position, aufgabe in enumerate(tasks):
+                cur = c.execute(
+                    "INSERT INTO nexus_tasks(mission_id,position,rolle,ziel,status,"
+                    "versuche,max_versuche,lease_bis,faellig_am,ergebnis,fehler,"
+                    "abhaengig_von,erstellt,aktualisiert) "
+                    "VALUES (?,?,?,?,'offen',0,?,NULL,?,'','',?,?,?)",
+                    (mission_id, position, str(aufgabe["rolle"]), str(aufgabe["ziel"]),
+                     int(aufgabe.get("max_versuche", 3)), erstellt,
+                     vorgaenger, erstellt, erstellt),
+                )
+                vorgaenger = int(cur.lastrowid or 0)
+        return self.nexus_mission(kennung) or {}
+
+    def nexus_mission(self, kennung: str) -> dict[str, Any] | None:
+        with self.conn() as c:
+            zeile = c.execute("SELECT * FROM nexus_missionen WHERE kennung=?",
+                              (kennung,)).fetchone()
+            if not zeile:
+                return None
+            tasks = [dict(r) for r in c.execute(
+                "SELECT * FROM nexus_tasks WHERE mission_id=? ORDER BY position, id",
+                (int(zeile["id"]),),
+            )]
+        mission = dict(zeile)
+        mission["bericht"] = _json_wert(mission.get("bericht") or "", {}) or {}
+        for task in tasks:
+            task["ergebnis"] = _json_wert(task.get("ergebnis") or "", {}) or {}
+        mission["tasks"] = tasks
+        return mission
+
+    def nexus_missionen(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self.conn() as c:
+            zeilen = c.execute(
+                "SELECT m.*, "
+                "(SELECT COUNT(*) FROM nexus_tasks t WHERE t.mission_id=m.id) AS tasks, "
+                "(SELECT COUNT(*) FROM nexus_tasks t WHERE t.mission_id=m.id AND t.status='erledigt') AS erledigt, "
+                "(SELECT COUNT(*) FROM nexus_tasks t WHERE t.mission_id=m.id AND t.status='offen') AS offen, "
+                "(SELECT COUNT(*) FROM nexus_tasks t WHERE t.mission_id=m.id AND t.status='fehlgeschlagen') AS fehlgeschlagen "
+                "FROM nexus_missionen m "
+                "ORDER BY CASE m.status WHEN 'laufend' THEN 0 WHEN 'offen' THEN 1 "
+                "WHEN 'fehlgeschlagen' THEN 2 ELSE 3 END, m.erstellt DESC, m.id DESC LIMIT ?",
+                (max(1, int(limit)),),
+            ).fetchall()
+        ergebnis = []
+        for zeile in zeilen:
+            eintrag = dict(zeile)
+            eintrag["bericht_vorhanden"] = bool(eintrag.pop("bericht", ""))
+            ergebnis.append(eintrag)
+        return ergebnis
+
+    def nexus_mission_statistik(self) -> dict[str, Any]:
+        with self.conn() as c:
+            gesamt = int(c.execute("SELECT COUNT(*) n FROM nexus_missionen").fetchone()["n"])
+            nach_status = {r["status"]: int(r["n"]) for r in c.execute(
+                "SELECT status, COUNT(*) n FROM nexus_missionen GROUP BY status")}
+            tasks = {r["status"]: int(r["n"]) for r in c.execute(
+                "SELECT status, COUNT(*) n FROM nexus_tasks GROUP BY status")}
+            fortschritt = c.execute(
+                "SELECT COALESCE(AVG(fortschritt),0) w FROM nexus_missionen").fetchone()["w"]
+        return {"gesamt": gesamt, "nach_status": nach_status,
+                "tasks": tasks, "fortschritt": round(float(fortschritt or 0.0), 1)}
+
+    def nexus_task(self, task_id: int) -> dict[str, Any] | None:
+        with self.conn() as c:
+            zeile = c.execute(
+                "SELECT t.*, m.kennung AS mission_kennung, m.titel, m.auftrag, m.prioritaet "
+                "FROM nexus_tasks t JOIN nexus_missionen m ON m.id=t.mission_id WHERE t.id=?",
+                (int(task_id),),
+            ).fetchone()
+        if not zeile:
+            return None
+        task = dict(zeile)
+        task["ergebnis"] = _json_wert(task.get("ergebnis") or "", {}) or {}
+        return task
+
+    def nexus_task_naechste(self, jetzt: str, lease_bis: str,
+                            mission_kennung: str | None = None) -> dict[str, Any] | None:
+        """Least eine fällige Aufgabe atomar. Abhängigkeiten werden geprüft."""
+        with self.conn() as c:
+            c.execute("BEGIN IMMEDIATE")
+            bedingung = " AND m.kennung=?" if mission_kennung else ""
+            args: list[Any] = [jetzt]
+            if mission_kennung:
+                args.append(mission_kennung)
+            zeile = c.execute(
+                "SELECT t.*, m.kennung AS mission_kennung, m.titel, m.auftrag, "
+                "m.prioritaet, m.status AS mission_status "
+                "FROM nexus_tasks t JOIN nexus_missionen m ON m.id=t.mission_id "
+                "WHERE t.status='offen' AND t.faellig_am<=? "
+                "AND m.status IN ('offen','laufend') "
+                "AND (t.abhaengig_von IS NULL OR EXISTS ("
+                "  SELECT 1 FROM nexus_tasks v WHERE v.id=t.abhaengig_von AND v.status='erledigt'"
+                ")) " + bedingung + " "
+                "ORDER BY CASE m.prioritaet WHEN 'kritisch' THEN 0 WHEN 'hoch' THEN 1 "
+                "WHEN 'mittel' THEN 2 ELSE 3 END, m.erstellt, t.position, t.id LIMIT 1",
+                tuple(args),
+            ).fetchone()
+            if not zeile:
+                return None
+            c.execute(
+                "UPDATE nexus_tasks SET status='laufend', versuche=versuche+1, "
+                "lease_bis=?, aktualisiert=? WHERE id=?",
+                (lease_bis, jetzt, int(zeile["id"])),
+            )
+            c.execute(
+                "UPDATE nexus_missionen SET status='laufend', "
+                "gestartet=COALESCE(gestartet, ?) WHERE id=?",
+                (jetzt, int(zeile["mission_id"])),
+            )
+            task = dict(zeile)
+            task["status"] = "laufend"
+            task["versuche"] = int(zeile["versuche"]) + 1
+            task["lease_bis"] = lease_bis
+            return task
+
+    def _mission_fehlerhaft(self, c: sqlite3.Connection, mission_id: int,
+                             position: int, fehler: str, jetzt: str) -> None:
+        """Blockiert Folgeschritte und markiert die Mission als abgebrochen."""
+        c.execute(
+            "UPDATE nexus_tasks SET status='blockiert', fehler=?, aktualisiert=? "
+            "WHERE mission_id=? AND position>? AND status IN ('offen','laufend')",
+            ("Vorgänger fehlgeschlagen", jetzt, int(mission_id), int(position)),
+        )
+        zahlen = c.execute(
+            "SELECT COUNT(*) gesamt, "
+            "SUM(CASE WHEN status='erledigt' THEN 1 ELSE 0 END) erledigt "
+            "FROM nexus_tasks WHERE mission_id=?", (int(mission_id),),
+        ).fetchone()
+        gesamt = int(zahlen["gesamt"] or 0)
+        erledigt = int(zahlen["erledigt"] or 0)
+        fortschritt = round(erledigt / gesamt * 100) if gesamt else 0
+        bericht = json.dumps({
+            "fehler": fehler,
+            "text": f"Mission abgebrochen: {fehler}",
+            "generiert": jetzt,
+        }, ensure_ascii=False)
+        c.execute(
+            "UPDATE nexus_missionen SET status='fehlgeschlagen', fortschritt=?, "
+            "beendet=?, bericht=? WHERE id=?",
+            (fortschritt, jetzt, bericht, int(mission_id)),
+        )
+
+    def nexus_task_leases_loesen(self, jetzt: str) -> int:
+        """Gibt abgelaufene Leases frei; nach dem letzten Versuch: Dead-Letter."""
+        freigegeben = 0
+        with self.conn() as c:
+            zeilen = c.execute(
+                "SELECT t.*, m.kennung AS mission_kennung FROM nexus_tasks t "
+                "JOIN nexus_missionen m ON m.id=t.mission_id "
+                "WHERE t.status='laufend' AND t.lease_bis IS NOT NULL AND t.lease_bis<?",
+                (jetzt,),
+            ).fetchall()
+            for zeile in zeilen:
+                task = dict(zeile)
+                endgueltig = int(task["versuche"]) >= int(task["max_versuche"])
+                if endgueltig:
+                    c.execute(
+                        "UPDATE nexus_tasks SET status='fehlgeschlagen', lease_bis=NULL, "
+                        "fehler=?, aktualisiert=? WHERE id=?",
+                        ("Lease abgelaufen; letzter Versuch verbraucht", jetzt,
+                         int(task["id"])),
+                    )
+                    self._mission_fehlerhaft(
+                        c, int(task["mission_id"]), int(task["position"]),
+                        "Lease abgelaufen; letzter Versuch verbraucht", jetzt,
+                    )
+                else:
+                    c.execute(
+                        "UPDATE nexus_tasks SET status='offen', lease_bis=NULL, "
+                        "faellig_am=?, fehler=?, aktualisiert=? WHERE id=?",
+                        (jetzt, "Lease abgelaufen; neuer Versuch", jetzt, int(task["id"])),
+                    )
+                    c.execute(
+                        "UPDATE nexus_missionen SET status='offen' WHERE id=?",
+                        (int(task["mission_id"]),),
+                    )
+                freigegeben += 1
+        return freigegeben
+
+    def nexus_task_erledigt(self, task_id: int, ergebnis: dict[str, Any],
+                            bericht: dict[str, Any] | None, jetzt: str) -> dict[str, Any]:
+        with self.conn() as c:
+            zeile = c.execute(
+                "SELECT t.*, m.kennung AS mission_kennung FROM nexus_tasks t "
+                "JOIN nexus_missionen m ON m.id=t.mission_id WHERE t.id=?",
+                (int(task_id),),
+            ).fetchone()
+            if not zeile:
+                raise ValueError(f"Unbekannte Aufgabe: {task_id}")
+            if zeile["status"] == "erledigt":
+                kennung = str(zeile["mission_kennung"])
+            else:
+                c.execute(
+                    "UPDATE nexus_tasks SET status='erledigt', lease_bis=NULL, "
+                    "ergebnis=?, fehler='', aktualisiert=? WHERE id=?",
+                    (json.dumps(ergebnis, ensure_ascii=False), jetzt, int(task_id)),
+                )
+                zahlen = c.execute(
+                    "SELECT COUNT(*) gesamt, "
+                    "SUM(CASE WHEN status='erledigt' THEN 1 ELSE 0 END) erledigt "
+                    "FROM nexus_tasks WHERE mission_id=?", (int(zeile["mission_id"]),),
+                ).fetchone()
+                gesamt = int(zahlen["gesamt"] or 0)
+                erledigt = int(zahlen["erledigt"] or 0)
+                fortschritt = round(erledigt / gesamt * 100) if gesamt else 0
+                kennung = str(zeile["mission_kennung"])
+                if erledigt >= gesamt:
+                    c.execute(
+                        "UPDATE nexus_missionen SET status='abgeschlossen', fortschritt=100, "
+                        "beendet=?, bericht=? WHERE id=?",
+                        (jetzt, json.dumps(bericht or {}, ensure_ascii=False),
+                         int(zeile["mission_id"])),
+                    )
+                else:
+                    c.execute(
+                        "UPDATE nexus_missionen SET status='offen', fortschritt=? WHERE id=?",
+                        (fortschritt, int(zeile["mission_id"])),
+                    )
+        return self.nexus_mission(kennung) or {}
+
+    def nexus_task_fehler(self, task_id: int, fehler: str, faellig_am: str,
+                          endgueltig: bool, jetzt: str) -> dict[str, Any]:
+        with self.conn() as c:
+            zeile = c.execute(
+                "SELECT t.*, m.kennung AS mission_kennung FROM nexus_tasks t "
+                "JOIN nexus_missionen m ON m.id=t.mission_id WHERE t.id=?",
+                (int(task_id),),
+            ).fetchone()
+            if not zeile:
+                raise ValueError(f"Unbekannte Aufgabe: {task_id}")
+            status = "fehlgeschlagen" if endgueltig else "offen"
+            c.execute(
+                "UPDATE nexus_tasks SET status=?, lease_bis=NULL, faellig_am=?, "
+                "fehler=?, aktualisiert=? WHERE id=?",
+                (status, faellig_am, fehler, jetzt, int(task_id)),
+            )
+            if endgueltig:
+                self._mission_fehlerhaft(
+                    c, int(zeile["mission_id"]), int(zeile["position"]),
+                    fehler, jetzt,
+                )
+            else:
+                c.execute("UPDATE nexus_missionen SET status='offen' WHERE id=?",
+                          (int(zeile["mission_id"]),))
+            kennung = str(zeile["mission_kennung"])
+        return self.nexus_mission(kennung) or {}
+
+    def nexus_claims_by_ids(self, ids: Sequence[int]) -> list[dict[str, Any]]:
+        if not ids:
+            return []
+        platzhalter = ",".join("?" for _ in ids)
+        with self.conn() as c:
+            return [dict(r) for r in c.execute(
+                f"SELECT * FROM nexus_claims WHERE id IN ({platzhalter}) ORDER BY id",
+                tuple(int(i) for i in ids),
+            )]
+
+    def nexus_claim_quellen_fuer(self, claim_ids: Sequence[int]) -> list[dict[str, Any]]:
+        if not claim_ids:
+            return []
+        platzhalter = ",".join("?" for _ in claim_ids)
+        with self.conn() as c:
+            return [dict(r) for r in c.execute(
+                f"SELECT * FROM nexus_claim_quellen WHERE claim_id IN ({platzhalter}) "
+                "ORDER BY claim_id, id",
+                tuple(int(i) for i in claim_ids),
+            )]
+
+    def nexus_widersprueche_fuer(self, claim_ids: Sequence[int]) -> list[dict[str, Any]]:
+        if not claim_ids:
+            return []
+        platzhalter = ",".join("?" for _ in claim_ids)
+        with self.conn() as c:
+            return [dict(r) for r in c.execute(
+                f"SELECT w.*, c.claim_key, c.kernaussage FROM nexus_widersprueche w "
+                f"JOIN nexus_claims c ON c.id=w.claim_id WHERE w.claim_id IN ({platzhalter}) "
+                "ORDER BY w.sicherheit DESC, w.id",
+                tuple(int(i) for i in claim_ids),
+            )]
 
     def artikel_by_ids(self, ids: Sequence[int]) -> list[sqlite3.Row]:
         if not ids:

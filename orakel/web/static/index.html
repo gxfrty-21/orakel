@@ -196,6 +196,19 @@
           <div class="tw" id="bewertungQuellen"><div class="empty">Noch keine Quellenreputation.</div></div>
         </div>
       </div>
+      <div class="panel" id="missionPanel">
+        <div class="ph">Missionen<span class="sp"></span><span class="tag" id="missionTag">–</span></div>
+        <div class="kpis nacht-kpis" id="missionKpis"></div>
+        <div class="mission-form">
+          <label>Titel<input id="missionTitel" maxlength="200" placeholder="z. B. EZB Leitzins"></label>
+          <label>Auftrag<textarea id="missionAuftrag" rows="2" maxlength="4000" placeholder="Welche Frage soll aus den gespeicherten Kernaussagen beantwortet werden?"></textarea></label>
+          <div class="mission-row">
+            <label>Priorität<select id="missionPrio"><option value="niedrig">niedrig</option><option value="mittel" selected>mittel</option><option value="hoch">hoch</option><option value="kritisch">kritisch</option></select></label>
+            <button type="button" class="toggle main" id="missionBtn">Mission anlegen &amp; starten</button>
+          </div>
+        </div>
+        <div class="list scroll" id="missionList"><div class="empty">Noch keine Missionen.</div></div>
+      </div>
       <div class="grid2">
         <div class="panel"><div class="ph">Zuletzt gelesen<span class="sp"></span><span class="tag" id="spiderTag"></span></div><div class="list scroll" id="spiderList"></div></div>
         <div class="panel"><div class="ph">Quellenqualität<span class="sp"></span><span class="tag">aus echten Läufen</span></div><div class="tw" id="spiderQuellen"></div></div>

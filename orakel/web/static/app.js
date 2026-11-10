@@ -431,6 +431,7 @@ async function ladeNacht(){
     nachtFehler = String(e.message || e);
   }
   zeichneNacht();
+  zeichneMissionen(nachtDaten);
 }
 
 const zeitKurz = s => esc(String(s || '').replace('T',' ').slice(0,16)) || '–';
@@ -510,6 +511,43 @@ function zeichneBewertung(d){
     ${reps.map(q=>`<tr><td>${esc(q.name)}<small>${esc(q.vertrauen)}</small></td><td class="m">${num(q.reputation,2)}</td>
     <td class="m up">${num(q.bestaetigt,0)}</td><td class="m dn">${num(q.widerlegt,0)}</td></tr>`).join('')}</tbody></table>`
     : '<div class="empty">Noch keine Quellenreputation.</div>';
+}
+
+function zeichneMissionen(d){
+  if(!$('#missionKpis')) return;
+  if(!d){
+    $('#missionTag').textContent = 'nicht erreichbar';
+    $('#missionKpis').innerHTML = '';
+    $('#missionList').innerHTML = '<div class="empty">Status nicht geladen.</div>';
+    return;
+  }
+  const st = d?.missionen?.statistik || {};
+  const liste = d?.missionen?.liste || [];
+  const ns = st.nach_status || {};
+  $('#missionTag').textContent = `${num(st.gesamt,0)} Missionen`;
+  $('#missionKpis').innerHTML = [
+    ['Missionen', num(st.gesamt,0), `${num(st.tasks?.erledigt,0)} Aufgaben erledigt`],
+    ['Laufend', num(ns.laufend,0), `${num(ns.offen,0)} offen`],
+    ['Abgeschlossen', num(ns.abgeschlossen,0), 'mit Bericht'],
+    ['Fortschritt', `${num(st.fortschritt,0)} %`, 'Durchschnitt aller Missionen'],
+  ].map(q=>`<div class="kpi"><div class="l">${q[0]}</div><div class="v">${q[1]}</div><div class="n">${q[2]}</div></div>`).join('');
+  const pill = s => s==='abgeschlossen' ? 'g' : (s==='fehlgeschlagen' ? 'r' : (s==='laufend' ? 'b' : 'w'));
+  $('#missionList').innerHTML = liste.length ? liste.map(m=>{
+    const p = Math.max(0, Math.min(100, Number(m.fortschritt)||0));
+    const datum = String(m.erstellt || '').replace('T',' ').slice(0,16);
+    return `<div class="li mission" data-kennung="${esc(m.kennung)}">
+      <div class="wlTop"><span><b style="font-weight:400">${esc(m.titel)}</b>
+        <small>${esc(m.kennung)} · ${esc(m.prioritaet)} · ${datum}</small></span>
+        <span class="pill ${pill(m.status)}">${esc(m.status)}</span></div>
+      <div class="mission-bar"><i style="width:${p}%"></i></div>
+      <div class="mission-meta"><small>${num(m.erledigt,0)} / ${num(m.tasks,0)} Aufgaben${m.fehlgeschlagen ? ' · ' + num(m.fehlgeschlagen,0) + ' fehlgeschlagen' : ''}</small>
+        <span class="mission-actions">
+          ${m.status !== 'abgeschlossen' ? `<button class="toggle" data-mission-lauf="1">Weiterarbeiten</button>` : ''}
+          ${m.bericht_vorhanden ? `<button class="toggle" data-mission-bericht="1">Bericht</button>` : ''}
+        </span></div>
+      <pre class="mission-report" hidden></pre>
+    </div>`;
+  }).join('') : '<div class="empty">Noch keine Mission. Eine Mission prüft gespeicherte Kernaussagen und schreibt einen Bericht mit offenen Fragen.</div>';
 }
 
 function renderSpider(){
@@ -644,6 +682,85 @@ $('#intelWeiter').addEventListener('change', async e => {
     box.querySelectorAll('select').forEach(s=>s.disabled = false);
     $('#banner').className = 'banner b-sim';
     $('#banner').innerHTML = '<b>FEHLER</b>' + esc(err.message);
+  }
+});
+
+/* ---------- Missionen ---------- */
+const missionFehler = text => {
+  $('#banner').className = 'banner b-sim';
+  $('#banner').innerHTML = '<b>FEHLER</b>' + esc(text);
+};
+
+const missionBtn = $('#missionBtn');
+if (missionBtn) missionBtn.onclick = async () => {
+  const titel = $('#missionTitel').value.trim();
+  const auftrag = $('#missionAuftrag').value.trim();
+  const prioritaet = $('#missionPrio').value;
+  if(titel.length < 3 || auftrag.length < 10){
+    missionFehler('Titel (min. 3 Zeichen) und Auftrag (min. 10 Zeichen) sind Pflicht.');
+    return;
+  }
+  missionBtn.disabled = true;
+  missionBtn.textContent = 'Mission läuft …';
+  try{
+    const r = await fetch('/api/nexus/mission', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({titel, auftrag, prioritaet})});
+    const d = await r.json();
+    if(!d.ok) throw new Error(d.fehler || 'Mission konnte nicht angelegt werden');
+    const kennung = d.mission?.kennung;
+    if(kennung){
+      const r2 = await fetch('/api/nexus/mission/' + encodeURIComponent(kennung) + '/lauf?max_tasks=10', {method:'POST'});
+      const d2 = await r2.json();
+      if(!d2.ok) throw new Error(d2.fehler || 'Mission konnte nicht laufen');
+    }
+    $('#missionTitel').value = '';
+    $('#missionAuftrag').value = '';
+    await ladeNacht();
+  }catch(e){
+    missionFehler(e.message);
+  }finally{
+    missionBtn.disabled = false;
+    missionBtn.textContent = 'Mission anlegen & starten';
+  }
+};
+
+const missionList = $('#missionList');
+if (missionList) missionList.addEventListener('click', async e => {
+  const box = e.target.closest('[data-kennung]');
+  if(!box) return;
+  const kennung = box.dataset.kennung;
+  if(e.target.closest('[data-mission-lauf]')){
+    const b = e.target.closest('button');
+    b.disabled = true;
+    try{
+      const r = await fetch('/api/nexus/mission/' + encodeURIComponent(kennung) + '/lauf?max_tasks=10', {method:'POST'});
+      const d = await r.json();
+      if(!d.ok) throw new Error(d.fehler || 'Mission konnte nicht laufen');
+      await ladeNacht();
+    }catch(err){
+      missionFehler(err.message);
+      b.disabled = false;
+    }
+    return;
+  }
+  const berichtBtn = e.target.closest('[data-mission-bericht]');
+  if(!berichtBtn) return;
+  berichtBtn.disabled = true;
+  try{
+    const r = await fetch('/api/nexus/mission/' + encodeURIComponent(kennung), {cache:'no-store'});
+    const d = await r.json();
+    if(!d.ok) throw new Error(d.fehler || 'Bericht konnte nicht geladen werden');
+    const bericht = d.mission?.bericht || {};
+    const pre = box.querySelector('.mission-report');
+    if(pre){
+      pre.textContent = bericht.text || bericht.fehler || 'Kein Bericht gespeichert.';
+      pre.hidden = false;
+    }
+  }catch(err){
+    missionFehler(err.message);
+  }finally{
+    berichtBtn.disabled = false;
   }
 });
 

@@ -183,7 +183,8 @@ Artikelbasis, keine gemessene Trefferquote.
 
 ## 7. Nächster Schritt
 
-Phase 4: Missionen, Queue, Retry, Fortschritt, API und UI-Liste. Die Claims aus
-Phase 3 sind die Eingabe; Missionen müssen auf echten, offenen Fragen aufsetzen,
-nicht auf Demo-Aufträgen. Auf der Oracle-VM läuft weiterhin der alte Stand, bis
-dort gepullt und der Nachtlauf neu gestartet wird.
+Phase 4 ist umgesetzt: Die Claims sind die Eingabe für persistente Missionen
+mit drei Aufgaben, Lease, Retry und Bericht. Siehe [PHASE-4.md](PHASE-4.md).
+Die Missionen rufen keine neuen Quellen ab und ersetzen keine Semantik. Auf der
+Oracle-VM läuft weiterhin der alte Stand, bis dort gepullt und der Nachtlauf
+neu gestartet wird.

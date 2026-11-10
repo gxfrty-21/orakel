@@ -1,4 +1,4 @@
-"""CLI: ``python -m orakel.nexus status|hole|nacht|bewertung``."""
+"""CLI: ``python -m orakel.nexus status|hole|nacht|bewertung|mission``."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from .abruf import Abrufer, HttpCache
 from .bewertung import claims_auffrischen
 from .feeds import parse_feed
 from .hackernews import meldungen as hn_meldungen
+from .missionen import Missionen
 from .nacht import nachtlauf
 from .quellen import lade_register
 from .status import gesamt_status
@@ -92,6 +93,39 @@ def _bewertung(args: argparse.Namespace) -> int:
     return 0
 
 
+def _mission(args: argparse.Namespace) -> int:
+    missionen = Missionen(Facts(args.db))
+    try:
+        mission = missionen.anlegen(args.titel, args.auftrag, args.prioritaet)
+    except ValueError as exc:
+        print(json.dumps({"ok": False, "fehler": str(exc)}, ensure_ascii=False, indent=2))
+        return 2
+    ergebnis = missionen.weiterarbeiten(args.max, mission["kennung"]) if args.start else {}
+    print(json.dumps({"ok": True, "mission": ergebnis.get("mission") or
+                      Facts(args.db).nexus_mission(mission["kennung"]),
+                      "lauf": ergebnis}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _missionen(args: argparse.Namespace) -> int:
+    print(json.dumps({
+        "missionen": Facts(args.db).nexus_missionen(args.limit),
+        "statistik": Facts(args.db).nexus_mission_statistik(),
+    }, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _mission_lauf(args: argparse.Namespace) -> int:
+    db = Facts(args.db)
+    if args.kennung and db.nexus_mission(args.kennung) is None:
+        print(json.dumps({"ok": False, "fehler": f"Unbekannte Mission: {args.kennung}"},
+                         ensure_ascii=False, indent=2))
+        return 2
+    ergebnis = Missionen(db).weiterarbeiten(args.max, args.kennung)
+    print(json.dumps({"ok": True, **ergebnis}, ensure_ascii=False, indent=2))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m orakel.nexus")
     unter = parser.add_subparsers(dest="befehl", required=True)
@@ -129,6 +163,27 @@ def main(argv: list[str] | None = None) -> int:
     bewertung.add_argument("--db", default="orakel.db")
     bewertung.add_argument("--register", default=None)
     bewertung.set_defaults(funktion=_bewertung)
+
+    mission = unter.add_parser("mission", help="Mission anlegen und optional starten")
+    mission.add_argument("--db", default="orakel.db")
+    mission.add_argument("--titel", required=True)
+    mission.add_argument("--auftrag", required=True)
+    mission.add_argument("--prioritaet", choices=("niedrig", "mittel", "hoch", "kritisch"),
+                         default="mittel")
+    mission.add_argument("--start", action="store_true")
+    mission.add_argument("--max", type=int, default=10)
+    mission.set_defaults(funktion=_mission)
+
+    missionen = unter.add_parser("missionen", help="Missionen und Queue-Statistik anzeigen")
+    missionen.add_argument("--db", default="orakel.db")
+    missionen.add_argument("--limit", type=int, default=20)
+    missionen.set_defaults(funktion=_missionen)
+
+    mission_lauf = unter.add_parser("mission-lauf", help="Fällige Missionen ausführen")
+    mission_lauf.add_argument("--db", default="orakel.db")
+    mission_lauf.add_argument("--kennung", default=None)
+    mission_lauf.add_argument("--max", type=int, default=10)
+    mission_lauf.set_defaults(funktion=_mission_lauf)
 
     args = parser.parse_args(argv)
     return int(args.funktion(args))

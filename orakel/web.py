@@ -18,6 +18,7 @@ from .globe import STANDARD_ZEITRAUM, baue_globe
 from .intel import IntelNetz, auftrag_aendern, weiterleitung_aendern
 from .knowledge import Vault
 from .nexus.abruf import HttpCache
+from .nexus.missionen import Missionen
 from .nexus.quellen import lade_register
 from .nexus.status import gesamt_status
 from .paper import tick
@@ -150,6 +151,67 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
             "statistik": db.nexus_claim_statistik(),
             "reputation": db.nexus_quellen_reputation(),
         }, headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/nexus/missionen")
+    def nexus_missionen(limit: int = 20) -> JSONResponse:
+        cfg = load_config(cfg_pfad)
+        db = Facts(cfg.db_pfad)
+        grenze = max(1, min(int(limit), 100))
+        return JSONResponse({
+            "missionen": db.nexus_missionen(grenze),
+            "statistik": db.nexus_mission_statistik(),
+        }, headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/nexus/mission/{kennung}")
+    def nexus_mission(kennung: str) -> JSONResponse:
+        cfg = load_config(cfg_pfad)
+        mission = Facts(cfg.db_pfad).nexus_mission(kennung)
+        if mission is None:
+            return JSONResponse({"ok": False, "fehler": f"Unbekannte Mission: {kennung}"},
+                                status_code=404)
+        return JSONResponse({"ok": True, "mission": mission},
+                            headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/nexus/mission")
+    async def nexus_mission_anlegen(request: Request) -> JSONResponse:
+        cfg = load_config(cfg_pfad)
+        try:
+            daten = await request.json()
+        except Exception:
+            return JSONResponse({"ok": False, "fehler": "Ungültiger JSON-Body"},
+                                status_code=400)
+        if not isinstance(daten, dict):
+            return JSONResponse({"ok": False, "fehler": "Ungültiger JSON-Body"},
+                                status_code=400)
+        try:
+            mission = Missionen(Facts(cfg.db_pfad)).anlegen(
+                str(daten.get("titel") or ""), str(daten.get("auftrag") or ""),
+                str(daten.get("prioritaet") or "mittel"),
+            )
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+        except Exception as exc:
+            return JSONResponse({"ok": False, "fehler": type(exc).__name__},
+                                status_code=500)
+        return JSONResponse({"ok": True, "mission": mission}, status_code=201)
+
+    @app.post("/api/nexus/mission/{kennung}/lauf")
+    def nexus_mission_lauf(kennung: str, max_tasks: int = 10) -> JSONResponse:
+        cfg = load_config(cfg_pfad)
+        db = Facts(cfg.db_pfad)
+        if db.nexus_mission(kennung) is None:
+            return JSONResponse({"ok": False, "fehler": f"Unbekannte Mission: {kennung}"},
+                                status_code=404)
+        grenze = max(1, min(int(max_tasks), 50))
+        try:
+            ergebnis = Missionen(db).weiterarbeiten(max_tasks=grenze, kennung=kennung)
+        except Exception as exc:
+            db.ereignis("fehler", "Mission", f"{kennung} konnte nicht laufen: {exc}")
+            return JSONResponse({"ok": False, "fehler": type(exc).__name__},
+                                status_code=500)
+        return JSONResponse({"ok": True, **ergebnis,
+                             "mission": db.nexus_mission(kennung)},
+                            headers={"Cache-Control": "no-store"})
 
     @app.get("/api/health")
     def health() -> dict[str, Any]:

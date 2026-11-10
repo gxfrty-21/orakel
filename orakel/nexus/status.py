@@ -36,4 +36,8 @@ def gesamt_status(cache: HttpCache, quellen: list[Quelle],
             "widersprueche": db.nexus_widersprueche(8),
         }
         daten["reputation"] = db.nexus_quellen_reputation()[:12]
+        daten["missionen"] = {
+            "statistik": db.nexus_mission_statistik(),
+            "liste": db.nexus_missionen(20),
+        }
     return daten

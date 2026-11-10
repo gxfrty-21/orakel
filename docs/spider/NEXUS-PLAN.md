@@ -1,6 +1,6 @@
 # SPIDER INTELLIGENCE NEXUS — Bestandsaufnahme und Umsetzungsplan
 
-**Stand:** 9. November 2026
+**Stand:** 10. November 2026
 **Grundlage:** `orakel/spider.py`, `orakel/intel.py`, `orakel/knowledge.py`,
 `orakel/globe.py`, `orakel/web.py`, `orakel/scheduler.py`, `orakel/company/`,
 `migrations/001_company.sql`, `config.toml`, `orakel/web/static/`
@@ -117,15 +117,18 @@ Maßnahmen, Konferenzsitzungen, Raumzustand.
 Mitternachtskonferenz, Spider **einmal** beim Start, Intel-Netz bei jedem Takt,
 Company-Schicht optional. `POST /api/spider` startet einen Lauf manuell.
 
-**Für den Nexus relevant:** Es gibt keinen Zeitplan für Recherche, keine
-Warteschlange für Missionen und keine Wiederaufnahme abgebrochener Läufe.
+**Für den Nexus relevant:** Der Nachtlauf hat einen systemd-Zeitplan. Seit
+Phase 4 gibt es zusätzlich eine persistente Missionen-Queue mit Lease, Retry
+und Wiederaufnahme nach einem Neustart. Missionen werden über API/CLI oder den
+Web-Takt ausgeführt; sie entstehen nicht automatisch aus erfundenen Fragen.
 
 ### 2.7 Tests
 
-Aktuell **74 Tests grün**, darunter `tests/test_spider.py` (Parsing, Dubletten,
+Aktuell **167 Tests grün**, darunter `tests/test_spider.py` (Parsing, Dubletten,
 robots.txt-Verbot, Qualitätsstrafe, Volltext, Symbolzuordnung),
-`tests/test_intel.py` (Themen, Weiterleitungen, Auftragsfelder, Lernschleife)
-und `tests/test_globe.py`.
+`tests/test_intel.py` (Themen, Weiterleitungen, Auftragsfelder, Lernschleife),
+`tests/test_globe.py` und `tests/test_nexus_missionen.py` (Neustart, Retry,
+Dead-Letter, Lease, Priorität).
 
 ### 2.8 Was der Auftrag zusätzlich verlangt
 
@@ -136,7 +139,7 @@ und `tests/test_globe.py`.
 | Textähnlichkeit, kopierte Meldungen | nur Titel-Hash | klein (SimHash/MinHash) |
 | Desinformations-Heuristiken | nur Sensationswörter | klein–mittel |
 | Prioritätsstufen KRITISCH/HOCH/MITTEL/NIEDRIG | nur Relevanz 0–1 | klein |
-| Missionen mit Zerlegung und Fortschritt | nur Einzelaufträge | mittel |
+| Missionen mit Zerlegung und Fortschritt | persistent, drei Schritte (Phase 4) | erledigt |
 | Gegenargument-Agent | Feld „Risiko" im Auftrag | mittel |
 | Wissensgraph | abgeleitet, nicht persistiert | mittel |
 | Prognosekontrolle mit Trefferquote | Lernschleife ohne Statistik | klein–mittel |
@@ -298,9 +301,11 @@ Neue Datei `orakel/web/static/nexus3d.js`, Ansicht `#v-nexus`:
 zuletzt — eine schöne Hülle ohne echte Daten wäre genau die verbotene
 Dekoration.
 
-**Stand 10. November 2026:** Phasen 1–3 sind lokal umgesetzt und getestet
+**Stand 10. November 2026:** Phasen 1–4 sind lokal umgesetzt und getestet
 (siehe [PHASE-1.md](PHASE-1.md), [PHASE-2.md](PHASE-2.md),
-[PHASE-3.md](PHASE-3.md)). Auf der Oracle-VM läuft noch der alte Stand; die
+[PHASE-3.md](PHASE-3.md), [PHASE-4.md](PHASE-4.md)). Phase 4 liefert die
+persistente Missionen-Queue, aber noch nicht die 15 Agentenrollen oder den
+Gegenargument-Agenten. Auf der Oracle-VM läuft noch der alte Stand; die
 Migration ist vorbereitet, aber nicht ausgeführt.
 
 ---

@@ -1,6 +1,6 @@
 # Nachtbetrieb — was automatisch läuft und was nicht
 
-**Stand:** 9. November 2026
+**Stand:** 10. November 2026
 **Grundlage:** `orakel/nexus/nacht.py` · `deploy/orakel-nacht.service` ·
 `deploy/orakel-nacht.timer` · `deploy/orakel-nacht-fail.service` ·
 `scripts/oracle-nacht-install.sh`
@@ -56,6 +56,16 @@ verstanden zu haben.
 Der Lauf ist damit ehrlich beschrieben: Er hält Artikel, Cache, Claims und
 Backup aktuell und protokolliert, was er gesehen hat — er erfindet keine
 Erkenntnisse.
+
+### Missionen im Takt
+
+Phase 4 ergänzt eine persistente Missionen-Queue. Ist der Web-Takt aktiv
+(`paper.takt_aktiv = true`), führt `scheduler.takt_schritt` bei jedem Takt
+höchstens fünf fällige Missionen-Aufgaben aus. Ohne aktiven Takt laufen
+Missionen nur über `POST /api/nexus/mission/{kennung}/lauf` oder die CLI
+`python -m orakel.nexus mission-lauf`. Der Nachtlauf selbst legt keine
+Missionen an; es gibt keinen Generator, der sich Fragen ausdenkt. Details:
+[PHASE-4.md](PHASE-4.md).
 
 ---
 

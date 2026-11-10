@@ -94,6 +94,26 @@ button.li:hover{background:var(--panel2)}
 .ordCtl select:focus-visible,.ordCtl textarea:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
 .ordCtl .toggle{align-self:flex-start}
 .ordCtl :disabled{opacity:.55}
+/* Missionen: Anlage, Fortschritt und Bericht */
+.mission-form{display:grid;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.mission-form label{display:flex;flex-direction:column;gap:4px;font-size:10.5px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--dim)}
+.mission-form input,.mission-form textarea,.mission-form select{width:100%;background:var(--panel2);
+  border:1px solid var(--line2);border-radius:4px;padding:7px 9px;color:var(--fg);
+  font-family:var(--sans);font-size:12.5px;line-height:1.4}
+.mission-form textarea{resize:vertical;min-height:54px}
+.mission-form input:focus-visible,.mission-form textarea:focus-visible,.mission-form select:focus-visible{
+  outline:1px solid var(--accent);outline-offset:1px}
+.mission-row{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.mission-row label{min-width:150px;flex:0 1 220px}
+.li.mission{flex-direction:column;align-items:stretch;gap:7px}
+.mission-bar{height:5px;background:var(--line);border-radius:3px;overflow:hidden}
+.mission-bar i{display:block;height:100%;background:var(--accent)}
+.mission-meta{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.mission-actions{display:flex;gap:6px;flex-wrap:wrap}
+.mission-report{margin:2px 0 0;padding:9px 10px;background:#080b0f;border:1px solid var(--line);
+  border-radius:4px;color:var(--muted);font-family:var(--mono);font-size:11.5px;line-height:1.5;
+  white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto}
 .pad{padding:14px 16px}
 .card{padding:16px;display:flex;flex-direction:column;gap:10px}
 /* Nachtbetrieb im Spider-Tab: KPIs ohne Außenabstand, Detailzeile darunter */
