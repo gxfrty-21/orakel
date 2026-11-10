@@ -184,8 +184,14 @@ git diff --check
 python -m orakel.nexus --help
 ```
 
-Die HTTP-Routen werden separat mit einer temporären SQLite-Datenbank geprüft;
-die UI wurde in diesem Lauf nicht visuell im Browser geöffnet.
+Die HTTP-Routen wurden separat mit einer temporären SQLite-Datenbank geprüft.
+Die Phase-6-Oberfläche wurde im Cloud-Browser bei 432 px visuell geprüft:
+gefüllter Graph mit vier Knoten und vier Kanten, Prognoseliste, Formularanlage
+und echter Leerzustand. Dabei wurden drei Darstellungsfehler behoben: die
+doppelte Graph-Leermeldung, die dreifache Prognose-Leermeldung und die auf
+schmalen Panels abgeschnittene Trefferspalte. Die Desktop-Breite wurde nicht
+visuell geprüft, weil die Playwright-Viewport-Steuerung mit einem internen
+`options.mode`-Fehler abbrach.
 
 ---
 

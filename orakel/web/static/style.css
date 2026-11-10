@@ -122,6 +122,9 @@ button.li:hover{background:var(--panel2)}
 #graphNodes .li b,#kalibrierungList .li b{overflow-wrap:anywhere}
 @media (max-width:520px){
   #graphWindow .tab{padding:3px 7px}
+  /* Kalibrierung: Trefferzahl ist auf schmalen Panels redundant zur Quote. */
+  #kalibrierungKlassen th:nth-child(3),
+  #kalibrierungKlassen td:nth-child(3){display:none}
 }
 .pad{padding:14px 16px}
 .card{padding:16px;display:flex;flex-direction:column;gap:10px}

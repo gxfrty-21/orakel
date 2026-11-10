@@ -595,7 +595,7 @@ function zeichneGraph(){
   $('#graphEdges').innerHTML = kanten.length ? `<table class="tbl"><thead><tr><th>Von</th><th>Nach</th><th>Art</th><th class="m">Sicherheit</th></tr></thead><tbody>
     ${kanten.map(k=>`<tr><td style="white-space:normal">${esc(label(k.von))}</td><td style="white-space:normal">${esc(label(k.nach))}</td>
       <td>${esc(k.art)}</td><td class="m">${num(k.sicherheit,2)}</td></tr>`).join('')}</tbody></table>`
-    : `<div class="empty">${esc(d.hinweis || 'Noch keine Kanten.')}</div>`;
+    : (knoten.length ? `<div class="empty">${esc(d.hinweis || 'Noch keine Kanten.')}</div>` : '');
 }
 
 async function ladeKalibrierung(){
@@ -645,11 +645,11 @@ function zeichneKalibrierung(){
     <div class="li"><span><b style="font-weight:400">${esc(f.aussage)}</b>
       <small>${esc(f.kennung)} · ${esc(f.symbol || 'ohne Symbol')} · ${num(f.konfidenz,2)} Konfidenz</small></span>
       <span class="pill ${statusPill(f)}">${esc(statusText(f))}</span></div>`).join('')
-    : `<div class="empty">${esc(d.hinweis || 'Noch keine Prognose.')}</div>`;
+    : '<div class="empty">Noch keine Prognose. Neue Marktprognosen erscheinen hier.</div>';
   const klassen = d.kalibrierungsklassen || [];
   $('#kalibrierungKlassen').innerHTML = klassen.some(k=>k.n) ? `<table class="tbl"><thead><tr><th>Konfidenz</th><th class="m">n</th><th class="m">Treffer</th><th class="m">Quote</th><th class="m">Brier</th></tr></thead><tbody>
     ${klassen.map(k=>`<tr><td>${esc(k.klasse)}</td><td class="m">${num(k.n,0)}</td><td class="m">${num(k.treffer,0)}</td><td class="m">${k.quote==null?'–':pct(k.quote*100,1)}</td><td class="m">${k.brier==null?'–':num(k.brier,4)}</td></tr>`).join('')}</tbody></table>`
-    : '<div class="empty">Noch keine geprüfte Prognose. Die Klassen bleiben leer, bis echte Kerzen nach Fälligkeit vorliegen.</div>';
+    : '<div class="empty">Noch keine Kalibrierungsklassen. Sie füllen sich erst mit geprüften Prognosen.</div>';
   $('#kalibrierungHinweis').textContent = d.hinweis || '';
 }
 
