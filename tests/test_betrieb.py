@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from orakel.betrieb import Betrieb
+from orakel.betrieb import Betrieb, betrieb_health
 from orakel.db import Facts
 
 START = datetime(2026, 11, 10, 0, 0, tzinfo=timezone.utc)
@@ -107,6 +107,16 @@ def test_ressourcengrenze_ueberspringt_schreibintensiven_job(cfg):
     assert any("Datenbank" in w["text"] for w in daten["warnungen"])
     assert daten["letzte_laeufe"][0]["status"] == "uebersprungen"
     assert daten["letzte_laeufe"][0]["fehler"].startswith("Datenbank")
+
+
+def test_health_zaehlt_info_hinweise_nicht_als_warnung(cfg):
+    db = Facts(cfg.db_pfad)
+
+    daten = betrieb_health(cfg, db)
+
+    assert daten["status"] == "aus"
+    assert daten["warnungen"] == 0
+    assert daten["hinweise"] == 1
 
 
 def test_monitoring_liefert_limits_protokoll_und_aktiven_takt(cfg):

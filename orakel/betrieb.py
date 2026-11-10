@@ -600,11 +600,15 @@ def betrieb_status(cfg: Config, db: Facts,
 def betrieb_health(cfg: Config, db: Facts) -> dict[str, Any]:
     """Kompakte, nicht geheime Betriebszeile für /api/health."""
     daten = betrieb_status(cfg, db)
+    warnungen = daten["warnungen"]
     return {
         "status": daten["takt"]["status"],
         "letzter_takt": daten["takt"]["letzter"],
         "jobs": len(daten["jobs"]),
-        "warnungen": len(daten["warnungen"]),
+        # Info-Hinweise wie der bewusst deaktivierte Takt sind keine Warnungen.
+        "warnungen": sum(1 for w in warnungen
+                         if w.get("stufe") in ("warnung", "fehler")),
+        "hinweise": sum(1 for w in warnungen if w.get("stufe") == "info"),
         "db_mb": daten["ressourcen"]["db_mb"],
         "rss_mb": daten["ressourcen"].get("rss_mb"),
     }
