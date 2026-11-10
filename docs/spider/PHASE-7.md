@@ -165,6 +165,6 @@ Visuelle Prüfung im Cloud-Browser bei **432 px**:
 
 ## 7. Nächster Schritt
 
-Phase 8: Dauerbetrieb, Zeitplan, Backoff, Ressourcenlimits und Monitoring.
-Vorher bleibt die Phase-7-Ansicht lokal geprüft; ein visueller Desktop-Test
-steht noch aus.
+Phase 8 ist umgesetzt: Dauerbetrieb, Zeitplan, Backoff, Ressourcenlimits und
+Monitoring, dokumentiert in [PHASE-8.md](PHASE-8.md). Ein visueller Desktop-Test
+der Phase-7-Ansicht steht weiterhin aus.

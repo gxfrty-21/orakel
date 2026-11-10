@@ -56,6 +56,24 @@ gleichzeitig schreibenden Maschinen; nicht horizontal skalieren.
    Benutzer und Passwort. Das erste TLS-Zertifikat holt Caddy automatisch,
    sobald die Domain korrekt zeigt.
 
+### Dauerbetrieb aktivieren
+
+Der Hintergrund-Takt ist standardmäßig aus. In `.env`:
+
+```bash
+ORAKEL_TAKT=1
+```
+
+Danach `docker compose up -d --force-recreate orakel`. Der Takt plant Paper,
+Konferenz, Spider, Intelligence und Missionen; Fehler bekommen persistenten
+Backoff. Grenzen und Intervalle stehen in `[betrieb]` in `config.toml`.
+Status im Container:
+
+```bash
+docker compose exec -T orakel python -m orakel betrieb
+curl -u BENUTZER:PASSWORT https://DEINE-DOMAIN/api/betrieb
+```
+
 ## Wo die Daten liegen
 
 Im Volume `orakel_data`, im Container unter `/data`:
@@ -133,8 +151,9 @@ docker compose up -d --force-recreate orakel
   erreichbar sind ausschließlich Caddy auf 80/443.
 - Es gibt genau ein Login, keine Rollen und keine Zwei-Faktor-Anmeldung. Für
   mehrere Benutzer gehört eine Identity-Aware-Proxy-Schicht davor.
-- `/api/health` ist ohne Login erreichbar und nennt nur Laufzeitstatus und
-  Artikelzahl.
+- `/api/health` ist ohne Login erreichbar und nennt Laufzeitstatus, Artikelzahl
+  und eine kompakte Betriebszeile. Der vollständige Plan liegt hinter dem Login
+  unter `/api/betrieb`.
 - `.env` niemals committen oder weitergeben. Passwortwechsel: `.env` ändern,
   `docker compose up -d --force-recreate orakel`.
 - Das Projekt bleibt **Paper-Trading**. Es existiert kein Codepfad zu einer

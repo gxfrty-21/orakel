@@ -304,23 +304,25 @@ Quelle mitgeliefert wird.
 | **5** | 15 Agentenrollen, Gegenargument-Agent, Berichte | 3–4 T | Bericht je Mission mit Gegenargumenten |
 | **6** | Wissensgraph persistiert, Prognosekontrolle mit Trefferquote | 3 T | Graph aus DB, Kalibrierung sichtbar |
 | **7** | 3D-Nexus mit Spinne, an echte Events gekoppelt | **umgesetzt** | Blick in den Raum zeigt echten Zustand |
-| **8** | Dauerbetrieb: Zeitplan, Backoff, Ressourcenlimits, Monitoring | 2 T | 24 h Lauf ohne Eingriff, Logs auswertbar |
+| **8** | Dauerbetrieb: Zeitplan, Backoff, Ressourcenlimits, Monitoring | **umgesetzt** | 24-h-Schleife simuliert, Logs auswertbar |
 
 **Summe: 21–25 Arbeitstage.** Phase 7 war der größte Einzelposten — eine
 schöne Hülle ohne echte Daten wäre genau die verbotene Dekoration. Sie liest
 jetzt ausschließlich den persistierten Graphen und echte Ereigniszeitpunkte.
 
-**Stand 10. November 2026:** Phasen 1–7 sind lokal umgesetzt und getestet
+**Stand 10. November 2026:** Phasen 1–8 sind lokal umgesetzt und getestet
 (siehe [PHASE-1.md](PHASE-1.md), [PHASE-2.md](PHASE-2.md),
 [PHASE-3.md](PHASE-3.md), [PHASE-4.md](PHASE-4.md),
 [PHASE-5.md](PHASE-5.md), [PHASE-6.md](PHASE-6.md),
-[PHASE-7.md](PHASE-7.md)). Phase 5 liefert 15 deterministische Prüfrollen,
+[PHASE-7.md](PHASE-7.md), [PHASE-8.md](PHASE-8.md)). Phase 5 liefert 15 deterministische Prüfrollen,
 Gegenargumente sowie die Vault-/Intel-Übergabe. Phase 6 persistiert den
 Wissensgraph und prüft manuelle sowie importierte Prognosen gegen echte
 M15-Kerzen. Phase 7 zeigt den Graphen im 3D-Nexus mit fester Kamera und einer
-Spinne, deren Beine ausschließlich bei laufender Arbeit bewegt werden. Auf der
-Oracle-VM läuft noch der alte Stand; die Migration ist vorbereitet, aber nicht
-ausgeführt.
+Spinne, deren Beine ausschließlich bei laufender Arbeit bewegt werden.
+Phase 8 plant die wiederkehrenden Jobs persistent, begrenzt Backoff und
+Ressourcen und protokolliert jeden Lauf in SQLite. Der Dauerbetrieb bleibt
+opt-in (`ORAKEL_TAKT=1`); ein echter 24-Stunden-Soak und die Aktivierung auf
+der Zielumgebung stehen noch aus.
 
 ---
 

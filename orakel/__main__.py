@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -152,23 +153,59 @@ def cmd_paper(args: argparse.Namespace) -> int:
 
 
 def cmd_daemon(args: argparse.Namespace) -> int:
-    from .scheduler import takt_schritt
+    from .betrieb import Betrieb
 
     cfg = _cfg(args.config)
     db = Facts(cfg.db_pfad)
-    intervall = max(5, int(cfg["paper"].get("takt_sekunden", 60)))
+    betrieb = Betrieb(cfg, db)
+    intervall = betrieb.takt_sekunden
     print(f"Dauerbetrieb: Takt alle {intervall} s. Beenden mit Strg+C.")
     erster = True
     try:
         while True:
-            ergebnis = takt_schritt(cfg, db, mit_spider=erster and args.mit_spider)
+            ergebnis = betrieb.takt(
+                erzwungen={"spider"} if erster and args.mit_spider else None)
             erster = False
             konto = ergebnis.get("paper", {}).get("konto", {})
-            print(f"[{ergebnis.get('paper', {}).get('zeit', '')}] Equity "
-                  f"{konto.get('equity', '–')} · Positionen {konto.get('positionen', '–')}")
+            if konto:
+                print(f"[{ergebnis.get('paper', {}).get('zeit', '')}] Equity "
+                      f"{konto.get('equity', '–')} · Positionen "
+                      f"{konto.get('positionen', '–')}")
+            b = ergebnis.get("betrieb", {})
+            print(f"  Takt {b.get('takt_nummer', '–')}: "
+                  f"{b.get('status', '–')} · {b.get('dauer_ms', 0)} ms")
             time.sleep(intervall)
     except KeyboardInterrupt:
         print("Dauerbetrieb beendet.")
+    return 0
+
+
+def cmd_betrieb(args: argparse.Namespace) -> int:
+    from .betrieb import betrieb_status
+
+    cfg = _cfg(args.config)
+    daten = betrieb_status(cfg, Facts(cfg.db_pfad))
+    if args.json:
+        print(json.dumps(daten, ensure_ascii=False, indent=2))
+        return 0
+    takt = daten["takt"]
+    res = daten["ressourcen"]
+    grenzen = res["limits"]
+    print(f"Takt: {takt['status']} · zuletzt {takt['letzter'] or 'nie'} · "
+          f"alle {takt['intervall_sekunden']} s")
+    print(f"Ressourcen: DB {res['db_mb']:.1f}/{grenzen['max_db_mb']:g} MB · "
+          f"RSS {res['rss_mb'] if res['rss_mb'] is not None else '–'}/"
+          f"{grenzen['max_rss_mb']:g} MB · frei {res['freier_speicher_mb'] or '–'} MB")
+    for job in daten["jobs"]:
+        naechster = job["naechster_versuch"] or 'sofort'
+        print(f"  {job['name']:<12} {job['zustand']:<10} "
+              f"Intervall {job['intervall_sekunden']:>6} s · nächster {naechster}"
+              + (f" · Fehler {job['fehlschluesse']}" if job["fehlschluesse"] else ""))
+    for warnung in daten["warnungen"]:
+        print(f"  [{warnung['stufe']}] {warnung['text']}")
+    print(f"Letzte 24 h: {daten['statistik']['gesamt']} Läufe · "
+          f"{daten['statistik']['fehler']} Fehler · "
+          f"{daten['statistik']['uebersprungen']} übersprungen")
     return 0
 
 
@@ -219,6 +256,10 @@ def main(argv: list[str] | None = None) -> int:
     da = sub.add_parser("daemon", help="Dauerbetrieb: Paper-Takt und Mitternachtskonferenz")
     da.add_argument("--mit-spider", action="store_true")
     da.set_defaults(func=cmd_daemon)
+
+    be = sub.add_parser("betrieb", help="Betriebsplan, Backoff und Ressourcen anzeigen")
+    be.add_argument("--json", action="store_true", help="vollständige Monitoringdaten")
+    be.set_defaults(func=cmd_betrieb)
 
     k = sub.add_parser("konferenz", help="Mitternachtskonferenz jetzt abhalten")
     k.set_defaults(func=cmd_konferenz)

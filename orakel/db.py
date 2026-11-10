@@ -116,6 +116,20 @@ CREATE TABLE IF NOT EXISTS zustand (
     wert TEXT NOT NULL
 );
 
+-- Phase 8: protokollierter Dauerbetrieb. Jeder Job-Lauf wird mit Dauer,
+-- Status und kompakten Details gespeichert; das ist die auswertbare Logquelle.
+CREATE TABLE IF NOT EXISTS betrieb_laeufe (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    zeit TEXT NOT NULL,
+    job TEXT NOT NULL,
+    status TEXT NOT NULL,
+    dauer_ms INTEGER NOT NULL DEFAULT 0,
+    fehler TEXT NOT NULL DEFAULT '',
+    details TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS ix_betrieb_laeufe_zeit ON betrieb_laeufe(zeit);
+CREATE INDEX IF NOT EXISTS ix_betrieb_laeufe_job ON betrieb_laeufe(job, status);
+
 CREATE TABLE IF NOT EXISTS artikel (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     geholt TEXT NOT NULL,
@@ -1469,3 +1483,60 @@ class Facts:
     def zustand_loeschen(self, schluessel: str) -> None:
         with self.conn() as c:
             c.execute("DELETE FROM zustand WHERE schluessel=?", (schluessel,))
+
+    # ---------- Betrieb (Phase 8) ----------
+    def betrieb_lauf_speichern(
+        self, job: str, status: str, dauer_ms: int = 0,
+        fehler: str = "", details: dict[str, Any] | None = None,
+    ) -> int:
+        with self.conn() as c:
+            cur = c.execute(
+                "INSERT INTO betrieb_laeufe(zeit,job,status,dauer_ms,fehler,details)"
+                " VALUES (?,?,?,?,?,?)",
+                (jetzt(), str(job)[:80], str(status)[:30], max(0, int(dauer_ms)),
+                 str(fehler or "")[:1000],
+                 json.dumps(details or {}, ensure_ascii=False, sort_keys=True)[:8000]),
+            )
+            return int(cur.lastrowid or 0)
+
+    def betrieb_laeufe(self, limit: int = 50) -> list[dict[str, Any]]:
+        grenze = max(1, min(int(limit), 500))
+        with self.conn() as c:
+            zeilen = list(c.execute(
+                "SELECT * FROM betrieb_laeufe ORDER BY id DESC LIMIT ?", (grenze,)
+            ))
+        raus: list[dict[str, Any]] = []
+        for zeile in zeilen:
+            eintrag = dict(zeile)
+            eintrag["details"] = _json_wert(eintrag.get("details") or "{}", {})
+            raus.append(eintrag)
+        return raus
+
+    def betrieb_laeufe_trim(self, max_laeufe: int = 1000) -> int:
+        """Hält das Jobprotokoll beschränkt; Fachdaten werden nicht berührt."""
+        grenze = max(100, int(max_laeufe))
+        with self.conn() as c:
+            cur = c.execute(
+                "DELETE FROM betrieb_laeufe WHERE id NOT IN ("
+                "SELECT id FROM betrieb_laeufe ORDER BY id DESC LIMIT ?)",
+                (grenze,),
+            )
+            return int(cur.rowcount or 0)
+
+    def betrieb_statistik(self, stunden: int = 24) -> dict[str, Any]:
+        seit = (datetime.now(timezone.utc) - timedelta(hours=max(1, int(stunden)))
+                ).isoformat(timespec="seconds")
+        with self.conn() as c:
+            gesamt = int(c.execute(
+                "SELECT COUNT(*) n FROM betrieb_laeufe WHERE zeit>=?", (seit,)
+            ).fetchone()["n"])
+            fehler = int(c.execute(
+                "SELECT COUNT(*) n FROM betrieb_laeufe WHERE zeit>=? AND status='fehler'",
+                (seit,),
+            ).fetchone()["n"])
+            uebersprungen = int(c.execute(
+                "SELECT COUNT(*) n FROM betrieb_laeufe WHERE zeit>=? AND status='uebersprungen'",
+                (seit,),
+            ).fetchone()["n"])
+        return {"stunden": int(stunden), "gesamt": gesamt, "fehler": fehler,
+                "uebersprungen": uebersprungen}

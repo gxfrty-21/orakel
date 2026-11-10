@@ -38,6 +38,14 @@ def cfg(tmp_path: Path) -> Config:
         },
         "paper": {"order_freigabe": False, "broker": "csv",
                   "takt_sekunden": 60, "takt_aktiv": False},
+        "betrieb": {
+            "spider_intervall_minuten": 360, "unternehmen_intervall_minuten": 60,
+            "max_missionen_pro_takt": 3, "backoff_basis_sekunden": 60,
+            "backoff_max_sekunden": 3600, "spider_backoff_max_sekunden": 3600,
+            "grenze_pause_sekunden": 300, "max_takt_sekunden": 240,
+            "max_db_mb": 512, "max_rss_mb": 768,
+            "min_freier_speicher_mb": 128, "max_laeufe": 1000,
+        },
         "spider": {
             "aktiv": True, "max_artikel_pro_lauf": 5, "max_notizen_pro_lauf": 3,
             "min_qualitaet": 0.2, "timeout_sekunden": 5, "min_abstand_sekunden": 0,

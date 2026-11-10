@@ -1,4 +1,4 @@
-"""Dauerbetrieb: Paper-Takt und Mitternachtskonferenz, auch ohne offenes Dashboard."""
+"""Dauerbetrieb: geplanter Betriebstakt, auch ohne offenes Dashboard."""
 
 from __future__ import annotations
 
@@ -9,13 +9,9 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from . import agents
+from .betrieb import Betrieb
 from .config import Config, RisikoGrenzen
 from .db import Facts
-from .intel import IntelNetz
-from .nexus.missionen import Missionen
-from .paper import tick
-from .spider import Spider
-from .knowledge import Vault
 
 
 def _validierungen_als_dicts(db: Facts) -> list[dict[str, Any]]:
@@ -70,42 +66,17 @@ def unternehmen_takt(cfg: Config, db: Facts, max_tasks: int | None = None) -> di
     return CompanyRuntime(cfg, db).run(max_tasks=max_tasks)
 
 
-def takt_schritt(cfg: Config, db: Facts, mit_spider: bool = False) -> dict[str, Any]:
-    ergebnis: dict[str, Any] = {}
-    try:
-        ergebnis["paper"] = tick(cfg, db)
-    except Exception as exc:
-        db.ereignis("fehler", "Takt", f"Paper-Takt fehlgeschlagen: {exc}")
-        ergebnis["paper"] = {"fehler": str(exc)}
-    try:
-        ergebnis["konferenz"] = konferenz_nachholen(cfg, db)
-    except Exception as exc:
-        db.ereignis("fehler", "Takt", f"Konferenz fehlgeschlagen: {exc}")
-        ergebnis["konferenz"] = None
-    if mit_spider:
-        try:
-            ergebnis["spider"] = Spider(cfg, db, Vault(cfg.vault_ordner)).lauf()
-        except Exception as exc:
-            db.ereignis("fehler", "Takt", f"Spider fehlgeschlagen: {exc}")
-    try:
-        netz = IntelNetz(cfg, db, Vault(cfg.vault_ordner))
-        ids = (ergebnis.get("spider") or {}).get("neue_ids") or []
-        ergebnis["intel"] = {**netz.verarbeite(ids), **netz.lernschleife()}
-    except Exception as exc:
-        db.ereignis("fehler", "Takt", f"Intelligence fehlgeschlagen: {exc}")
-    try:
-        ergebnis["missionen"] = Missionen(
-            db, vault=Vault(cfg.vault_ordner)).weiterarbeiten(max_tasks=5)
-    except Exception as exc:
-        db.ereignis("fehler", "Takt", f"Missionen fehlgeschlagen: {exc}")
-        ergebnis["missionen"] = {"fehler": str(exc)}
-    if cfg.abschnitt("unternehmen").get("aktiv", False):
-        try:
-            ergebnis["unternehmen"] = unternehmen_takt(cfg, db)
-        except Exception as exc:
-            db.ereignis("fehler", "Takt", f"Company-Schicht fehlgeschlagen: {exc}")
-            ergebnis["unternehmen"] = {"fehler": str(exc)}
-    return ergebnis
+def takt_schritt(cfg: Config, db: Facts, mit_spider: bool = False,
+                 jetzt_wert: Any = None) -> dict[str, Any]:
+    """Ein geplanter Betriebstakt.
+
+    Die Jobs laufen nicht mehr ungeprüft nacheinander: ``Betrieb`` prüft
+    Intervall, Backoff und Ressourcenbudget. ``mit_spider`` erzwingt den
+    ersten Recherche-Lauf, der bisher beim Start üblich war.
+    """
+    jetzt = (lambda: jetzt_wert) if jetzt_wert is not None else None
+    return Betrieb(cfg, db, jetzt_funktion=jetzt).takt(
+        erzwungen={"spider"} if mit_spider else None)
 
 
 class Takt(threading.Thread):
@@ -118,14 +89,21 @@ class Takt(threading.Thread):
         self.mit_spider = mit_spider
         self._stopp = threading.Event()
         self.letzter_lauf: dict[str, Any] = {}
+        self.betrieb = Betrieb(cfg, db)
 
     def run(self) -> None:  # pragma: no cover - Zeitverhalten
         intervall = max(5, int(self.cfg["paper"].get("takt_sekunden", 60)))
+        erzwungen = {"spider"} if self.mit_spider else None
         while not self._stopp.is_set():
-            self.letzter_lauf = takt_schritt(self.cfg, self.db, self.mit_spider)
-            self._stopp.wait(intervall)
-            # Nach dem ersten Durchlauf reicht der günstige Takt ohne Spider
-            self.mit_spider = False
+            beginn = time.monotonic()
+            try:
+                self.letzter_lauf = self.betrieb.takt(erzwungen=erzwungen)
+            except Exception as exc:
+                self.db.ereignis("fehler", "Takt", f"Betriebstakt abgebrochen: {exc}")
+            erzwungen = None
+            # Ein langer Takt verlängert den Abstand nicht zusätzlich.
+            wartezeit = max(1.0, intervall - (time.monotonic() - beginn))
+            self._stopp.wait(wartezeit)
 
     def stoppe(self) -> None:
         self._stopp.set()

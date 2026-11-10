@@ -166,6 +166,17 @@ einem manuellen CLI-Deploy ohne GitHub-Status läuft er nicht; dann fehlt auch
 `RAILWAY_GIT_COMMIT_SHA`. Für diesen Service ist GitHub der einzige automatische
 Deploy-Weg.
 
+## Dauerbetrieb (Phase 8)
+
+Der Takt bleibt standardmäßig aus. Zum Aktivieren im Railway-Service
+`ORAKEL_TAKT=1` setzen und neu deployen. Danach zeigt
+`/api/health` eine kompakte Betriebszeile; der vollständige Plan mit Backoff
+und Ressourcenwerten liegt hinter dem Login unter `/api/betrieb`.
+
+Der Railway-Healthcheck bleibt bewusst nur auf HTTP 200. Ein Job im Backoff
+darf keinen Container-Neustart-Loop auslösen. Ein echter 24-Stunden-Soak und
+ein externer Watchdog für den Takt stehen noch aus.
+
 ## Wichtig: `railway.json` ist Legacy
 
 `railway.json` liegt im Projekt, weil es für diese Variante angefordert wurde.
@@ -199,7 +210,7 @@ einen neuen Railway-Service ist sie nicht die Quelle der Wahrheit.
    | `ORAKEL_AUTH_USER` | Benutzername für das Dashboard |
    | `ORAKEL_AUTH_PASS` | starkes Passwort, als Secret/Sealed markieren |
    | `ORAKEL_DATA` | `/data` |
-   | `ORAKEL_TAKT` | `0` (kein Hintergrund-Takt) |
+   | `ORAKEL_TAKT` | `0` (kein Hintergrund-Takt; für Phase 8 auf `1` setzen) |
    | `PORT` | `3000` |
    | `RAILWAY_RUN_UID` | `0` (siehe Sicherheit) |
 
@@ -283,8 +294,9 @@ für Volumes zusätzlich eigene Backups an; die Verfügbarkeit hängt vom Plan a
 
 - Basic-Auth nur über HTTPS. Railway liefert TLS für die
   `*.up.railway.app`-Adresse.
-- `/api/health` ist absichtlich ohne Login erreichbar und nennt nur
-  Laufzeitstatus und Artikelzahl.
+- `/api/health` ist absichtlich ohne Login erreichbar und nennt Laufzeitstatus,
+  Artikelzahl und eine kompakte Betriebszeile. Der vollständige Plan liegt
+  hinter dem Login unter `/api/betrieb`.
 - Railway mountet Volumes als `root`. Deshalb ist für dieses non-root-Image
   `RAILWAY_RUN_UID=0` nötig; der Container läuft auf Railway damit als root.
   Das ist der offizielle Railway-Workaround für Volume-Images. Für diesen

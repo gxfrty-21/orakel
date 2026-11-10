@@ -66,6 +66,23 @@ broker = "csv"                     # csv | mock | mt5  (mt5 nur unter Windows)
 takt_sekunden = 60                 # Abstand des Paper-Takts im Dauerbetrieb
 takt_aktiv = false                 # true = Takt startet mit "orakel serve"
 
+[betrieb]
+# Phase 8: Dauerbetrieb. Der Takt selbst kommt aus [paper].takt_sekunden.
+# Der Spider läuft nicht mehr nur beim Start, sondern nach diesem Intervall.
+spider_intervall_minuten = 360
+unternehmen_intervall_minuten = 60
+max_missionen_pro_takt = 5
+backoff_basis_sekunden = 60
+backoff_max_sekunden = 3600
+spider_backoff_max_sekunden = 21600
+grenze_pause_sekunden = 300
+max_takt_sekunden = 240
+# Schreibintensive Jobs pausieren, bevor die Datenbank oder der Prozess vollläuft.
+max_db_mb = 512
+max_rss_mb = 768
+min_freier_speicher_mb = 256
+max_laeufe = 1000
+
 [unternehmen]
 # Phase 1: Profile, Queue, Policy. Standardmäßig aus, damit der bestehende
 # Paper-Takt unverändert bleibt. Explizit starten mit:

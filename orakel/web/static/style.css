@@ -557,3 +557,39 @@ button.li:hover{background:var(--panel2)}
   .n-live-dot{animation:none!important}
   #nexusCanvas{cursor:default}
 }
+
+/* ---------- Phase 8: Dauerbetrieb und Monitoring ---------- */
+.betrieb-view{max-width:1280px}
+.betrieb-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.betrieb-kicker{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--accent);margin-bottom:5px}
+.betrieb-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:start}
+.betrieb-res{gap:0;padding:0}
+.betrieb-res .tbl td:last-child{width:34%}
+.betrieb-res .bar{display:block;min-width:80px}
+.betrieb-view .tbl small{display:block;color:var(--dim);font-family:var(--mono);font-size:10px;margin-top:2px}
+.betrieb-note{display:flex;align-items:flex-start;gap:8px;padding:9px 0;border-bottom:1px solid var(--line);font-size:12px;line-height:1.45;color:var(--muted)}
+.betrieb-note:last-child{border-bottom:0}
+.betrieb-note .pill{flex:0 0 auto;margin-top:1px}
+.betrieb-note span:last-child{min-width:0;overflow-wrap:anywhere}
+@media (max-width:900px){.betrieb-grid{grid-template-columns:1fr}}
+.betrieb-fehler-mobil,.betrieb-mobil{display:none}
+@media (max-width:620px){
+  .betrieb-head .toggle{width:100%}
+  .betrieb-view .tbl{font-size:11px}
+  .betrieb-view .tbl th,.betrieb-view .tbl td{padding:7px 6px}
+  /* Auf schmalen Geräten zählt der Plan, nicht die letzte Erfolgsspalte. */
+  #betriebJobs th:nth-child(5),#betriebJobs td:nth-child(5),
+  #betriebJobs th:nth-child(6),#betriebJobs td:nth-child(6){display:none}
+  #betriebJobs .tbl{table-layout:fixed}
+  #betriebJobs th:nth-child(1){width:42%}
+  #betriebJobs th:nth-child(2){width:20%}
+  #betriebJobs th:nth-child(3){width:18%}
+  #betriebJobs th:nth-child(4){width:20%}
+  #betriebJobs th,#betriebJobs td{white-space:normal;overflow-wrap:anywhere;vertical-align:top}
+  #betriebJobs th{font-size:10px}
+  #betriebJobs td:first-child small{white-space:normal;overflow-wrap:anywhere}
+  .betrieb-fehler-mobil,.betrieb-mobil{display:inline}
+  .betrieb-mobil{color:var(--dim);font-family:var(--sans);font-size:10px}
+  .betrieb-res .tbl td{white-space:normal}
+  .betrieb-res .tbl td:last-child{display:none}
+}

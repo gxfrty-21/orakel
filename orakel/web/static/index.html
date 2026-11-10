@@ -7,7 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307090c'/%3E%3Ccircle cx='16' cy='16' r='8' fill='none' stroke='%235fe0c8' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/static/style.css?v=8">
+<link rel="stylesheet" href="/static/style.css?v=12">
 </head>
 <body>
 <div class="app">
@@ -30,6 +30,7 @@
     <button class="nav" data-v="research"><b>Research</b><small>Ablauf der Engine</small></button>
     <button class="nav" data-v="globe"><b>Weltkugel</b><small>Intelligence-Netzwerk</small></button>
     <button class="nav" data-v="nexus"><b>Nexus</b><small>3D-Raum und Spinne</small></button>
+    <button class="nav" data-v="betrieb"><b>Betrieb</b><small>Takt, Backoff, Grenzen</small></button>
     <button class="nav" data-v="ship"><b>Raumschiff</b><small>Abteilungen und Agenten</small></button>
     <button class="nav" data-v="spider"><b>Spider</b><small>Quellen und Erkenntnisse</small></button>
     <button class="nav" data-v="kb"><b>Wissensbank</b><small>Schlüsse aus Ergebnissen</small></button>
@@ -235,6 +236,36 @@
       </div>
     </section>
 
+    <section class="view betrieb-view" id="v-betrieb" hidden>
+      <div class="head betrieb-head">
+        <div>
+          <span class="betrieb-kicker">BETRIEB / DAUERLAUF</span>
+          <h1>Betrieb</h1>
+          <p class="sub">Zeitplan, Backoff und Ressourcen des Hintergrund-Takts. Die Werte kommen aus SQLite; ein ausgefallener Job wird als Fehler und nicht als Fortschritt angezeigt.</p>
+        </div>
+        <button type="button" class="toggle main" id="betriebRefresh">Aktualisieren</button>
+      </div>
+      <div class="kpis" id="betriebKpis"></div>
+      <div class="panel">
+        <div class="ph">Zeitplan<span class="sp"></span><span class="tag" id="betriebTag">–</span></div>
+        <div class="tw" id="betriebJobs"><div class="empty">Betriebsstatus wird geladen.</div></div>
+      </div>
+      <div class="betrieb-grid">
+        <div class="panel">
+          <div class="ph">Ressourcen<span class="sp"></span><span class="tag">harte Grenzen</span></div>
+          <div class="card betrieb-res" id="betriebRes"><div class="empty">Wird geladen.</div></div>
+        </div>
+        <div class="panel">
+          <div class="ph">Letzte Job-Läufe<span class="sp"></span><span class="tag">aus betrieb_laeufe</span></div>
+          <div class="list scroll" id="betriebLog"><div class="empty">Noch kein Takt ausgeführt.</div></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="ph">Hinweise<span class="sp"></span><span class="tag">keine erfundene Entwarnung</span></div>
+        <div class="card" id="betriebHinweise"><div class="empty">Wird geladen.</div></div>
+      </div>
+    </section>
+
     <section class="view" id="v-ship" hidden>
       <div><h1>Raumschiff</h1><p class="sub">Acht Abteilungen, je zehn Agenten. Jeder Raum zeigt, was im letzten Lauf tatsächlich passiert ist. Raum anklicken.</p></div>
       <div class="deck" id="deck"></div>
@@ -320,6 +351,6 @@
     </section>
   </main>
 </div>
-<script src="/static/app.js?v=9"></script>
+<script src="/static/app.js?v=12"></script>
 </body>
 </html>

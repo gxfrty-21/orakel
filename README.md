@@ -46,6 +46,25 @@ persistentem SQLite-Speicher im `/data`-Volume: siehe [DEPLOY.md](DEPLOY.md).
 Für Railway ohne eigenen Server, Caddy oder eigene Domain: siehe
 [RAILWAY.md](RAILWAY.md).
 
+### Phase 8: Dauerbetrieb und Monitoring
+
+Der Hintergrund-Takt ist bewusst **opt-in** (`serve --takt` oder
+`ORAKEL_TAKT=1`). Er plant Paper-Takt, Konferenz, Spider (standardmäßig alle
+sechs Stunden), Intelligence, Missionen und optional die Company-Schicht.
+Fehler erhalten einen persistenten exponentiellen Backoff; DB-, RSS- und
+Speichergrenzen pausieren schreibintensive Jobs, statt den Prozess volllaufen
+zu lassen. Jeder Lauf wird in `betrieb_laeufe` protokolliert.
+
+```bash
+python -m orakel betrieb           # Plan, Backoff, Ressourcen, letzte Läufe
+python -m orakel betrieb --json    # vollständige Monitoringdaten
+```
+
+Im Dashboard gibt es dafür den Punkt **Betrieb**; die geschützte API liegt
+unter `GET /api/betrieb`. `/api/health` bleibt offen und nennt nur eine
+kompakte Betriebszeile. Details und ehrliche Grenzen:
+[docs/spider/PHASE-8.md](docs/spider/PHASE-8.md).
+
 Unter Windows zusätzlich `pip install MetaTrader5` (nur dort verfügbar) und in
 `config.toml` `[paper] broker = "mt5"` setzen. MT5 muss laufen und mit dem
 **Demo-Konto** eingeloggt sein.
@@ -65,6 +84,7 @@ Unter Windows zusätzlich `pip install MetaTrader5` (nur dort verfügbar) und in
 | Konferenz | 00:00 Europe/Zurich, Nachholen verpasster Termine, Protokoll im Vault |
 | Wissenszentrum | Obsidian-Vault mit Frontmatter, Tags, `[[Links]]` |
 | Dashboard | Orakel-Design, 8 Ansichten, Live-Polling, «Lauf starten» |
+| Dauerbetrieb | persistenter Plan, Backoff, Ressourcenlimits, Jobprotokoll und Betriebsansicht |
 
 ## Risikogrenzen (deine Vorgaben)
 
@@ -104,7 +124,8 @@ tests/           Risiko, Backtest, Daten, Bericht
 2. **Spider Intelligence**: Netz-Recherche mit Quellenprüfung, robots.txt und Limits.
 3. **Weltkugel und Raumschiff**: interaktive 2D-Welt (der Meister-Prompt erlaubt 2D,
    wenn 3D mit den Ressourcen nicht sinnvoll ist), an echte Daten gekoppelt.
-4. **Paper-Loop im Dauerbetrieb**: Scheduler, der Kurse aktualisiert und Signale prüft.
+4. **Dauerbetrieb aktivieren**: Plan und Monitoring sind gebaut; auf dem Zielhost
+   fehlen noch `ORAKEL_TAKT=1`, ein echter Soak und ein externer Watchdog.
 5. **Selbstlernen**: Auswertung abgeschlossener Trades inkl. Fehleranalyse.
 
 ## Grundsätze im Code

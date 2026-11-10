@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import agents
+from .betrieb import betrieb_health, betrieb_status
 from .config import load_config
 from .db import Facts
 from .globe import STANDARD_ZEITRAUM, baue_globe
@@ -286,6 +287,12 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                                 status_code=500)
         return JSONResponse({"ok": True, "prognose": forecast}, status_code=201)
 
+    @app.get("/api/betrieb")
+    def betrieb() -> JSONResponse:
+        cfg = load_config(cfg_pfad)
+        return JSONResponse(betrieb_status(cfg, Facts(cfg.db_pfad)),
+                            headers={"Cache-Control": "no-store"})
+
     @app.get("/api/health")
     def health() -> dict[str, Any]:
         cfg = load_config(cfg_pfad)
@@ -294,6 +301,9 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                 "halt": db.zustand("risiko_stopp"),
                 "paper_tick": db.zustand("paper_letzter_tick"),
                 "artikel": db.artikel_statistik()["gesamt"],
+                # Kompakt und ohne Secrets; der volle Plan liegt hinter Login
+                # unter /api/betrieb.
+                "betrieb": betrieb_health(cfg, db),
                 # Railway setzt den SHA bei Deploys aus GitHub; die Nachprüfung
                 # nach dem Deploy vergleicht ihn mit dem erwarteten Commit.
                 "commit": os.environ.get("RAILWAY_GIT_COMMIT_SHA") or None}
