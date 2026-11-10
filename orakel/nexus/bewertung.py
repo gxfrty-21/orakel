@@ -31,6 +31,7 @@ from typing import Any, Iterable
 from urllib.parse import urlparse
 
 from ..db import Facts, jetzt
+from .graph import graph_auffrischen
 from .quellen import Quelle, lade_register
 
 FENSTER_TAGE = 7
@@ -408,6 +409,7 @@ def _leere_bewertung(db: Facts, quellen: Iterable[Quelle], meldungen: int) -> di
     for zeile in rep.values():
         zeile["aktualisiert"] = jetzt()
     db.nexus_bewertung_ersetzen(list(rep.values()), [], [], [])
+    graph_auffrischen(db)
     return {
         "meldungen": meldungen, "meldungen_mit_claim": 0, "kernaussagen": 0,
         "belege": 0, "widersprueche": 0, "quellen": len(rep),
@@ -531,6 +533,7 @@ def claims_auffrischen(db: Facts, quellen: Iterable[Quelle] | None = None) -> di
             })
 
     db.nexus_bewertung_ersetzen(list(reps.values()), claims, claim_quellen, widersprueche)
+    graph_auffrischen(db)
     nach_status: dict[str, int] = defaultdict(int)
     for c in claims:
         nach_status[c["status"]] += 1

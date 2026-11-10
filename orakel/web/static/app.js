@@ -5,6 +5,7 @@ const COL = { accent:'#5fe0c8', amber:'#e8b45a', good:'#62d68a', bad:'#e2616b', 
 let R = null, current = 'overview', labFilter = 'all', labSel = 0, stratSel = 0, depSel = 'A';
 let globe3d = null, globeFailed = false, globeWindow = '24h', globeRequest = 0, globeAbort = null, globeLoading = null;
 let nachtDaten = null, nachtFehler = null;
+let graphWindow = '7d', graphDaten = null, kalibrierungDaten = null;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = (v,d=2) => (v==null||isNaN(v)) ? '–' : Number(v).toLocaleString('de-CH',{minimumFractionDigits:d,maximumFractionDigits:d});
 const pct = (v,d=1) => v==null ? '–' : num(v,d)+' %';
@@ -550,6 +551,116 @@ function zeichneMissionen(d){
   }).join('') : '<div class="empty">Noch keine Mission. Eine Mission prüft gespeicherte Kernaussagen und schreibt einen Bericht mit offenen Fragen.</div>';
 }
 
+const phase6Fehler = text => {
+  $('#banner').className = 'banner b-sim';
+  $('#banner').innerHTML = '<b>FEHLER</b>' + esc(text);
+};
+
+async function ladeGraph(){
+  if(!$('#graphNodes')) return;
+  try {
+    const r = await fetch('/api/nexus/graph?zeitraum=' + encodeURIComponent(graphWindow), {cache:'no-store'});
+    const d = await r.json();
+    if(!r.ok || !d.ok) throw new Error(d.fehler || 'Graph konnte nicht geladen werden');
+    graphDaten = d;
+    zeichneGraph();
+  } catch(e) {
+    graphDaten = null;
+    if($('#graphTag')) $('#graphTag').innerHTML = '<span class="dn">nicht erreichbar</span>';
+    if($('#graphKpis')) $('#graphKpis').innerHTML = '';
+    if($('#graphNodes')) $('#graphNodes').innerHTML = `<div class="empty">Graph nicht geladen: ${esc(e.message)}</div>`;
+    if($('#graphEdges')) $('#graphEdges').innerHTML = '';
+  }
+}
+
+function zeichneGraph(){
+  const d = graphDaten;
+  if(!d || !$('#graphNodes')) return;
+  const st = d.statistik || {}, typen = st.typen || {};
+  const knoten = d.knoten || [], kanten = d.kanten || [];
+  $('#graphTag').textContent = `${num(st.knoten,0)} Knoten · ${num(st.kanten,0)} Kanten`;
+  $('#graphKpis').innerHTML = [
+    ['Knoten', num(st.knoten,0), `${num(typen.claim,0)} Kernaussagen`],
+    ['Kanten', num(st.kanten,0), `${num(typen.quelle,0)} Quellen · ${num(typen.thema,0)} Themen`],
+    ['Zeitraum', d.zeitraum || graphWindow, 'aus gespeicherten Zeitstempeln'],
+    ['Beziehungen', `${num((st.arten||{}).belegt_durch,0)} Belege`, `${num((st.arten||{}).widerspruch,0)} Widersprüche`],
+  ].map(q=>`<div class="kpi"><div class="l">${q[0]}</div><div class="v">${q[1]}</div><div class="n">${q[2]}</div></div>`).join('');
+  const typName = {claim:'Kernaussage', quelle:'Quelle', thema:'Thema'};
+  $('#graphNodes').innerHTML = knoten.length ? knoten.map(n=>`
+    <div class="li"><span><b style="font-weight:400">${esc(n.label)}</b>
+      <small>${esc(typName[n.typ] || n.typ)}${n.status ? ' · ' + esc(n.status) : ''}</small></span>
+      <span class="pill ${n.typ==='claim'?'b':n.typ==='thema'?'w':'g'}">${esc(n.typ)}</span></div>`).join('')
+    : `<div class="empty">${esc(d.hinweis || 'Noch keine Knoten.')}</div>`;
+  const label = id => (knoten.find(n=>n.id===id) || {}).label || id;
+  $('#graphEdges').innerHTML = kanten.length ? `<table class="tbl"><thead><tr><th>Von</th><th>Nach</th><th>Art</th><th class="m">Sicherheit</th></tr></thead><tbody>
+    ${kanten.map(k=>`<tr><td style="white-space:normal">${esc(label(k.von))}</td><td style="white-space:normal">${esc(label(k.nach))}</td>
+      <td>${esc(k.art)}</td><td class="m">${num(k.sicherheit,2)}</td></tr>`).join('')}</tbody></table>`
+    : `<div class="empty">${esc(d.hinweis || 'Noch keine Kanten.')}</div>`;
+}
+
+async function ladeKalibrierung(){
+  if(!$('#kalibrierungList')) return;
+  try {
+    const r = await fetch('/api/nexus/kalibrierung', {cache:'no-store'});
+    const d = await r.json();
+    if(!r.ok || !d.ok) throw new Error(d.fehler || 'Kalibrierung konnte nicht geladen werden');
+    kalibrierungDaten = d;
+    zeichneKalibrierung();
+  } catch(e) {
+    kalibrierungDaten = null;
+    if($('#kalibrierungTag')) $('#kalibrierungTag').innerHTML = '<span class="dn">nicht erreichbar</span>';
+    if($('#kalibrierungKpis')) $('#kalibrierungKpis').innerHTML = '';
+    if($('#kalibrierungList')) $('#kalibrierungList').innerHTML = `<div class="empty">Kalibrierung nicht geladen: ${esc(e.message)}</div>`;
+    if($('#kalibrierungKlassen')) $('#kalibrierungKlassen').innerHTML = '';
+    if($('#kalibrierungHinweis')) $('#kalibrierungHinweis').textContent = '';
+  }
+}
+
+function zeichneKalibrierung(){
+  const d = kalibrierungDaten;
+  if(!d || !$('#kalibrierungList')) return;
+  const quote = d.trefferquote == null ? '–' : pct(d.trefferquote*100, 1);
+  const brier = d.brier == null ? '–' : num(d.brier, 4);
+  $('#kalibrierungTag').textContent = `${num(d.gesamt,0)} Prognosen · ${num(d.auto,0)} automatisch`;
+  $('#kalibrierungKpis').innerHTML = [
+    ['Prognosen', num(d.gesamt,0), `${num(d.offen,0)} offen · ${num(d.unpruefbar,0)} unprüfbar`],
+    ['Geprüft', num(d.geprueft,0), `${num(d.manuell,0)} manuell · ${num(d.auto,0)} Intel`],
+    ['Trefferquote', quote, `${num(d.treffer,0)} Treffer aus geprüften`],
+    ['Brier-Score', brier, '0 = sicher richtig, 1 = sicher falsch'],
+  ].map(q=>`<div class="kpi"><div class="l">${q[0]}</div><div class="v">${q[1]}</div><div class="n">${q[2]}</div></div>`).join('');
+  const statusText = f => {
+    const e = f.ergebnis;
+    if(e && e.eingetreten === 1) return 'eingetreten';
+    if(e && e.eingetreten === 0) return 'nicht eingetreten';
+    return f.status || 'offen';
+  };
+  const statusPill = f => {
+    const e = f.ergebnis;
+    if(e && e.eingetreten === 1) return 'g';
+    if(e && e.eingetreten === 0) return 'r';
+    return f.status === 'unpruefbar' ? 'g' : 'w';
+  };
+  const liste = d.letzte || [];
+  $('#kalibrierungList').innerHTML = liste.length ? liste.map(f=>`
+    <div class="li"><span><b style="font-weight:400">${esc(f.aussage)}</b>
+      <small>${esc(f.kennung)} · ${esc(f.symbol || 'ohne Symbol')} · ${num(f.konfidenz,2)} Konfidenz</small></span>
+      <span class="pill ${statusPill(f)}">${esc(statusText(f))}</span></div>`).join('')
+    : `<div class="empty">${esc(d.hinweis || 'Noch keine Prognose.')}</div>`;
+  const klassen = d.kalibrierungsklassen || [];
+  $('#kalibrierungKlassen').innerHTML = klassen.some(k=>k.n) ? `<table class="tbl"><thead><tr><th>Konfidenz</th><th class="m">n</th><th class="m">Treffer</th><th class="m">Quote</th><th class="m">Brier</th></tr></thead><tbody>
+    ${klassen.map(k=>`<tr><td>${esc(k.klasse)}</td><td class="m">${num(k.n,0)}</td><td class="m">${num(k.treffer,0)}</td><td class="m">${k.quote==null?'–':pct(k.quote*100,1)}</td><td class="m">${k.brier==null?'–':num(k.brier,4)}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="empty">Noch keine geprüfte Prognose. Die Klassen bleiben leer, bis echte Kerzen nach Fälligkeit vorliegen.</div>';
+  $('#kalibrierungHinweis').textContent = d.hinweis || '';
+}
+
+document.querySelectorAll('#graphWindow [data-w]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    graphWindow = btn.dataset.w || '7d';
+    document.querySelectorAll('#graphWindow [data-w]').forEach(b=>b.classList.toggle('on', b===btn));
+    ladeGraph();
+  });
+});
+
 function renderSpider(){
   ladeNacht();
   const sp = R.spider || {};
@@ -619,6 +730,9 @@ function renderSpider(){
       <label>Status<select data-wl="status">${st.map(s=>`<option value="${esc(s)}"${s===w.status?' selected':''}>${esc(s)}</option>`).join('')}</select></label>
     </div></div>`;}).join('')
     : '<div class="empty">Noch keine Weiterleitungen.</div>';
+
+  ladeGraph();
+  ladeKalibrierung();
 }
 
 $('#spiderBtn') && ($('#spiderBtn').onclick = async () => {
@@ -772,6 +886,41 @@ if (missionList) missionList.addEventListener('click', async e => {
     berichtBtn.disabled = false;
   }
 });
+
+const forecastBtn = $('#forecastBtn');
+if (forecastBtn) forecastBtn.onclick = async () => {
+  const aussage = $('#forecastAussage').value.trim();
+  const symbol = $('#forecastSymbol').value.trim().toUpperCase();
+  const erwartung = $('#forecastErwartung').value;
+  const zeithorizont = $('#forecastHorizont').value.trim() || '24h';
+  const konfidenz = Number($('#forecastKonfidenz').value);
+  if(aussage.length < 5 || !symbol){
+    phase6Fehler('Aussage (min. 5 Zeichen) und Symbol sind Pflicht.');
+    return;
+  }
+  if(!Number.isFinite(konfidenz) || konfidenz < 0 || konfidenz > 1){
+    phase6Fehler('Konfidenz muss zwischen 0 und 1 liegen.');
+    return;
+  }
+  forecastBtn.disabled = true;
+  forecastBtn.textContent = 'Wird angelegt …';
+  try {
+    const r = await fetch('/api/nexus/prognose', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({aussage, erwartung, symbol, zeithorizont, konfidenz})});
+    const d = await r.json();
+    if(!r.ok || !d.ok) throw new Error(d.fehler || 'Prognose konnte nicht angelegt werden');
+    $('#forecastAussage').value = '';
+    $('#forecastSymbol').value = '';
+    await ladeKalibrierung();
+    await ladeNacht();
+  } catch(e) {
+    phase6Fehler(e.message);
+  } finally {
+    forecastBtn.disabled = false;
+    forecastBtn.textContent = 'Prognose anlegen';
+  }
+};
 
 /* ---------- Laden ---------- */
 async function lade(){

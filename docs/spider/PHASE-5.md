@@ -198,5 +198,6 @@ Zusätzlich:
 
 ## 8. Nächster Schritt
 
-Phase 6: Wissensgraph und Prognosekontrolle. Erst danach ist die 3D-Darstellung
-sinnvoll. Die Missionen- und Übergabeschicht ist die Datenquelle dafür.
+Phase 6 ist umgesetzt: [PHASE-6.md](PHASE-6.md) beschreibt den persistierten
+Wissensgraph und die Prognosekontrolle. Erst danach ist die 3D-Darstellung
+sinnvoll; die Missionen- und Übergabeschicht bleibt eine Datenquelle dafür.

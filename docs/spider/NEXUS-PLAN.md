@@ -143,8 +143,8 @@ Dead-Letter, Lease, Priorität, 15 Rollen, Gegenargumente, Übergabe).
 | Missionen mit Zerlegung und Fortschritt | persistent, fünf Schritte (Phase 4+5) | erledigt |
 | Gegenargument-Agent | regelbasiert, eigene Rollen (Phase 5) | erledigt |
 | 15 Agentenrollen | 15 deterministische Prüfrollen (Phase 5) | erledigt |
-| Wissensgraph | abgeleitet, nicht persistiert | mittel |
-| Prognosekontrolle mit Trefferquote | Lernschleife ohne Statistik | klein–mittel |
+| Wissensgraph | persistiert in `nexus_edges` (Phase 6) | erledigt |
+| Prognosekontrolle mit Trefferquote | Trefferquote und Brier-Score (Phase 6) | erledigt |
 | 3D-Spinne + Nexus-Raum | 2D-Deck, Three.js-Globus | **groß** |
 | 24/7-Recherche | ein Lauf beim Start | klein |
 
@@ -305,14 +305,15 @@ Neue Datei `orakel/web/static/nexus3d.js`, Ansicht `#v-nexus`:
 zuletzt — eine schöne Hülle ohne echte Daten wäre genau die verbotene
 Dekoration.
 
-**Stand 10. November 2026:** Phasen 1–5 sind lokal umgesetzt und getestet
+**Stand 10. November 2026:** Phasen 1–6 sind lokal umgesetzt und getestet
 (siehe [PHASE-1.md](PHASE-1.md), [PHASE-2.md](PHASE-2.md),
 [PHASE-3.md](PHASE-3.md), [PHASE-4.md](PHASE-4.md),
-[PHASE-5.md](PHASE-5.md)). Phase 5 liefert 15 deterministische Prüfrollen,
-Gegenargumente sowie die Vault-/Intel-Übergabe. Die **3D feste Kamera** aus dem
-ursprünglichen Phasenplan ist damit noch nicht umgesetzt; sie bleibt nach den
-echten Missionsdaten. Auf der Oracle-VM läuft noch der alte Stand; die
-Migration ist vorbereitet, aber nicht ausgeführt.
+[PHASE-5.md](PHASE-5.md), [PHASE-6.md](PHASE-6.md)). Phase 5 liefert 15
+deterministische Prüfrollen, Gegenargumente sowie die Vault-/Intel-Übergabe.
+Phase 6 persistiert den Wissensgraph und prüft manuelle sowie importierte
+Prognosen gegen echte M15-Kerzen. Die **3D feste Kamera** aus dem ursprünglichen
+Phasenplan ist damit noch nicht umgesetzt; sie bleibt Phase 7. Auf der Oracle-VM
+läuft noch der alte Stand; die Migration ist vorbereitet, aber nicht ausgeführt.
 
 ---
 

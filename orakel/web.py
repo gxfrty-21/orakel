@@ -18,6 +18,8 @@ from .globe import STANDARD_ZEITRAUM, baue_globe
 from .intel import IntelNetz, auftrag_aendern, weiterleitung_aendern
 from .knowledge import Vault
 from .nexus.abruf import HttpCache
+from .nexus.graph import ZEITRAEUME, graph_auffrischen, graph_daten
+from .nexus.kalibrierung import kalibrierung_auffrischen, prognose_anlegen
 from .nexus.missionen import Missionen
 from .nexus.quellen import lade_register
 from .nexus.status import gesamt_status
@@ -214,6 +216,61 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         return JSONResponse({"ok": True, **ergebnis,
                              "mission": db.nexus_mission(kennung)},
                             headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/nexus/graph")
+    def nexus_graph(zeitraum: str = "7d") -> JSONResponse:
+        cfg = load_config(cfg_pfad)
+        if zeitraum not in ZEITRAEUME:
+            return JSONResponse(
+                {"ok": False, "fehler": f"Unbekannter Zeitraum: {zeitraum}"},
+                status_code=400,
+            )
+        db = Facts(cfg.db_pfad)
+        graph_auffrischen(db)
+        return JSONResponse(graph_daten(db, zeitraum),
+                            headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/nexus/kalibrierung")
+    def nexus_kalibrierung() -> JSONResponse:
+        cfg = load_config(cfg_pfad)
+        ergebnis = kalibrierung_auffrischen(Facts(cfg.db_pfad))
+        return JSONResponse(
+            {"ok": True, **ergebnis["statistik"],
+             "intel": ergebnis["intel"],
+             "neu_geprueft": ergebnis["neu_geprueft"]},
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.post("/api/nexus/prognose")
+    async def nexus_prognose(request: Request) -> JSONResponse:
+        cfg = load_config(cfg_pfad)
+        try:
+            daten = await request.json()
+        except Exception:
+            return JSONResponse({"ok": False, "fehler": "Ungültiger JSON-Body"},
+                                status_code=400)
+        if not isinstance(daten, dict):
+            return JSONResponse({"ok": False, "fehler": "Ungültiger JSON-Body"},
+                                status_code=400)
+        try:
+            forecast = prognose_anlegen(
+                Facts(cfg.db_pfad),
+                str(daten.get("aussage") or ""),
+                str(daten.get("erwartung") or ""),
+                zeithorizont=str(daten.get("zeithorizont") or "24h"),
+                konfidenz=float(daten.get("konfidenz", 0.5)),
+                symbol=str(daten.get("symbol") or ""),
+                toleranz_pct=float(daten.get("toleranz_pct", 0.1)),
+                mission_kennung=daten.get("mission_kennung") or None,
+                claim_id=(int(daten["claim_id"])
+                          if daten.get("claim_id") is not None else None),
+            )
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+        except Exception as exc:
+            return JSONResponse({"ok": False, "fehler": type(exc).__name__},
+                                status_code=500)
+        return JSONResponse({"ok": True, "prognose": forecast}, status_code=201)
 
     @app.get("/api/health")
     def health() -> dict[str, Any]:

@@ -209,6 +209,41 @@
         </div>
         <div class="list scroll" id="missionList"><div class="empty">Noch keine Missionen.</div></div>
       </div>
+      <div class="panel" id="graphPanel">
+        <div class="ph">Wissensgraph<span class="sp"></span><span class="tag" id="graphTag">–</span>
+          <div class="tabs" id="graphWindow" role="group" aria-label="Zeitraum für den Wissensgraph">
+            <button type="button" class="tab" data-w="24h">24 h</button>
+            <button type="button" class="tab on" data-w="7d">7 Tage</button>
+            <button type="button" class="tab" data-w="30d">30 Tage</button>
+            <button type="button" class="tab" data-w="alle">Alle</button>
+          </div>
+        </div>
+        <div class="kpis nacht-kpis" id="graphKpis"></div>
+        <div class="grid2">
+          <div class="list scroll" id="graphNodes"><div class="empty">Noch kein Graph geladen.</div></div>
+          <div class="tw" id="graphEdges"><div class="empty">Noch keine Kanten.</div></div>
+        </div>
+      </div>
+      <div class="panel" id="kalibrierungPanel">
+        <div class="ph">Prognosekontrolle<span class="sp"></span><span class="tag" id="kalibrierungTag">–</span></div>
+        <div class="kpis nacht-kpis" id="kalibrierungKpis"></div>
+        <div class="grid2">
+          <div class="list scroll" id="kalibrierungList"><div class="empty">Noch keine Prognosen.</div></div>
+          <div class="tw" id="kalibrierungKlassen"><div class="empty">Noch keine Kalibrierung.</div></div>
+        </div>
+        <div class="nacht-status pad" id="kalibrierungHinweis"></div>
+        <div class="mission-form forecast-form">
+          <label>Neue Marktprognose<input id="forecastAussage" maxlength="500" placeholder="z. B. EURUSD steigt in den nächsten 24 Stunden"></label>
+          <div class="mission-row">
+            <label>Symbol<input id="forecastSymbol" maxlength="20" placeholder="EURUSD"></label>
+            <label>Erwartung<select id="forecastErwartung"><option value="steigt">steigt</option><option value="sinkt">sinkt</option><option value="unveraendert">unverändert</option></select></label>
+            <label>Horizont<input id="forecastHorizont" maxlength="12" value="24h"></label>
+            <label>Konfidenz<input id="forecastKonfidenz" type="number" min="0" max="1" step="0.05" value="0.5"></label>
+            <button type="button" class="toggle main" id="forecastBtn">Prognose anlegen</button>
+          </div>
+          <small>Nur prüfbare M15-Prognosen. Die Kontrolle nutzt gespeicherte Kerzen; ohne Kurs nach Fälligkeit bleibt die Prognose offen. Paper-Trading bleibt unverändert.</small>
+        </div>
+      </div>
       <div class="grid2">
         <div class="panel"><div class="ph">Zuletzt gelesen<span class="sp"></span><span class="tag" id="spiderTag"></span></div><div class="list scroll" id="spiderList"></div></div>
         <div class="panel"><div class="ph">Quellenqualität<span class="sp"></span><span class="tag">aus echten Läufen</span></div><div class="tw" id="spiderQuellen"></div></div>

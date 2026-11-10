@@ -114,6 +114,15 @@ button.li:hover{background:var(--panel2)}
 .mission-report{margin:2px 0 0;padding:9px 10px;background:#080b0f;border:1px solid var(--line);
   border-radius:4px;color:var(--muted);font-family:var(--mono);font-size:11.5px;line-height:1.5;
   white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto}
+/* Phase 6: Wissensgraph und Prognosekontrolle */
+.forecast-form .mission-row label{flex:1 1 120px}
+.forecast-form .mission-row .toggle{align-self:flex-end}
+.forecast-form small{color:var(--dim);font-size:11.5px;line-height:1.4}
+#graphWindow{flex:0 0 auto}
+#graphNodes .li b,#kalibrierungList .li b{overflow-wrap:anywhere}
+@media (max-width:520px){
+  #graphWindow .tab{padding:3px 7px}
+}
 .pad{padding:14px 16px}
 .card{padding:16px;display:flex;flex-direction:column;gap:10px}
 /* Nachtbetrieb im Spider-Tab: KPIs ohne Außenabstand, Detailzeile darunter */

@@ -27,6 +27,8 @@ from pathlib import Path
 from ..db import Facts
 from .abruf import Abrufer, CacheEintrag, HttpCache
 from .bewertung import claims_auffrischen
+from .graph import graph_auffrischen
+from .kalibrierung import kalibrierung_auffrischen
 from .feeds import parse_feed
 from .quellen import Quelle, lade_register
 from .speicher import MeldungSpeicher
@@ -278,6 +280,20 @@ def nachtlauf(
         bewertung = {"fehler": type(exc).__name__}
         bewertung_fehler = True
 
+    graph_fehler = False
+    try:
+        graph = graph_auffrischen(datenbank)
+    except Exception as exc:
+        graph = {"fehler": type(exc).__name__}
+        graph_fehler = True
+
+    kalibrierung_fehler = False
+    try:
+        kalibrierung = kalibrierung_auffrischen(datenbank, jetzt)
+    except Exception as exc:
+        kalibrierung = {"fehler": type(exc).__name__}
+        kalibrierung_fehler = True
+
     bericht: dict[str, object] = {
         "zeit": zeit,
         "faellig": zaehler.faellig,
@@ -290,6 +306,8 @@ def nachtlauf(
         "wiederholungen": zaehler.wiederholungen,
         "speicher_fehler": zaehler.speicher_fehler,
         "bewertung": bewertung,
+        "graph": graph,
+        "kalibrierung": kalibrierung,
         "quellen": detail,
         "hinweis": ("Meldungen werden in artikel gespeichert; SimHash gruppiert Kopien; "
                     "Kernaussagen werden regelbasiert bewertet."),
@@ -309,7 +327,8 @@ def nachtlauf(
     domain = bericht.get("domain")
     domain_fehler = isinstance(domain, dict) and not domain.get("ok")
     bericht["ok"] = (zaehler.fehler == 0 and zaehler.speicher_fehler == 0
-                     and not bewertung_fehler and not backup_fehler
+                     and not bewertung_fehler and not graph_fehler
+                     and not kalibrierung_fehler and not backup_fehler
                      and not domain_fehler)
     bericht["warnung_noetig"] = not bericht["ok"]
 
@@ -332,7 +351,9 @@ def nachtlauf(
             f"{zaehler.wiederholungen} Wiederholungen, {zaehler.fehler} Fehler, "
             f"{bericht.get('bewertung', {}).get('kernaussagen', 0)} Kernaussagen, "
             f"{bericht.get('bewertung', {}).get('widersprueche', 0)} Widersprüche, "
-            f"ok={bericht['ok']}",
+            f"{bericht.get('graph', {}).get('kanten', 0)} Graphkanten, "
+            f"{bericht.get('kalibrierung', {}).get('statistik', {}).get('geprueft', 0)} "
+            f"geprüfte Prognosen, ok={bericht['ok']}",
         )
         datenbank.zustand_setzen("nexus_nacht", bericht)
     except Exception as exc:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from ..db import Facts
 from .abruf import HttpCache
+from .graph import graph_daten
+from .kalibrierung import kalibrierung_statistik
 from .quellen import Quelle, statistik
 
 
@@ -39,5 +41,11 @@ def gesamt_status(cache: HttpCache, quellen: list[Quelle],
         daten["missionen"] = {
             "statistik": db.nexus_mission_statistik(),
             "liste": db.nexus_missionen(20),
+        }
+        daten["graph"] = graph_daten(db, "7d")["statistik"]
+        kalibrierung = kalibrierung_statistik(db)
+        daten["kalibrierung"] = {
+            **kalibrierung,
+            "letzte": kalibrierung.get("letzte", [])[:5],
         }
     return daten

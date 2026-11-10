@@ -12,6 +12,8 @@ from ..knowledge import Vault
 from .abruf import Abrufer, HttpCache
 from .bewertung import claims_auffrischen
 from .feeds import parse_feed
+from .graph import ZEITRAEUME, graph_auffrischen, graph_daten
+from .kalibrierung import kalibrierung_auffrischen, prognose_anlegen
 from .hackernews import meldungen as hn_meldungen
 from .missionen import Missionen
 from .nacht import nachtlauf
@@ -94,6 +96,38 @@ def _bewertung(args: argparse.Namespace) -> int:
     return 0
 
 
+def _graph(args: argparse.Namespace) -> int:
+    db = Facts(args.db)
+    aufbau = graph_auffrischen(db)
+    daten = graph_daten(db, args.zeitraum)
+    print(json.dumps({"ok": True, "aufbau": aufbau, "graph": daten},
+                     ensure_ascii=False, indent=2))
+    return 0
+
+
+def _kalibrierung(args: argparse.Namespace) -> int:
+    ergebnis = kalibrierung_auffrischen(Facts(args.db))
+    print(json.dumps(ergebnis, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _prognose(args: argparse.Namespace) -> int:
+    try:
+        forecast = prognose_anlegen(
+            Facts(args.db), args.aussage, args.erwartung,
+            zeithorizont=args.zeithorizont, konfidenz=args.konfidenz,
+            symbol=args.symbol, toleranz_pct=args.toleranz_pct,
+            mission_kennung=args.mission, claim_id=args.claim_id,
+        )
+    except ValueError as exc:
+        print(json.dumps({"ok": False, "fehler": str(exc)},
+                         ensure_ascii=False, indent=2))
+        return 2
+    print(json.dumps({"ok": True, "prognose": forecast},
+                     ensure_ascii=False, indent=2))
+    return 0
+
+
 def _mission(args: argparse.Namespace) -> int:
     missionen = Missionen(Facts(args.db), vault=Vault(args.vault))
     try:
@@ -164,6 +198,28 @@ def main(argv: list[str] | None = None) -> int:
     bewertung.add_argument("--db", default="orakel.db")
     bewertung.add_argument("--register", default=None)
     bewertung.set_defaults(funktion=_bewertung)
+
+    graph = unter.add_parser("graph", help="Wissensgraph neu aufbauen und anzeigen")
+    graph.add_argument("--db", default="orakel.db")
+    graph.add_argument("--zeitraum", choices=tuple(ZEITRAEUME), default="7d")
+    graph.set_defaults(funktion=_graph)
+
+    kalibrierung = unter.add_parser("kalibrierung", help="Prognosen prüfen und Kalibrierung anzeigen")
+    kalibrierung.add_argument("--db", default="orakel.db")
+    kalibrierung.set_defaults(funktion=_kalibrierung)
+
+    prognose = unter.add_parser("prognose", help="Prüfbare Marktprognose anlegen")
+    prognose.add_argument("--db", default="orakel.db")
+    prognose.add_argument("--aussage", required=True)
+    prognose.add_argument("--erwartung", choices=("steigt", "sinkt", "unveraendert"),
+                          required=True)
+    prognose.add_argument("--symbol", required=True)
+    prognose.add_argument("--zeithorizont", default="24h")
+    prognose.add_argument("--konfidenz", type=float, default=0.5)
+    prognose.add_argument("--toleranz-pct", type=float, default=0.1)
+    prognose.add_argument("--mission", default=None)
+    prognose.add_argument("--claim-id", type=int, default=None)
+    prognose.set_defaults(funktion=_prognose)
 
     mission = unter.add_parser("mission", help="Mission anlegen und optional starten")
     mission.add_argument("--db", default="orakel.db")

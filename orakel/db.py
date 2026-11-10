@@ -271,6 +271,59 @@ CREATE TABLE IF NOT EXISTS nexus_tasks (
 CREATE INDEX IF NOT EXISTS ix_nexus_task_mission ON nexus_tasks(mission_id, position);
 CREATE INDEX IF NOT EXISTS ix_nexus_task_queue ON nexus_tasks(status, faellig_am, lease_bis);
 
+-- Nexus Phase 6: persistierter Wissensgraph.
+-- Knoten werden aus Claims, Quellen und Themen abgeleitet; die Kanten
+-- stehen als nachvollziehbare Beziehungen dauerhaft in SQLite.
+CREATE TABLE IF NOT EXISTS nexus_edges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    von TEXT NOT NULL,
+    nach TEXT NOT NULL,
+    art TEXT NOT NULL,
+    begruendung TEXT NOT NULL DEFAULT '',
+    sicherheit REAL NOT NULL DEFAULT 0.5,
+    erstellt TEXT NOT NULL,
+    UNIQUE(von, nach, art)
+);
+CREATE INDEX IF NOT EXISTS ix_nexus_edge_von ON nexus_edges(von);
+CREATE INDEX IF NOT EXISTS ix_nexus_edge_nach ON nexus_edges(nach);
+CREATE INDEX IF NOT EXISTS ix_nexus_edge_art ON nexus_edges(art);
+CREATE INDEX IF NOT EXISTS ix_nexus_edge_erstellt ON nexus_edges(erstellt);
+
+-- Nexus Phase 6: Prognoseregister und echte Prüfergebnisse.
+-- Die Konfidenz ist die Wahrscheinlichkeit, mit der die Erwartung eintritt.
+-- Automatisch aus Intel-Aufträgen importierte Prognosen tragen bewusst 0,5,
+-- weil dort keine Modellwahrscheinlichkeit gespeichert ist.
+CREATE TABLE IF NOT EXISTS nexus_forecasts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kennung TEXT NOT NULL UNIQUE,
+    auftrag_id INTEGER UNIQUE,
+    mission_kennung TEXT,
+    claim_id INTEGER,
+    aussage TEXT NOT NULL,
+    erwartung TEXT NOT NULL,
+    zeithorizont TEXT NOT NULL,
+    faellig_am TEXT NOT NULL,
+    konfidenz REAL NOT NULL DEFAULT 0.5,
+    symbol TEXT NOT NULL DEFAULT '',
+    basiswert REAL,
+    toleranz_pct REAL NOT NULL DEFAULT 0.1,
+    status TEXT NOT NULL DEFAULT 'offen',
+    erstellt TEXT NOT NULL,
+    aktualisiert TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_nexus_forecast_status ON nexus_forecasts(status);
+CREATE INDEX IF NOT EXISTS ix_nexus_forecast_faellig ON nexus_forecasts(faellig_am);
+
+CREATE TABLE IF NOT EXISTS nexus_forecast_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    forecast_id INTEGER NOT NULL UNIQUE,
+    eingetreten INTEGER,
+    messwert REAL,
+    geprueft_am TEXT NOT NULL,
+    notiz TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY(forecast_id) REFERENCES nexus_forecasts(id)
+);
+
 -- Spider Intelligence: analysierter Volltext je Artikel
 CREATE TABLE IF NOT EXISTS intel_inhalte (
     artikel_id INTEGER PRIMARY KEY,
@@ -340,6 +393,27 @@ def _json_wert(text: str, standard: Any = None) -> Any:
         return json.loads(text)
     except (TypeError, ValueError):
         return standard
+
+
+def _forecast_aus_zeile(zeile: sqlite3.Row) -> dict[str, Any]:
+    """Trennt Prognose und Prüfergebnis für die API, ohne Werte zu erfinden."""
+    daten = dict(zeile)
+    result_id = daten.pop("result_id", None)
+    ergebnis = None
+    if result_id is not None:
+        ergebnis = {
+            "id": int(result_id),
+            "eingetreten": (None if daten.get("result_eingetreten") is None
+                            else int(daten["result_eingetreten"])),
+            "messwert": daten.get("result_messwert"),
+            "geprueft_am": daten.get("result_geprueft_am"),
+            "notiz": daten.get("result_notiz") or "",
+        }
+    for schluessel in list(daten):
+        if schluessel.startswith("result_"):
+            daten.pop(schluessel)
+    daten["ergebnis"] = ergebnis
+    return daten
 
 
 COMPANY_SCHEMA_VERSION = 1
@@ -1059,6 +1133,113 @@ class Facts:
                 "ORDER BY w.sicherheit DESC, w.id",
                 tuple(int(i) for i in claim_ids),
             )]
+
+    # ---------- Nexus Phase 6: Wissensgraph und Prognosen ----------
+    def nexus_graph_ersetzen(self, kanten: Sequence[dict[str, Any]]) -> None:
+        """Ersetzt den persistierten Graph atomar. Idempotenter Rebuild."""
+        with self.conn() as c:
+            c.execute("DELETE FROM nexus_edges")
+            if kanten:
+                c.executemany(
+                    "INSERT INTO nexus_edges(von,nach,art,begruendung,sicherheit,erstellt)"
+                    " VALUES (?,?,?,?,?,?)",
+                    [(str(k["von"]), str(k["nach"]), str(k["art"]),
+                      str(k.get("begruendung") or ""),
+                      round(max(0.0, min(1.0, float(k.get("sicherheit", 0.5)))), 3),
+                      str(k["erstellt"])) for k in kanten],
+                )
+
+    def nexus_graph_edges(self) -> list[dict[str, Any]]:
+        with self.conn() as c:
+            return [dict(r) for r in c.execute(
+                "SELECT * FROM nexus_edges ORDER BY erstellt, id"
+            )]
+
+    def nexus_forecast_zaehler(self, tag: str) -> int:
+        with self.conn() as c:
+            r = c.execute(
+                "SELECT COUNT(*) n FROM nexus_forecasts WHERE kennung LIKE ?",
+                (f"FC-{tag}-%",),
+            ).fetchone()
+        return int(r["n"])
+
+    def nexus_forecast(self, kennung: str) -> dict[str, Any] | None:
+        with self.conn() as c:
+            zeile = c.execute(
+                "SELECT f.*, r.id AS result_id, r.eingetreten AS result_eingetreten,"
+                " r.messwert AS result_messwert, r.geprueft_am AS result_geprueft_am,"
+                " r.notiz AS result_notiz FROM nexus_forecasts f"
+                " LEFT JOIN nexus_forecast_results r ON r.forecast_id=f.id"
+                " WHERE f.kennung=?",
+                (kennung,),
+            ).fetchone()
+        return _forecast_aus_zeile(zeile) if zeile else None
+
+    def nexus_forecast_anlegen(self, daten: dict[str, Any]) -> dict[str, Any]:
+        """Legt eine Prognose an oder aktualisiert dieselbe Kennung."""
+        felder = (
+            "kennung", "auftrag_id", "mission_kennung", "claim_id", "aussage",
+            "erwartung", "zeithorizont", "faellig_am", "konfidenz", "symbol",
+            "basiswert", "toleranz_pct", "status", "erstellt", "aktualisiert",
+        )
+        werte = tuple(daten.get(feld) for feld in felder)
+        with self.conn() as c:
+            c.execute(
+                "INSERT INTO nexus_forecasts(kennung,auftrag_id,mission_kennung,claim_id,"
+                "aussage,erwartung,zeithorizont,faellig_am,konfidenz,symbol,basiswert,"
+                "toleranz_pct,status,erstellt,aktualisiert) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(kennung) DO UPDATE SET "
+                "auftrag_id=excluded.auftrag_id, mission_kennung=excluded.mission_kennung,"
+                "claim_id=excluded.claim_id, aussage=excluded.aussage,"
+                "erwartung=excluded.erwartung, zeithorizont=excluded.zeithorizont,"
+                "faellig_am=excluded.faellig_am, konfidenz=excluded.konfidenz,"
+                "symbol=excluded.symbol, basiswert=excluded.basiswert,"
+                "toleranz_pct=excluded.toleranz_pct, status=excluded.status,"
+                "aktualisiert=excluded.aktualisiert",
+                werte,
+            )
+        return self.nexus_forecast(str(daten["kennung"])) or {}
+
+    def nexus_forecast_status_setzen(self, kennung: str, status: str,
+                                     aktualisiert: str) -> None:
+        with self.conn() as c:
+            c.execute(
+                "UPDATE nexus_forecasts SET status=?, aktualisiert=? WHERE kennung=?",
+                (status, aktualisiert, kennung),
+            )
+
+    def nexus_forecast_result_speichern(
+        self, forecast_id: int, eingetreten: int | None, messwert: float | None,
+        geprueft_am: str, notiz: str = "",
+    ) -> None:
+        with self.conn() as c:
+            c.execute(
+                "INSERT INTO nexus_forecast_results(forecast_id,eingetreten,messwert,"
+                "geprueft_am,notiz) VALUES (?,?,?,?,?) "
+                "ON CONFLICT(forecast_id) DO UPDATE SET eingetreten=excluded.eingetreten,"
+                "messwert=excluded.messwert, geprueft_am=excluded.geprueft_am,"
+                "notiz=excluded.notiz",
+                (int(forecast_id), None if eingetreten is None else int(eingetreten),
+                 messwert, geprueft_am, notiz[:2000]),
+            )
+
+    def nexus_forecast_result_loeschen(self, forecast_id: int) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM nexus_forecast_results WHERE forecast_id=?",
+                      (int(forecast_id),))
+
+    def nexus_forecasts(self, limit: int = 100) -> list[dict[str, Any]]:
+        with self.conn() as c:
+            zeilen = c.execute(
+                "SELECT f.*, r.id AS result_id, r.eingetreten AS result_eingetreten,"
+                " r.messwert AS result_messwert, r.geprueft_am AS result_geprueft_am,"
+                " r.notiz AS result_notiz FROM nexus_forecasts f"
+                " LEFT JOIN nexus_forecast_results r ON r.forecast_id=f.id"
+                " ORDER BY COALESCE(f.faellig_am, f.erstellt) DESC, f.id DESC LIMIT ?",
+                (max(1, int(limit)),),
+            ).fetchall()
+        return [_forecast_aus_zeile(z) for z in zeilen]
 
     def artikel_by_ids(self, ids: Sequence[int]) -> list[sqlite3.Row]:
         if not ids:
