@@ -153,6 +153,82 @@ CREATE INDEX IF NOT EXISTS ix_nexus_cluster ON nexus_meldungen(cluster_id);
 CREATE INDEX IF NOT EXISTS ix_nexus_artikel ON nexus_meldungen(artikel_id);
 CREATE INDEX IF NOT EXISTS ix_nexus_sprache ON nexus_meldungen(sprache);
 
+-- Nexus Phase 3: Quellenreputation als nachvollziehbarer Snapshot.
+-- Die Zähler stammen aus echten Auftrags-Ergebnissen (intel_quellen), die
+-- Reputation ist daraus plus Registergewicht berechnet, nie erfunden.
+CREATE TABLE IF NOT EXISTS nexus_quellen_reputation (
+    quelle_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    host TEXT NOT NULL,
+    gewicht REAL NOT NULL DEFAULT 0.5,
+    artikel INTEGER NOT NULL DEFAULT 0,
+    analysiert INTEGER NOT NULL DEFAULT 0,
+    bestaetigt INTEGER NOT NULL DEFAULT 0,
+    widerlegt INTEGER NOT NULL DEFAULT 0,
+    widersprueche INTEGER NOT NULL DEFAULT 0,
+    reputation REAL NOT NULL DEFAULT 0.5,
+    vertrauen TEXT NOT NULL DEFAULT 'vorläufig',
+    aktualisiert TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_nexus_rep_host ON nexus_quellen_reputation(host);
+
+-- Nexus Phase 3: eine Kernthese je normalisiertem Aussage-Muster.
+CREATE TABLE IF NOT EXISTS nexus_claims (
+    id INTEGER PRIMARY KEY,
+    claim_key TEXT NOT NULL UNIQUE,
+    kernaussage TEXT NOT NULL,
+    thema TEXT NOT NULL,
+    subjekt TEXT NOT NULL,
+    metrik TEXT NOT NULL DEFAULT '',
+    quellen INTEGER NOT NULL DEFAULT 0,
+    belege INTEGER NOT NULL DEFAULT 0,
+    widersprueche INTEGER NOT NULL DEFAULT 0,
+    bestaetigungsgrad REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'unbestätigt',
+    erstmals TEXT NOT NULL,
+    aktualisiert TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_nexus_claim_status ON nexus_claims(status);
+CREATE INDEX IF NOT EXISTS ix_nexus_claim_grad ON nexus_claims(bestaetigungsgrad);
+
+-- Jede Meldung, die zu einer Kernthese gehört. Kopien sind Belege, aber keine
+-- unabhängigen Quellen; die Bewertung zählt sie deshalb nicht als Bestätigung.
+CREATE TABLE IF NOT EXISTS nexus_claim_quellen (
+    id INTEGER PRIMARY KEY,
+    claim_id INTEGER NOT NULL,
+    meldung_key TEXT NOT NULL,
+    artikel_id INTEGER NOT NULL,
+    quelle_id TEXT NOT NULL,
+    host TEXT NOT NULL,
+    aussage TEXT NOT NULL,
+    richtung TEXT NOT NULL,
+    wert REAL,
+    einheit TEXT NOT NULL DEFAULT '',
+    negiert INTEGER NOT NULL DEFAULT 0,
+    ist_kopie INTEGER NOT NULL DEFAULT 0,
+    reputation REAL NOT NULL DEFAULT 0.5,
+    erstellt TEXT NOT NULL,
+    UNIQUE(claim_id, meldung_key)
+);
+CREATE INDEX IF NOT EXISTS ix_nexus_claimq_claim ON nexus_claim_quellen(claim_id);
+CREATE INDEX IF NOT EXISTS ix_nexus_claimq_host ON nexus_claim_quellen(host);
+
+-- Erkannte Widersprüche bleiben als Paar sichtbar, inklusive Grund und
+-- Sicherheit. Kein Widerspruch wird stillschweigend zu einer Wahrheit.
+CREATE TABLE IF NOT EXISTS nexus_widersprueche (
+    id INTEGER PRIMARY KEY,
+    claim_id INTEGER NOT NULL,
+    meldung_a TEXT NOT NULL,
+    meldung_b TEXT NOT NULL,
+    quelle_a TEXT NOT NULL,
+    quelle_b TEXT NOT NULL,
+    grund TEXT NOT NULL,
+    sicherheit REAL NOT NULL,
+    erstellt TEXT NOT NULL,
+    UNIQUE(claim_id, meldung_a, meldung_b)
+);
+CREATE INDEX IF NOT EXISTS ix_nexus_wid_claim ON nexus_widersprueche(claim_id);
+
 -- Spider Intelligence: analysierter Volltext je Artikel
 CREATE TABLE IF NOT EXISTS intel_inhalte (
     artikel_id INTEGER PRIMARY KEY,
@@ -512,6 +588,122 @@ class Facts:
             "dublettenquote": round(dubletten / gesamt, 3) if gesamt else 0.0,
             "cluster": cluster,
             "nach_sprache": nach_sprache,
+        }
+
+    def nexus_meldungen_alle(self) -> list[sqlite3.Row]:
+        """Alle Meldungen für den deterministischen Bewertungs-Rebuild."""
+        with self.conn() as c:
+            return list(c.execute("SELECT * FROM nexus_meldungen ORDER BY id"))
+
+    # ---------- Nexus Phase 3: Quellenreputation, Claims, Widersprüche ----------
+    def nexus_bewertung_ersetzen(
+        self,
+        quellen: Sequence[dict[str, Any]],
+        claims: Sequence[dict[str, Any]],
+        claim_quellen: Sequence[dict[str, Any]],
+        widersprueche: Sequence[dict[str, Any]],
+    ) -> None:
+        """Ersetzt den Bewertungsstand atomar. Kein halber Rebuild bleibt sichtbar."""
+        with self.conn() as c:
+            for tabelle in ("nexus_claim_quellen", "nexus_widersprueche",
+                            "nexus_claims", "nexus_quellen_reputation"):
+                c.execute(f"DELETE FROM {tabelle}")
+            if quellen:
+                c.executemany(
+                    "INSERT INTO nexus_quellen_reputation(quelle_id,name,host,gewicht,"
+                    "artikel,analysiert,bestaetigt,widerlegt,widersprueche,reputation,"
+                    "vertrauen,aktualisiert) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    [tuple(r[k] for k in (
+                        "quelle_id", "name", "host", "gewicht", "artikel",
+                        "analysiert", "bestaetigt", "widerlegt", "widersprueche",
+                        "reputation", "vertrauen", "aktualisiert")) for r in quellen],
+                )
+            if claims:
+                c.executemany(
+                    "INSERT INTO nexus_claims(id,claim_key,kernaussage,thema,subjekt,"
+                    "metrik,quellen,belege,widersprueche,bestaetigungsgrad,status,"
+                    "erstmals,aktualisiert) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    [tuple(r[k] for k in (
+                        "id", "claim_key", "kernaussage", "thema", "subjekt",
+                        "metrik", "quellen", "belege", "widersprueche",
+                        "bestaetigungsgrad", "status", "erstmals",
+                        "aktualisiert")) for r in claims],
+                )
+            if claim_quellen:
+                c.executemany(
+                    "INSERT INTO nexus_claim_quellen(id,claim_id,meldung_key,artikel_id,"
+                    "quelle_id,host,aussage,richtung,wert,einheit,negiert,ist_kopie,"
+                    "reputation,erstellt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    [tuple(r[k] for k in (
+                        "id", "claim_id", "meldung_key", "artikel_id", "quelle_id",
+                        "host", "aussage", "richtung", "wert", "einheit",
+                        "negiert", "ist_kopie", "reputation", "erstellt"))
+                     for r in claim_quellen],
+                )
+            if widersprueche:
+                c.executemany(
+                    "INSERT INTO nexus_widersprueche(id,claim_id,meldung_a,meldung_b,"
+                    "quelle_a,quelle_b,grund,sicherheit,erstellt) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    [tuple(r[k] for k in (
+                        "id", "claim_id", "meldung_a", "meldung_b", "quelle_a",
+                        "quelle_b", "grund", "sicherheit", "erstellt"))
+                     for r in widersprueche],
+                )
+
+    def nexus_quellen_reputation(self) -> list[dict[str, Any]]:
+        with self.conn() as c:
+            return [dict(r) for r in c.execute(
+                "SELECT * FROM nexus_quellen_reputation "
+                "ORDER BY reputation DESC, artikel DESC, name"
+            )]
+
+    def nexus_claims(self, limit: int = 50, status: str | None = None) -> list[dict[str, Any]]:
+        with self.conn() as c:
+            if status:
+                zeilen = c.execute(
+                    "SELECT * FROM nexus_claims WHERE status=? "
+                    "ORDER BY bestaetigungsgrad DESC, quellen DESC, id DESC LIMIT ?",
+                    (status, int(limit)),
+                )
+            else:
+                zeilen = c.execute(
+                    "SELECT * FROM nexus_claims "
+                    "ORDER BY bestaetigungsgrad DESC, quellen DESC, id DESC LIMIT ?",
+                    (int(limit),),
+                )
+            return [dict(r) for r in zeilen]
+
+    def nexus_widersprueche(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self.conn() as c:
+            zeilen = c.execute(
+                "SELECT w.*, c.claim_key, c.kernaussage, c.status AS claim_status "
+                "FROM nexus_widersprueche w JOIN nexus_claims c ON c.id=w.claim_id "
+                "ORDER BY w.sicherheit DESC, w.id DESC LIMIT ?",
+                (int(limit),),
+            )
+            return [dict(r) for r in zeilen]
+
+    def nexus_claim_statistik(self) -> dict[str, Any]:
+        with self.conn() as c:
+            gesamt = int(c.execute("SELECT COUNT(*) n FROM nexus_claims").fetchone()["n"])
+            nach_status = {r["status"]: int(r["n"]) for r in c.execute(
+                "SELECT status, COUNT(*) n FROM nexus_claims GROUP BY status")}
+            belege = int(c.execute(
+                "SELECT COALESCE(SUM(belege),0) n FROM nexus_claims").fetchone()["n"])
+            widersprueche = int(c.execute(
+                "SELECT COUNT(*) n FROM nexus_widersprueche").fetchone()["n"])
+            quellen = int(c.execute(
+                "SELECT COUNT(*) n FROM nexus_quellen_reputation").fetchone()["n"])
+            grad = c.execute(
+                "SELECT COALESCE(AVG(bestaetigungsgrad),0) w FROM nexus_claims").fetchone()["w"]
+        return {
+            "gesamt": gesamt,
+            "nach_status": nach_status,
+            "belege": belege,
+            "widersprueche": widersprueche,
+            "quellen": quellen,
+            "bestaetigungsgrad": round(float(grad or 0.0), 3),
         }
 
     def artikel_by_ids(self, ids: Sequence[int]) -> list[sqlite3.Row]:

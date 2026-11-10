@@ -26,6 +26,7 @@ from pathlib import Path
 
 from ..db import Facts
 from .abruf import Abrufer, CacheEintrag, HttpCache
+from .bewertung import claims_auffrischen
 from .feeds import parse_feed
 from .quellen import Quelle, lade_register
 from .speicher import MeldungSpeicher
@@ -154,6 +155,9 @@ def _warnung_text(bericht: dict[str, object]) -> str:
         teile.append(f"Backup: {backup['fehler']}.")
     if bericht.get("speicher_fehler"):
         teile.append(f"Speicherung: {bericht['speicher_fehler']} Fehler.")
+    bewertung = bericht.get("bewertung")
+    if isinstance(bewertung, dict) and bewertung.get("fehler"):
+        teile.append(f"Bewertung: {bewertung['fehler']}.")
     domain = bericht.get("domain")
     if isinstance(domain, dict) and not domain.get("ok"):
         teile.append(f"Domain: {domain.get('fehler', 'unbekannt')}.")
@@ -267,6 +271,13 @@ def nachtlauf(
                        "speicher_fehler_typ": speicher_fehler_typ,
                        "fehler": ergebnis.fehler, "ms": ergebnis.dauer_ms})
 
+    bewertung_fehler = False
+    try:
+        bewertung = claims_auffrischen(datenbank, quellen)
+    except Exception as exc:
+        bewertung = {"fehler": type(exc).__name__}
+        bewertung_fehler = True
+
     bericht: dict[str, object] = {
         "zeit": zeit,
         "faellig": zaehler.faellig,
@@ -278,8 +289,10 @@ def nachtlauf(
         "dubletten": zaehler.dubletten,
         "wiederholungen": zaehler.wiederholungen,
         "speicher_fehler": zaehler.speicher_fehler,
+        "bewertung": bewertung,
         "quellen": detail,
-        "hinweis": "Meldungen werden in artikel gespeichert; SimHash gruppiert Kopien.",
+        "hinweis": ("Meldungen werden in artikel gespeichert; SimHash gruppiert Kopien; "
+                    "Kernaussagen werden regelbasiert bewertet."),
     }
 
     if backup_ordner:
@@ -296,7 +309,8 @@ def nachtlauf(
     domain = bericht.get("domain")
     domain_fehler = isinstance(domain, dict) and not domain.get("ok")
     bericht["ok"] = (zaehler.fehler == 0 and zaehler.speicher_fehler == 0
-                     and not backup_fehler and not domain_fehler)
+                     and not bewertung_fehler and not backup_fehler
+                     and not domain_fehler)
     bericht["warnung_noetig"] = not bericht["ok"]
 
     if not bericht["ok"]:
@@ -316,6 +330,8 @@ def nachtlauf(
             f"{zaehler.unveraendert} unverändert, {zaehler.meldungen} Meldungen, "
             f"{zaehler.gespeichert} gespeichert, {zaehler.dubletten} Dubletten, "
             f"{zaehler.wiederholungen} Wiederholungen, {zaehler.fehler} Fehler, "
+            f"{bericht.get('bewertung', {}).get('kernaussagen', 0)} Kernaussagen, "
+            f"{bericht.get('bewertung', {}).get('widersprueche', 0)} Widersprüche, "
             f"ok={bericht['ok']}",
         )
         datenbank.zustand_setzen("nexus_nacht", bericht)

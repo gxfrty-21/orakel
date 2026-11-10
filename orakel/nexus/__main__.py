@@ -1,4 +1,4 @@
-"""CLI: ``python -m orakel.nexus status|hole|nacht``."""
+"""CLI: ``python -m orakel.nexus status|hole|nacht|bewertung``."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import sys
 
 from ..db import Facts
 from .abruf import Abrufer, HttpCache
+from .bewertung import claims_auffrischen
 from .feeds import parse_feed
 from .hackernews import meldungen as hn_meldungen
 from .nacht import nachtlauf
@@ -84,6 +85,13 @@ def _nacht(args: argparse.Namespace) -> int:
     return 0 if bericht.get("ok") else 1
 
 
+def _bewertung(args: argparse.Namespace) -> int:
+    quellen = lade_register(args.register)
+    ergebnis = claims_auffrischen(Facts(args.db), quellen)
+    print(json.dumps(ergebnis, ensure_ascii=False, indent=2))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m orakel.nexus")
     unter = parser.add_subparsers(dest="befehl", required=True)
@@ -116,6 +124,11 @@ def main(argv: list[str] | None = None) -> int:
     nacht.add_argument("--ping-url", default=os.environ.get("ORAKEL_PING_URL") or None)
     nacht.add_argument("--limit", type=int, default=None)
     nacht.set_defaults(funktion=_nacht)
+
+    bewertung = unter.add_parser("bewertung", help="Kernaussagen und Quellenreputation neu berechnen")
+    bewertung.add_argument("--db", default="orakel.db")
+    bewertung.add_argument("--register", default=None)
+    bewertung.set_defaults(funktion=_bewertung)
 
     args = parser.parse_args(argv)
     return int(args.funktion(args))

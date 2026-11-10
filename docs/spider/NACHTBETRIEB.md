@@ -41,18 +41,21 @@ steht). `Persistent=true` holt einen verpassten Lauf beim nächsten Start nach.
 | 2 | Abruf mit `If-None-Match` / `If-Modified-Since` | unveränderte Quellen: `304`, kein Body, kein Parsen |
 | 3 | Neue Antworten parsen | Meldungen zählen (RSS 2.0, RDF, Atom), Sprache schätzen, SimHash berechnen |
 | 4 | Speichern und gruppieren | Original in `artikel`, jede Meldung in `nexus_meldungen` |
-| 5 | Ereignis und Zustand schreiben | `ereignisse`, `zustand["nexus_nacht"]` |
-| 6 | SQLite-Backup | `backups/orakel-JJJJ-MM-TT.db`, `integrity_check` |
-| 7 | Backups aufräumen | älter als 14 Tage werden gelöscht |
-| 8 | Optional DNS/TLS | A/AAAA, Zertifikatsablauf, `/api/health` |
+| 5 | Kernaussagen bewerten | regelbasierte Claims, Quellenreputation, Widersprüche |
+| 6 | Ereignis und Zustand schreiben | `ereignisse`, `zustand["nexus_nacht"]` |
+| 7 | SQLite-Backup | `backups/orakel-JJJJ-MM-TT.db`, `integrity_check` |
+| 8 | Backups aufräumen | älter als 14 Tage werden gelöscht |
+| 9 | Optional DNS/TLS | A/AAAA, Zertifikatsablauf, `/api/health` |
 
-**Was noch nicht:** Volltextanalyse, Entitäten, Claims und Quellenreputation.
-Der Lauf speichert die Meldung, erkennt Kopien über SimHash und hält jede
-Meldung mit Quelle und Sprache fest. Er behauptet nicht, den Inhalt verstanden
-zu haben.
+**Was noch nicht:** Volltextanalyse, Entitäten und semantisches Verstehen.
+Phase 3 bewertet nur Sätze mit prüfbaren Mustern (Metrik, Zahl, Richtung,
+Verneinung). 431 von 446 Meldungen im letzten breiten Lauf hatten kein solches
+Muster und bleiben bewusst ohne Claim. Der Lauf behauptet nicht, den Inhalt
+verstanden zu haben.
 
-Der Lauf ist damit ehrlich beschrieben: Er hält Artikel, Cache und Backup
-aktuell und protokolliert, was er gesehen hat — er erfindet keine Erkenntnisse.
+Der Lauf ist damit ehrlich beschrieben: Er hält Artikel, Cache, Claims und
+Backup aktuell und protokolliert, was er gesehen hat — er erfindet keine
+Erkenntnisse.
 
 ---
 
@@ -146,6 +149,7 @@ deshalb der bessere Weg.
 sudo docker compose exec -T orakel python -m orakel.nexus status --db /data/orakel.db
 sudo docker compose exec -T orakel python -m orakel.nexus nacht --db /data/orakel.db \
   --backup-ordner /data/backups --limit 5 --ping-url ""
+sudo docker compose exec -T orakel python -m orakel.nexus bewertung --db /data/orakel.db
 ```
 
 Die Ausgabe ist JSON und nennt `faellig`, `abgerufen`, `unveraendert`,
@@ -219,13 +223,23 @@ Spider-Tab steht dafür die Karte **Nachtbetrieb**:
 | Laufzeit | `nacht.zeit` |
 | Quellen | `faellig`, `abgerufen`, `unveraendert` |
 | Meldungen, gespeichert, Kopien | `meldungen`, `gespeichert`, `dubletten` |
-| Fehler | `fehler`, `speicher_fehler` |
+| Kernaussagen, Belege | `bewertung.kernaussagen`, `bewertung.belege` |
+| Widersprüche | `bewertung.widersprueche` |
+| Fehler | `fehler`, `speicher_fehler`, `bewertung.fehler` |
 | Backup-Zeitpunkt | `backup.erstellt` |
 | Integrität und Größe | `backup.integrity`, `backup.bytes` |
 | Warnung und Ping | `warnung.gesendet`, `ping.gesendet` |
 
 Ohne gespeicherten Lauf steht dort „Noch kein Nachtlauf“ — keine erfundene
 Zahl. Die Karte lädt beim Öffnen des Spider-Tabs neu.
+
+Die Karte **Kernaussagen** zeigt zusätzlich `claims.statistik` und
+`claims.top` aus derselben API. `GET /api/nexus/claims` liefert alle Claims,
+Widersprüche und die Quellenreputation; `status=widersprüchlich` filtert.
+
+```bash
+curl -s 'http://127.0.0.1:8000/api/nexus/claims?limit=20' | python -m json.tool
+```
 
 ---
 

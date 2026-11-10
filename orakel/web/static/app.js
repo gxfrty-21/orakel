@@ -477,7 +477,39 @@ function zeichneNacht(){
   if(b.pfad) teile.push(`Backup: <span class="code">${esc(String(b.pfad).split('/').pop())}</span>`);
   if(b.entfernt?.length) teile.push(`${b.entfernt.length} alte Backups entfernt.`);
   if(n.domain) teile.push(`Domain: ${n.domain.ok ? 'ok' : esc(n.domain.fehler || 'Fehler')}${n.domain.tage_rest != null ? ' · Zertifikat ' + num(n.domain.tage_rest,0) + ' Tage' : ''}.`);
+  if(n.bewertung?.fehler) teile.push(`<span class="pill r">Bewertung</span> ${esc(n.bewertung.fehler)}.`);
+  else if(n.bewertung) teile.push(`Kernaussagen: ${num(n.bewertung.kernaussagen,0)} · Widersprüche: ${num(n.bewertung.widersprueche,0)}.`);
   $('#nachtDetail').innerHTML = `<div class="nacht-status">${teile.join(' ')}</div>`;
+  zeichneBewertung(nachtDaten);
+}
+
+function zeichneBewertung(d){
+  if(!$('#bewertungKpis')) return;
+  const c = d?.claims?.statistik || {};
+  const top = d?.claims?.top || [];
+  const wid = d?.claims?.widersprueche || [];
+  const reps = d?.reputation || [];
+  const ns = c.nach_status || {};
+  $('#bewertungTag').textContent = `${num(c.gesamt,0)} Kernaussagen`;
+  $('#bewertungKpis').innerHTML = [
+    ['Kernaussagen', num(c.gesamt,0), `${num(c.belege,0)} Belege`],
+    ['Bestätigt', num(ns['bestätigt'],0), '≥ 2 unabhängige Quellen'],
+    ['Teilweise', num(ns['teilweise'],0), 'nur eine Quelle oder wenig Belege'],
+    ['Widersprüchlich', num(c.widersprueche,0), 'erkannte Konflikte'],
+  ].map(q=>`<div class="kpi"><div class="l">${q[0]}</div><div class="v">${q[1]}</div><div class="n">${q[2]}</div></div>`).join('');
+
+  const pill = s => s==='bestätigt' ? 'g' : (s==='widersprüchlich' ? 'r' : (s==='teilweise' ? 'w' : ''));
+  $('#bewertungClaims').innerHTML = top.length ? top.map(k=>`
+    <div class="li"><span><b style="font-weight:400">${esc(k.kernaussage)}</b>
+      <small>${esc(k.thema)} · ${num(k.quellen,0)} Quellen · ${num(k.belege,0)} Belege</small></span>
+      <span class="pill ${pill(k.status)}">${num(k.bestaetigungsgrad,2)}</span></div>`).join('')
+    + (wid.length ? `<div class="nacht-status"><span class="pill r">Widerspruch</span> ${esc(wid[0].grund)} <span class="code">${esc(wid[0].quelle_a)} ↔ ${esc(wid[0].quelle_b)}</span></div>` : '')
+    : '<div class="empty">Noch keine Kernaussage. Der Nachtlauf bewertet Titel mit prüfbaren Zahlen, Richtungen oder Verneinungen.</div>';
+
+  $('#bewertungQuellen').innerHTML = reps.length ? `<table class="tbl"><thead><tr><th>Quelle</th><th class="m">Reputation</th><th class="m">belegt</th><th class="m">verworfen</th></tr></thead><tbody>
+    ${reps.map(q=>`<tr><td>${esc(q.name)}<small>${esc(q.vertrauen)}</small></td><td class="m">${num(q.reputation,2)}</td>
+    <td class="m up">${num(q.bestaetigt,0)}</td><td class="m dn">${num(q.widerlegt,0)}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="empty">Noch keine Quellenreputation.</div>';
 }
 
 function renderSpider(){

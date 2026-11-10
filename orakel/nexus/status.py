@@ -30,4 +30,10 @@ def gesamt_status(cache: HttpCache, quellen: list[Quelle],
     }
     if db is not None:
         daten["meldungen"] = db.nexus_statistik()
+        daten["claims"] = {
+            "statistik": db.nexus_claim_statistik(),
+            "top": db.nexus_claims(12),
+            "widersprueche": db.nexus_widersprueche(8),
+        }
+        daten["reputation"] = db.nexus_quellen_reputation()[:12]
     return daten

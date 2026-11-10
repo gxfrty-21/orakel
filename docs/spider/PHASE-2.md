@@ -126,5 +126,7 @@ identischen Feed-Einträgen und einer umformulierten Kopie getestet.
 
 ## 6. Nächster Schritt
 
-Phase 3: Quellenreputation aus echten Ergebnissen, Bestätigungsgrad und
-Widerspruchserkennung. Erst danach werden aus Meldungen belastbare Claims.
+Phase 3 ist umgesetzt: Quellenreputation, regelbasierte Kernaussagen,
+Bestätigungsgrad und Widerspruchserkennung. Details und ehrliche Grenzen:
+[PHASE-3.md](PHASE-3.md). Erst danach werden aus Meldungen belastbare Claims —
+Phase 3 liefert dafür die erste, bewusst heuristische Stufe.

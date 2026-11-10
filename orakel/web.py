@@ -135,6 +135,22 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         daten["nacht"] = db.zustand("nexus_nacht")
         return JSONResponse(daten, headers={"Cache-Control": "no-store"})
 
+    @app.get("/api/nexus/claims")
+    def nexus_claims(status: str | None = None, limit: int = 50) -> JSONResponse:
+        cfg = load_config(cfg_pfad)
+        db = Facts(cfg.db_pfad)
+        erlaubt = {"bestätigt", "teilweise", "unbestätigt", "widersprüchlich"}
+        if status and status not in erlaubt:
+            return JSONResponse({"ok": False, "fehler": f"Unbekannter Status: {status}"},
+                                status_code=400)
+        grenze = max(1, min(int(limit), 200))
+        return JSONResponse({
+            "claims": db.nexus_claims(grenze, status),
+            "widersprueche": db.nexus_widersprueche(grenze),
+            "statistik": db.nexus_claim_statistik(),
+            "reputation": db.nexus_quellen_reputation(),
+        }, headers={"Cache-Control": "no-store"})
+
     @app.get("/api/health")
     def health() -> dict[str, Any]:
         cfg = load_config(cfg_pfad)

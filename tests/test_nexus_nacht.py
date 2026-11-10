@@ -164,6 +164,20 @@ def test_nachtlauf_speichert_original_und_erkennt_kopie(server, tmp_path):
     assert statistik["dublettenquote"] == 0.5
 
 
+def test_nachtlauf_bewertet_kernaussage_und_kopie(server, tmp_path):
+    bericht = _nacht(tmp_path, _register(tmp_path, f"{server}/dubletten.xml"))
+
+    assert bericht["ok"] is True
+    assert bericht["bewertung"]["kernaussagen"] == 1
+    assert bericht["bewertung"]["belege"] == 2
+    assert bericht["bewertung"]["widersprueche"] == 0
+
+    claim = Facts(tmp_path / "orakel.db").nexus_claims(5)[0]
+    assert claim["quellen"] == 1
+    assert claim["belege"] == 2
+    assert claim["status"] == "unbestätigt"
+
+
 def test_zweiter_lauf_erzeugt_keine_neue_zeile(server, tmp_path):
     register = _register(tmp_path, f"{server}/feed.xml")
     erster = _nacht(tmp_path, register)

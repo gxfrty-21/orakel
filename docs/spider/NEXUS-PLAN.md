@@ -298,6 +298,11 @@ Neue Datei `orakel/web/static/nexus3d.js`, Ansicht `#v-nexus`:
 zuletzt — eine schöne Hülle ohne echte Daten wäre genau die verbotene
 Dekoration.
 
+**Stand 10. November 2026:** Phasen 1–3 sind lokal umgesetzt und getestet
+(siehe [PHASE-1.md](PHASE-1.md), [PHASE-2.md](PHASE-2.md),
+[PHASE-3.md](PHASE-3.md)). Auf der Oracle-VM läuft noch der alte Stand; die
+Migration ist vorbereitet, aber nicht ausgeführt.
+
 ---
 
 ## 6. Erste Scheibe (empfohlener Start)
