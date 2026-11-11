@@ -1,7 +1,8 @@
 # Raumbuch — Orakel Interstellar Headquarters
 
-**Status:** Planung, keine Umsetzung  
-**Maßstab:** 1 Three.js-Einheit = 1 Meter  
+**Status:** Planung; Main Command Center E6 als erster begehbarer 3D-Prototyp umgesetzt<br>
+**Stand:** 10. November 2026<br>
+**Maßstab:** 1 Three.js-Einheit = 1 Meter
 **Hülle:** ca. 280 m lang, 140 m breit, 68 m hoch  
 **Decks:** 8 (E0–E7), je 8 m Strukturhöhe, 7 m lichte Höhe  
 **Zentrum:** offenes Atrium mit sechs Aufzügen und zwei Treppenhäusern
@@ -10,6 +11,32 @@ Das Schiff ist kein Kriegsschiff. Es ist ein fliegendes Forschungs-, Handels- un
 Verwaltungszentrum. Die Form ist aerodynamisch genug für eine Raumstation, aber
 bewusst als Innenarchitektur gedacht: breite Korridore, Glasfronten, hohe Räume und
 ein zentraler Lichthof.
+
+## 0. Umgesetzter Prototyp: Main Command Center (E6)
+
+Seit 10. November 2026 ist das Main Command Center als erste begehbare 3D-Ansicht
+im Dashboard umgesetzt. Die Ansicht `#v-command` nutzt das lokal eingebundene
+Three.js und bleibt ohne Bundler. Sie enthält:
+
+- acht Stationen für die echten Abteilungen A–H,
+- ein zentrales Hologramm mit Takt-, Job-, Datenbank- und Agentenwerten,
+- drei Wandschirme für Dauerbetrieb, Risiko/Paper und Agentenaktivität,
+- interaktive Deckskarte mit Direktreisen zu allen acht Stationen,
+- First-Person-Navigation mit WASD, Maus-Look, Shift und Pointer Lock,
+- einfache Wand- und Tischkollisionen,
+- eine synchronisierte Seitenleiste mit den echten Läufen aus `/api/report` und
+  dem Betriebsstatus aus `/api/betrieb`.
+
+Fehlende Daten werden als `KEINE DATEN` dargestellt. Die Szene ist reine
+Darstellung; sie verändert weder Paper-Trading noch Risikogrenzen und erzeugt
+keine Broker-Orders. Die übrigen Decks und Räume bleiben Planung.
+
+**Dateien:** `orakel/web/static/command3d.js`, `command.css`, Ergänzungen in
+`index.html` und `app.js`.
+
+**Bedienung im Prototyp:** WASD gehen, Maus umsehen, Shift rennen, `M` öffnet die
+Deckskarte, ESC gibt die Maus frei. Die übrigen in Kapitel 6 geplanten Tasten sind
+noch nicht angebunden.
 
 ## 1. Gesamtform und Erschließung
 
