@@ -7,7 +7,8 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307090c'/%3E%3Ccircle cx='16' cy='16' r='8' fill='none' stroke='%235fe0c8' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/static/style.css?v=12">
+<link rel="stylesheet" href="/static/style.css?v=13">
+<link rel="stylesheet" href="/static/command.css?v=3">
 </head>
 <body>
 <div class="app">
@@ -32,6 +33,7 @@
     <button class="nav" data-v="nexus"><b>Nexus</b><small>3D-Raum und Spinne</small></button>
     <button class="nav" data-v="betrieb"><b>Betrieb</b><small>Takt, Backoff, Grenzen</small></button>
     <button class="nav" data-v="ship"><b>Raumschiff</b><small>Abteilungen und Agenten</small></button>
+    <button class="nav" data-v="command"><b>Command Center</b><small>Begehbare 3D-Brücke</small></button>
     <button class="nav" data-v="spider"><b>Spider</b><small>Quellen und Erkenntnisse</small></button>
     <button class="nav" data-v="kb"><b>Wissensbank</b><small>Schlüsse aus Ergebnissen</small></button>
     <button class="nav" data-v="agents"><b>Agentenraum</b><small>Wer hat was getan</small></button>
@@ -275,6 +277,81 @@
       </div>
     </section>
 
+    <section class="view command-view" id="v-command" hidden>
+      <div class="command-head">
+        <div>
+          <span class="command-kicker">COMMAND DECK / E6 · BEGEHBARER 3D-PROTOTYP</span>
+          <h1>Command Center</h1>
+          <p class="sub">Die erste begehbare Brücke des Orakels. Acht Stationen entsprechen den acht echten Abteilungen; Wände, Hologramm und Screens zeigen ausschließlich Werte aus /api/report und /api/betrieb. Fehlt eine Grundlage, steht «KEINE DATEN» auf dem Schirm.</p>
+        </div>
+        <div class="command-actions">
+          <div class="command-mode" id="commandMode"><span class="g-live-dot"></span><span><b>WIRD GELADEN</b><small>Raum wird verbunden</small></span></div>
+          <button type="button" class="toggle main" id="commandEnter">Betreten</button>
+        </div>
+      </div>
+      <div class="command-grid">
+        <div class="command-stage" id="commandStage" tabindex="0" aria-label="Begehbares 3D-Command-Center. Klicken für Maussteuerung, WASD zum Gehen, M für die Deckskarte, Escape zum Freigeben.">
+          <canvas id="commandCanvas"></canvas>
+          <div class="command-hud-top">
+            <div class="command-hud-kicker">ORAKEL / COMMAND CENTER</div>
+            <div class="command-hud-status" id="commandHudStatus">–</div>
+            <div class="command-hud-detail" id="commandHudDetail">–</div>
+          </div>
+          <div class="command-hud-stats">
+            <span><small>TAKT</small><b id="commandHudTakt">–</b></span>
+            <span><small>AGENTEN</small><b id="commandHudAgenten">–</b></span>
+            <span><small>DB</small><b id="commandHudDb">–</b></span>
+          </div>
+          <div class="command-overlay" id="commandOverlay">
+            <span class="command-overlay-kicker">COMMAND DECK / E6</span>
+            <b>Brücke betreten</b>
+            <small id="commandOverlayText">Klicken, um den Raum zu betreten. WASD zum Gehen, Maus zum Umsehen, ESC zum Verlassen.</small>
+            <button type="button" class="toggle main" id="commandEnterOverlay">Betreten</button>
+          </div>
+          <div class="command-hint" id="commandHint">WASD GEHEN · MAUS UMSEHEN · SHIFT RENNEN · M KARTE · ESC FREIGEBEN</div>
+          <div class="command-controls">
+            <button type="button" class="g-control" id="commandMapBtn" aria-expanded="false" aria-controls="commandMap">Deckskarte</button>
+            <button type="button" class="g-control" id="commandReset">Position zurücksetzen</button>
+          </div>
+          <div class="command-map" id="commandMap" role="dialog" aria-modal="true" aria-label="Deckskarte des Command Centers" hidden>
+            <div class="command-map-head">
+              <div>
+                <span class="command-map-kicker">DECKSKARTE / E6</span>
+                <b>Main Command Center</b>
+              </div>
+              <button type="button" class="g-control" id="commandMapClose">Schliessen</button>
+            </div>
+            <div class="command-map-plan" id="commandMapPlan" aria-label="Grundriss mit acht Stationen">
+              <div class="command-map-loading">Deckskarte wird geladen.</div>
+            </div>
+            <div class="command-map-foot"><span class="command-map-key"><i></i>STATION</span><span>Station anklicken, um direkt davor zu stehen.</span><span><b>M</b> Karte · <b>ESC</b> schliessen</span></div>
+          </div>
+        </div>
+        <aside class="command-rail" aria-label="Echte Daten des Command Centers">
+          <div class="command-rail-head"><span>LAGEBILD</span><b id="commandTag">–</b></div>
+          <div class="command-kpis" id="commandKpis"></div>
+          <div class="command-rail-section">
+            <div class="command-rail-title">ABTEILUNGEN / STATIONEN</div>
+            <div id="commandDepts"></div>
+          </div>
+          <div class="command-rail-section">
+            <div class="command-rail-title">LETZTE AKTIVITÄT</div>
+            <div class="command-activity" id="commandActivity"><div class="command-empty">Wird geladen.</div></div>
+          </div>
+        </aside>
+      </div>
+      <div class="command-lower">
+        <div class="panel">
+          <div class="ph">Raumvertrag<span class="sp"></span><span class="tag">keine Dekoration</span></div>
+          <div class="card command-contract" id="commandContract">Die Brücke ist ein erster Prototyp, keine Automation. Sie liest nur die bestehenden Fakten aus Report und Betrieb. Acht Stationen sind den Abteilungen A–H zugeordnet; die Zahl der Agentenläufe und Befunde stammt aus der Datenbank. Es werden keine Agenten, Kurse oder Aktivitäten erfunden. Paper-Trading und Risikogrenzen bleiben unverändert.</div>
+        </div>
+        <div class="panel">
+          <div class="ph">Datenquellen<span class="sp"></span><span class="tag">live</span></div>
+          <div class="card command-sources" id="commandSources"><div class="command-empty">Wird geladen.</div></div>
+        </div>
+      </div>
+    </section>
+
     <section class="view" id="v-spider" hidden>
       <div class="head"><div><h1>Spider Intelligence</h1><p class="sub">RSS-Quellen, robots.txt geprüft, Abruflimits eingehalten. Volltext nur bei freigegebenen Seiten. Jede Erkenntnis behält Quelle und Qualitätsheuristik.</p></div>
         <button class="toggle main" id="spiderBtn">Recherche starten</button></div>
@@ -351,6 +428,6 @@
     </section>
   </main>
 </div>
-<script src="/static/app.js?v=12"></script>
+<script src="/static/app.js?v=16"></script>
 </body>
 </html>
