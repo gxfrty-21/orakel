@@ -5,7 +5,7 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const FARBEN = {
-    '00-Index':'#9b8bb4', '10-Daten':'#7fd4ff', '20-Strategien':'#ff3fa4',
+    '10-Daten':'#7fd4ff', '20-Strategien':'#ff3fa4',
     '30-Validierungen':'#38e8ff', '40-Entscheide':'#5ef2c0', '50-Konferenz':'#c08bff',
     '60-Fehler':'#ff5470', '70-Wissen':'#ffb84d', 'Unaufgelöst':'#8f7ba8', 'Tags':'#c9a7ff',
   };
