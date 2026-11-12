@@ -47,6 +47,15 @@
       updateCount();
       draw();
     });
+    el.search.addEventListener('keydown', ev => {
+      if (ev.key !== 'Escape') return;
+      ev.preventDefault();
+      el.search.value = '';
+      state.search = '';
+      updateCount();
+      draw();
+      el.search.blur();
+    });
     el.folder.addEventListener('change', filterGeaendert);
     el.orphans.addEventListener('change', filterGeaendert);
     if (el.tags) el.tags.addEventListener('change', tagsGeaendert);
