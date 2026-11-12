@@ -805,6 +805,13 @@ body.nurAltBloecke .mtasks.ohneAlt{display:none}
   .planZeile>span:first-child{flex:1 1 100%;min-width:0}
   .planZeile .planStatus{flex:0 0 100%;flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px;margin-top:2px}
   .planZeile .planStatus .r{white-space:normal;text-align:left}
+  .evZeile{flex-wrap:wrap;align-items:flex-start}
+  .evZeile>span:first-child{flex:1 1 100%;min-width:0}
+  .evZeile>span:last-child{margin-top:2px}
+  .evZeile b,.evZeile small{overflow-wrap:anywhere}
+  .ord .wlTop{flex-wrap:wrap;align-items:flex-start}
+  .ord .wlTop>span:first-child{flex:1 1 100%;min-width:0}
+  .ord .wlTop>span:last-child{margin-top:2px}
   .musterTrades li{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-areas:"sym date date" "net rend dauer";gap:3px 8px;margin:0;padding:6px 0;border-top:1px solid var(--line)}
   .musterTrades li:first-child{border-top:0}
   .musterTrades li>span::before{content:none}
