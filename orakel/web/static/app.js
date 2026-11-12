@@ -239,7 +239,7 @@ function zeichneVaultOrdner(){
   const el = $('#vaultOrdner');
   if(!el) return;
   el.innerHTML = vaultOrdner
-    ? (vaultOrdner.length ? vaultOrdner.map(o=>`<span class="i">${esc(o)}</span>`).join('')
+    ? (vaultOrdner.length ? vaultOrdner.map(o=>`<span class="i">${esc(o.name)} · ${o.anzahl} ${o.anzahl === 1 ? 'Notiz' : 'Notizen'}</span>`).join('')
       : '<span class="i">Keine Ordner mit Notizen.</span>')
     : '<span class="i">wird geladen …</span>';
 }
@@ -252,7 +252,8 @@ async function ladeVaultOrdner(){
     const r = await fetch('/api/vault/graph', {cache:'no-store'});
     const d = await r.json();
     if(!r.ok || !d.ok) throw new Error(d.fehler || 'Graph nicht verfügbar');
-    vaultOrdner = (d.ordner || []).map(o=>o.name).filter(Boolean);
+    vaultOrdner = (d.ordner || []).filter(o=>o && o.name)
+      .map(o=>({name:o.name, anzahl:Number(o.anzahl) || 0}));
   }catch(e){
     const el = $('#vaultOrdner');
     if(el) el.innerHTML = `<span class="i">Ordner konnten nicht geladen werden: ${esc(e.message)}</span>`;
