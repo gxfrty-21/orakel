@@ -145,6 +145,23 @@ button.li:hover{background:var(--panel2)}
 .tbl td.id{font-family:var(--mono);font-size:12px;color:var(--muted)}
 .tbl tr:last-child td{border-bottom:0}
 .tw{overflow-x:auto}
+/* Wissensbank: breite Tabelle wird auf schmalen Viewports zur Kartenliste. */
+@media (max-width:900px){
+  #types{overflow-x:visible}
+  #types .tbl{display:block;width:100%;font-size:12.5px}
+  #types .tbl thead{display:none}
+  #types .tbl tbody{display:grid;gap:8px}
+  #types .tbl tr{display:block;padding:11px 13px;border:1px solid var(--line);border-radius:6px;background:rgba(255,255,255,.015)}
+  #types .tbl td{display:grid;grid-template-columns:minmax(90px,.8fr) minmax(0,1.2fr);gap:12px;align-items:baseline;
+    padding:3px 0;border:0;white-space:normal;text-align:left}
+  #types .tbl td::before{content:attr(data-label);color:var(--dim);font-family:var(--mono);font-size:10.5px;line-height:1.5;letter-spacing:.03em;text-align:left}
+  #types .tbl td.m{text-align:right}
+  #types .tbl td[data-label="Typ"]{display:block;padding:0 0 7px;margin-bottom:4px;border-bottom:1px solid var(--line);
+    font-weight:600;color:var(--fg)}
+  #types .tbl td[data-label="Typ"]::before{display:none}
+  #types .tbl td[data-label="Häufigste Ablehnung"]{display:block;padding-top:6px}
+  #types .tbl td[data-label="Häufigste Ablehnung"]::before{display:block;margin-bottom:2px}
+}
 .bar{display:inline-block;width:110px;height:6px;background:var(--line);border-radius:3px;overflow:hidden;vertical-align:middle}
 .bar i{display:block;height:100%;background:var(--accent)}
 .tabs{display:flex;gap:6px;flex-wrap:wrap}
