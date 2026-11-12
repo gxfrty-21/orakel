@@ -598,6 +598,7 @@ button.li:hover{background:var(--panel2)}
 .musterTrades summary{cursor:pointer;color:var(--accent)}
 .musterTrades ul{margin:4px 0 0 14px;padding:0}
 .musterTrades li{margin:2px 0;color:var(--muted)}
+.musterTrades li>span::before{content:" · ";color:var(--dim)}
 .musterTrades .trFilter{display:flex;align-items:center;gap:5px;margin:4px 0 0 2px;color:var(--muted);cursor:pointer}
 .musterTrades .trFilter input{accent-color:var(--accent);margin:0}
 .musterTrades ul.nurAbw li:not(.abweichend){display:none}
@@ -624,7 +625,7 @@ button.li:hover{background:var(--panel2)}
 .mtask.alt .mtaskstat{color:#e0b64a}
 .trRend.plus{color:#4ade80}
 .trRend.minus{color:#f87171}
-.trNet,.trRend,.trDauer{white-space:nowrap}
+.trNet,.trRend,.trDauer,.trDatum{white-space:nowrap}
 #mtgPanel .ph .mtgTaktStand{margin-left:6px}
 .mtgLogKopf{display:flex;align-items:center;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-top:6px}
 .mtgLogKopf .toggle{font-size:10px;padding:1px 6px}
@@ -798,6 +799,15 @@ body.nurAltBloecke .mtasks.ohneAlt{display:none}
   .sekTabs button{min-height:44px}
   .mtgVote button,.mtgOverride button{min-height:44px}
   summary{min-height:44px}
+  .musterTrades li{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-areas:"sym date date" "net rend dauer";gap:3px 8px;margin:0;padding:6px 0;border-top:1px solid var(--line)}
+  .musterTrades li:first-child{border-top:0}
+  .musterTrades li>span::before{content:none}
+  .musterTrades .trSym{grid-area:sym;font-size:11.5px}
+  .musterTrades .trDatum{grid-area:date;color:var(--dim);font-size:10.5px;text-align:right}
+  .musterTrades .trNet{grid-area:net;text-align:left}
+  .musterTrades .trRend{grid-area:rend;text-align:right}
+  .musterTrades .trDauer{grid-area:dauer;text-align:right}
+  .musterTrades .trGrund{grid-column:1/-1;color:#d9a300;font-size:10px}
 }
 
 .mtgAltKopf{display:inline-flex;gap:6px;align-items:center}
