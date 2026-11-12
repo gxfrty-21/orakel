@@ -71,6 +71,13 @@ def _bericht(cfg_pfad: str) -> dict[str, Any]:
     bericht["konferenz"] = konferenz["protokoll"] if konferenz else basis.get("konferenz")
     spider = dict(db.zustand("spider_letzter_lauf") or {})
     spider.setdefault("artikel", [])
+    status = db.zustand("spider_quellen_status") or {}
+    if not spider.get("quellen_status") and status.get("quellen"):
+        spider["quellen_status"] = status.get("quellen")
+        spider["intervall_minuten"] = status.get("intervall_minuten")
+        spider["stand"] = status.get("stand")
+    spider.setdefault("quellen_status", [])
+    spider.setdefault("intervall_minuten", None)
     if not spider["artikel"]:
         import json as _json
 
@@ -81,6 +88,10 @@ def _bericht(cfg_pfad: str) -> dict[str, Any]:
                 eintrag["symbole"] = ", ".join(_json.loads(eintrag.get("symbole") or "[]"))
             except Exception:
                 eintrag["symbole"] = ""
+            # Alte Zeilen kennen keine Erkennungszeit; dann gilt der Abrufzeitpunkt.
+            eintrag["erkannt"] = eintrag.get("erkannt") or eintrag.get("geholt")
+            eintrag.setdefault("prioritaet", "")
+            eintrag.setdefault("prioritaet_grund", "")
             zeilen.append(eintrag)
         spider["artikel"] = zeilen
     spider["statistik"] = db.artikel_statistik()

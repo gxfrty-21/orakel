@@ -26,7 +26,7 @@ from typing import Any, Callable
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
-from .db import Facts
+from .db import Facts, jetzt
 from .knowledge import Vault
 
 MAX_BYTES = 2_000_000
@@ -68,6 +68,7 @@ class Artikel:
     zusammenfassung: str = ""
     qualitaet: float = 0.0
     symbole: list[str] = field(default_factory=list)
+    gewicht: float = 0.5
 
     @property
     def titel_hash(self) -> str:
@@ -95,8 +96,14 @@ def _symbole_erkennen(text: str) -> list[str]:
             if any(w in klein for w in woerter)]
 
 
-def _qualitaet(quelle_gewicht: float, url: str, titel: str, text: str) -> float:
-    """Heuristik, offen dokumentiert. Keine KI-Bewertung, keine erfundene Zahl."""
+def _qualitaet(quelle_gewicht: float, url: str, titel: str, text: str,
+              typ: str = "") -> float:
+    """Heuristik, offen dokumentiert. Keine KI-Bewertung, keine erfundene Zahl.
+
+    Forenbeiträge sind naturgemäss kurz; ohne eigene Regel fielen echte
+    Diskussionen unter die Mindestqualität. Ein Beitrag ab 400 Zeichen mit
+    Marktbegriff gilt deshalb als brauchbar, kurze Einzeiler weiterhin nicht.
+    """
     wert = 0.15 + 0.35 * quelle_gewicht
     host = urlparse(url).netloc.lower().removeprefix("www.")
     if any(host.endswith(d) for d in SERIOESE_DOMAINS):
@@ -113,7 +120,72 @@ def _qualitaet(quelle_gewicht: float, url: str, titel: str, text: str) -> float:
         wert -= 0.35
     if titel.isupper() or titel.count("!") >= 2:
         wert -= 0.1
+    if typ == "forum":
+        if len(text) >= 400 and _symbole_erkennen(titel + " " + text):
+            wert += 0.2
+        else:
+            wert -= 0.1
     return round(max(0.0, min(1.0, wert)), 2)
+
+
+# Begriffe, die unabhängig von der Quelle auf ein marktbewegendes Ereignis deuten.
+# Reine Stichwortliste, offen dokumentiert — keine KI-Bewertung.
+KRITISCHE_BEGRIFFE = re.compile(
+    r"\b(zoll|zölle|zoelle|tariff|tariffs|leitzins|zinsentscheid|rate cut|rate hike|"
+    r"sanktion|sanktionen|sanction|sanctions|krieg|notstand|staatspleite|default|"
+    r"insolvenz|bankrott|bank run|chapter 11|opec|lockdown)\b",
+    re.IGNORECASE,
+)
+
+
+# Meldungen, die älter sind, sind keine Frühwarnung mehr — auch wenn die Quelle
+# hochwertig ist. Sie werden als «normal» geführt, mit sichtbarem Grund.
+MAX_ALTER_TAGE_PRIORITAET = 3
+
+
+def _alter_tage(veroeffentlicht: str | None) -> float | None:
+    if not veroeffentlicht:
+        return None
+    try:
+        from datetime import datetime, timezone
+        from email.utils import parsedate_to_datetime
+
+        zeit = parsedate_to_datetime(veroeffentlicht)
+        if zeit.tzinfo is None:
+            zeit = zeit.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - zeit).total_seconds() / 86400
+    except Exception:
+        return None
+
+
+def _prioritaet(artikel: Artikel, gewicht: float) -> tuple[str, str]:
+    """Kritisch / Wichtig / Normal aus nachvollziehbaren Signalen.
+
+    Regeln (bewusst einfach und prüfbar):
+    - kritisch: Schlüsselbegriff und Qualität >= 0.55, oder Marktbezug + Qualität
+      >= 0.7 bei Notenbank-/Unternehmensquelle bzw. Quellengewicht >= 0.9.
+    - wichtig: Marktbezug und Qualität >= 0.6, oder hohes Quellengewicht.
+    - normal: alles übrige.
+    Die Begründung wird mitgespeichert, damit die Stufe nicht als Blackbox wirkt.
+    """
+    text = f"{artikel.titel} {artikel.zusammenfassung}"
+    treffer = sorted({m.group(0).lower() for m in KRITISCHE_BEGRIFFE.finditer(text)})
+    hohe_quelle = artikel.typ in ("notenbank", "unternehmensbericht") or gewicht >= 0.9
+    teile = [f"Quelle {artikel.typ} (Gewicht {gewicht:.2f})",
+             f"Qualität {artikel.qualitaet:.2f}",
+             ("Marktbezug " + ", ".join(artikel.symbole)) if artikel.symbole else "kein Marktbezug"]
+    if treffer:
+        teile.append("Schlüsselbegriff " + ", ".join(treffer[:3]))
+    alter = _alter_tage(artikel.veroeffentlicht)
+    if alter is not None and alter > MAX_ALTER_TAGE_PRIORITAET:
+        return "normal", f"normal: {alter:.0f} Tage alt; " + "; ".join(teile)
+    if treffer and artikel.qualitaet >= 0.55:
+        return "kritisch", "kritisch: " + "; ".join(teile)
+    if artikel.symbole and artikel.qualitaet >= 0.7 and hohe_quelle:
+        return "kritisch", "kritisch: " + "; ".join(teile)
+    if (artikel.symbole and artikel.qualitaet >= 0.6) or hohe_quelle:
+        return "wichtig", "wichtig: " + "; ".join(teile)
+    return "normal", "normal: " + "; ".join(teile)
 
 
 class Spider:
@@ -235,7 +307,9 @@ class Spider:
                 symbole=_symbole_erkennen(titel + " " + zusammenfassung),
             )
             artikel.qualitaet = _qualitaet(float(quelle.get("gewicht", 0.5)), link,
-                                           artikel.titel, zusammenfassung)
+                                           artikel.titel, zusammenfassung,
+                                           str(quelle.get("typ") or ""))
+            artikel.gewicht = float(quelle.get("gewicht", 0.5))
             raus.append(artikel)
         return raus
 
@@ -257,8 +331,55 @@ class Spider:
             return None
         return text[: int(self.s["max_text_zeichen"])]
 
+    @staticmethod
+    def _auswahl(gesammelt: list[Artikel], limit: int) -> list[Artikel]:
+        """Faire Auswahl pro Quelle statt «die lautesten gewinnen».
+
+        Ohne Quote würde eine starke Quelle (Fed/SEC) alle Plätze des Laufs
+        belegen und neue Quellen kämen nie zum Zug. Jede Quelle erhält daher
+        zuerst ein Kontingent; freie Plätze gehen an die beste Restqualität.
+        """
+        pro_quelle: dict[str, list[Artikel]] = {}
+        for artikel in gesammelt:
+            pro_quelle.setdefault(artikel.quelle, []).append(artikel)
+        for liste in pro_quelle.values():
+            liste.sort(key=lambda a: a.qualitaet, reverse=True)
+        quote = max(1, limit // max(1, len(pro_quelle)))
+        auswahl = [a for liste in pro_quelle.values() for a in liste[:quote]]
+        if len(auswahl) < limit:
+            rest = [a for liste in pro_quelle.values() for a in liste[quote:]]
+            rest.sort(key=lambda a: a.qualitaet, reverse=True)
+            auswahl.extend(rest[: limit - len(auswahl)])
+        auswahl.sort(key=lambda a: a.qualitaet, reverse=True)
+        return auswahl[:limit]
+
+    def _prioritaeten_nachziehen(self) -> int:
+        """Altbestand ohne Priorität mit derselben Regel nachziehen.
+
+        Das Gewicht der Quelle wurde damals nicht gespeichert; es wird mit 0.5
+        angesetzt und im Grund als «nachgezogen» gekennzeichnet — keine stille
+        Annahme.
+        """
+        gesetzt = 0
+        for r in self.db.artikel_ohne_prioritaet(500):
+            try:
+                symbole = json.loads(r["symbole"] or "[]")
+            except Exception:
+                symbole = []
+            artikel = Artikel(
+                quelle=str(r["quelle"]), typ=str(r["typ"]), titel=str(r["titel"]),
+                url=str(r["url"]), veroeffentlicht=r["veroeffentlicht"],
+                zusammenfassung=str(r["zusammenfassung"] or ""),
+                qualitaet=float(r["qualitaet"] or 0.0), symbole=symbole,
+            )
+            stufe, grund = _prioritaet(artikel, 0.5)
+            self.db.artikel_prioritaet_setzen(int(r["id"]), stufe, "nachgezogen: " + grund)
+            gesetzt += 1
+        return gesetzt
+
     # ---------- Lauf ----------
     def lauf(self) -> dict[str, Any]:
+        self._prioritaeten_nachziehen()
         quellen = list(self.s.get("quelle") or [])
         limit = int(self.s["max_artikel_pro_lauf"])
         min_q = float(self.s["min_qualitaet"])
@@ -266,28 +387,61 @@ class Spider:
 
         gesammelt: list[Artikel] = []
         fehler: list[str] = []
+        quellen_status: list[dict[str, Any]] = []
         for quelle in quellen:
+            eintrag: dict[str, Any] = {
+                "name": str(quelle.get("name") or quelle.get("url") or "unbekannt"),
+                "url": str(quelle.get("url") or ""),
+                "typ": str(quelle.get("typ") or ""),
+                "gewicht": float(quelle.get("gewicht", 0.5)),
+                "status": "ok", "gelesen": 0, "neu": 0,
+                "fehler": None, "letzter_abruf": None,
+            }
             try:
-                gesammelt.extend(self._feed_lesen(quelle))
+                gelesen = self._feed_lesen(quelle)
+                # Foren-Feeds enthalten nur Teaser. Für die Qualitätsregel wird
+                # bei den ersten Beiträgen der Volltext nachgeladen — robots.txt
+                # und Host-Abstand gelten dabei unverändert.
+                if str(quelle.get("typ") or "") == "forum" and gelesen:
+                    for artikel in gelesen[:3]:
+                        volltext = self._seite_lesen(artikel.url)
+                        if not volltext:
+                            continue
+                        artikel.zusammenfassung = volltext[:600]
+                        artikel.qualitaet = _qualitaet(
+                            float(quelle.get("gewicht", 0.5)), artikel.url,
+                            artikel.titel, volltext, "forum",
+                        )
+                eintrag["gelesen"] = len(gelesen)
+                eintrag["letzter_abruf"] = jetzt()
+                gesammelt.extend(gelesen)
             except Exception as exc:  # eine defekte Quelle stoppt nie den Lauf
+                eintrag["status"] = "fehler"
+                eintrag["fehler"] = str(exc)[:200]
                 fehler.append(f"{quelle.get('name')}: {exc}")
+            quellen_status.append(eintrag)
 
-        gesammelt.sort(key=lambda a: a.qualitaet, reverse=True)
+        auswahl = self._auswahl(gesammelt, limit)
         neu = 0
         notizen = 0
         neu_ids: list[int] = []
-        for artikel in gesammelt[:limit]:
+        for artikel in auswahl:
             if artikel.qualitaet < min_q:
                 continue
+            stufe, grund = _prioritaet(artikel, artikel.gewicht)
             aid = self.db.artikel_speichern(
                 artikel.quelle, artikel.typ, artikel.titel, artikel.url,
                 artikel.veroeffentlicht, artikel.zusammenfassung, artikel.qualitaet,
-                artikel.symbole, artikel.titel_hash,
+                artikel.symbole, artikel.titel_hash, stufe, grund, jetzt(),
             )
             if not aid:
                 continue
             neu += 1
             neu_ids.append(aid)
+            for status in quellen_status:
+                if status["name"] == artikel.quelle:
+                    status["neu"] = int(status["neu"]) + 1
+                    break
             if notizen < max_notizen:
                 self.vault.notiz(
                     "wissen", artikel.titel,
@@ -326,12 +480,22 @@ class Spider:
             self.db.artikel_aktualisieren(aid, qualitaet, sorted(symbole))
             analysiert += 1
 
+        # Intervall und Abrufstand offen mitschreiben: Die Oberfläche darf nur
+        # behaupten, was hier tatsächlich steht.
+        try:
+            intervall = int((self.cfg.abschnitt("betrieb") or {}).get("spider_intervall_minuten", 360))
+        except (TypeError, ValueError):
+            intervall = 360
+        stand = jetzt()
+        self.db.zustand_setzen("spider_quellen_status", {
+            "stand": stand, "intervall_minuten": intervall, "quellen": quellen_status,
+        })
         self.db.ereignis(
             "info" if neu else "warnung", "Spider",
             f"{len(quellen)} Quellen, {len(gesammelt)} Artikel gelesen, {neu} neu gespeichert"
             + (f", {len(fehler)} Fehler" if fehler else ""),
         )
-        return {
+        ergebnis = {
             "quellen": len(quellen),
             "gelesen": len(gesammelt),
             "neu": neu,
@@ -339,7 +503,13 @@ class Spider:
             "analysiert": analysiert,
             "neue_ids": neu_ids,
             "fehler": fehler,
+            "stand": stand,
+            "intervall_minuten": intervall,
+            "quellen_status": quellen_status,
             "top": [{"titel": a.titel, "quelle": a.quelle, "qualitaet": a.qualitaet,
                      "symbole": a.symbole, "url": a.url} for a in gesammelt[:8]],
             "statistik": self.db.artikel_statistik(),
         }
+        # Auch ein Einzellauf (CLI/Recherche-Knopf) muss im Dashboard sichtbar sein.
+        self.db.zustand_setzen("spider_letzter_lauf", ergebnis)
+        return ergebnis

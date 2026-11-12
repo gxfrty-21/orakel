@@ -130,20 +130,23 @@ url = "https://www.sec.gov/news/pressreleases.rss"
 typ = "unternehmensbericht"
 gewicht = 0.9
 
-[[spider.quelle]]
-name = "arXiv q-fin.TR"
-url = "https://export.arxiv.org/rss/q-fin.TR"
-typ = "wissenschaft"
-gewicht = 0.9
-
-[[spider.quelle]]
-name = "Yahoo Finance"
-url = "https://finance.yahoo.com/news/rssindex"
-typ = "markt"
-gewicht = 0.6
-
+# arXiv und Yahoo liefern im Betrieb keine Einträge und sind deshalb entfernt.
 [[spider.quelle]]
 name = "Investing.com Märkte"
 url = "https://www.investing.com/rss/news_25.rss"
 typ = "markt"
 gewicht = 0.6
+
+# Schweizer Finanzportal, eigener RSS-Feed (geprüft: liefert gültiges RSS).
+[[spider.quelle]]
+name = "cash.ch Märkte"
+url = "https://www.cash.ch/rss-article.xml"
+typ = "markt"
+gewicht = 0.7
+
+# Foren: nur offizielle RSS-Feeds, robots.txt wird vor jedem Abruf geprüft.
+[[spider.quelle]]
+name = "Trade2Win Foren"
+url = "https://www.trade2win.com/forums/-/index.rss"
+typ = "forum"
+gewicht = 0.5
