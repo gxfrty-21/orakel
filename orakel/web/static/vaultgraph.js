@@ -32,7 +32,8 @@
     el = {
       canvas, stage: $('#vaultStage'), empty: $('#vaultGraphEmpty'), tip: $('#vaultTip'),
       detail: $('#vaultDetail'), tag: $('#vaultGraphTag'), count: $('#vaultGraphCount'),
-      search: $('#vaultSearch'), folder: $('#vaultFolder'), orphans: $('#vaultOrphans'),
+      search: $('#vaultSearch'), searchClear: $('#vaultSearchClear'),
+      folder: $('#vaultFolder'), orphans: $('#vaultOrphans'),
       tags: $('#vaultTags'), reset: $('#vaultReset'), legend: $('#vaultLegend'),
       fokus: $('#vaultTagFokus'), fokusLabel: $('#vaultTagFokusLabel'),
       tagSuche: $('#vaultTagSuche'), tagOptionen: $('#vaultTagOptionen'),
@@ -55,6 +56,13 @@
       updateCount();
       draw();
       el.search.blur();
+    });
+    if (el.searchClear) el.searchClear.addEventListener('click', () => {
+      el.search.value = '';
+      state.search = '';
+      updateCount();
+      draw();
+      el.search.focus();
     });
     el.folder.addEventListener('change', filterGeaendert);
     el.orphans.addEventListener('change', filterGeaendert);
@@ -428,6 +436,7 @@
   }
 
   function updateCount() {
+    if (el.searchClear && el.search) el.searchClear.hidden = !el.search.value;
     if (!el.count) return;
     const sichtbar_ = state.knoten.filter(sichtbar);
     if (state.search) {
