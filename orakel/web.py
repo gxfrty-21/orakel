@@ -199,13 +199,14 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
 
     @app.get("/api/vault/suche")
     def vault_suche_route(suche: str = "", von: str = "", bis: str = "",
-                          sortierung: str = "neu", limit: int = 50) -> JSONResponse:
+                          sortierung: str = "neu", limit: int = 50,
+                          entscheid: str = "") -> JSONResponse:
         from .sekretariat import vault_suche
 
         cfg = load_config(cfg_pfad)
         treffer, gesamt = vault_suche(Vault(cfg.vault_ordner), suche=suche,
                                       limit=limit, von=von, bis=bis,
-                                      sortierung=sortierung)
+                                      sortierung=sortierung, entscheid=entscheid)
         return JSONResponse({"ok": True, "treffer": treffer, "gesamt": gesamt},
                             headers={"Cache-Control": "no-store"})
 

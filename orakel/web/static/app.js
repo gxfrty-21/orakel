@@ -1722,7 +1722,7 @@ async function ladeProtokolle(){
     ? 'Zeitraum: ' + (protoVon || '…') + ' – ' + (protoBis || '…') : '';
   try{
     const qs = protoVault
-      ? new URLSearchParams({suche: protoSuche, von: protoVon, bis: protoBis, sortierung: protoSort, limit: '50'})
+      ? new URLSearchParams({suche: protoSuche, entscheid: protoFilter, von: protoVon, bis: protoBis, sortierung: protoSort, limit: '50'})
       : new URLSearchParams({suche: protoSuche, entscheid: protoFilter, von: protoVon, bis: protoBis, sortierung: protoSort, limit: '50'});
     const pfad = protoVault ? '/api/vault/suche' : '/api/sitzung/protokolle';
     const r = await fetch(pfad + '?' + qs.toString(), {cache: 'no-store'});

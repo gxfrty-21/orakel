@@ -739,10 +739,14 @@ def sitzung_abschluss(db: Facts, vault: Vault | None = None) -> dict[str, Any]:
 
 
 def vault_suche(vault: Vault, suche: str = "", limit: int = 50, von: str = "",
-                bis: str = "", sortierung: str = "neu"
+                bis: str = "", sortierung: str = "neu", entscheid: str = ""
                 ) -> tuple[list[dict[str, Any]], int]:
     """Durchsucht alle Kategorien des Vaults, nicht nur die Sitzungsprotokolle."""
     text = (suche or "").strip().lower()
+    label = {"angenommen": "Angenommen", "abgelehnt": "Abgelehnt",
+             "vertagt": "Vertagt", "offen": "Offen"}.get(entscheid)
+    wort = {"angenommen": "annehmen", "abgelehnt": "ablehnen",
+            "vertagt": "vertagen"}.get(entscheid)
     treffer: list[dict[str, Any]] = []
     for kategorie in (vault.zaehle() or {}):
         if kategorie == "index":
@@ -763,6 +767,12 @@ def vault_suche(vault: Vault, suche: str = "", limit: int = 50, von: str = "",
                 continue
             if bis and datum > bis:
                 continue
+            if entscheid:
+                passend = bool(label and re.search(r"\*\*" + label + r":\*\*\s*[1-9]", inhalt))
+                if wort and ("[" + wort + "]") in inhalt:
+                    passend = True
+                if not passend:
+                    continue
             treffer.append({"kategorie": kategorie, "titel": titel, "datum": datum,
                             "erstellt": n.get("erstellt"), "inhalt": inhalt[:1500]})
     treffer.sort(key=lambda p: str(p.get("erstellt") or p.get("datum") or ""),
