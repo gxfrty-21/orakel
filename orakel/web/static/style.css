@@ -577,9 +577,9 @@ button.li:hover{background:var(--panel2)}
 .mtgProto .md h3,.mtgProto .md h4{margin:6px 0 3px;font-size:12px;color:var(--fg)}
 .mtgProto .md b{color:var(--fg)}
 .protoTools{display:flex;gap:6px;padding:2px 0 8px;flex-wrap:wrap}
-.protoTools input,.protoTools select{padding:5px 8px;border-radius:4px;border:1px solid var(--line2);
+.protoTools input:not([type="checkbox"]),.protoTools select{padding:5px 8px;border-radius:4px;border:1px solid var(--line2);
   background:var(--panel2);color:var(--fg);font:inherit;font-size:11px}
-.protoTools input{flex:1;min-width:140px}
+.protoTools input:not([type="checkbox"]){flex:1;min-width:140px}
 
 /* Aufgaben einer weitergeleiteten Mission */
 .mtasks{display:flex;flex-direction:column;gap:3px;margin:2px 0 4px;padding-left:2px}
@@ -784,9 +784,14 @@ body.nurAltBloecke .mtasks.ohneAlt{display:none}
 @media (max-width:620px){
   .side .nav{min-height:44px}
   .tab{min-height:44px;min-width:44px}
+  .head>.tabs{flex:1 1 100%;min-width:0}
   .toggle{min-height:44px}
   main input:not([type="checkbox"]):not([type="radio"]),main select,main textarea{min-height:44px}
   .g-window,.g-control{min-height:44px}
+  .mtgTakt{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 8px}
+  .mtgTakt label{white-space:nowrap}
+  .mtgTakt select{width:100%}
+  .mtgTakt .mtgAltKopf{grid-column:1/-1}
   .protoQuick,.mtgAltZahl{min-height:44px;min-width:44px}
   .protoVault{min-height:44px}
   .sekTabs button{min-height:44px}
