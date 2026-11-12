@@ -111,7 +111,8 @@
           <span id="vaultTagFokusLabel">Tag-Sprung</span>
           <strong class="vault-tag-aktiv" id="vaultTagAktiv" hidden></strong>
           <div class="vault-tag-suche">
-            <input id="vaultTagSuche" type="search" placeholder="Tag suchen …" autocomplete="off" spellcheck="false"
+            <input id="vaultTagSuche" type="search" placeholder="Tag suchen … (/)" autocomplete="off" spellcheck="false"
+              title="Tastenkürzel: / fokussiert die Tag-Suche"
               aria-label="Tag suchen" role="combobox" aria-expanded="false" aria-controls="vaultTagOptionen" aria-autocomplete="list">
             <div class="vault-tag-optionen" id="vaultTagOptionen" role="listbox" hidden></div>
           </div>
@@ -128,7 +129,7 @@
               <button type="button" data-vault-zoom="out" aria-label="Herauszoomen">−</button>
               <button type="button" data-vault-zoom="fit" aria-label="Graph einpassen">Fit</button>
             </div>
-            <div class="vault-help">Ziehen: verschieben · Rad: zoomen · Knoten: Details · Tag: filtern</div>
+            <div class="vault-help">Ziehen: verschieben · Rad: zoomen · Knoten: Details · Tag: filtern · /: Tag suchen</div>
           </div>
           <aside class="vault-detail" id="vaultDetail" aria-live="polite">
             <div class="empty">Knoten anklicken, um Notiz, Tags und Links zu sehen.</div>
@@ -393,7 +394,7 @@
     </section>
   </main>
 </div>
-<script src="/static/vaultgraph.js?v=9"></script>
+<script src="/static/vaultgraph.js?v=10"></script>
 <script src="/static/app.js?v=119"></script>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>

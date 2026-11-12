@@ -66,6 +66,16 @@
     document.addEventListener('pointerdown', ev => {
       if (el.fokus && !el.fokus.contains(ev.target)) schliesseTagOptionen();
     });
+    document.addEventListener('keydown', ev => {
+      if (ev.key !== '/' || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      const t = ev.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      const kb = document.getElementById('v-kb');
+      if (!kb || kb.hidden || !state.geladen || !el.tagSuche || !el.fokus || el.fokus.hidden) return;
+      ev.preventDefault();
+      el.tagSuche.focus();
+      el.tagSuche.select();
+    });
     el.reset.addEventListener('click', reset);
     el.empty.addEventListener('click', ev => {
       if (ev.target && ev.target.id === 'vaultReload') laden();
@@ -216,7 +226,7 @@
       el.tagAktiv.textContent = aktiv ? `${aktiv.titel} · ${aktiv.anzahl} ${aktiv.anzahl === 1 ? 'Notiz' : 'Notizen'}` : '';
     }
     if (el.fokusClear) el.fokusClear.hidden = !state.tagFilter;
-    if (el.tagSuche) el.tagSuche.placeholder = state.tagFilter ? 'Anderen Tag suchen …' : 'Tag suchen …';
+    if (el.tagSuche) el.tagSuche.placeholder = state.tagFilter ? 'Anderen Tag suchen … (/)' : 'Tag suchen … (/)';
   }
 
   function tagSucheFilter() {
