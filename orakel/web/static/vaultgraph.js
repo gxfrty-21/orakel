@@ -293,6 +293,7 @@
     } else if (ev.key === 'Escape') {
       ev.preventDefault();
       schliesseTagOptionen();
+      el.tagSuche.blur();
     } else if (ev.key === 'Tab') {
       schliesseTagOptionen();
     }
