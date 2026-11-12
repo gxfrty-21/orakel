@@ -218,7 +218,7 @@
     const ordner = state.daten?.ordner || [];
     if (el.folder) {
       el.folder.innerHTML = '<option value="">Alle Ordner</option>' + ordner
-        .map(o => `<option value="${esc(o.name)}">${esc(o.name)} (${o.anzahl})</option>`).join('');
+        .map(o => `<option value="${esc(o.name)}">${esc(o.name)} · ${o.anzahl} ${o.anzahl === 1 ? 'Notiz' : 'Notizen'}</option>`).join('');
     }
     updateLegende();
     aktualisiereTagSprung();
