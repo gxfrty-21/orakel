@@ -7,7 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307090c'/%3E%3Ccircle cx='16' cy='16' r='8' fill='none' stroke='%235fe0c8' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/static/style.css?v=59">
+<link rel="stylesheet" href="/static/style.css?v=60">
 </head>
 <body>
 <div class="app">
@@ -97,7 +97,10 @@
         <div class="ph">Vault-Graph<span class="sp"></span><span class="tag" id="vaultGraphTag">–</span></div>
         <div class="vault-toolbar">
           <label class="vault-field vault-search"><span>Suche</span>
-            <input id="vaultSearch" type="search" placeholder="Notiz, Tag oder Ordner" autocomplete="off" spellcheck="false">
+            <span class="vault-suche-feld">
+              <input id="vaultSearch" type="search" placeholder="Notiz, Tag oder Ordner" autocomplete="off" spellcheck="false">
+              <button type="button" id="vaultSearchClear" aria-label="Suche leeren" title="Suche leeren" hidden>×</button>
+            </span>
           </label>
           <label class="vault-field"><span>Ordner</span>
             <select id="vaultFolder"><option value="">Alle Ordner</option></select>
@@ -394,7 +397,7 @@
     </section>
   </main>
 </div>
-<script src="/static/vaultgraph.js?v=14"></script>
+<script src="/static/vaultgraph.js?v=15"></script>
 <script src="/static/app.js?v=119"></script>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>

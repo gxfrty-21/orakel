@@ -659,6 +659,14 @@ body.nurAltBloecke .mtasks.ohneAlt{display:none}
 .vault-field input{min-width:0}
 .vault-field input:focus-visible,.vault-field select:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
 .vault-search{flex:1 1 240px;max-width:360px}
+.vault-suche-feld{position:relative;display:block}
+.vault-suche-feld input{padding-right:28px}
+.vault-suche-feld input::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none}
+.vault-suche-feld button{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:20px;height:20px;
+  display:flex;align-items:center;justify-content:center;padding:0;border:0;border-radius:3px;
+  background:none;color:var(--dim);font-size:15px;line-height:1;cursor:pointer}
+.vault-suche-feld button:hover{color:var(--accent);background:rgba(255,63,164,.12)}
+.vault-suche-feld button:focus-visible{outline:1px solid var(--accent2);outline-offset:1px}
 .vault-check{display:inline-flex;align-items:center;gap:6px;padding-bottom:6px;font-size:11.5px;
   color:var(--muted);white-space:nowrap;cursor:pointer}
 .vault-check input{accent-color:var(--accent);margin:0}
