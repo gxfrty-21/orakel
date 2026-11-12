@@ -197,6 +197,12 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         return JSONResponse({"ok": True, "protokolle": treffer, "gesamt": gesamt},
                             headers={"Cache-Control": "no-store"})
 
+    @app.get("/api/vault/graph")
+    def vault_graph_route() -> JSONResponse:
+        cfg = load_config(cfg_pfad)
+        return JSONResponse({"ok": True, **Vault(cfg.vault_ordner).graph()},
+                            headers={"Cache-Control": "no-store"})
+
     @app.get("/api/vault/suche")
     def vault_suche_route(suche: str = "", von: str = "", bis: str = "",
                           sortierung: str = "neu", limit: int = 50,
