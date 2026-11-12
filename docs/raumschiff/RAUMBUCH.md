@@ -1,8 +1,8 @@
 # Raumbuch — Orakel Interstellar Headquarters
 
-**Status:** Planung; Main Command Center E6 als erster begehbarer 3D-Prototyp umgesetzt<br>
-**Stand:** 10. November 2026<br>
-**Maßstab:** 1 Three.js-Einheit = 1 Meter
+**Status:** Planung; der 3D-Prototyp wurde am 12. November 2026 entfernt. Aktuell ist die 2D-Ansicht `#v-ship`.<br>
+**Stand:** 12. November 2026<br>
+**Maßstab:** 1 Three.js-Einheit = 1 Meter (nur Planung)
 **Hülle:** ca. 280 m lang, 140 m breit, 68 m hoch  
 **Decks:** 8 (E0–E7), je 8 m Strukturhöhe, 7 m lichte Höhe  
 **Zentrum:** offenes Atrium mit sechs Aufzügen und zwei Treppenhäusern
@@ -12,11 +12,15 @@ Verwaltungszentrum. Die Form ist aerodynamisch genug für eine Raumstation, aber
 bewusst als Innenarchitektur gedacht: breite Korridore, Glasfronten, hohe Räume und
 ein zentraler Lichthof.
 
-## 0. Umgesetzter Prototyp: Main Command Center (E6)
+> **Aktueller Stand (12.11.2026):** Die 3D-Welt ist zurückgestellt. Die aktuelle
+> Raumschiff-Ansicht ist der 2D-Querschnitt `#v-ship`. Die 3D-Beschreibungen in
+> diesem Raumbuch sind Planung/History, keine laufende Funktion.
 
-Seit 10. November 2026 ist das Main Command Center als erste begehbare 3D-Ansicht
-im Dashboard umgesetzt. Die Ansicht `#v-command` nutzt das lokal eingebundene
-Three.js und bleibt ohne Bundler. Sie enthält:
+## 0. Historischer Prototyp: Main Command Center (E6)
+
+Vom 10. bis 12. November 2026 existierte das Main Command Center als erste begehbare
+3D-Ansicht im Dashboard. Die Ansicht `#v-command` nutzte das lokal eingebundene
+Three.js und blieb ohne Bundler. Sie enthielt:
 
 - acht Stationen für die echten Abteilungen A–H,
 - ein zentrales Hologramm mit Takt-, Job-, Datenbank- und Agentenwerten,
@@ -31,12 +35,12 @@ Fehlende Daten werden als `KEINE DATEN` dargestellt. Die Szene ist reine
 Darstellung; sie verändert weder Paper-Trading noch Risikogrenzen und erzeugt
 keine Broker-Orders. Die übrigen Decks und Räume bleiben Planung.
 
-**Dateien:** `orakel/web/static/command3d.js`, `command.css`, Ergänzungen in
-`index.html` und `app.js`.
+**Damals beteiligte Dateien:** `orakel/web/static/command3d.js`, `command.css`,
+`command-view.js`; sie sind am 12. November 2026 entfernt worden.
 
-**Bedienung im Prototyp:** WASD gehen, Maus umsehen, Shift rennen, `M` öffnet die
-Deckskarte, ESC gibt die Maus frei. Die übrigen in Kapitel 6 geplanten Tasten sind
-noch nicht angebunden.
+**Bedienung damals:** WASD gehen, Maus umsehen, Shift rennen, `M` öffnete die
+Deckskarte, ESC gab die Maus frei. Die übrigen in Kapitel 6 geplanten Tasten waren
+nicht angebunden.
 
 ## 1. Gesamtform und Erschließung
 
