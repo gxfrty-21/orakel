@@ -664,7 +664,7 @@ body.nurAltBloecke .mtasks.ohneAlt{display:none}
 .vault-suche-feld input::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none}
 .vault-suche-clear{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:20px;height:20px;
   display:flex;align-items:center;justify-content:center;padding:0;border:0;border-radius:3px;
-  background:none;color:var(--dim);font-size:15px;line-height:1;cursor:pointer}
+  background:none;color:var(--dim);font-size:15px;line-height:1;cursor:pointer;touch-action:manipulation}
 .vault-suche-clear:hover{color:var(--accent);background:rgba(255,63,164,.12)}
 .vault-suche-clear:focus-visible{outline:1px solid var(--accent2);outline-offset:1px}
 .vault-tag-suche input{padding-right:26px}
@@ -757,6 +757,8 @@ body.nurAltBloecke .mtasks.ohneAlt{display:none}
   .vault-toolbar{gap:8px;padding:10px;align-items:stretch}
   .vault-field{flex:1 1 100%;min-width:0}
   .vault-search{max-width:none}
+  /* 20 px sichtbarer Knopf, 44 px Trefferfläche für Touch – Feldhöhe bleibt gleich. */
+  .vault-suche-clear::before{content:"";position:absolute;inset:-12px}
   .vault-check{flex:1 1 100%;padding-bottom:0}
   .vault-toolbar .toggle{flex:1 1 100%;margin-bottom:0}
   .vault-count{width:100%;margin-left:0;padding-bottom:0}
