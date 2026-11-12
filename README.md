@@ -9,8 +9,8 @@ Grundlage ist dein Meister-Prompt (Abschnitte 1–12) und dein Orakel-Design.
 echten Broker-Order: Der MT5-Broker verweigert Echtgeldkonten und sendet ohne
 `order_freigabe = true` nur einen Probelauf.
 
-**Planungsdossier Raumschiff:** [docs/raumschiff/README.md](docs/raumschiff/README.md)
-— Analyse, Grundriss, Architektur und Entwicklungsplan; noch keine Umsetzung.
+**Raumschiff-Doku:** [docs/raumschiff/README.md](docs/raumschiff/README.md)
+— Planung und aktueller 2D-Stand (drei Decks, acht Abteilungen, Meetingraum, Sekretariat).
 
 ## Schnellstart
 
@@ -83,7 +83,7 @@ Unter Windows zusätzlich `pip install MetaTrader5` (nur dort verfügbar) und in
 | Company-Schicht | Phase 1: 103 Profile, SQLite-Queue mit Lease/Retry, Policy-Engine, Audit-Kette; 3D/API noch nicht |
 | Konferenz | 00:00 Europe/Zurich, Nachholen verpasster Termine, Protokoll im Vault |
 | Wissenszentrum | Obsidian-Vault mit Frontmatter, Tags, `[[Links]]` |
-| Dashboard | Orakel-Design, 8 Ansichten, Live-Polling, «Lauf starten» |
+| Dashboard | Orakel-Design, 12 Ansichten, Live-Polling, 2D-Raumschiff, «Lauf starten» |
 | Dauerbetrieb | persistenter Plan, Backoff, Ressourcenlimits, Jobprotokoll und Betriebsansicht |
 
 ## Risikogrenzen (deine Vorgaben)
@@ -122,8 +122,8 @@ tests/           Risiko, Backtest, Daten, Bericht
 
 1. **Echte Daten**: MT5-Export oder direkter Abruf auf deinem Windows-Rechner.
 2. **Spider Intelligence**: Netz-Recherche mit Quellenprüfung, robots.txt und Limits.
-3. **Weltkugel und Raumschiff**: interaktive 2D-Welt (der Meister-Prompt erlaubt 2D,
-   wenn 3D mit den Ressourcen nicht sinnvoll ist), an echte Daten gekoppelt.
+3. **3D-Ausbau**: begehbare Decks und First-Person-Navigation sind zurückgestellt;
+   die aktuelle 2D-Welt ist umgesetzt und an echte Daten gekoppelt.
 4. **Dauerbetrieb aktivieren**: `ORAKEL_TAKT=1` ist gesetzt; der 24-Stunden-Soak
    läuft. Der externe Watchdog ist in `.github/workflows/watchdog.yml` angelegt
    und prüft nach dem Push auf `main` den Takt alle fünf Minuten.
