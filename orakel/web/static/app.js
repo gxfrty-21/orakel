@@ -217,7 +217,7 @@ function renderStrat(){
     ${[['Profit Factor ungesehen',num(O.profit_factor,2)],['Trefferquote ungesehen',pct(O.trefferquote_pct)],
        ['Max. Drawdown ungesehen',pct(O.max_drawdown_pct)],['Trades ungesehen',O.trades??'–']]
       .map(q=>`<div class="kpi"><div class="l">${q[0]}</div><div class="v">${q[1]}</div></div>`).join('')}</div>
-    <div class="tw"><table class="tbl"><tbody>
+    <div class="tw"><table class="tbl tblKey"><tbody>
     <tr><td>Nettogewinn gesamt</td><td class="m ${cls(G.netto)}">${money(G.netto)}</td></tr>
     <tr><td>Rendite gesamt</td><td class="m ${cls(G.rendite_pct)}">${pct(G.rendite_pct,1)}</td></tr>
     <tr><td>Kaufen und Halten (ungesehen)</td><td class="m">${pct(d.kaufen_halten_oos_pct,1)}</td></tr>
