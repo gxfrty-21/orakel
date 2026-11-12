@@ -7,7 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307090c'/%3E%3Ccircle cx='16' cy='16' r='8' fill='none' stroke='%235fe0c8' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/static/style.css?v=54">
+<link rel="stylesheet" href="/static/style.css?v=56">
 </head>
 <body>
 <div class="app">
@@ -93,6 +93,37 @@
     <section class="view" id="v-kb" hidden>
       <div><h1>Wissensbank</h1><p class="sub">Gespeichert wird nur, was nachprüfbar ist: Validierungen, Entscheide und Ereignisse. Daraus zieht die Research-Abteilung ihre Schlüsse.</p></div>
       <div class="panel"><div class="ph">Strategietypen<span class="sp"></span><span class="tag" id="libTag"></span></div><div class="tw" id="types"></div></div>
+      <div class="panel vault-panel">
+        <div class="ph">Vault-Graph<span class="sp"></span><span class="tag" id="vaultGraphTag">–</span></div>
+        <div class="vault-toolbar">
+          <label class="vault-field vault-search"><span>Suche</span>
+            <input id="vaultSearch" type="search" placeholder="Notiz, Tag oder Ordner" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="vault-field"><span>Ordner</span>
+            <select id="vaultFolder"><option value="">Alle Ordner</option></select>
+          </label>
+          <label class="vault-check"><input type="checkbox" id="vaultOrphans" checked><span>Einzelnotizen</span></label>
+          <button type="button" class="toggle" id="vaultReset">Ansicht zurücksetzen</button>
+          <span class="vault-count" id="vaultGraphCount"></span>
+        </div>
+        <div class="vault-legend" id="vaultLegend" aria-label="Ordnerfarben"></div>
+        <div class="vault-graph-grid">
+          <div class="vault-stage" id="vaultStage">
+            <canvas id="vaultCanvas" tabindex="0" role="img" aria-label="Interaktiver Graph der Vault-Notizen. Knoten anklicken für Details, ziehen zum Verschieben, Mausrad zum Zoomen."></canvas>
+            <div class="vault-empty" id="vaultGraphEmpty" hidden></div>
+            <div class="vault-tip" id="vaultTip" hidden></div>
+            <div class="vault-zoom" role="group" aria-label="Graph vergrößern oder verkleinern">
+              <button type="button" data-vault-zoom="in" aria-label="Hineinzoomen">+</button>
+              <button type="button" data-vault-zoom="out" aria-label="Herauszoomen">−</button>
+              <button type="button" data-vault-zoom="fit" aria-label="Graph einpassen">Fit</button>
+            </div>
+            <div class="vault-help">Ziehen: verschieben · Rad: zoomen · Knoten: Details</div>
+          </div>
+          <aside class="vault-detail" id="vaultDetail" aria-live="polite">
+            <div class="empty">Knoten anklicken, um Notiz, Tags und Links zu sehen.</div>
+          </aside>
+        </div>
+      </div>
       <div class="grid2">
         <div class="panel"><div class="ph">Bisherige Entscheide</div><div class="list scroll" id="decList"></div></div>
         <div class="panel"><div class="ph">Vault</div><div class="card" id="vaultInfo"></div></div>
@@ -351,7 +382,8 @@
     </section>
   </main>
 </div>
-<script src="/static/app.js?v=118"></script>
+<script src="/static/vaultgraph.js?v=2"></script>
+<script src="/static/app.js?v=119"></script>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
