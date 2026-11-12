@@ -10,7 +10,7 @@ Broker-Order.
 
 ## Aktueller Stand
 
-Deployed am 8. November 2026:
+Zuletzt deployed am 12. November 2026:
 
 - Dashboard: <https://orakel-production-fb18.up.railway.app>
 - Projekt: `orakel` (`565cd49f-e067-415b-aa3a-5680557fedd9`)
@@ -18,12 +18,14 @@ Deployed am 8. November 2026:
 - Service: `orakel` (`1f8e2304-31d5-4c7e-80b3-8010ee2d969e`)
 - Volume: `orakel-volume` (`241709d8-4eb6-40c9-8163-a28edb58b3ed`),
   Mount `/data`, 500 MB
-- Letztes Deployment: `0c6a45b6-9c0f-4ea7-94d8-db6b89d5eeda` — `SUCCESS`
-  (Build aus dem Workspace mit Seed-Schritt; Zeitfilter 24 h / 7 Tage / 30 Tage
-  für Graph und Aktivität)
+- Letztes Deployment: `40ab8686-8d8c-4d72-aaa0-4890f075b2a2` — `SUCCESS`
+  (12. November 2026, CLI-Upload des lokalen Stands; Details unter
+  „Deploy ohne GitHub-Push“)
 - Domain: Target Port `3000`, TLS von Railway
-- Deploy-Weg: Ziel ist GitHub-Quelle mit „Wait for CI“; Project Tokens setzen
-  eine bezahlte Subscription voraus und sind hier nicht im Einsatz.
+- Deploy-Weg: CLI-Upload aus dem Workspace. Die GitHub-Quelle ist derzeit
+  getrennt, damit kein Rebuild den CLI-Stand überschreibt (siehe
+  „Überschreib-Gefahr“). Project Tokens setzen eine bezahlte Subscription
+  voraus und sind hier nicht im Einsatz.
 - Graph-API: `/api/globe?zeitraum=24h|7d|30d`; ungültige Werte fallen auf `24h`
   zurück. Der Markt-Snapshot bleibt die aktuelle Live-Ansicht.
 
@@ -93,6 +95,90 @@ blieb bei 34 Artikeln/28.086 Trades.
 - TLS und öffentliche URL kommen von Railway.
 - Der Container hört auf `PORT`; der Healthcheck nutzt denselben Port.
 
+## Deploy ohne GitHub-Push (CLI-Upload)
+
+Wenn der Push nach GitHub nicht möglich ist (fehlende Zugangsdaten in der
+Umgebung), lädt die Railway-CLI den lokalen Stand direkt hoch. Railway baut
+dabei denselben `Dockerfile`; ein Commit auf GitHub ist nicht nötig.
+
+Voraussetzungen:
+
+- Railway-CLI (`npm i -g @railway/cli` oder `npx @railway/cli`)
+- angemeldete CLI (`railway login`); der Login liegt in `~/.railway`
+- alternativ `RAILWAY_TOKEN`/`RAILWAY_API_TOKEN` in der Umgebung. In dieser
+  Chat-Umgebung kommen Projekt-Secrets nicht als Umgebungsvariablen an; dort
+  funktioniert nur der gespeicherte CLI-Login.
+- verknüpftes Projekt; sonst `--project` und `--environment` angeben
+
+```bash
+railway up \
+  --project 565cd49f-e067-415b-aa3a-5680557fedd9 \
+  --environment production \
+  --service orakel \
+  --ci
+```
+
+Was hochgeladen wird, begrenzt `.dockerignore`: `vault/`, `daten/`, `orakel.db`,
+`tests/`, `artifacts/` und `.git` bleiben außen vor (im Test 3,7 MB). Das
+Volume `/data` wird nicht angefasst; der Entrypoint importiert den Seed nur in
+eine leere DB.
+
+Nachprüfung:
+
+```bash
+railway deployment list          # neueste Zeile: SUCCESS
+curl -s https://orakel-production-fb18.up.railway.app/api/health
+```
+
+`/api/health` liefert bei CLI-Uploads `commit: null`, weil
+`RAILWAY_GIT_COMMIT_SHA` fehlt. `deploy-check.yml` läuft dafür nicht; die
+Prüfung erfolgt über Deployment-Status, `ok: true` und `/` → 401.
+
+### Überschreib-Gefahr
+
+Der Service war mit `gxfrty-21/orakel`, Branch `main`, verbunden. **Am
+12. November 2026 wurde die Quelle getrennt** (`railway service source
+disconnect`), weil `main` hinter der Produktion lag. Damit kann kein Push und
+kein Source-Redeploy mehr den CLI-Stand ersetzen; `railway up` funktioniert
+weiter.
+
+Ein CLI-Upload erzeugt **keinen** Commit: `main` bleibt alt, die Produktion
+läuft trotzdem neu. Wird die Quelle wieder verbunden, baut jeder Deploy aus
+GitHub (Push auf `main`, manueller Redeploy, Neustart mit Source-Build, „Wait
+for CI“) wieder `main` und ersetzt den CLI-Stand.
+
+Konkret am 12. November 2026:
+
+- `main` = `4ffede68` (Merge von PR #3, begehbares 3D-Deck)
+- Produktion = lokaler Stand `e8b7e08` (2D-Stand, Sekretariat, Filter-Fixes),
+  per CLI als `40ab8686` deployed
+- Die lokalen Commits haben eine andere Basis als `main`; ein GitHub-Build
+  würde also nicht nur den CLI-Upload ersetzen, sondern auch das 3D-Deck und
+  den älteren Funktionsstand zurückbringen.
+
+Erkennungsmerkmal: Bei CLI-Deploys fehlt `RAILWAY_GIT_COMMIT_SHA`, deshalb
+steht in `/api/health` `commit: null`, und `deploy-check.yml` läuft nicht. Ein
+GitHub-Deploy liefert dort den Commit-Hash.
+
+Schutz vor einem unbeabsichtigten Rückschritt:
+
+1. Die Quelle bleibt getrennt, solange `main` hinter der Produktion liegt.
+2. Erst wenn der gewünschte Stand auf `main` liegt (Branch pushen, PR mergen),
+   die Quelle wieder verbinden:
+
+   ```bash
+   railway service source connect \
+     --repo gxfrty-21/orakel --branch main --service orakel
+   ```
+
+   Danach baut Railway genau diesen Commit.
+3. Nach einem CLI-Deploy bewusst notieren, dass `main` zurückliegt, und die
+   Quelle bis zum Nachziehen getrennt lassen.
+4. Wenn CLI-Deploys dauerhaft der Weg sein sollen, bleibt die Quelle getrennt.
+
+Merksatz: Ein CLI-Deploy deployt den Workspace, aber aktualisiert nicht das
+Repository. `main` bleibt die Quelle für jeden automatischen Build.
+
 ## Deploy nur bei grüner CI
 
 Railway kann ein Deployment zurückhalten, bis die GitHub-Actions-Läufe des
@@ -104,7 +190,8 @@ laufende Version bleibt erreichbar.
 Voraussetzungen:
 
 - Der Service ist mit dem GitHub-Repository verbunden (Autodeploy), nicht nur
-  per CLI befüllt.
+  per CLI befüllt. Aktuell ist die Quelle getrennt (siehe „Überschreib-Gefahr“);
+  diese Schritte greifen erst nach dem Wiederverbinden.
 - Ein Projektmitglied hat Schreibzugriff auf das Repository.
 - Ein Workflow läuft auf `push` in den Deploy-Branch. `.github/workflows/tests.yml`
   macht das mit `on: push: branches: [main]`.
@@ -164,7 +251,8 @@ Der Lauf beantwortet damit die Frage „ist der Deploy wirklich durch?“. Er st
 erst nach dem Deploy und blockiert deshalb nicht Railways „Wait for CI“. Bei
 einem manuellen CLI-Deploy ohne GitHub-Status läuft er nicht; dann fehlt auch
 `RAILWAY_GIT_COMMIT_SHA`. Für diesen Service ist GitHub der einzige automatische
-Deploy-Weg.
+Deploy-Weg; der CLI-Upload ist manuell und wird von `deploy-check.yml` nicht
+geprüft.
 
 ## Dauerbetrieb (Phase 8)
 
@@ -174,8 +262,15 @@ Der Takt bleibt standardmäßig aus. Zum Aktivieren im Railway-Service
 und Ressourcenwerten liegt hinter dem Login unter `/api/betrieb`.
 
 Der Railway-Healthcheck bleibt bewusst nur auf HTTP 200. Ein Job im Backoff
-darf keinen Container-Neustart-Loop auslösen. Ein echter 24-Stunden-Soak und
-ein externer Watchdog für den Takt stehen noch aus.
+darf keinen Container-Neustart-Loop auslösen. Ein echter 24-Stunden-Soak steht
+noch aus.
+
+Der externe Watchdog ist als GitHub-Actions-Workflow in
+`.github/workflows/watchdog.yml` angelegt. Nach dem Push auf den Default-Branch
+prüft er alle fünf Minuten `/api/health`, öffnet bei einem Taktalter über 300
+Sekunden oder einem Status ungleich `laeuft` ein GitHub-Issue und schließt es
+nach der Erholung wieder. GitHub kann geplante Läufe verzögern; der Watchdog
+ergänzt den Railway-Healthcheck, ersetzt ihn aber nicht.
 
 ## Wichtig: `railway.json` ist Legacy
 

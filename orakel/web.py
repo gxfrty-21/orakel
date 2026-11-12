@@ -71,6 +71,13 @@ def _bericht(cfg_pfad: str) -> dict[str, Any]:
     bericht["konferenz"] = konferenz["protokoll"] if konferenz else basis.get("konferenz")
     spider = dict(db.zustand("spider_letzter_lauf") or {})
     spider.setdefault("artikel", [])
+    status = db.zustand("spider_quellen_status") or {}
+    if not spider.get("quellen_status") and status.get("quellen"):
+        spider["quellen_status"] = status.get("quellen")
+        spider["intervall_minuten"] = status.get("intervall_minuten")
+        spider["stand"] = status.get("stand")
+    spider.setdefault("quellen_status", [])
+    spider.setdefault("intervall_minuten", None)
     if not spider["artikel"]:
         import json as _json
 
@@ -81,6 +88,10 @@ def _bericht(cfg_pfad: str) -> dict[str, Any]:
                 eintrag["symbole"] = ", ".join(_json.loads(eintrag.get("symbole") or "[]"))
             except Exception:
                 eintrag["symbole"] = ""
+            # Alte Zeilen kennen keine Erkennungszeit; dann gilt der Abrufzeitpunkt.
+            eintrag["erkannt"] = eintrag.get("erkannt") or eintrag.get("geholt")
+            eintrag.setdefault("prioritaet", "")
+            eintrag.setdefault("prioritaet_grund", "")
             zeilen.append(eintrag)
         spider["artikel"] = zeilen
     spider["statistik"] = db.artikel_statistik()
@@ -124,6 +135,145 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     @app.get("/api/report")
     def report() -> JSONResponse:
         return JSONResponse(_bericht(cfg_pfad), headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/sekretariat")
+    def sekretariat() -> JSONResponse:
+        from .sekretariat import SEKRETAERE, lage
+
+        cfg = load_config(cfg_pfad)
+        db = Facts(cfg.db_pfad)
+        return JSONResponse({
+            "ok": True, "sekretaere": SEKRETAERE, "lage": lage(db),
+            "chat": list(db.zustand("sekretariat_chat") or [])[-30:],
+            "agenda": db.zustand("sekretariat_agenda"),
+        }, headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/sekretariat/chat")
+    async def sekretariat_chat(request: Request) -> JSONResponse:
+        from .sekretariat import chat
+
+        cfg = load_config(cfg_pfad)
+        try:
+            daten = await request.json()
+        except Exception:
+            return JSONResponse({"ok": False, "fehler": "Ungültiger JSON-Body"},
+                                status_code=400)
+        if not isinstance(daten, dict):
+            return JSONResponse({"ok": False, "fehler": "Ungültiger JSON-Body"},
+                                status_code=400)
+        try:
+            ergebnis = chat(Facts(cfg.db_pfad), str(daten.get("sekretaer") or ""),
+                            str(daten.get("text") or ""))
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+        return JSONResponse({"ok": True, **ergebnis}, headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/sekretariat/agenda")
+    def sekretariat_agenda() -> JSONResponse:
+        from .sekretariat import agenda
+
+        cfg = load_config(cfg_pfad)
+        return JSONResponse({"ok": True, **agenda(Facts(cfg.db_pfad))},
+                            headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/sitzung")
+    def sitzung_stand() -> JSONResponse:
+        from .sekretariat import sitzung_mit_status
+
+        cfg = load_config(cfg_pfad)
+        return JSONResponse({"ok": True, **sitzung_mit_status(Facts(cfg.db_pfad))},
+                            headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/sitzung/protokolle")
+    def sitzung_protokolle(suche: str = "", entscheid: str = "", von: str = "",
+                           bis: str = "", sortierung: str = "neu",
+                           limit: int = 50) -> JSONResponse:
+        from .sekretariat import protokolle
+
+        cfg = load_config(cfg_pfad)
+        treffer, gesamt = protokolle(Vault(cfg.vault_ordner), limit=limit,
+                                     suche=suche, entscheid=entscheid, von=von,
+                                     bis=bis, sortierung=sortierung)
+        return JSONResponse({"ok": True, "protokolle": treffer, "gesamt": gesamt},
+                            headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/vault/suche")
+    def vault_suche_route(suche: str = "", von: str = "", bis: str = "",
+                          sortierung: str = "neu", limit: int = 50,
+                          entscheid: str = "") -> JSONResponse:
+        from .sekretariat import vault_suche
+
+        cfg = load_config(cfg_pfad)
+        treffer, gesamt = vault_suche(Vault(cfg.vault_ordner), suche=suche,
+                                      limit=limit, von=von, bis=bis,
+                                      sortierung=sortierung, entscheid=entscheid)
+        return JSONResponse({"ok": True, "treffer": treffer, "gesamt": gesamt},
+                            headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/sitzung/start")
+    def sitzung_start_route() -> JSONResponse:
+        from .sekretariat import sitzung_start
+
+        cfg = load_config(cfg_pfad)
+        return JSONResponse({"ok": True, **sitzung_start(Facts(cfg.db_pfad))},
+                            headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/sitzung/stimme")
+    async def sitzung_stimme(request: Request) -> JSONResponse:
+        from .sekretariat import stimme
+
+        cfg = load_config(cfg_pfad)
+        try:
+            daten = await request.json()
+            ergebnis = stimme(Facts(cfg.db_pfad), int(daten.get("index", -1)),
+                              str(daten.get("entscheid") or ""))
+        except (ValueError, TypeError, AttributeError) as exc:
+            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+        return JSONResponse({"ok": True, **ergebnis}, headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/sitzung/weiter")
+    def sitzung_weiter_route() -> JSONResponse:
+        from .sekretariat import sitzung_weiter
+
+        cfg = load_config(cfg_pfad)
+        try:
+            ergebnis = sitzung_weiter(Facts(cfg.db_pfad), Vault(cfg.vault_ordner))
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+        return JSONResponse({"ok": True, **ergebnis}, headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/sitzung/ueberstimmen")
+    async def sitzung_ueberstimmen(request: Request) -> JSONResponse:
+        from .sekretariat import ueberstimmen
+
+        cfg = load_config(cfg_pfad)
+        try:
+            daten = await request.json()
+            ergebnis = ueberstimmen(Facts(cfg.db_pfad), int(daten.get("index", -1)),
+                                    str(daten.get("entscheid") or ""),
+                                    str(daten.get("begruendung") or ""))
+        except (ValueError, TypeError, AttributeError) as exc:
+            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+        return JSONResponse({"ok": True, **ergebnis}, headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/sitzung/abschluss")
+    def sitzung_abschluss_route() -> JSONResponse:
+        from .sekretariat import sitzung_abschluss
+
+        cfg = load_config(cfg_pfad)
+        try:
+            ergebnis = sitzung_abschluss(Facts(cfg.db_pfad), Vault(cfg.vault_ordner))
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+        return JSONResponse({"ok": True, **ergebnis}, headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/sekretariat/bericht")
+    def sekretariat_bericht() -> JSONResponse:
+        from .sekretariat import bericht
+
+        cfg = load_config(cfg_pfad)
+        eintrag = bericht(Facts(cfg.db_pfad), cfg, Vault(cfg.vault_ordner))
+        return JSONResponse({"ok": True, **eintrag}, headers={"Cache-Control": "no-store"})
 
     @app.get("/api/globe")
     def globe(zeitraum: str = STANDARD_ZEITRAUM) -> JSONResponse:

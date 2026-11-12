@@ -157,9 +157,11 @@ CLI betrieb  → Takt aus, 5 Jobs, Ressourcen, letzte 24 h
   eingebaut, aber nicht stillschweigend für die Produktion aktiviert.
 - **Ein Prozess, ein SQLite-Writer.** Der Takt ist ein Daemon-Thread; es gibt
   keine verteilten Worker und keine horizontale Skalierung.
-- **Kein externes Alerting.** Warnungen stehen in SQLite, API und UI. Ein
-  Dead-man's-Switch für den Takt selbst ist nicht angeschlossen; der
-  bestehende Nachtlauf hat dafür seinen eigenen Healthchecks-Pfad.
+- **Kein eingebautes Alerting.** Warnungen stehen in SQLite, API und UI. Der
+  externe GitHub-Actions-Watchdog prüft den Health-Endpunkt und öffnet bei
+  einem stehenden Takt ein Issue; er ist kein vollständiger Dead-man's-Switch
+  und kann durch GitHub verzögert werden. Der Nachtlauf hat dafür seinen
+  eigenen Healthchecks-Pfad.
 - **RSS ist Spitzenwert.** `ru_maxrss` ist der Spitzenverbrauch des Prozesses,
   kein momentaner Livewert. Das Limit schützt trotzdem vor weiterem Wachstum.
 - **Keine CPU- oder Netzwerkquote pro Job.** Die vorhandenen Limits aus
@@ -173,11 +175,14 @@ CLI betrieb  → Takt aus, 5 Jobs, Ressourcen, letzte 24 h
 
 ## 7. Nächster Schritt
 
-Phase 8 ist lokal umgesetzt und getestet. Für einen echten Dauerbetrieb sind
-zwei getrennte Entscheidungen nötig:
+`ORAKEL_TAKT=1` ist auf dem Zielhost gesetzt; der 24-Stunden-Soak läuft. Der
+externe Watchdog ist als GitHub-Actions-Workflow
+`.github/workflows/watchdog.yml` angelegt. Der Workflow wird mit dem Push auf
+den Default-Branch aktiv und prüft alle fünf Minuten den öffentlichen
+Health-Endpunkt, öffnet bei einem Taktalter über 300 Sekunden
+oder einem Status ungleich `laeuft` ein GitHub-Issue und schließt es nach der
+Erholung wieder. GitHub kann geplante Läufe verzögern; der Watchdog ist kein
+Ersatz für einen vollständigen Dead-man's-Switch.
 
-1. `ORAKEL_TAKT=1` auf dem Zielhost setzen und einen kurzen Soak beobachten.
-2. Einen externen Watchdog für den Takt ergänzen, damit ein stehender Prozess
-   nicht nur im Dashboard sichtbar ist.
-
-Paper-Trading, Risikogrenzen und der Nachtlauf bleiben unverändert.
+Offen bleibt der Abschluss des 24-Stunden-Soaks. Paper-Trading,
+Risikogrenzen und der Nachtlauf bleiben unverändert.

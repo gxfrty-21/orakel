@@ -49,6 +49,33 @@ def _kontext(cfg: Config, db: Facts, modus: str = "paper") -> dict[str, Any]:
     }
 
 
+def agenda_nachholen(cfg: Config, db: Facts,
+                     jetzt_wert: datetime | None = None) -> dict[str, Any] | None:
+    """Sammelt die Agenda am Abend vor der Mitternachtssitzung — einmal pro Tag.
+
+    Vor 22:00 Uhr passiert nichts. Ist für heute schon eine Agenda gespeichert,
+    wird sie nicht überschrieben.
+    """
+    tz = ZoneInfo(cfg["basis"].get("zeitzone", "Europe/Zurich"))
+    jetzt = jetzt_wert or datetime.now(tz)
+    if jetzt.tzinfo is None:
+        jetzt = jetzt.replace(tzinfo=tz)
+    else:
+        jetzt = jetzt.astimezone(tz)
+    if jetzt.hour < 22:
+        return None
+    gespeichert = db.zustand("sekretariat_agenda") or {}
+    if str(gespeichert.get("zeit") or "")[:10] == jetzt.date().isoformat():
+        return None
+    from .sekretariat import agenda
+
+    eintrag = agenda(db)
+    db.ereignis("info", "Sekretariat",
+                f"Abendagenda für die Mitternachtssitzung gesammelt "
+                f"({len(eintrag.get('themen') or [])} Themen)")
+    return eintrag
+
+
 def konferenz_nachholen(cfg: Config, db: Facts) -> dict[str, Any] | None:
     """Ist die Konferenz des heutigen Tages ausgeblieben, wird sie nachgeholt."""
     tz = ZoneInfo(cfg["basis"].get("zeitzone", "Europe/Zurich"))

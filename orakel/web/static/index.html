@@ -7,8 +7,8 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307090c'/%3E%3Ccircle cx='16' cy='16' r='8' fill='none' stroke='%235fe0c8' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/static/style.css?v=13">
-<link rel="stylesheet" href="/static/command.css?v=3">
+<link rel="stylesheet" href="/static/style.css?v=51">
+<link rel="stylesheet" href="/static/command.css?v=4">
 </head>
 <body>
 <div class="app">
@@ -17,6 +17,8 @@
     <span class="chip" id="cMode"><span class="dot"></span>–</span>
     <span class="chip" id="cRisk">Risiko: –</span>
     <span class="chip" id="cAge">Stand: –</span>
+    <span id="mtgTaktStand" class="mtgTaktStand">–</span>
+    <span id="mtgTaktZahl" class="mtgTaktStand">0 Aktualisierungen</span>
     <span class="sp"></span>
     <button class="toggle main" id="runBtn">Lauf starten</button>
   </header>
@@ -30,10 +32,8 @@
     <button class="nav" data-v="strat"><b>Strategien</b><small>Bestandene Auswahl</small></button>
     <button class="nav" data-v="research"><b>Research</b><small>Ablauf der Engine</small></button>
     <button class="nav" data-v="globe"><b>Weltkugel</b><small>Intelligence-Netzwerk</small></button>
-    <button class="nav" data-v="nexus"><b>Nexus</b><small>3D-Raum und Spinne</small></button>
     <button class="nav" data-v="betrieb"><b>Betrieb</b><small>Takt, Backoff, Grenzen</small></button>
     <button class="nav" data-v="ship"><b>Raumschiff</b><small>Abteilungen und Agenten</small></button>
-    <button class="nav" data-v="command"><b>Command Center</b><small>Begehbare 3D-Brücke</small></button>
     <button class="nav" data-v="spider"><b>Spider</b><small>Quellen und Erkenntnisse</small></button>
     <button class="nav" data-v="kb"><b>Wissensbank</b><small>Schlüsse aus Ergebnissen</small></button>
     <button class="nav" data-v="agents"><b>Agentenraum</b><small>Wer hat was getan</small></button>
@@ -174,69 +174,6 @@
       </div>
     </section>
 
-    <section class="view nexus-view" id="v-nexus" hidden>
-      <div class="nexus-head">
-        <div>
-          <span class="nexus-kicker">NEXUS / 3D-RAUM · LIVE GRAPH</span>
-          <h1>Nexus-Raum</h1>
-          <p class="sub">Die Spinne sitzt im Kern des persistierten Wissensgraphen. Knoten und Kanten kommen aus SQLite; die Beine bewegen sich nur, wenn eine Mission oder Aufgabe tatsächlich läuft. Sonst bleibt der Raum ruhig.</p>
-        </div>
-        <div class="nexus-actions">
-          <div class="nexus-window" id="nexusWindow" role="group" aria-label="Zeitraum für den Nexus-Raum">
-            <button type="button" class="n-window" data-window="24h" aria-pressed="false">24 h</button>
-            <button type="button" class="n-window is-active" data-window="7d" aria-pressed="true">7 Tage</button>
-            <button type="button" class="n-window" data-window="30d" aria-pressed="false">30 Tage</button>
-            <button type="button" class="n-window" data-window="alle" aria-pressed="false">Alle</button>
-          </div>
-          <div class="nexus-mode" id="nexusMode">
-            <span class="n-live-dot"></span>
-            <span><b id="nexusModeLabel">WIRD GELADEN</b><small id="nexusModeDetail">Raum wird verbunden</small></span>
-          </div>
-        </div>
-      </div>
-      <div class="nexus-panel">
-        <div class="nexus-grid">
-          <aside class="nexus-rail" aria-label="Graphknoten im Nexus-Raum">
-            <div class="nexus-rail-head"><span>GRAPHKNOTEN</span><b id="nexusNodeTotal">–</b></div>
-            <div class="nexus-rail-list" id="nexusNodes"><div class="nexus-rail-empty">Graph wird geladen.</div></div>
-            <div class="nexus-rail-foot"><span class="n-signal"></span><span id="nexusGraphHint">–</span></div>
-          </aside>
-          <div class="nexus-stage" id="nexusStage" tabindex="0" aria-label="Feste 3D-Ansicht des Nexus-Raums. Knoten anklicken oder mit der Tastatur fokussieren.">
-            <canvas id="nexusCanvas"></canvas>
-            <div class="nexus-hud-top">
-              <div class="nexus-hud-kicker">NEXUS / SPIDER CORE</div>
-              <div class="nexus-activity" id="nexusActivity">–</div>
-              <div class="nexus-activity-detail" id="nexusActivityDetail"></div>
-            </div>
-            <div class="nexus-hud-stats">
-              <span><small>KNOTEN</small><b id="nexusStatNodes">–</b></span>
-              <span><small>KANTEN</small><b id="nexusStatEdges">–</b></span>
-              <span><small>LAUFEND</small><b id="nexusStatRunning">–</b></span>
-            </div>
-            <div class="nexus-tooltip" id="nexusTooltip" hidden></div>
-            <div class="nexus-empty" id="nexusEmpty" hidden></div>
-            <div class="nexus-hint" id="nexusHint">FESTE KAMERA · BEINE BEWEGEN SICH NUR BEI LAUFENDER ARBEIT</div>
-            <div class="nexus-controls">
-              <button type="button" class="n-control" id="nexusReset">Ansicht zurücksetzen</button>
-              <button type="button" class="n-control" id="nexusPause">Bewegung pausieren</button>
-            </div>
-          </div>
-          <aside class="nexus-rail nexus-rail-right" aria-label="Echte Aktivität im Nexus">
-            <div class="nexus-rail-head"><span>AKTIVITÄT</span><b id="nexusEventTotal">–</b></div>
-            <div class="nexus-rail-list nexus-events" id="nexusEvents"><div class="nexus-rail-empty">Aktivität wird geladen.</div></div>
-            <div class="nexus-rail-foot"><span class="n-signal"></span>Echte Zeitstempel</div>
-          </aside>
-        </div>
-        <div class="nexus-dock">
-          <div class="nexus-legend" id="nexusLegend"></div>
-          <div class="nexus-meta" id="nexusMeta">–</div>
-        </div>
-      </div>
-      <div class="nexus-lower">
-        <div class="panel"><div class="ph">Raumvertrag<span class="sp"></span><span class="tag">keine Dekoration</span></div><div class="card nexus-contract" id="nexusContract"></div></div>
-        <div class="panel"><div class="ph">Knotenverteilung<span class="sp"></span><span class="tag" id="nexusTypeTag">–</span></div><div class="tw" id="nexusTypes"></div></div>
-      </div>
-    </section>
 
     <section class="view betrieb-view" id="v-betrieb" hidden>
       <div class="head betrieb-head">
@@ -268,89 +205,76 @@
       </div>
     </section>
 
-    <section class="view" id="v-ship" hidden>
-      <div><h1>Raumschiff</h1><p class="sub">Acht Abteilungen, je zehn Agenten. Jeder Raum zeigt, was im letzten Lauf tatsächlich passiert ist. Raum anklicken.</p></div>
-      <div class="deck" id="deck"></div>
+    <section class="view ship-view" id="v-ship" hidden>
+      <div class="ship-head">
+        <div>
+          <span class="ship-kicker">ORAKEL / RAUMSCHIFF · 2D-QUERSCHNITT</span>
+          <h1>Raumschiff</h1>
+          <p class="sub">Zwei Decks, acht Abteilungen. Jeder Raum zeigt ausschliesslich, was im letzten Lauf in der Datenbank steht; ein Raum ohne Lauf bleibt dunkel und heisst «KEINE DATEN».</p>
+        </div>
+        <div class="ship-mode" id="shipMode"><span class="ship-dot"></span><span><b>VERBUNDEN</b><small id="shipModeDetail">–</small></span></div>
+      </div>
+      <div class="ship-hull">
+        <div class="ship-deck deck-a">
+          <span class="deck-label">DECK A · BRÜCKE</span>
+          <div class="deck-rooms" id="deckA"></div>
+        </div>
+        <div class="ship-deck deck-b">
+          <span class="deck-label">DECK B · HAUPTDECK</span>
+          <div class="deck-rooms" id="deckB"></div>
+        </div>
+        <div class="ship-deck deck-c">
+          <span class="deck-label">DECK C · EXECUTIVE</span>
+          <div class="deck-rooms" id="deckC"></div>
+        </div>
+      </div>
       <div class="grid2">
         <div class="panel"><div class="ph">Abteilung<span class="sp"></span><span class="tag" id="roomTag"></span></div><div class="list scroll" id="roomAgents"></div></div>
         <div class="panel"><div class="ph">Rohrpost<span class="sp"></span><span class="tag">letzte Ergebnisse</span></div><div class="list scroll" id="roomRuns"></div></div>
       </div>
+      <div class="panel" id="mtgPanel">
+        <div class="ph">Meetingraum<span class="sp"></span><span class="tag" id="mtgTag">Sitzung</span></div>
+        <div id="mtgBody"><div class="empty">Sitzung wird geladen …</div></div>
+        <div class="mtgTakt"><label for="mtgTakt">Aktualisierung</label>
+          <select id="mtgTakt">
+            <option value="2000">alle 2 s</option>
+            <option value="5000">alle 5 s</option>
+            <option value="10000">alle 10 s</option>
+            <option value="30000">alle 30 s</option>
+            <option value="0">pausiert</option>
+          </select>
+          <label for="mtgAltWahl">Markierung ab</label>
+          <select id="mtgAltWahl">
+            <option value="0">wie Konfiguration</option>
+            <option value="1">1 Std.</option>
+            <option value="2">2 Std.</option>
+            <option value="4">4 Std.</option>
+            <option value="8">8 Std.</option>
+            <option value="24">24 Std.</option>
+          </select>
+          <span class="mtgAltKopf">
+            <button type="button" id="mtgAltZahl" class="mtgTaktStand mtgAltZahl" aria-pressed="false">0 veraltet</button>
+            <button type="button" id="mtgBlockZahl" class="mtgTaktStand mtgAltZahl" aria-pressed="false" hidden>0 Blöcke</button>
+          </span>
+          </div>
+        <div class="mtgLogKopf"><span>Letzte Aktualisierungen</span>
+          <button type="button" id="mtgLogLeeren" class="toggle">Leeren</button></div>
+        <div id="mtgLog" class="mtgLog"></div>
+        <div id="mtgProto"></div>
+      </div>
+      <div class="panel" id="sekPanel">
+        <div class="ph">Sekretariat<span class="sp"></span><span class="tag">Mira · Jonas · Lea</span></div>
+        <div class="sekAgendaHead"><span>Agenda der nächsten Sitzung</span><button type="button" id="sekAgendaBtn" class="toggle">Sammeln</button></div>
+        <div class="sekAgenda" id="sekAgenda"><div class="empty">Noch keine Agenda gesammelt.</div></div>
+        <div class="sekTabs" id="sekTabs"></div>
+        <div class="sekThread" id="sekThread"><div class="empty">Wird geladen …</div></div>
+        <form class="sekForm" id="sekForm">
+          <input id="sekInput" autocomplete="off" placeholder="Frage an das Sekretariat …">
+          <button type="submit" class="toggle main">Senden</button>
+        </form>
+      </div>
     </section>
 
-    <section class="view command-view" id="v-command" hidden>
-      <div class="command-head">
-        <div>
-          <span class="command-kicker">COMMAND DECK / E6 · BEGEHBARER 3D-PROTOTYP</span>
-          <h1>Command Center</h1>
-          <p class="sub">Die erste begehbare Brücke des Orakels. Acht Stationen entsprechen den acht echten Abteilungen; Wände, Hologramm und Screens zeigen ausschließlich Werte aus /api/report und /api/betrieb. Fehlt eine Grundlage, steht «KEINE DATEN» auf dem Schirm.</p>
-        </div>
-        <div class="command-actions">
-          <div class="command-mode" id="commandMode"><span class="g-live-dot"></span><span><b>WIRD GELADEN</b><small>Raum wird verbunden</small></span></div>
-          <button type="button" class="toggle main" id="commandEnter">Betreten</button>
-        </div>
-      </div>
-      <div class="command-grid">
-        <div class="command-stage" id="commandStage" tabindex="0" aria-label="Begehbares 3D-Command-Center. Klicken für Maussteuerung, WASD zum Gehen, M für die Deckskarte, Escape zum Freigeben.">
-          <canvas id="commandCanvas"></canvas>
-          <div class="command-hud-top">
-            <div class="command-hud-kicker">ORAKEL / COMMAND CENTER</div>
-            <div class="command-hud-status" id="commandHudStatus">–</div>
-            <div class="command-hud-detail" id="commandHudDetail">–</div>
-          </div>
-          <div class="command-hud-stats">
-            <span><small>TAKT</small><b id="commandHudTakt">–</b></span>
-            <span><small>AGENTEN</small><b id="commandHudAgenten">–</b></span>
-            <span><small>DB</small><b id="commandHudDb">–</b></span>
-          </div>
-          <div class="command-overlay" id="commandOverlay">
-            <span class="command-overlay-kicker">COMMAND DECK / E6</span>
-            <b>Brücke betreten</b>
-            <small id="commandOverlayText">Klicken, um den Raum zu betreten. WASD zum Gehen, Maus zum Umsehen, ESC zum Verlassen.</small>
-            <button type="button" class="toggle main" id="commandEnterOverlay">Betreten</button>
-          </div>
-          <div class="command-hint" id="commandHint">WASD GEHEN · MAUS UMSEHEN · SHIFT RENNEN · M KARTE · ESC FREIGEBEN</div>
-          <div class="command-controls">
-            <button type="button" class="g-control" id="commandMapBtn" aria-expanded="false" aria-controls="commandMap">Deckskarte</button>
-            <button type="button" class="g-control" id="commandReset">Position zurücksetzen</button>
-          </div>
-          <div class="command-map" id="commandMap" role="dialog" aria-modal="true" aria-label="Deckskarte des Command Centers" hidden>
-            <div class="command-map-head">
-              <div>
-                <span class="command-map-kicker">DECKSKARTE / E6</span>
-                <b>Main Command Center</b>
-              </div>
-              <button type="button" class="g-control" id="commandMapClose">Schliessen</button>
-            </div>
-            <div class="command-map-plan" id="commandMapPlan" aria-label="Grundriss mit acht Stationen">
-              <div class="command-map-loading">Deckskarte wird geladen.</div>
-            </div>
-            <div class="command-map-foot"><span class="command-map-key"><i></i>STATION</span><span>Station anklicken, um direkt davor zu stehen.</span><span><b>M</b> Karte · <b>ESC</b> schliessen</span></div>
-          </div>
-        </div>
-        <aside class="command-rail" aria-label="Echte Daten des Command Centers">
-          <div class="command-rail-head"><span>LAGEBILD</span><b id="commandTag">–</b></div>
-          <div class="command-kpis" id="commandKpis"></div>
-          <div class="command-rail-section">
-            <div class="command-rail-title">ABTEILUNGEN / STATIONEN</div>
-            <div id="commandDepts"></div>
-          </div>
-          <div class="command-rail-section">
-            <div class="command-rail-title">LETZTE AKTIVITÄT</div>
-            <div class="command-activity" id="commandActivity"><div class="command-empty">Wird geladen.</div></div>
-          </div>
-        </aside>
-      </div>
-      <div class="command-lower">
-        <div class="panel">
-          <div class="ph">Raumvertrag<span class="sp"></span><span class="tag">keine Dekoration</span></div>
-          <div class="card command-contract" id="commandContract">Die Brücke ist ein erster Prototyp, keine Automation. Sie liest nur die bestehenden Fakten aus Report und Betrieb. Acht Stationen sind den Abteilungen A–H zugeordnet; die Zahl der Agentenläufe und Befunde stammt aus der Datenbank. Es werden keine Agenten, Kurse oder Aktivitäten erfunden. Paper-Trading und Risikogrenzen bleiben unverändert.</div>
-        </div>
-        <div class="panel">
-          <div class="ph">Datenquellen<span class="sp"></span><span class="tag">live</span></div>
-          <div class="card command-sources" id="commandSources"><div class="command-empty">Wird geladen.</div></div>
-        </div>
-      </div>
-    </section>
 
     <section class="view" id="v-spider" hidden>
       <div class="head"><div><h1>Spider Intelligence</h1><p class="sub">RSS-Quellen, robots.txt geprüft, Abruflimits eingehalten. Volltext nur bei freigegebenen Seiten. Jede Erkenntnis behält Quelle und Qualitätsheuristik.</p></div>
@@ -428,7 +352,8 @@
     </section>
   </main>
 </div>
-<script src="/static/app.js?v=16"></script>
-<script src="/static/command-view.js?v=1"></script>
+<script src="/static/app.js?v=116"></script>
+<script src="/static/command-view.js?v=2"></script>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>
 </html>

@@ -141,7 +141,10 @@ CREATE TABLE IF NOT EXISTS artikel (
     zusammenfassung TEXT,
     qualitaet REAL NOT NULL,
     symbole TEXT NOT NULL DEFAULT '[]',
-    titel_hash TEXT NOT NULL
+    titel_hash TEXT NOT NULL,
+    prioritaet TEXT NOT NULL DEFAULT '',
+    prioritaet_grund TEXT NOT NULL DEFAULT '',
+    erkannt TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_artikel_hash ON artikel(titel_hash);
 CREATE INDEX IF NOT EXISTS ix_artikel_geholt ON artikel(geholt);
@@ -279,6 +282,8 @@ CREATE TABLE IF NOT EXISTS nexus_tasks (
     abhaengig_von INTEGER,
     erstellt TEXT NOT NULL,
     aktualisiert TEXT NOT NULL,
+    abgeschlossen_am TEXT,
+    fehlgeschlagen_am TEXT,
     UNIQUE(mission_id, position),
     FOREIGN KEY(mission_id) REFERENCES nexus_missionen(id)
 );
@@ -449,11 +454,36 @@ class Facts:
         self.pfad.parent.mkdir(parents=True, exist_ok=True)
         with self.conn() as c:
             c.executescript(SCHEMA_SQL)
+            self._spalten_nachziehen(c)
             version = int(c.execute("PRAGMA user_version").fetchone()[0])
             if version < COMPANY_SCHEMA_VERSION:
                 # Additive Migration: bestehende Tabellen und Zeilen bleiben unberührt.
                 c.executescript(_company_schema_laden())
                 c.execute(f"PRAGMA user_version = {COMPANY_SCHEMA_VERSION}")
+
+    @staticmethod
+    def _spalten_nachziehen(c: sqlite3.Connection) -> None:
+        """Additive Spalten für bestehende Datenbanken (CREATE TABLE greift dort nicht).
+
+        Bestehende Zeilen bleiben unberührt; neue Spalten sind leer bzw. NULL und
+        werden in der Oberfläche als «unbekannt» dargestellt, nie erfunden.
+        """
+        vorhanden = {r["name"] for r in c.execute("PRAGMA table_info(artikel)")}
+        for name, ddl in (
+            ("prioritaet", "TEXT NOT NULL DEFAULT ''"),
+            ("prioritaet_grund", "TEXT NOT NULL DEFAULT ''"),
+            ("erkannt", "TEXT"),
+        ):
+            if name not in vorhanden:
+                c.execute(f"ALTER TABLE artikel ADD COLUMN {name} {ddl}")
+
+        if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                     "AND name='nexus_tasks'").fetchone():
+            spalten = {r["name"] for r in c.execute("PRAGMA table_info(nexus_tasks)")}
+            if "abgeschlossen_am" not in spalten:
+                c.execute("ALTER TABLE nexus_tasks ADD COLUMN abgeschlossen_am TEXT")
+            if "fehlgeschlagen_am" not in spalten:
+                c.execute("ALTER TABLE nexus_tasks ADD COLUMN fehlgeschlagen_am TEXT")
 
     @contextmanager
     def conn(self) -> Iterator[sqlite3.Connection]:
@@ -621,8 +651,13 @@ class Facts:
     def artikel_speichern(
         self, quelle: str, typ: str, titel: str, url: str, veroeffentlicht: str | None,
         zusammenfassung: str, qualitaet: float, symbole: list[str], titel_hash: str,
+        prioritaet: str = "", prioritaet_grund: str = "", erkannt: str | None = None,
     ) -> int | None:
-        """Speichert einen Artikel und gibt seine id zurück. None = Dublette."""
+        """Speichert einen Artikel und gibt seine id zurück. None = Dublette.
+
+        `erkannt` ist der Zeitpunkt, an dem Orakel die Meldung gesehen hat —
+        getrennt von `veroeffentlicht`, damit Verzögerungen sichtbar bleiben.
+        """
         with self.conn() as c:
             bekannt = c.execute(
                 "SELECT 1 FROM artikel WHERE url=? OR titel_hash=? LIMIT 1", (url, titel_hash)
@@ -631,11 +666,26 @@ class Facts:
                 return None
             cur = c.execute(
                 "INSERT INTO artikel(geholt,quelle,typ,titel,url,veroeffentlicht,zusammenfassung,"
-                "qualitaet,symbole,titel_hash) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "qualitaet,symbole,titel_hash,prioritaet,prioritaet_grund,erkannt)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (jetzt(), quelle, typ, titel, url, veroeffentlicht, zusammenfassung,
-                 qualitaet, json.dumps(symbole, ensure_ascii=False), titel_hash),
+                 qualitaet, json.dumps(symbole, ensure_ascii=False), titel_hash,
+                 prioritaet, prioritaet_grund, erkannt or jetzt()),
             )
             return int(cur.lastrowid or 0) or None
+
+    def artikel_ohne_prioritaet(self, limit: int = 500) -> list[sqlite3.Row]:
+        with self.conn() as c:
+            return list(c.execute(
+                "SELECT * FROM artikel WHERE prioritaet='' ORDER BY id DESC LIMIT ?", (limit,)
+            ))
+
+    def artikel_prioritaet_setzen(self, aid: int, prioritaet: str, grund: str) -> int:
+        with self.conn() as c:
+            return c.execute(
+                "UPDATE artikel SET prioritaet=?, prioritaet_grund=? WHERE id=?",
+                (prioritaet, grund, aid),
+            ).rowcount
 
     def artikel(self, limit: int = 50) -> list[sqlite3.Row]:
         with self.conn() as c:
@@ -987,9 +1037,10 @@ class Facts:
                              position: int, fehler: str, jetzt: str) -> None:
         """Blockiert Folgeschritte und markiert die Mission als abgebrochen."""
         c.execute(
-            "UPDATE nexus_tasks SET status='blockiert', fehler=?, aktualisiert=? "
+            "UPDATE nexus_tasks SET status='blockiert', fehler=?, aktualisiert=?, "
+            "fehlgeschlagen_am=? "
             "WHERE mission_id=? AND position>? AND status IN ('offen','laufend')",
-            ("Vorgänger fehlgeschlagen", jetzt, int(mission_id), int(position)),
+            ("Vorgänger fehlgeschlagen", jetzt, jetzt, int(mission_id), int(position)),
         )
         zahlen = c.execute(
             "SELECT COUNT(*) gesamt, "
@@ -1026,8 +1077,8 @@ class Facts:
                 if endgueltig:
                     c.execute(
                         "UPDATE nexus_tasks SET status='fehlgeschlagen', lease_bis=NULL, "
-                        "fehler=?, aktualisiert=? WHERE id=?",
-                        ("Lease abgelaufen; letzter Versuch verbraucht", jetzt,
+                        "fehler=?, aktualisiert=?, fehlgeschlagen_am=? WHERE id=?",
+                        ("Lease abgelaufen; letzter Versuch verbraucht", jetzt, jetzt,
                          int(task["id"])),
                     )
                     self._mission_fehlerhaft(
@@ -1062,8 +1113,8 @@ class Facts:
             else:
                 c.execute(
                     "UPDATE nexus_tasks SET status='erledigt', lease_bis=NULL, "
-                    "ergebnis=?, fehler='', aktualisiert=? WHERE id=?",
-                    (json.dumps(ergebnis, ensure_ascii=False), jetzt, int(task_id)),
+                    "ergebnis=?, fehler='', aktualisiert=?, abgeschlossen_am=? WHERE id=?",
+                    (json.dumps(ergebnis, ensure_ascii=False), jetzt, jetzt, int(task_id)),
                 )
                 zahlen = c.execute(
                     "SELECT COUNT(*) gesamt, "

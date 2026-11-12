@@ -1,7 +1,7 @@
 # Orakel Raumschiff — Planungsdossier
 
-**Status:** Phase 1 umgesetzt (Company-Schicht); Phase 2 ff. nicht begonnen  
-**Stand:** 8. November 2026  
+**Status:** Phase 1 umgesetzt (Company-Schicht); Phase 2 begonnen — begehbarer Command-Center-Prototyp<br>
+**Stand:** 10. November 2026
 **Grundlage:** bestehendes Orakel-Projekt in diesem Repository  
 **Entscheidung des Owners:** Phase 1 freigegeben
 
@@ -10,8 +10,9 @@ Projekt untersuchen, einen vollständigen Grundriss, eine technische Architektur
 Agentenstruktur, das Management, die Sekretäre, die Kommunikation, die
 Mitternachtskonferenz, den Ressourcenplan und einen realistischen Entwicklungsplan
 vorlegen. Phase 1 ist inzwischen als additive Company-Schicht umgesetzt: 103 Profile,
-SQLite-Queue, Policy-Engine, Audit-Kette und CLI. 3D-Welt, Company-API, Management-
-und Konferenzlogik bleiben offen.
+SQLite-Queue, Policy-Engine, Audit-Kette und CLI. Seit 10. November 2026 gibt es
+einen ersten begehbaren 3D-Prototypen des Main Command Centers. Die restlichen Decks,
+die Company-API sowie Management- und Konferenzlogik bleiben offen.
 
 ## Kurzfassung
 
@@ -19,8 +20,9 @@ Das Orakel ist bereits ein funktionierendes Paper-Trading-System mit echter
 Fakten-Datenbank, Richter, Risikomanager, Spider Intelligence, Obsidian-Vault,
 80 Agenten in acht Abteilungen, einer automatischen Mitternachtskonferenz und einem
 Dashboard. Die vorhandene „Weltkugel“ ist eine echte Three.js-Datenvisualisierung.
-Die vorhandene „Raumschiff“-Ansicht ist dagegen ein administratives 2D-Deck, keine
-begehbare 3D-Welt.
+Die vorhandene „Raumschiff“-Ansicht ist ein administratives 2D-Deck. Sie bleibt als
+Übersicht und Fallback erhalten; daneben steht jetzt der begehbare Command-Center-
+Prototyp `#v-command`.
 
 Der vorgeschlagene Ausbau ist deshalb **kein Neubau neben dem Projekt**, sondern eine
 Erweiterung in drei Schichten:
@@ -59,7 +61,8 @@ erschaffen.
 
 ### Was heute noch fehlt
 
-- Keine begehbare 3D-Welt und keine First-Person-Navigation.
+- Begehbare 3D-Welt bisher nur als Command-Center-Prototyp; keine First-Person-
+  Navigation für die übrigen Decks.
 - Keine CEO-Etage, kein Sekretariat und keine drei Sekretäre.
 - Keine zwei zusätzlichen Fachabteilungen für Observatory und Security.
 - Keine 100 spezialisierten Fachagenten; derzeit 80.
@@ -132,8 +135,9 @@ umgesetzt.
    und datengebunden. Ein lokales Open-Source-Modell ist optional für Formulierung,
    Zusammenfassung und CEO-Dialog; es trifft keine Handelsentscheidung und läuft
    nicht auf Railway. Keine kostenpflichtigen APIs.
-7. **Die bestehende `#v-ship`-Ansicht wird ersetzt, nicht dupliziert.** Die 2D-Deck-
-   Ansicht bleibt als Fallback und für kleine Bildschirme erhalten.
+7. **Die bestehende `#v-ship`-Ansicht bleibt als 2D-Übersicht und Fallback.** Der
+   begehbare Command-Center-Prototyp ergänzt sie als eigene Ansicht; die übrigen
+   Decks folgen erst nach eigener Freigabe.
 8. **Die Weltkugel bleibt.** Sie wird zum zentralen Exponat der Global Intelligence
    Observatory und behält ihren Zeitfilter.
 9. **Paper-only und Sicherheitsgrenzen sind unantastbar.** Kein Agent darf Broker,
@@ -149,12 +153,22 @@ umgesetzt.
 CLI `python -m orakel unternehmen` und sieben neue Tests. Die Scheduler-Anbindung
 ist vorhanden, aber mit `[unternehmen] aktiv = false` standardmäßig aus.
 
-**Noch nicht umgesetzt:** Company-API (P2), 3D-Welt und Navigation (P2+), CEO-Etage
-(P4), vollständige Kommunikation (P5), autonomes Management und Mitternachts-
-konferenz (P6), Produktionsdeployment, LLM und echte Broker-Orders.
+**Phase 2 — begonnen (10.11.2026):** Im Dashboard gibt es `#v-command` mit einem
+begehbaren Main Command Center: acht Stationen für A–H, ein zentrales Hologramm,
+drei Wandschirme, eine interaktive Deckskarte mit Direktreisen und First-Person-
+Navigation per Pointer Lock, WASD, Maus und Shift.
+Die Anzeigen lesen ausschließlich `/api/report` und `/api/betrieb`; fehlende Werte
+werden als `KEINE DATEN` angezeigt. Die Szene ist eine Darstellung, keine neue
+Datenquelle und keine Automation.
 
-Der nächste Schritt nach separater Freigabe ist Phase 2: Company-API und eine
-3D-Hülle mit einem Deck, Karte und Steuerung — weiterhin ohne echte Orders.
+**Noch nicht umgesetzt:** Company-API (P2), restliche Decks und vollständige
+Navigation (P2+), CEO-Etage (P4), vollständige Kommunikation (P5), autonomes
+Management und Mitternachtskonferenz (P6), Produktionsdeployment, LLM und echte
+Broker-Orders.
+
+Der Command-Center-Prototyp ist der erste sichtbare Teil von Phase 2. Als Nächstes
+folgen die Company-API, die restlichen Decks, eine Übersichtskarte und die
+Interaktionspunkte — weiterhin ohne echte Orders.
 
 ## Offene Entscheidungen für die nächsten Phasen
 

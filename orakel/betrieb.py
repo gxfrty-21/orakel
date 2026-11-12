@@ -241,7 +241,7 @@ class Betrieb:
 
     # ---------- Plan ----------
     def _job_liste(self, jobs: dict[str, Callable[[], Any]] | None) -> list[Job]:
-        from .scheduler import konferenz_nachholen
+        from .scheduler import agenda_nachholen, konferenz_nachholen
 
         b = self.betrieb_cfg
         missionen_max = _int(b.get("max_missionen_pro_takt"), 5, 1)
@@ -281,6 +281,9 @@ class Betrieb:
                 0, _int(b.get("backoff_max_sekunden"), 3600, 60)),
             Job("konferenz", "Mitternachtskonferenz",
                 lambda: konferenz_nachholen(self.cfg, self.db),
+                0, _int(b.get("backoff_max_sekunden"), 3600, 60)),
+            Job("agenda", "Abendagenda",
+                lambda: agenda_nachholen(self.cfg, self.db),
                 0, _int(b.get("backoff_max_sekunden"), 3600, 60)),
         ]
         if spider_aktiv:
