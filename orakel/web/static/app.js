@@ -73,9 +73,9 @@ function renderOverview(){
   const P = R.plan||[];
   $('#planTag').textContent = P.length ? `${P.length} Auftragsentwürfe` : 'keine Aufträge';
   $('#planList').innerHTML = P.length ? P.map(p=>`
-    <div class="li"><span><b>${esc(p.symbol)} · ${esc(p.aktion)}${p.menge?' · '+num(p.menge,0)+' Stück':''}</b>
+    <div class="li planZeile"><span><b>${esc(p.symbol)} · ${esc(p.aktion)}${p.menge?' · '+num(p.menge,0)+' Stück':''}</b>
     <small>${esc(p.strategie||'')}${p.kurs?' · Kurs '+num(p.kurs,5):''}</small></span>
-    <span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+    <span class="planStatus">
     <span class="pill ${p.genehmigt?'':'r'}">${p.genehmigt?'GENEHMIGT':'ABGELEHNT'}</span>
     <span class="r">${esc(p.status)}</span></span></div>`).join('')
     : '<div class="empty">Dieser Lauf hat keine Aufträge geplant.</div>';
