@@ -18,6 +18,7 @@
     drag: null, pan: null, geladen: false, laedt: false, userMoved: false,
   };
   let el = {};
+  let tagAktivIndex = -1;
 
   function aktivieren() {
     if (!el.initialisiert) init();
@@ -34,7 +35,8 @@
       search: $('#vaultSearch'), folder: $('#vaultFolder'), orphans: $('#vaultOrphans'),
       tags: $('#vaultTags'), reset: $('#vaultReset'), legend: $('#vaultLegend'),
       fokus: $('#vaultTagFokus'), fokusLabel: $('#vaultTagFokusLabel'),
-      fokusSelect: $('#vaultTagFokusSelect'), fokusClear: $('#vaultTagFokusClear'),
+      tagSuche: $('#vaultTagSuche'), tagOptionen: $('#vaultTagOptionen'),
+      tagAktiv: $('#vaultTagAktiv'), fokusClear: $('#vaultTagFokusClear'),
       ctx: canvas.getContext('2d'),
       initialisiert: true,
     };
@@ -49,7 +51,21 @@
     el.orphans.addEventListener('change', filterGeaendert);
     if (el.tags) el.tags.addEventListener('change', tagsGeaendert);
     if (el.fokusClear) el.fokusClear.addEventListener('click', () => entferneTagFokus());
-    if (el.fokusSelect) el.fokusSelect.addEventListener('change', () => sprungZuTag(el.fokusSelect.value));
+    if (el.tagSuche) {
+      el.tagSuche.addEventListener('focus', () => oeffneTagOptionen());
+      el.tagSuche.addEventListener('input', () => { tagAktivIndex = -1; oeffneTagOptionen(); });
+      el.tagSuche.addEventListener('keydown', tagSucheTaste);
+    }
+    if (el.tagOptionen) {
+      el.tagOptionen.addEventListener('mousedown', ev => ev.preventDefault());
+      el.tagOptionen.addEventListener('click', ev => {
+        const b = ev.target.closest('button[data-tag-id]');
+        if (b) sprungZuTag(b.dataset.tagId);
+      });
+    }
+    document.addEventListener('pointerdown', ev => {
+      if (el.fokus && !el.fokus.contains(ev.target)) schliesseTagOptionen();
+    });
     el.reset.addEventListener('click', reset);
     el.empty.addEventListener('click', ev => {
       if (ev.target && ev.target.id === 'vaultReload') laden();
@@ -132,6 +148,8 @@
       if (el.folder) el.folder.value = '';
       if (el.orphans) el.orphans.checked = true;
       if (el.tags) el.tags.checked = false;
+      if (el.tagSuche) el.tagSuche.value = '';
+      schliesseTagOptionen();
       rebuildGraph();
       baueFilter();
       layout();
@@ -192,18 +210,88 @@
     const tags = tagListe();
     el.fokus.hidden = tags.length === 0;
     if (el.fokusLabel) el.fokusLabel.textContent = state.tagFilter ? 'Tag-Fokus' : 'Tag-Sprung';
+    if (el.tagAktiv) {
+      const aktiv = state.tagFilter ? tags.find(t => t.id === state.tagFilter) : null;
+      el.tagAktiv.hidden = !aktiv;
+      el.tagAktiv.textContent = aktiv ? `${aktiv.titel} · ${aktiv.anzahl} ${aktiv.anzahl === 1 ? 'Notiz' : 'Notizen'}` : '';
+    }
     if (el.fokusClear) el.fokusClear.hidden = !state.tagFilter;
-    if (el.fokusSelect) {
-      const aktuell = state.tagFilter && tags.some(t => t.id === state.tagFilter) ? state.tagFilter : '';
-      el.fokusSelect.innerHTML = '<option value="">Tag wählen …</option>' + tags
-        .map(t => `<option value="${esc(t.id)}">${esc(t.titel)} · ${t.anzahl} ${t.anzahl === 1 ? 'Notiz' : 'Notizen'}</option>`)
-        .join('');
-      el.fokusSelect.value = aktuell;
+    if (el.tagSuche) el.tagSuche.placeholder = state.tagFilter ? 'Anderen Tag suchen …' : 'Tag suchen …';
+  }
+
+  function tagSucheFilter() {
+    const q = (el.tagSuche?.value || '').trim().toLowerCase();
+    return tagListe().filter(t => !q || t.titel.toLowerCase().includes(q));
+  }
+
+  function rendereTagOptionen() {
+    if (!el.tagOptionen) return;
+    tagAktivIndex = -1;
+    const tags = tagSucheFilter();
+    el.tagOptionen.innerHTML = tags.length
+      ? tags.map((t, i) => `<button type="button" role="option" aria-selected="false" id="vaultTagOption${i}" data-tag-id="${esc(t.id)}">
+          <span>${esc(t.titel)}</span><small>${t.anzahl} ${t.anzahl === 1 ? 'Notiz' : 'Notizen'}</small></button>`).join('')
+      : '<div class="leer">Kein Tag gefunden.</div>';
+  }
+
+  function oeffneTagOptionen() {
+    if (!el.fokus || el.fokus.hidden || !el.tagOptionen) return;
+    rendereTagOptionen();
+    el.tagOptionen.hidden = false;
+    if (el.tagSuche) el.tagSuche.setAttribute('aria-expanded', 'true');
+  }
+
+  function schliesseTagOptionen() {
+    if (el.tagOptionen) el.tagOptionen.hidden = true;
+    if (el.tagSuche) {
+      el.tagSuche.setAttribute('aria-expanded', 'false');
+      el.tagSuche.removeAttribute('aria-activedescendant');
+    }
+    tagAktivIndex = -1;
+  }
+
+  function markiereTagOption(index) {
+    if (!el.tagOptionen || !el.tagSuche) return;
+    const buttons = [...el.tagOptionen.querySelectorAll('button[data-tag-id]')];
+    if (!buttons.length) return;
+    tagAktivIndex = (index + buttons.length) % buttons.length;
+    buttons.forEach((b, i) => {
+      b.classList.toggle('aktiv', i === tagAktivIndex);
+      b.setAttribute('aria-selected', i === tagAktivIndex ? 'true' : 'false');
+    });
+    const aktiv = buttons[tagAktivIndex];
+    el.tagSuche.setAttribute('aria-activedescendant', aktiv.id);
+    aktiv.scrollIntoView({ block: 'nearest' });
+  }
+
+  function tagSucheTaste(ev) {
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      if (el.tagOptionen.hidden) oeffneTagOptionen();
+      const buttons = [...el.tagOptionen.querySelectorAll('button[data-tag-id]')];
+      if (!buttons.length) return;
+      const next = tagAktivIndex < 0
+        ? (ev.key === 'ArrowDown' ? 0 : buttons.length - 1)
+        : tagAktivIndex + (ev.key === 'ArrowDown' ? 1 : -1);
+      markiereTagOption(next);
+    } else if (ev.key === 'Enter') {
+      ev.preventDefault();
+      if (!el.tagOptionen || el.tagOptionen.hidden) return;
+      const buttons = [...el.tagOptionen.querySelectorAll('button[data-tag-id]')];
+      const ziel = buttons[tagAktivIndex >= 0 ? tagAktivIndex : 0];
+      if (ziel) sprungZuTag(ziel.dataset.tagId);
+    } else if (ev.key === 'Escape') {
+      ev.preventDefault();
+      schliesseTagOptionen();
+    } else if (ev.key === 'Tab') {
+      schliesseTagOptionen();
     }
   }
 
   function sprungZuTag(id) {
-    if (!id) { if (state.tagFilter) entferneTagFokus(); return; }
+    if (!id) return;
+    if (el.tagSuche) el.tagSuche.value = '';
+    schliesseTagOptionen();
     let n = state.byId.get(id);
     if (!n) {
       state.tags = true;
@@ -304,7 +392,11 @@
   function tagsGeaendert() {
     if (!state.daten) return;
     state.tags = !!(el.tags && el.tags.checked);
-    if (!state.tags && state.tagFilter) state.tagFilter = null;
+    if (!state.tags && state.tagFilter) {
+      state.tagFilter = null;
+      if (el.tagSuche) el.tagSuche.value = '';
+      schliesseTagOptionen();
+    }
     rebuildGraph();
     layout();
     fitToVisible();
@@ -345,7 +437,11 @@
 
   function filterGeaendert() {
     const ordner = el.folder ? el.folder.value : '';
-    if (state.tagFilter && ordner !== state.folder) state.tagFilter = null;
+    if (state.tagFilter && ordner !== state.folder) {
+      state.tagFilter = null;
+      if (el.tagSuche) el.tagSuche.value = '';
+      schliesseTagOptionen();
+    }
     state.folder = ordner;
     state.orphans = el.orphans ? el.orphans.checked : true;
     state.hover = null;
@@ -371,6 +467,8 @@
     state.folder = '';
     state.hover = null;
     hideTip();
+    if (el.tagSuche) el.tagSuche.value = '';
+    schliesseTagOptionen();
     aktualisiereTagSprung();
     renderDetail(n);
     fitToVisible();
@@ -381,6 +479,8 @@
   function entferneTagFokus() {
     if (!state.tagFilter) return;
     state.tagFilter = null;
+    if (el.tagSuche) el.tagSuche.value = '';
+    schliesseTagOptionen();
     if (state.selected && state.selected.typ === 'tag') {
       state.selected = null;
       renderDetail(null);
@@ -401,6 +501,8 @@
     state.tags = false;
     state.tagFilter = null;
     if (el.tags) el.tags.checked = false;
+    if (el.tagSuche) el.tagSuche.value = '';
+    schliesseTagOptionen();
     state.selected = null;
     state.hover = null;
     hideTip();

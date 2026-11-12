@@ -665,16 +665,30 @@ body.nurAltBloecke .mtasks.ohneAlt{display:none}
 .vault-toolbar .toggle{padding:5px 9px;font-size:11px;margin-bottom:1px}
 .vault-count{margin-left:auto;padding-bottom:7px;font-family:var(--mono);font-size:10px;
   color:var(--dim);white-space:nowrap}
-.vault-fokus{display:flex;align-items:center;gap:8px;padding:7px 14px;border-bottom:1px solid var(--line);
-  background:rgba(201,167,255,.06);font-family:var(--mono);font-size:10px;color:var(--muted)}
+.vault-fokus{position:relative;z-index:8;display:flex;align-items:center;gap:8px;padding:7px 14px;
+  border-bottom:1px solid var(--line);background:rgba(201,167,255,.06);font-family:var(--mono);
+  font-size:10px;color:var(--muted)}
 .vault-fokus[hidden]{display:none}
-.vault-fokus span{letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
-.vault-fokus select{flex:1 1 180px;min-width:0;max-width:320px;background:#0b0613;border:1px solid var(--line2);
-  border-radius:4px;padding:3px 6px;color:var(--fg);font-family:var(--mono);font-size:10px}
-.vault-fokus select:focus-visible{outline:1px solid var(--accent2);outline-offset:1px}
-.vault-fokus button{margin-left:auto;padding:3px 8px;border:1px solid var(--line2);border-radius:4px;
+.vault-fokus > span{letter-spacing:.08em;text-transform:uppercase;color:var(--dim);white-space:nowrap}
+.vault-tag-aktiv{font-weight:500;color:#e9defa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:230px}
+.vault-tag-suche{position:relative;flex:1 1 220px;min-width:150px;max-width:340px}
+.vault-tag-suche input{width:100%;background:#0b0613;border:1px solid var(--line2);border-radius:4px;
+  padding:4px 7px;color:var(--fg);font-family:var(--mono);font-size:10px}
+.vault-tag-suche input:focus-visible{outline:1px solid var(--accent2);outline-offset:1px}
+.vault-tag-optionen{position:absolute;z-index:30;left:0;right:0;top:calc(100% + 4px);max-height:230px;
+  overflow:auto;background:#0b0613;border:1px solid var(--line2);border-radius:5px;
+  box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.vault-tag-optionen[hidden]{display:none}
+.vault-tag-optionen button{display:flex;justify-content:space-between;gap:10px;width:100%;padding:6px 8px;
+  border:0;border-bottom:1px solid rgba(42,26,63,.55);background:none;color:var(--fg);
+  font-family:var(--mono);font-size:10.5px;text-align:left;cursor:pointer}
+.vault-tag-optionen button:last-child{border-bottom:0}
+.vault-tag-optionen button:hover,.vault-tag-optionen button.aktiv{background:rgba(201,167,255,.12);color:#fff}
+.vault-tag-optionen small{color:var(--dim);font-size:9.5px;white-space:nowrap}
+.vault-tag-optionen .leer{padding:7px 8px;color:var(--dim);font-size:10px}
+.vault-fokus > button{margin-left:auto;padding:3px 8px;border:1px solid var(--line2);border-radius:4px;
   background:none;color:var(--accent2);font-family:var(--mono);font-size:10px;cursor:pointer;white-space:nowrap}
-.vault-fokus button:hover{border-color:var(--accent2)}
+.vault-fokus > button:hover{border-color:var(--accent2)}
 .vault-legend{display:flex;gap:12px;flex-wrap:wrap;padding:8px 14px;border-bottom:1px solid var(--line);
   font-family:var(--mono);font-size:10px;color:var(--muted)}
 .vault-legend span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
@@ -737,8 +751,9 @@ body.nurAltBloecke .mtasks.ohneAlt{display:none}
   .vault-toolbar .toggle{flex:1 1 100%;margin-bottom:0}
   .vault-count{width:100%;margin-left:0;padding-bottom:0}
   .vault-fokus{padding:7px 10px;flex-wrap:wrap}
-  .vault-fokus select{flex:1 1 100%;max-width:none}
-  .vault-fokus button{margin-left:0}
+  .vault-tag-aktiv{max-width:100%}
+  .vault-tag-suche{flex:1 1 100%;max-width:none}
+  .vault-fokus > button{margin-left:0}
   .vault-legend{padding:8px 10px;gap:8px}
   .vault-stage{height:430px}
   .vault-help{display:none}
