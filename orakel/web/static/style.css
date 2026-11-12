@@ -757,19 +757,25 @@ body.nurAltBloecke .mtasks.ohneAlt{display:none}
   .vault-toolbar{gap:8px;padding:10px;align-items:stretch}
   .vault-field{flex:1 1 100%;min-width:0}
   .vault-search{max-width:none}
-  /* 20 px sichtbarer Knopf, 44 px Trefferfläche für Touch – Feldhöhe bleibt gleich. */
+  /* Alle Bedienelemente erhalten mindestens 44 px hohe Touch-Flächen. */
+  .vault-field input,.vault-field select{min-height:44px}
   .vault-suche-clear::before{content:"";position:absolute;inset:-12px}
-  .vault-check{flex:1 1 100%;padding-bottom:0}
-  .vault-toolbar .toggle{flex:1 1 100%;margin-bottom:0}
+  .vault-check{flex:1 1 100%;min-height:44px;align-items:center;padding-bottom:0}
+  .vault-toolbar .toggle{flex:1 1 100%;min-height:44px;margin-bottom:0}
   .vault-count{width:100%;margin-left:0;padding-bottom:0}
   .vault-fokus{padding:7px 10px;flex-wrap:wrap}
   .vault-tag-aktiv{max-width:100%}
   .vault-tag-suche{flex:1 1 100%;max-width:none}
-  .vault-fokus > button{margin-left:0}
+  .vault-tag-suche input{min-height:44px;padding:9px 30px 9px 10px}
+  .vault-tag-suche .vault-suche-clear::before{inset:-13px}
+  .vault-fokus > button{min-height:44px;margin-left:0;padding:8px 12px}
+  .vault-tag-optionen button{min-height:44px;align-items:center;padding:9px 10px}
+  .vault-empty button{min-height:44px;padding:10px 14px}
+  .vd-link{min-height:44px;padding:9px 0}
   .vault-legend{padding:8px 10px;gap:8px}
   .vault-stage{height:430px}
   .vault-help{display:none}
-  /* 44 px hohe Trefferflächen; der größere Abstand verhindert Überlappungen. */
+  /* 44 px Trefferflächen; 16 px Abstand verhindert Überlappungen. */
   .vault-zoom{gap:16px}
   .vault-zoom button::before{content:"";position:absolute;inset:-9.5px -9px}
 }
