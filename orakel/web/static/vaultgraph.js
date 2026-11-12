@@ -292,6 +292,7 @@
       if (ziel) sprungZuTag(ziel.dataset.tagId);
     } else if (ev.key === 'Escape') {
       ev.preventDefault();
+      el.tagSuche.value = '';
       schliesseTagOptionen();
       el.tagSuche.blur();
     } else if (ev.key === 'Tab') {
