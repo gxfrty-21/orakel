@@ -12,7 +12,7 @@
 
   const state = {
     daten: null, knoten: [], kanten: [], byId: new Map(),
-    basisKnoten: [], basisKanten: [], tagAnzahl: 0, tags: false,
+    basisKnoten: [], basisKanten: [], tagAnzahl: 0, tags: false, tagFilter: null,
     selected: null, hover: null, search: '', folder: '', orphans: true,
     t: { x: 0, y: 0, k: 1 }, width: 0, height: 0, dpr: 1,
     drag: null, pan: null, geladen: false, laedt: false, userMoved: false,
@@ -32,7 +32,9 @@
       canvas, stage: $('#vaultStage'), empty: $('#vaultGraphEmpty'), tip: $('#vaultTip'),
       detail: $('#vaultDetail'), tag: $('#vaultGraphTag'), count: $('#vaultGraphCount'),
       search: $('#vaultSearch'), folder: $('#vaultFolder'), orphans: $('#vaultOrphans'),
-      tags: $('#vaultTags'), reset: $('#vaultReset'), legend: $('#vaultLegend'), ctx: canvas.getContext('2d'),
+      tags: $('#vaultTags'), reset: $('#vaultReset'), legend: $('#vaultLegend'),
+      fokus: $('#vaultTagFokus'), fokusName: $('#vaultTagFokusName'), fokusClear: $('#vaultTagFokusClear'),
+      ctx: canvas.getContext('2d'),
       initialisiert: true,
     };
     if (!el.stage || !el.ctx) return;
@@ -45,6 +47,7 @@
     el.folder.addEventListener('change', filterGeaendert);
     el.orphans.addEventListener('change', filterGeaendert);
     if (el.tags) el.tags.addEventListener('change', tagsGeaendert);
+    if (el.fokusClear) el.fokusClear.addEventListener('click', () => entferneTagFokus());
     el.reset.addEventListener('click', reset);
     el.empty.addEventListener('click', ev => {
       if (ev.target && ev.target.id === 'vaultReload') laden();
@@ -80,6 +83,7 @@
     canvas.addEventListener('dblclick', () => { fitToVisible(); draw(); });
     canvas.addEventListener('keydown', ev => {
       if (ev.key === 'Escape') {
+        if (state.tagFilter) { entferneTagFokus(); return; }
         state.selected = null;
         renderDetail(null);
         draw();
@@ -113,6 +117,8 @@
       state.basisKanten = (d.kanten || []).map(e => ({ ...e }));
       state.tags = false;
       state.tagAnzahl = 0;
+      state.tagFilter = null;
+      if (el.fokus) el.fokus.hidden = true;
       state.selected = null;
       state.hover = null;
       state.search = '';
@@ -249,6 +255,10 @@
   function tagsGeaendert() {
     if (!state.daten) return;
     state.tags = !!(el.tags && el.tags.checked);
+    if (!state.tags && state.tagFilter) {
+      state.tagFilter = null;
+      if (el.fokus) el.fokus.hidden = true;
+    }
     rebuildGraph();
     layout();
     fitToVisible();
@@ -269,6 +279,11 @@
   }
 
   function sichtbar(n) {
+    if (state.tagFilter) {
+      if (n.id === state.tagFilter) return true;
+      if (n.typ === 'tag') return false;
+      return state.kanten.some(e => e.von === n.id && e.nach === state.tagFilter);
+    }
     if (!state.orphans && (n.grad || 0) === 0) return false;
     if (state.folder && n.typ === 'tag') {
       return state.kanten.some(e => e.nach === n.id && state.byId.get(e.von)?.ordner === state.folder);
@@ -282,11 +297,51 @@
   }
 
   function filterGeaendert() {
-    state.folder = el.folder ? el.folder.value : '';
+    const ordner = el.folder ? el.folder.value : '';
+    if (state.tagFilter && ordner !== state.folder) {
+      state.tagFilter = null;
+      if (el.fokus) el.fokus.hidden = true;
+    }
+    state.folder = ordner;
     state.orphans = el.orphans ? el.orphans.checked : true;
     state.hover = null;
     hideTip();
     if (state.selected && !sichtbar(state.selected)) {
+      state.selected = null;
+      renderDetail(null);
+    }
+    fitToVisible();
+    updateCount();
+    draw();
+  }
+
+  function tagFokusSetzen(n) {
+    if (!n || n.typ !== 'tag') return;
+    if (state.tagFilter === n.id) { entferneTagFokus(); return; }
+    state.tagFilter = n.id;
+    state.selected = n;
+    if (el.search) el.search.value = '';
+    state.search = '';
+    if (el.folder) el.folder.value = '';
+    state.folder = '';
+    state.hover = null;
+    hideTip();
+    if (el.fokus) {
+      const anzahl = n.anzahl || state.kanten.filter(e => e.nach === n.id).length;
+      if (el.fokusName) el.fokusName.textContent = `${n.titel} · ${anzahl} ${anzahl === 1 ? 'Notiz' : 'Notizen'}`;
+      el.fokus.hidden = false;
+    }
+    renderDetail(n);
+    fitToVisible();
+    updateCount();
+    draw();
+  }
+
+  function entferneTagFokus() {
+    if (!state.tagFilter) return;
+    state.tagFilter = null;
+    if (el.fokus) el.fokus.hidden = true;
+    if (state.selected && state.selected.typ === 'tag') {
       state.selected = null;
       renderDetail(null);
     }
@@ -303,6 +358,8 @@
     state.folder = '';
     state.orphans = true;
     state.tags = false;
+    state.tagFilter = null;
+    if (el.fokus) el.fokus.hidden = true;
     if (el.tags) el.tags.checked = false;
     state.selected = null;
     state.hover = null;
@@ -543,7 +600,7 @@
     const n = pick(p.x, p.y);
     if (n) {
       state.selected = n;
-      state.drag = { n, ox: p.x, oy: p.y, nx: n.x, ny: n.y };
+      state.drag = { n, ox: p.x, oy: p.y, nx: n.x, ny: n.y, moved: false };
       renderDetail(n);
       hideTip();
       draw();
@@ -558,6 +615,7 @@
     const p = punkt(ev);
     if (state.drag) {
       state.userMoved = true;
+      if (Math.abs(p.x - state.drag.ox) + Math.abs(p.y - state.drag.oy) > 3) state.drag.moved = true;
       state.drag.n.x = state.drag.nx + (p.x - state.drag.ox) / state.t.k;
       state.drag.n.y = state.drag.ny + (p.y - state.drag.oy) / state.t.k;
       draw();
@@ -583,6 +641,9 @@
   }
 
   function onUp(ev) {
+    if (state.drag && !state.drag.moved && state.drag.n.typ === 'tag') {
+      tagFokusSetzen(state.drag.n);
+    }
     if (state.pan && !state.pan.moved) {
       state.selected = null;
       renderDetail(null);
