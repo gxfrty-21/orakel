@@ -669,7 +669,9 @@ body.nurAltBloecke .mtasks.ohneAlt{display:none}
   background:rgba(201,167,255,.06);font-family:var(--mono);font-size:10px;color:var(--muted)}
 .vault-fokus[hidden]{display:none}
 .vault-fokus span{letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
-.vault-fokus strong{font-weight:500;color:#e9defa;overflow-wrap:anywhere}
+.vault-fokus select{flex:1 1 180px;min-width:0;max-width:320px;background:#0b0613;border:1px solid var(--line2);
+  border-radius:4px;padding:3px 6px;color:var(--fg);font-family:var(--mono);font-size:10px}
+.vault-fokus select:focus-visible{outline:1px solid var(--accent2);outline-offset:1px}
 .vault-fokus button{margin-left:auto;padding:3px 8px;border:1px solid var(--line2);border-radius:4px;
   background:none;color:var(--accent2);font-family:var(--mono);font-size:10px;cursor:pointer;white-space:nowrap}
 .vault-fokus button:hover{border-color:var(--accent2)}
@@ -735,6 +737,7 @@ body.nurAltBloecke .mtasks.ohneAlt{display:none}
   .vault-toolbar .toggle{flex:1 1 100%;margin-bottom:0}
   .vault-count{width:100%;margin-left:0;padding-bottom:0}
   .vault-fokus{padding:7px 10px;flex-wrap:wrap}
+  .vault-fokus select{flex:1 1 100%;max-width:none}
   .vault-fokus button{margin-left:0}
   .vault-legend{padding:8px 10px;gap:8px}
   .vault-stage{height:430px}

@@ -33,7 +33,7 @@
       detail: $('#vaultDetail'), tag: $('#vaultGraphTag'), count: $('#vaultGraphCount'),
       search: $('#vaultSearch'), folder: $('#vaultFolder'), orphans: $('#vaultOrphans'),
       tags: $('#vaultTags'), reset: $('#vaultReset'), legend: $('#vaultLegend'),
-      fokus: $('#vaultTagFokus'), fokusName: $('#vaultTagFokusName'), fokusClear: $('#vaultTagFokusClear'),
+      fokus: $('#vaultTagFokus'), fokusSelect: $('#vaultTagFokusSelect'), fokusClear: $('#vaultTagFokusClear'),
       ctx: canvas.getContext('2d'),
       initialisiert: true,
     };
@@ -48,6 +48,10 @@
     el.orphans.addEventListener('change', filterGeaendert);
     if (el.tags) el.tags.addEventListener('change', tagsGeaendert);
     if (el.fokusClear) el.fokusClear.addEventListener('click', () => entferneTagFokus());
+    if (el.fokusSelect) el.fokusSelect.addEventListener('change', () => {
+      const n = state.byId.get(el.fokusSelect.value);
+      if (n) tagFokusSetzen(n);
+    });
     el.reset.addEventListener('click', reset);
     el.empty.addEventListener('click', ev => {
       if (ev.target && ev.target.id === 'vaultReload') laden();
@@ -327,8 +331,15 @@
     state.hover = null;
     hideTip();
     if (el.fokus) {
-      const anzahl = n.anzahl || state.kanten.filter(e => e.nach === n.id).length;
-      if (el.fokusName) el.fokusName.textContent = `${n.titel} · ${anzahl} ${anzahl === 1 ? 'Notiz' : 'Notizen'}`;
+      const tags = state.knoten
+        .filter(k => k.typ === 'tag')
+        .sort((a, b) => (b.anzahl || 0) - (a.anzahl || 0) || a.titel.localeCompare(b.titel, 'de'));
+      if (el.fokusSelect) {
+        el.fokusSelect.innerHTML = tags
+          .map(t => `<option value="${esc(t.id)}">${esc(t.titel)} · ${t.anzahl || 0} ${t.anzahl === 1 ? 'Notiz' : 'Notizen'}</option>`)
+          .join('');
+        el.fokusSelect.value = n.id;
+      }
       el.fokus.hidden = false;
     }
     renderDetail(n);
