@@ -18,13 +18,13 @@ Zuletzt deployed am 12. November 2026:
 - Service: `orakel` (`1f8e2304-31d5-4c7e-80b3-8010ee2d969e`)
 - Volume: `orakel-volume` (`241709d8-4eb6-40c9-8163-a28edb58b3ed`),
   Mount `/data`, 500 MB
-- Letztes Deployment: `40ab8686-8d8c-4d72-aaa0-4890f075b2a2` — `SUCCESS`
-  (12. November 2026, CLI-Upload des lokalen Stands; Details unter
-  „Deploy ohne GitHub-Push“)
+- Letztes Deployment: `ea11f42e-a107-454b-ac9d-467ffc43319c` — `SUCCESS`
+  (12. November 2026, automatischer GitHub-Build aus `main`, Commit
+  `ad454e0`; `/api/health` liefert diesen Commit)
 - Domain: Target Port `3000`, TLS von Railway
-- Deploy-Weg: CLI-Upload aus dem Workspace. Die GitHub-Quelle ist derzeit
-  getrennt, damit kein Rebuild den CLI-Stand überschreibt (siehe
-  „Überschreib-Gefahr“). Project Tokens setzen eine bezahlte Subscription
+- Deploy-Weg: GitHub-Quelle `gxfrty-21/orakel`, Branch `main`, ist wieder
+  verbunden; Pushes bauen automatisch. Der CLI-Upload bleibt Fallback, wenn
+  kein Push möglich ist. Project Tokens setzen eine bezahlte Subscription
   voraus und sind hier nicht im Einsatz.
 - Graph-API: `/api/globe?zeitraum=24h|7d|30d`; ungültige Werte fallen auf `24h`
   zurück. Der Markt-Snapshot bleibt die aktuelle Live-Ansicht.
@@ -99,7 +99,9 @@ blieb bei 34 Artikeln/28.086 Trades.
 
 Wenn der Push nach GitHub nicht möglich ist (fehlende Zugangsdaten in der
 Umgebung), lädt die Railway-CLI den lokalen Stand direkt hoch. Railway baut
-dabei denselben `Dockerfile`; ein Commit auf GitHub ist nicht nötig.
+dabei denselben `Dockerfile`; ein Commit auf GitHub ist nicht nötig. Seit dem
+12. November 2026 ist die GitHub-Quelle wieder verbunden — dieser Weg bleibt
+der manuelle Fallback.
 
 Voraussetzungen:
 
@@ -136,25 +138,24 @@ Prüfung erfolgt über Deployment-Status, `ok: true` und `/` → 401.
 
 ### Überschreib-Gefahr
 
-Der Service war mit `gxfrty-21/orakel`, Branch `main`, verbunden. **Am
-12. November 2026 wurde die Quelle getrennt** (`railway service source
-disconnect`), weil `main` hinter der Produktion lag. Damit kann kein Push und
-kein Source-Redeploy mehr den CLI-Stand ersetzen; `railway up` funktioniert
-weiter.
+Der Service ist seit dem 12. November 2026 wieder mit `gxfrty-21/orakel`,
+Branch `main`, verbunden (`railway service source connect`), nachdem PR #4 den
+Produktionsstand auf `main` gebracht hatte. Zuvor war die Quelle kurzzeitig
+getrennt, weil `main` hinter der Produktion lag; ein Rebuild hätte den
+CLI-Stand ersetzt. `railway up` funktioniert weiterhin als manueller Weg.
 
 Ein CLI-Upload erzeugt **keinen** Commit: `main` bleibt alt, die Produktion
-läuft trotzdem neu. Wird die Quelle wieder verbunden, baut jeder Deploy aus
-GitHub (Push auf `main`, manueller Redeploy, Neustart mit Source-Build, „Wait
-for CI“) wieder `main` und ersetzt den CLI-Stand.
+läuft trotzdem neu. Ist die Quelle verbunden, baut jeder Deploy aus GitHub
+(Push auf `main`, manueller Redeploy, Neustart mit Source-Build, „Wait for CI“)
+wieder `main` und ersetzt den CLI-Stand.
 
 Konkret am 12. November 2026:
 
-- `main` = `4ffede68` (Merge von PR #3, begehbares 3D-Deck)
-- Produktion = lokaler Stand `e8b7e08` (2D-Stand, Sekretariat, Filter-Fixes),
-  per CLI als `40ab8686` deployed
-- Die lokalen Commits haben eine andere Basis als `main`; ein GitHub-Build
-  würde also nicht nur den CLI-Upload ersetzen, sondern auch das 3D-Deck und
-  den älteren Funktionsstand zurückbringen.
+- `main` = `ad454e0` (Merge von PR #4, 2D-Stand mit Sekretariat und
+  Filter-Fixes)
+- Produktion = derselbe Commit, automatisch als `ea11f42e` gebaut
+- Die frühere CLI-Version `40ab8686` (Stand `e8b7e08`) ist damit ersetzt; das
+  Volume blieb erhalten (`artikel=46`, 28.086 Trades).
 
 Erkennungsmerkmal: Bei CLI-Deploys fehlt `RAILWAY_GIT_COMMIT_SHA`, deshalb
 steht in `/api/health` `commit: null`, und `deploy-check.yml` läuft nicht. Ein
@@ -162,19 +163,17 @@ GitHub-Deploy liefert dort den Commit-Hash.
 
 Schutz vor einem unbeabsichtigten Rückschritt:
 
-1. Die Quelle bleibt getrennt, solange `main` hinter der Produktion liegt.
-2. Erst wenn der gewünschte Stand auf `main` liegt (Branch pushen, PR mergen),
-   die Quelle wieder verbinden:
+1. Vor einem GitHub-Deploy muss der gewünschte Stand auf `main` liegen; ein
+   Push baut genau diesen Commit.
+2. Nach einem CLI-Deploy liegt `main` zurück: Quelle trennen oder zeitnah
+   denselben Stand auf `main` bringen. Wiederverbinden:
 
    ```bash
    railway service source connect \
      --repo gxfrty-21/orakel --branch main --service orakel
    ```
 
-   Danach baut Railway genau diesen Commit.
-3. Nach einem CLI-Deploy bewusst notieren, dass `main` zurückliegt, und die
-   Quelle bis zum Nachziehen getrennt lassen.
-4. Wenn CLI-Deploys dauerhaft der Weg sein sollen, bleibt die Quelle getrennt.
+3. Wenn CLI-Deploys dauerhaft der Weg sein sollen, bleibt die Quelle getrennt.
 
 Merksatz: Ein CLI-Deploy deployt den Workspace, aber aktualisiert nicht das
 Repository. `main` bleibt die Quelle für jeden automatischen Build.
@@ -190,8 +189,7 @@ laufende Version bleibt erreichbar.
 Voraussetzungen:
 
 - Der Service ist mit dem GitHub-Repository verbunden (Autodeploy), nicht nur
-  per CLI befüllt. Aktuell ist die Quelle getrennt (siehe „Überschreib-Gefahr“);
-  diese Schritte greifen erst nach dem Wiederverbinden.
+  per CLI befüllt. Die Quelle ist seit dem 12. November 2026 wieder verbunden.
 - Ein Projektmitglied hat Schreibzugriff auf das Repository.
 - Ein Workflow läuft auf `push` in den Deploy-Branch. `.github/workflows/tests.yml`
   macht das mit `on: push: branches: [main]`.
