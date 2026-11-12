@@ -237,8 +237,8 @@ function renderKb(){
   const T = R.wissen?.typen||[];
   $('#libTag').textContent = `${T.length} Typen`;
   $('#types').innerHTML = T.length ? `<table class="tbl"><thead><tr><th>Typ</th><th class="m">Tests</th><th class="m">Bestanden</th><th class="m">Quote</th><th class="m">Median PF ungesehen</th><th>Häufigste Ablehnung</th></tr></thead><tbody>
-    ${T.map(t=>`<tr><td>${esc(t.typ)}</td><td class="m">${t.tests}</td><td class="m">${t.bestanden}</td><td class="m">${pct(t.quote_pct,0)}</td>
-    <td class="m">${t.median_pf_oos==null?'–':num(t.median_pf_oos,2)}</td><td style="white-space:normal">${esc((t.haeufigste_ablehnung||[]).join(', ')||'–')}</td></tr>`).join('')}
+    ${T.map(t=>`<tr><td data-label="Typ">${esc(t.typ)}</td><td class="m" data-label="Tests">${t.tests}</td><td class="m" data-label="Bestanden">${t.bestanden}</td><td class="m" data-label="Quote">${pct(t.quote_pct,0)}</td>
+    <td class="m" data-label="Median PF ungesehen">${t.median_pf_oos==null?'–':num(t.median_pf_oos,2)}</td><td data-label="Häufigste Ablehnung" style="white-space:normal">${esc((t.haeufigste_ablehnung||[]).join(', ')||'–')}</td></tr>`).join('')}
     </tbody></table>` : '<div class="empty">Noch keine Validierungen gespeichert.</div>';
   const D = R.entscheide||[];
   $('#decList').innerHTML = D.length ? D.map(d=>`<div class="li"><span><b>${esc(d.symbol)} · ${esc(d.aktion)}</b>
