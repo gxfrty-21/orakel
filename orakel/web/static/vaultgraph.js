@@ -36,7 +36,8 @@
       folder: $('#vaultFolder'), orphans: $('#vaultOrphans'),
       tags: $('#vaultTags'), reset: $('#vaultReset'), legend: $('#vaultLegend'),
       fokus: $('#vaultTagFokus'), fokusLabel: $('#vaultTagFokusLabel'),
-      tagSuche: $('#vaultTagSuche'), tagOptionen: $('#vaultTagOptionen'),
+      tagSuche: $('#vaultTagSuche'), tagSucheClear: $('#vaultTagSucheClear'),
+      tagOptionen: $('#vaultTagOptionen'),
       tagAktiv: $('#vaultTagAktiv'), fokusClear: $('#vaultTagFokusClear'),
       ctx: canvas.getContext('2d'),
       initialisiert: true,
@@ -73,6 +74,12 @@
       el.tagSuche.addEventListener('input', () => { tagAktivIndex = -1; oeffneTagOptionen(); });
       el.tagSuche.addEventListener('keydown', tagSucheTaste);
     }
+    if (el.tagSucheClear) el.tagSucheClear.addEventListener('click', () => {
+      el.tagSuche.value = '';
+      tagAktivIndex = -1;
+      oeffneTagOptionen();
+      el.tagSuche.focus();
+    });
     if (el.tagOptionen) {
       el.tagOptionen.addEventListener('mousedown', ev => ev.preventDefault());
       el.tagOptionen.addEventListener('click', ev => {
@@ -251,7 +258,12 @@
     return tagListe().filter(t => !q || t.titel.toLowerCase().includes(q));
   }
 
+  function aktualisiereTagSuchKnopf() {
+    if (el.tagSucheClear && el.tagSuche) el.tagSucheClear.hidden = !el.tagSuche.value;
+  }
+
   function rendereTagOptionen() {
+    aktualisiereTagSuchKnopf();
     if (!el.tagOptionen) return;
     tagAktivIndex = -1;
     const tags = tagSucheFilter();
@@ -274,6 +286,7 @@
       el.tagSuche.setAttribute('aria-expanded', 'false');
       el.tagSuche.removeAttribute('aria-activedescendant');
     }
+    aktualisiereTagSuchKnopf();
     tagAktivIndex = -1;
   }
 
