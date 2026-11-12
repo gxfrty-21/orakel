@@ -809,6 +809,8 @@ body.nurAltBloecke .mtasks.ohneAlt{display:none}
   .musterTrades .trRend{grid-area:rend;text-align:right}
   .musterTrades .trDauer{grid-area:dauer;text-align:right}
   .musterTrades .trGrund{grid-column:1/-1;color:#d9a300;font-size:10px}
+  .musterTrades .trFilter{min-height:44px;margin-left:0;padding-left:2px}
+  .musterTrades .trFilter input{width:18px;height:18px;flex:0 0 18px}
   .trKopf{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 8px;margin:4px 0 0 14px;padding:0 0 3px;color:var(--dim);font-size:9px;letter-spacing:.06em;text-transform:uppercase}
   .trKopf span:nth-child(2),.trKopf span:nth-child(3){text-align:right}
 }
