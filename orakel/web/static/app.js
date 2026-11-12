@@ -89,7 +89,7 @@ function renderOverview(){
   }).join('') : '<div class="empty">Keine Strategie ausgewählt.</div>';
 
   const ev = [...(R.fehler||[]).map(t=>({stufe:'fehler',quelle:'Lauf',text:t,zeit:R.erstellt})), ...(R.ereignisse||[])].slice(0,30);
-  $('#events').innerHTML = ev.length ? ev.map(e=>`<div class="li"><span><b style="font-weight:400">${esc(e.text)}</b>
+  $('#events').innerHTML = ev.length ? ev.map(e=>`<div class="li evZeile"><span><b style="font-weight:400">${esc(e.text)}</b>
     <small>${esc((e.zeit||'').replace('T',' ').slice(0,16))} · ${esc(e.quelle)}</small></span>
     <span class="pill ${e.stufe==='fehler'?'r':e.stufe==='warnung'?'w':'g'}">${esc(e.stufe).toUpperCase()}</span></div>`).join('')
     : '<div class="empty">Keine Ereignisse.</div>';
