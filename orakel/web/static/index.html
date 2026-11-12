@@ -7,7 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307090c'/%3E%3Ccircle cx='16' cy='16' r='8' fill='none' stroke='%235fe0c8' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/static/style.css?v=58">
+<link rel="stylesheet" href="/static/style.css?v=59">
 </head>
 <body>
 <div class="app">
@@ -109,9 +109,12 @@
         </div>
         <div class="vault-fokus" id="vaultTagFokus" hidden>
           <span id="vaultTagFokusLabel">Tag-Sprung</span>
-          <select id="vaultTagFokusSelect" aria-label="Zu einem Tag springen">
-            <option value="">Tag wählen …</option>
-          </select>
+          <strong class="vault-tag-aktiv" id="vaultTagAktiv" hidden></strong>
+          <div class="vault-tag-suche">
+            <input id="vaultTagSuche" type="search" placeholder="Tag suchen …" autocomplete="off" spellcheck="false"
+              aria-label="Tag suchen" role="combobox" aria-expanded="false" aria-controls="vaultTagOptionen" aria-autocomplete="list">
+            <div class="vault-tag-optionen" id="vaultTagOptionen" role="listbox" hidden></div>
+          </div>
           <button type="button" id="vaultTagFokusClear" hidden>Alle Notizen</button>
         </div>
         <div class="vault-legend" id="vaultLegend" aria-label="Ordnerfarben"></div>
@@ -390,7 +393,7 @@
     </section>
   </main>
 </div>
-<script src="/static/vaultgraph.js?v=8"></script>
+<script src="/static/vaultgraph.js?v=9"></script>
 <script src="/static/app.js?v=119"></script>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>
