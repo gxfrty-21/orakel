@@ -14,10 +14,11 @@ def test_vault_graph_liest_notizen_und_wikilinks(tmp_path):
     knoten = {n["id"]: n for n in graph["knoten"]}
     kanten = {(k["von"], k["nach"]) for k in graph["kanten"]}
 
-    # Der automatisch gepflegte Index liegt ebenfalls als Notiz im Vault.
+    # Der automatisch gepflegte Index ist Navigation, keine Graph-Notiz.
     assert graph["statistik"] == {
-        "notizen": 5, "links": 2, "unaufgeloest": 1, "ohne_verknuepfung": 2,
+        "notizen": 4, "links": 2, "unaufgeloest": 1, "ohne_verknuepfung": 1,
     }
+    assert "00-Index/index.md" not in knoten
     assert ("20-Strategien/alpha.md", "70-Wissen/beta.md") in kanten
     assert ("60-Fehler/gamma.md", "unaufgeloest:fehlt") in kanten
     assert knoten["20-Strategien/alpha.md"]["tags"] == ["strategie"]

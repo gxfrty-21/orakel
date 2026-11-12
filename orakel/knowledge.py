@@ -109,10 +109,13 @@ class Vault:
 
         Nur vorhandene Notizen und echte Wikilinks werden zu Knoten und Kanten.
         Ein Link auf eine fehlende Notiz bleibt als unaufgelöster Knoten sichtbar.
+        Der generierte Index ist Navigation und keine inhaltliche Notiz.
         """
         notizen: list[dict[str, Any]] = []
         fehler: list[str] = []
         for kategorie, unter in ORDNER.items():
+            if kategorie == "index":
+                continue
             for pfad in sorted((self.wurzel / unter).glob("*.md")):
                 try:
                     text = pfad.read_text(encoding="utf-8")
