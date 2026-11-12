@@ -93,6 +93,8 @@ class Vault:
                 f"- [[{_slug(v)}|{v}]]" for v in verlinkt if v
             ) + "\n"
         ziel.write_text(text, encoding="utf-8")
+        # Die Übersicht soll nie hinter dem Vault zurückbleiben.
+        self.index(self.zaehle())
         return ziel
 
     def index(self, eintraege: dict[str, int]) -> Path:
