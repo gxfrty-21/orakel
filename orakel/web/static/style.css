@@ -624,6 +624,7 @@ button.li:hover{background:var(--panel2)}
 .mtask.alt .mtaskstat{color:#e0b64a}
 .trRend.plus{color:#4ade80}
 .trRend.minus{color:#f87171}
+.trNet,.trRend,.trDauer{white-space:nowrap}
 #mtgPanel .ph .mtgTaktStand{margin-left:6px}
 .mtgLogKopf{display:flex;align-items:center;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-top:6px}
 .mtgLogKopf .toggle{font-size:10px;padding:1px 6px}

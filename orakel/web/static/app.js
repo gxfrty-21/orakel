@@ -1562,7 +1562,7 @@ function musterTrades(t){
     ? `<label class="trFilter"><input type="checkbox" class="trNurAbw"${tradeNurAbw ? ' checked' : ''}> nur abweichender Grund (${abweichend})</label>`
     : '';
   return `<details class="musterTrades"><summary>Einzel-Trades (<span class="trZahl" data-basis="${esc(basis)}">${esc(zahl)}</span>)</summary>${filter}<ul${tradeNurAbw && abweichend ? ' class="nurAbw"' : ''}>` +
-    liste.map(x => `<li${x.grund && x.grund !== t.ausstieg_grund ? ' class="abweichend"' : ''}><b>${esc(x.symbol || '')}</b> ${esc(String(x.einstieg || '').slice(0, 10))} → ${esc(String(x.ausstieg || '').slice(0, 10))} · <span class="trNet ${Number(x.netto || 0) >= 0 ? 'plus' : 'minus'}">${Number(x.netto || 0).toFixed(2)}</span> · <span class="trRend ${Number(x.netto || 0) >= 0 ? 'plus' : 'minus'}">${Number(x.rendite || 0).toFixed(2)} %</span>${x.dauer != null ? ' · ' + esc(String(x.dauer)) + ' Min.' : ''}${x.grund && x.grund !== t.ausstieg_grund ? ' · ' + esc(x.grund) : ''}</li>`).join('') +
+    liste.map(x => `<li${x.grund && x.grund !== t.ausstieg_grund ? ' class="abweichend"' : ''}><b>${esc(x.symbol || '')}</b> ${esc(String(x.einstieg || '').slice(0, 10))} → ${esc(String(x.ausstieg || '').slice(0, 10))} · <span class="trNet ${Number(x.netto || 0) >= 0 ? 'plus' : 'minus'}">${Number(x.netto || 0).toFixed(2)}</span> · <span class="trRend ${Number(x.netto || 0) >= 0 ? 'plus' : 'minus'}">${Number(x.rendite || 0).toFixed(2)} %</span>${x.dauer != null ? ' · <span class="trDauer">' + esc(String(x.dauer)) + ' Min.</span>' : ''}${x.grund && x.grund !== t.ausstieg_grund ? ' · ' + esc(x.grund) : ''}</li>`).join('') +
     '</ul></details>';
 }
 
