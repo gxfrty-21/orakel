@@ -780,4 +780,18 @@ body.nurAltBloecke .mtasks.ohneAlt{display:none}
   .vault-zoom button::before{content:"";position:absolute;inset:-9.5px -9px}
 }
 
+/* Mobile Touch-Ziele in allen übrigen Ansichten */
+@media (max-width:620px){
+  .side .nav{min-height:44px}
+  .tab{min-height:44px;min-width:44px}
+  .toggle{min-height:44px}
+  main input:not([type="checkbox"]):not([type="radio"]),main select,main textarea{min-height:44px}
+  .g-window,.g-control{min-height:44px}
+  .protoQuick,.mtgAltZahl{min-height:44px;min-width:44px}
+  .protoVault{min-height:44px}
+  .sekTabs button{min-height:44px}
+  .mtgVote button,.mtgOverride button{min-height:44px}
+  summary{min-height:44px}
+}
+
 .mtgAltKopf{display:inline-flex;gap:6px;align-items:center}
