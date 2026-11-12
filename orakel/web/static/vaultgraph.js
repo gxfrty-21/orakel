@@ -7,11 +7,12 @@
   const FARBEN = {
     '00-Index':'#9b8bb4', '10-Daten':'#7fd4ff', '20-Strategien':'#ff3fa4',
     '30-Validierungen':'#38e8ff', '40-Entscheide':'#5ef2c0', '50-Konferenz':'#c08bff',
-    '60-Fehler':'#ff5470', '70-Wissen':'#ffb84d', 'Unaufgelöst':'#8f7ba8',
+    '60-Fehler':'#ff5470', '70-Wissen':'#ffb84d', 'Unaufgelöst':'#8f7ba8', 'Tags':'#c9a7ff',
   };
 
   const state = {
     daten: null, knoten: [], kanten: [], byId: new Map(),
+    basisKnoten: [], basisKanten: [], tagAnzahl: 0, tags: false,
     selected: null, hover: null, search: '', folder: '', orphans: true,
     t: { x: 0, y: 0, k: 1 }, width: 0, height: 0, dpr: 1,
     drag: null, pan: null, geladen: false, laedt: false, userMoved: false,
@@ -31,7 +32,7 @@
       canvas, stage: $('#vaultStage'), empty: $('#vaultGraphEmpty'), tip: $('#vaultTip'),
       detail: $('#vaultDetail'), tag: $('#vaultGraphTag'), count: $('#vaultGraphCount'),
       search: $('#vaultSearch'), folder: $('#vaultFolder'), orphans: $('#vaultOrphans'),
-      reset: $('#vaultReset'), legend: $('#vaultLegend'), ctx: canvas.getContext('2d'),
+      tags: $('#vaultTags'), reset: $('#vaultReset'), legend: $('#vaultLegend'), ctx: canvas.getContext('2d'),
       initialisiert: true,
     };
     if (!el.stage || !el.ctx) return;
@@ -43,6 +44,7 @@
     });
     el.folder.addEventListener('change', filterGeaendert);
     el.orphans.addEventListener('change', filterGeaendert);
+    if (el.tags) el.tags.addEventListener('change', tagsGeaendert);
     el.reset.addEventListener('click', reset);
     el.empty.addEventListener('click', ev => {
       if (ev.target && ev.target.id === 'vaultReload') laden();
@@ -103,13 +105,14 @@
       const d = await r.json();
       if (!r.ok || !d.ok) throw new Error(d.fehler || 'Graph konnte nicht geladen werden');
       state.daten = d;
-      state.knoten = (d.knoten || []).map(n => ({
+      state.basisKnoten = (d.knoten || []).map(n => ({
         ...n,
         _such: [n.titel, n.ordner, n.kategorie, ...(n.tags || []), n.auszug]
           .filter(Boolean).join(' ').toLowerCase(),
       }));
-      state.kanten = d.kanten || [];
-      state.byId = new Map(state.knoten.map(n => [n.id, n]));
+      state.basisKanten = (d.kanten || []).map(e => ({ ...e }));
+      state.tags = false;
+      state.tagAnzahl = 0;
       state.selected = null;
       state.hover = null;
       state.search = '';
@@ -120,6 +123,8 @@
       if (el.search) el.search.value = '';
       if (el.folder) el.folder.value = '';
       if (el.orphans) el.orphans.checked = true;
+      if (el.tags) el.tags.checked = false;
+      rebuildGraph();
       baueFilter();
       layout();
       resize();
@@ -155,21 +160,101 @@
       el.folder.innerHTML = '<option value="">Alle Ordner</option>' + ordner
         .map(o => `<option value="${esc(o.name)}">${esc(o.name)} (${o.anzahl})</option>`).join('');
     }
-    if (el.legend) {
-      const st = state.daten?.statistik || {};
-      el.legend.innerHTML = ordner
-        .map(o => `<span><i style="background:${FARBEN[o.name] || '#ab9cc9'}"></i>${esc(o.name)} ${o.anzahl}</span>`)
-        .join('') + (st.unaufgeloest
-          ? `<span><i style="background:${FARBEN['Unaufgelöst']}"></i>unaufgelöst ${st.unaufgeloest}</span>` : '');
-    }
+    updateLegende();
+  }
+
+  function updateLegende() {
+    if (!el.legend) return;
+    const ordner = state.daten?.ordner || [];
+    const st = state.daten?.statistik || {};
+    el.legend.innerHTML = ordner
+      .map(o => `<span><i style="background:${FARBEN[o.name] || '#ab9cc9'}"></i>${esc(o.name)} ${o.anzahl}</span>`)
+      .join('') + (st.unaufgeloest
+        ? `<span><i style="background:${FARBEN['Unaufgelöst']}"></i>unaufgelöst ${st.unaufgeloest}</span>` : '') +
+      (state.tags && state.tagAnzahl
+        ? `<span><i style="background:${FARBEN.Tags}"></i>Tags ${state.tagAnzahl}</span>` : '');
   }
 
   function updateMeta() {
     if (!state.daten || !el.tag) return;
     const st = state.daten.statistik || {};
     el.tag.textContent = `${st.notizen || 0} Notizen · ${st.links || 0} Links` +
-      (st.unaufgeloest ? ` · ${st.unaufgeloest} unaufgelöst` : '');
+      (st.unaufgeloest ? ` · ${st.unaufgeloest} unaufgelöst` : '') +
+      (state.tags ? ` · ${state.tagAnzahl} Tags` : '');
     updateCount();
+  }
+
+  function rebuildGraph() {
+    const alt = new Map(state.knoten.map(n => [n.id, n]));
+    const notizen = (state.basisKnoten || []).map(n => {
+      const old = alt.get(n.id);
+      return { ...n, x: old?.x, y: old?.y, vx: old?.vx || 0, vy: old?.vy || 0 };
+    });
+    let kanten = (state.basisKanten || []).map(e => ({ ...e }));
+    const tagKnoten = new Map();
+    if (state.tags) {
+      for (const n of notizen) {
+        for (const roh of n.tags || []) {
+          const tag = String(roh).trim();
+          if (!tag) continue;
+          const key = tag.toLowerCase();
+          let t = tagKnoten.get(key);
+          if (!t) {
+            const old = alt.get('tag:' + key);
+            t = {
+              id: 'tag:' + key, titel: '#' + tag, ordner: 'Tags', kategorie: 'tag',
+              tags: [tag], erstellt: null, pfad: null, auszug: '', unaufgeloest: false,
+              typ: 'tag', _such: ('#' + tag + ' tag ' + tag).toLowerCase(),
+              x: old?.x, y: old?.y, vx: 0, vy: 0, anzahl: 0,
+            };
+            tagKnoten.set(key, t);
+          }
+          t.anzahl += 1;
+          kanten.push({ von: n.id, nach: t.id, art: 'tag' });
+        }
+      }
+    }
+    const gesehen = new Set();
+    kanten = kanten.filter(e => {
+      const key = e.von + '\u0000' + e.nach;
+      if (gesehen.has(key)) return false;
+      gesehen.add(key);
+      return true;
+    });
+    const knoten = notizen.concat([...tagKnoten.values()]);
+    for (const n of knoten) { n.ausgehend = 0; n.eingehend = 0; n.grad = 0; }
+    const byId = new Map(knoten.map(n => [n.id, n]));
+    for (const e of kanten) {
+      const a = byId.get(e.von), b = byId.get(e.nach);
+      if (!a || !b) continue;
+      a.ausgehend += 1;
+      b.eingehend += 1;
+      a.grad += 1;
+      b.grad += 1;
+    }
+    for (const t of tagKnoten.values()) {
+      t.auszug = `${t.anzahl} ${t.anzahl === 1 ? 'Notiz teilt' : 'Notizen teilen'} #${t.tags[0]}.`;
+    }
+    state.knoten = knoten;
+    state.kanten = kanten;
+    state.byId = byId;
+    state.tagAnzahl = tagKnoten.size;
+    if (state.selected) {
+      const neu = byId.get(state.selected.id);
+      state.selected = neu || null;
+      if (!neu) renderDetail(null);
+    }
+  }
+
+  function tagsGeaendert() {
+    if (!state.daten) return;
+    state.tags = !!(el.tags && el.tags.checked);
+    rebuildGraph();
+    layout();
+    fitToVisible();
+    updateLegende();
+    updateMeta();
+    draw();
   }
 
   function updateCount() {
@@ -185,6 +270,9 @@
 
   function sichtbar(n) {
     if (!state.orphans && (n.grad || 0) === 0) return false;
+    if (state.folder && n.typ === 'tag') {
+      return state.kanten.some(e => e.nach === n.id && state.byId.get(e.von)?.ordner === state.folder);
+    }
     if (state.folder && n.ordner !== state.folder) return false;
     return true;
   }
@@ -214,12 +302,17 @@
     state.search = '';
     state.folder = '';
     state.orphans = true;
+    state.tags = false;
+    if (el.tags) el.tags.checked = false;
     state.selected = null;
     state.hover = null;
     hideTip();
+    rebuildGraph();
+    layout();
     renderDetail(null);
     fitToVisible();
-    updateCount();
+    updateLegende();
+    updateMeta();
     draw();
   }
 
@@ -312,6 +405,7 @@
   }
 
   function radius(n) {
+    if (n.typ === 'tag') return 3.8 + Math.min(4.2, Math.sqrt(n.grad || 0) * 1.8);
     return n.unaufgeloest ? 3.6 : 4.2 + Math.min(4.5, Math.sqrt(n.grad || 0) * 2.4);
   }
 
@@ -342,12 +436,15 @@
       if (state.search && (!istTreffer(a) || !istTreffer(b))) alpha = 0.07;
       if (sel) alpha = e.von === sel.id || e.nach === sel.id ? 0.85 : 0.08;
       ctx.globalAlpha = alpha;
-      ctx.strokeStyle = sel && (e.von === sel.id || e.nach === sel.id) ? '#38e8ff' : '#9b7fc2';
+      ctx.strokeStyle = sel && (e.von === sel.id || e.nach === sel.id) ? '#38e8ff' :
+        (e.art === 'tag' ? '#c9a7ff' : '#9b7fc2');
       ctx.lineWidth = 1.35 / state.t.k;
+      if (e.art === 'tag') ctx.setLineDash([4 / state.t.k, 4 / state.t.k]);
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
       ctx.stroke();
+      ctx.setLineDash([]);
     }
 
     for (const n of state.knoten) {
@@ -358,23 +455,35 @@
       const r = radius(n) + (state.hover && state.hover.id === n.id ? 1.2 : 0);
       const color = FARBEN[n.ordner] || '#ab9cc9';
       ctx.globalAlpha = alpha;
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-      if (n.unaufgeloest) {
-        ctx.fillStyle = 'rgba(143,123,168,.15)';
-        ctx.fill();
-        ctx.setLineDash([3 / state.t.k, 3 / state.t.k]);
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 1.3 / state.t.k;
-        ctx.stroke();
-        ctx.setLineDash([]);
-      } else {
+      if (n.typ === 'tag') {
+        ctx.save();
+        ctx.translate(n.x, n.y);
+        ctx.rotate(Math.PI / 4);
         ctx.fillStyle = color;
-        ctx.fill();
-        if (n.grad > 0) {
-          ctx.strokeStyle = 'rgba(255,255,255,.38)';
-          ctx.lineWidth = 0.8 / state.t.k;
+        ctx.fillRect(-r * 0.72, -r * 0.72, r * 1.44, r * 1.44);
+        ctx.strokeStyle = 'rgba(255,255,255,.45)';
+        ctx.lineWidth = 0.8 / state.t.k;
+        ctx.strokeRect(-r * 0.72, -r * 0.72, r * 1.44, r * 1.44);
+        ctx.restore();
+      } else {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+        if (n.unaufgeloest) {
+          ctx.fillStyle = 'rgba(143,123,168,.15)';
+          ctx.fill();
+          ctx.setLineDash([3 / state.t.k, 3 / state.t.k]);
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1.3 / state.t.k;
           ctx.stroke();
+          ctx.setLineDash([]);
+        } else {
+          ctx.fillStyle = color;
+          ctx.fill();
+          if (n.grad > 0) {
+            ctx.strokeStyle = 'rgba(255,255,255,.38)';
+            ctx.lineWidth = 0.8 / state.t.k;
+            ctx.stroke();
+          }
         }
       }
       if (sel && sel.id === n.id) {
@@ -530,17 +639,19 @@
       const z = state.byId.get(id);
       return `<button type="button" class="vd-link" data-vault-target="${esc(id)}">${esc(z?.titel || id)}<small>${esc(z?.unaufgeloest ? 'unaufgelöst' : z?.ordner || '')}</small></button>`;
     };
-    const tags = (n.tags || []).map(t => `<span class="vd-tag">#${esc(t)}</span>`).join('');
+    const tags = n.typ === 'tag' ? '' : (n.tags || []).map(t => `<span class="vd-tag">#${esc(t)}</span>`).join('');
     const datum = n.erstellt ? n.erstellt.replace('T', ' ').slice(0, 16) : 'ohne Datum';
+    const art = n.typ === 'tag' ? `Tag-Knoten · ${n.anzahl || ein.length} Notizen` :
+      n.unaufgeloest ? 'unaufgelöster Link' : 'Notiz';
     el.detail.innerHTML = `
       <div class="vd-kicker">${esc(n.ordner)}</div>
       <h3>${esc(n.titel)}</h3>
-      <div class="vd-meta">${esc(datum)} · ${n.unaufgeloest ? 'unaufgelöster Link' : 'Notiz'}</div>
+      <div class="vd-meta">${n.typ === 'tag' ? esc(art) : esc(datum) + ' · ' + esc(art)}</div>
       ${tags ? `<div class="vd-tags">${tags}</div>` : ''}
       <p class="vd-text">${esc(n.auszug || (n.unaufgeloest ? 'Dieses Linkziel existiert noch nicht im Vault.' : 'Keine Textvorschau.'))}</p>
       ${n.pfad ? `<div class="vd-path">vault/${esc(n.pfad)}</div>` : ''}
       <div class="vd-group"><div class="lbl">Ausgehend (${aus.length})</div>
-        ${aus.length ? aus.map(e => link(e.nach)).join('') : '<div class="vd-leer">Keine ausgehenden Wikilinks.</div>'}
+        ${aus.length ? aus.map(e => link(e.nach)).join('') : `<div class="vd-leer">${n.typ === 'tag' ? 'Keine ausgehenden Verbindungen.' : 'Keine ausgehenden Wikilinks.'}</div>`}
       </div>
       <div class="vd-group"><div class="lbl">Eingehend (${ein.length})</div>
         ${ein.length ? ein.map(e => link(e.von)).join('') : '<div class="vd-leer">Keine Backlinks.</div>'}
