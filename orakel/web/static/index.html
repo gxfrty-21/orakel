@@ -108,9 +108,11 @@
           <span class="vault-count" id="vaultGraphCount"></span>
         </div>
         <div class="vault-fokus" id="vaultTagFokus" hidden>
-          <span>Tag-Fokus</span>
-          <select id="vaultTagFokusSelect" aria-label="Tag wechseln"></select>
-          <button type="button" id="vaultTagFokusClear">Alle Notizen</button>
+          <span id="vaultTagFokusLabel">Tag-Sprung</span>
+          <select id="vaultTagFokusSelect" aria-label="Zu einem Tag springen">
+            <option value="">Tag wählen …</option>
+          </select>
+          <button type="button" id="vaultTagFokusClear" hidden>Alle Notizen</button>
         </div>
         <div class="vault-legend" id="vaultLegend" aria-label="Ordnerfarben"></div>
         <div class="vault-graph-grid">
@@ -388,7 +390,7 @@
     </section>
   </main>
 </div>
-<script src="/static/vaultgraph.js?v=7"></script>
+<script src="/static/vaultgraph.js?v=8"></script>
 <script src="/static/app.js?v=119"></script>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>

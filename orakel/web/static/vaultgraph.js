@@ -33,7 +33,8 @@
       detail: $('#vaultDetail'), tag: $('#vaultGraphTag'), count: $('#vaultGraphCount'),
       search: $('#vaultSearch'), folder: $('#vaultFolder'), orphans: $('#vaultOrphans'),
       tags: $('#vaultTags'), reset: $('#vaultReset'), legend: $('#vaultLegend'),
-      fokus: $('#vaultTagFokus'), fokusSelect: $('#vaultTagFokusSelect'), fokusClear: $('#vaultTagFokusClear'),
+      fokus: $('#vaultTagFokus'), fokusLabel: $('#vaultTagFokusLabel'),
+      fokusSelect: $('#vaultTagFokusSelect'), fokusClear: $('#vaultTagFokusClear'),
       ctx: canvas.getContext('2d'),
       initialisiert: true,
     };
@@ -48,10 +49,7 @@
     el.orphans.addEventListener('change', filterGeaendert);
     if (el.tags) el.tags.addEventListener('change', tagsGeaendert);
     if (el.fokusClear) el.fokusClear.addEventListener('click', () => entferneTagFokus());
-    if (el.fokusSelect) el.fokusSelect.addEventListener('change', () => {
-      const n = state.byId.get(el.fokusSelect.value);
-      if (n) tagFokusSetzen(n);
-    });
+    if (el.fokusSelect) el.fokusSelect.addEventListener('change', () => sprungZuTag(el.fokusSelect.value));
     el.reset.addEventListener('click', reset);
     el.empty.addEventListener('click', ev => {
       if (ev.target && ev.target.id === 'vaultReload') laden();
@@ -171,6 +169,53 @@
         .map(o => `<option value="${esc(o.name)}">${esc(o.name)} (${o.anzahl})</option>`).join('');
     }
     updateLegende();
+    aktualisiereTagSprung();
+  }
+
+  function tagListe() {
+    const tags = new Map();
+    for (const n of state.basisKnoten || []) {
+      for (const roh of n.tags || []) {
+        const tag = String(roh).trim();
+        if (!tag) continue;
+        const key = tag.toLowerCase();
+        const t = tags.get(key) || { id: 'tag:' + key, titel: '#' + tag, anzahl: 0 };
+        t.anzahl += 1;
+        tags.set(key, t);
+      }
+    }
+    return [...tags.values()].sort((a, b) => b.anzahl - a.anzahl || a.titel.localeCompare(b.titel, 'de'));
+  }
+
+  function aktualisiereTagSprung() {
+    if (!el.fokus) return;
+    const tags = tagListe();
+    el.fokus.hidden = tags.length === 0;
+    if (el.fokusLabel) el.fokusLabel.textContent = state.tagFilter ? 'Tag-Fokus' : 'Tag-Sprung';
+    if (el.fokusClear) el.fokusClear.hidden = !state.tagFilter;
+    if (el.fokusSelect) {
+      const aktuell = state.tagFilter && tags.some(t => t.id === state.tagFilter) ? state.tagFilter : '';
+      el.fokusSelect.innerHTML = '<option value="">Tag wählen …</option>' + tags
+        .map(t => `<option value="${esc(t.id)}">${esc(t.titel)} · ${t.anzahl} ${t.anzahl === 1 ? 'Notiz' : 'Notizen'}</option>`)
+        .join('');
+      el.fokusSelect.value = aktuell;
+    }
+  }
+
+  function sprungZuTag(id) {
+    if (!id) { if (state.tagFilter) entferneTagFokus(); return; }
+    let n = state.byId.get(id);
+    if (!n) {
+      state.tags = true;
+      if (el.tags) el.tags.checked = true;
+      rebuildGraph();
+      layout();
+      updateLegende();
+      updateMeta();
+      n = state.byId.get(id);
+    }
+    if (n) tagFokusSetzen(n);
+    else aktualisiereTagSprung();
   }
 
   function updateLegende() {
@@ -259,15 +304,13 @@
   function tagsGeaendert() {
     if (!state.daten) return;
     state.tags = !!(el.tags && el.tags.checked);
-    if (!state.tags && state.tagFilter) {
-      state.tagFilter = null;
-      if (el.fokus) el.fokus.hidden = true;
-    }
+    if (!state.tags && state.tagFilter) state.tagFilter = null;
     rebuildGraph();
     layout();
     fitToVisible();
     updateLegende();
     updateMeta();
+    aktualisiereTagSprung();
     draw();
   }
 
@@ -302,10 +345,7 @@
 
   function filterGeaendert() {
     const ordner = el.folder ? el.folder.value : '';
-    if (state.tagFilter && ordner !== state.folder) {
-      state.tagFilter = null;
-      if (el.fokus) el.fokus.hidden = true;
-    }
+    if (state.tagFilter && ordner !== state.folder) state.tagFilter = null;
     state.folder = ordner;
     state.orphans = el.orphans ? el.orphans.checked : true;
     state.hover = null;
@@ -316,6 +356,7 @@
     }
     fitToVisible();
     updateCount();
+    aktualisiereTagSprung();
     draw();
   }
 
@@ -330,18 +371,7 @@
     state.folder = '';
     state.hover = null;
     hideTip();
-    if (el.fokus) {
-      const tags = state.knoten
-        .filter(k => k.typ === 'tag')
-        .sort((a, b) => (b.anzahl || 0) - (a.anzahl || 0) || a.titel.localeCompare(b.titel, 'de'));
-      if (el.fokusSelect) {
-        el.fokusSelect.innerHTML = tags
-          .map(t => `<option value="${esc(t.id)}">${esc(t.titel)} · ${t.anzahl || 0} ${t.anzahl === 1 ? 'Notiz' : 'Notizen'}</option>`)
-          .join('');
-        el.fokusSelect.value = n.id;
-      }
-      el.fokus.hidden = false;
-    }
+    aktualisiereTagSprung();
     renderDetail(n);
     fitToVisible();
     updateCount();
@@ -351,11 +381,11 @@
   function entferneTagFokus() {
     if (!state.tagFilter) return;
     state.tagFilter = null;
-    if (el.fokus) el.fokus.hidden = true;
     if (state.selected && state.selected.typ === 'tag') {
       state.selected = null;
       renderDetail(null);
     }
+    aktualisiereTagSprung();
     fitToVisible();
     updateCount();
     draw();
@@ -370,7 +400,6 @@
     state.orphans = true;
     state.tags = false;
     state.tagFilter = null;
-    if (el.fokus) el.fokus.hidden = true;
     if (el.tags) el.tags.checked = false;
     state.selected = null;
     state.hover = null;
@@ -381,6 +410,7 @@
     fitToVisible();
     updateLegende();
     updateMeta();
+    aktualisiereTagSprung();
     draw();
   }
 
