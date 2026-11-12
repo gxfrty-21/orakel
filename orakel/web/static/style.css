@@ -812,6 +812,21 @@ body.nurAltBloecke .mtasks.ohneAlt{display:none}
   .ord .wlTop{flex-wrap:wrap;align-items:flex-start}
   .ord .wlTop>span:first-child{flex:1 1 100%;min-width:0}
   .ord .wlTop>span:last-child{margin-top:2px}
+  .tblCards{display:block;width:100%;font-size:12.5px}
+  .tblCards thead{display:none}
+  .tblCards tbody{display:grid;gap:8px}
+  .tblCards tr{display:block;padding:10px 12px;border:1px solid var(--line);border-radius:5px;background:rgba(255,255,255,.015)}
+  .tblCards td{display:block;padding:3px 0;border:0;white-space:normal;text-align:left;overflow-wrap:anywhere}
+  .tblCards td::before{display:block;content:attr(data-label);color:var(--dim);font-family:var(--mono);font-size:10.5px;line-height:1.5;letter-spacing:.03em;margin-bottom:2px}
+  .tblCards td.m{text-align:left}
+  .tblCards td:first-child{padding:0 0 7px;margin-bottom:5px;border-bottom:1px solid var(--line);font-weight:600}
+  .tblCards td:first-child::before{display:none}
+  .tblKey{display:block;width:100%;font-size:12.5px}
+  .tblKey tbody{display:grid;gap:8px}
+  .tblKey tr{display:flex;flex-wrap:wrap;gap:3px 10px;padding:9px 12px;border:1px solid var(--line);border-radius:5px;background:rgba(255,255,255,.015)}
+  .tblKey td{display:block;padding:0;border:0;white-space:normal;text-align:left}
+  .tblKey td:first-child{flex:1 1 100%;color:var(--dim);font-family:var(--mono);font-size:10.5px;letter-spacing:.03em}
+  .tblKey td:last-child{flex:0 1 auto;margin-left:auto;font-family:var(--mono);color:var(--fg)}
   .musterTrades li{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-areas:"sym date date" "net rend dauer";gap:3px 8px;margin:0;padding:6px 0;border-top:1px solid var(--line)}
   .musterTrades li:first-child{border-top:0}
   .musterTrades li>span::before{content:none}
