@@ -3,8 +3,7 @@
 const $ = s => document.querySelector(s);
 const COL = { accent:'#5fe0c8', amber:'#e8b45a', good:'#62d68a', bad:'#e2616b', blue:'#8fb8ff', dim:'#55606d' };
 let R = null, current = 'overview', labFilter = 'all', labSel = 0, stratSel = 0, depSel = 'A';
-let globe3d = null, globeFailed = false, globeWindow = '24h', globeRequest = 0, globeAbort = null, globeLoading = null;
-let nexus3d = null, nexusFailed = false, nexusWindow = '7d', nexusRequest = 0, nexusAbort = null, nexusLoading = null, nexusDaten = null, nexusSelected = null;
+let globeView = null, globeFailed = false, globeWindow = '24h', globeRequest = 0, globeAbort = null, globeLoading = null;
 let nachtDaten = null, nachtFehler = null;
 let graphWindow = '7d', graphDaten = null, kalibrierungDaten = null;
 let betriebDaten = null, betriebFehler = null, betriebTimer = null;
@@ -26,9 +25,7 @@ const DEP = { A:'Hauptzentrale', B:'Spider Intelligence', C:'Labor', D:'Trading 
 /* ---------- Navigation ---------- */
 document.querySelectorAll('.nav').forEach(b => b.onclick = () => zeige(b.dataset.v));
 function zeige(v){ current=v;
-  if(v !== 'globe' && globe3d) globe3d.setActive(false);
-  if(v !== 'nexus' && nexus3d) nexus3d.setActive(false);
-  if(v !== 'nexus' && nexusAbort){ nexusAbort.abort(); nexusAbort = null; }
+  if(v !== 'globe' && globeView) globeView.setActive(false);
   if(v !== 'betrieb' && betriebTimer){ clearInterval(betriebTimer); betriebTimer = null; }
   if(v === 'betrieb' && !betriebTimer){
     ladeBetrieb();
@@ -351,8 +348,8 @@ document.querySelectorAll('#globeWindow [data-window]').forEach(btn => {
 });
 syncGlobeWindow(globeWindow);
 
-async function ensureGlobe3d(){
-  if(globe3d) return globe3d;
+async function ensureGlobe(){
+  if(globeView) return globeView;
   if(globeFailed) return null;
   if(globeLoading) return globeLoading;
   const stage = $('#globeStage');
@@ -360,12 +357,12 @@ async function ensureGlobe3d(){
   globeLoading = (async () => {
     try{
       const mod = await import('/static/globe2d.js?v=1');
-      globe3d = new mod.IntelligenceGlobe(stage);
-      if(current === 'globe') globe3d.setActive(true);
-      return globe3d;
+      globeView = new mod.IntelligenceGlobe(stage);
+      if(current === 'globe') globeView.setActive(true);
+      return globeView;
     }catch(e){
       globeFailed = true;
-      showGlobeError(e.message || 'Die 3D-Ansicht konnte nicht initialisiert werden.');
+      showGlobeError(e.message || 'Die Weltkugel konnte nicht initialisiert werden.');
       return null;
     }finally{
       globeLoading = null;
@@ -376,7 +373,7 @@ async function ensureGlobe3d(){
 
 async function renderGlobe(){
   renderGlobeMarkets();
-  const g = await ensureGlobe3d();
+  const g = await ensureGlobe();
   if(!g || current !== 'globe') return;
   g.setActive(true);
   const request = ++globeRequest;
@@ -399,237 +396,6 @@ async function renderGlobe(){
     if(globeAbort === controller) globeAbort = null;
   }
 }
-
-/* ---------- Nexus-Raum (Phase 7) ---------- */
-const NEXUS_WINDOWS = ['24h','7d','30d','alle'];
-function syncNexusWindow(key){
-  nexusWindow = NEXUS_WINDOWS.includes(key) ? key : '7d';
-  document.querySelectorAll('#nexusWindow [data-window]').forEach(btn => {
-    const on = btn.dataset.window === nexusWindow;
-    btn.classList.toggle('is-active', on);
-    btn.setAttribute('aria-pressed', String(on));
-  });
-}
-
-function setNexusWindow(key){
-  if(!NEXUS_WINDOWS.includes(key) || key === nexusWindow) return;
-  syncNexusWindow(key);
-  if(current === 'nexus') renderNexus();
-}
-
-document.querySelectorAll('#nexusWindow [data-window]').forEach(btn => {
-  btn.addEventListener('click', () => setNexusWindow(btn.dataset.window));
-});
-syncNexusWindow(nexusWindow);
-
-async function ensureNexus3d(){
-  if(nexus3d) return nexus3d;
-  if(nexusFailed) return null;
-  if(nexusLoading) return nexusLoading;
-  const stage = $('#nexusStage');
-  if(!stage) return null;
-  nexusLoading = (async () => {
-    try{
-      const mod = await import('/static/nexus3d.js?v=9');
-      nexus3d = new mod.NexusRoom(stage);
-      if(current === 'nexus') nexus3d.setActive(true);
-      return nexus3d;
-    }catch(e){
-      nexusFailed = true;
-      showNexusError(e.message || 'Die 3D-Ansicht konnte nicht initialisiert werden.');
-      return null;
-    }finally{
-      nexusLoading = null;
-    }
-  })();
-  return nexusLoading;
-}
-
-function showNexusError(message){
-  const mode = $('#nexusMode');
-  if(mode){
-    mode.className = 'nexus-mode is-error';
-    const label = $('#nexusModeLabel');
-    const detail = $('#nexusModeDetail');
-    if(label) label.textContent = 'RAUM OFFLINE';
-    if(detail) detail.textContent = message || '3D-Ansicht nicht verfügbar';
-  }
-  const activity = $('#nexusActivity');
-  if(activity){ activity.textContent = 'KEINE VERBINDUNG'; activity.className = 'nexus-activity is-error'; }
-  const detail = $('#nexusActivityDetail');
-  if(detail) detail.textContent = message || 'Der Nexus-Raum konnte nicht geladen werden.';
-  const empty = $('#nexusEmpty');
-  if(empty){
-    empty.hidden = false;
-    empty.innerHTML = `<b>RAUM NICHT VERFÜGBAR</b><span>${esc(message || 'Die 3D-Ansicht konnte nicht geladen werden.')}</span>`;
-  }
-  ['nexusStatNodes','nexusStatEdges','nexusStatRunning'].forEach(id => {
-    const el = document.getElementById(id);
-    if(el) el.textContent = '–';
-  });
-  if(nexus3d) nexus3d.showError(message);
-}
-
-async function renderNexus(){
-  const g = await ensureNexus3d();
-  if(current !== 'nexus') return;
-  if(g) g.setActive(true);
-  await ladeNexus(g);
-}
-
-async function ladeNexus(g){
-  const request = ++nexusRequest;
-  const key = nexusWindow;
-  if(nexusAbort) nexusAbort.abort();
-  const controller = new AbortController();
-  nexusAbort = controller;
-  try{
-    const r = await fetch(`/api/nexus/raum?zeitraum=${encodeURIComponent(key)}`, {
-      cache:'no-store', signal:controller.signal,
-    });
-    if(request !== nexusRequest || current !== 'nexus') return;
-    if(!r.ok) throw new Error(`Der Nexus-Raum ist momentan nicht erreichbar (HTTP ${r.status}).`);
-    const d = await r.json();
-    if(request !== nexusRequest || current !== 'nexus') return;
-    if(!d.ok) throw new Error(d.fehler || 'Der Nexus-Raum konnte nicht geladen werden.');
-    nexusDaten = d;
-    zeichneNexus(d);
-    if(g) g.setData(d);
-    syncNexusWindow(d.zeitraum || key);
-  }catch(e){
-    if(e.name === 'AbortError' || request !== nexusRequest || current !== 'nexus') return;
-    nexusDaten = null;
-    showNexusError(e.message || 'Der Nexus-Raum konnte nicht geladen werden.');
-  }finally{
-    if(nexusAbort === controller) nexusAbort = null;
-  }
-}
-
-function zeichneNexus(d){
-  const graph = d.graph || {};
-  const st = graph.statistik || {};
-  const zahlen = d.zahlen || {};
-  const a = d.aktivitaet || {};
-  const knoten = graph.knoten || [];
-  const kanten = graph.kanten || [];
-  const events = a.events || [];
-  const typName = {claim:'Kernaussage', quelle:'Quelle', thema:'Thema'};
-  const mode = $('#nexusMode');
-  if(mode){
-    mode.className = 'nexus-mode' + (nexusFailed ? ' is-error' : (a.status ? ' is-'+a.status : ''));
-    const label = $('#nexusModeLabel');
-    const detail = $('#nexusModeDetail');
-    if(label) label.textContent = nexusFailed ? 'RAUM OFFLINE' : (a.label || 'RUHIG');
-    if(detail) detail.textContent = nexusFailed
-      ? '3D-Modul nicht verfügbar; Datenleiste bleibt sichtbar'
-      : `${num(zahlen.knoten,0)} Knoten · ${num(a.laufend,0)} laufend · ${esc(d.zeitraum || nexusWindow)}`;
-  }
-  const total = $('#nexusNodeTotal');
-  if(total) total.textContent = `${num(knoten.length,0)} Knoten`;
-  const eventTotal = $('#nexusEventTotal');
-  if(eventTotal) eventTotal.textContent = `${num(events.length,0)} Ereignisse`;
-  const statNodes = $('#nexusStatNodes');
-  const statEdges = $('#nexusStatEdges');
-  const statRunning = $('#nexusStatRunning');
-  if(statNodes) statNodes.textContent = num(st.knoten,0);
-  if(statEdges) statEdges.textContent = num(st.kanten,0);
-  if(statRunning) statRunning.textContent = num(a.laufend,0);
-  const activity = $('#nexusActivity');
-  if(activity){ activity.textContent = a.label || '–'; activity.className = 'nexus-activity' + (a.status ? ' is-'+a.status : ''); }
-  const activityDetail = $('#nexusActivityDetail');
-  if(activityDetail) activityDetail.textContent = a.detail || '';
-  const hint = $('#nexusGraphHint');
-  if(hint) hint.textContent = kanten.length ? `${num(kanten.length,0)} Kanten im Zeitraum` : (graph.hinweis || 'Noch keine Graphkanten.');
-
-  if(nexusSelected && !knoten.some(n => n.id === nexusSelected)) nexusSelected = null;
-  const nodesBox = $('#nexusNodes');
-  if(nodesBox){
-    nodesBox.innerHTML = knoten.length ? knoten.slice(0,40).map(n => `
-      <button type="button" class="nexus-node${nexusSelected === n.id ? ' is-selected' : ''}" data-node="${esc(n.id)}">
-        <span class="nexus-node-top"><span class="nexus-node-type is-${esc(n.typ)}">${esc(typName[n.typ] || n.typ)}</span></span>
-        <span class="nexus-node-label">${esc(n.label)}</span>
-        <small>${esc(n.status || n.id)}${n.meta?.thema ? ' · ' + esc(n.meta.thema) : ''}</small>
-      </button>`).join('')
-      : `<div class="nexus-rail-empty">${esc(graph.hinweis || 'Noch keine Graphknoten. Der Raum bleibt ohne erfundene Knoten leer.')}</div>`;
-  }
-
-  const eventsBox = $('#nexusEvents');
-  if(eventsBox){
-    const artName = {mission:'Mission', claim:'Claim', quelle:'Quelle', prognose:'Prognose'};
-    eventsBox.innerHTML = events.length ? events.slice(0,30).map(e => {
-      const t = String(e.zeit || '');
-      const time = t.includes('T') ? t.slice(11,16) : '–';
-      return `<div class="nexus-event">
-        <span class="nexus-event-time">${esc(time)}</span>
-        <span class="nexus-event-main"><span class="nexus-event-art is-${esc(e.art)}">${esc(artName[e.art] || e.art)}</span>
-          <span class="nexus-event-text">${esc(e.text)}</span>
-          <span class="nexus-event-title">${esc(e.titel)}${e.status ? ' · ' + esc(e.status) : ''}</span></span>
-      </div>`;
-    }).join('') : '<div class="nexus-rail-empty">Keine Aktivität im gewählten Zeitraum. Es wird kein Ereignis erfunden.</div>';
-  }
-
-  const empty = $('#nexusEmpty');
-  if(empty){
-    if(nexusFailed){
-      empty.hidden = false;
-      empty.innerHTML = '<b>3D-ANSICHT NICHT VERFÜGBAR</b><span>Die Datenleiste bleibt nutzbar; für den Raum fehlt WebGL oder das Modul.</span>';
-    }else if(!knoten.length){
-      empty.hidden = false;
-      empty.innerHTML = `<b>RAUM OHNE GRAPH</b><span>${esc(graph.hinweis || 'Noch keine Graphknoten im gewählten Zeitraum.')}${events.length ? ' Die Aktivität rechts bleibt sichtbar.' : ''}</span>`;
-    }else{
-      empty.hidden = true;
-    }
-  }
-
-  const legend = $('#nexusLegend');
-  if(legend){
-    legend.innerHTML = `<span class="n-legend-item"><i style="background:#5fe0c8"></i>Kernaussage</span>
-      <span class="n-legend-item"><i style="background:#8fb8ff"></i>Quelle</span>
-      <span class="n-legend-item"><i style="background:#e8b45a"></i>Thema</span>
-      <span class="n-legend-item"><i class="is-line"></i>Kante</span>
-      <span class="n-legend-item">${a.laufend ? 'Beine aktiv' : 'Beine ruhig'}</span>`;
-  }
-  const meta = $('#nexusMeta');
-  if(meta) meta.textContent = `${num(zahlen.knoten,0)} Knoten · ${num(zahlen.kanten,0)} Kanten · ${esc(d.zeitraum || nexusWindow)} · ${esc(String(d.generiert || '').replace('T',' ').slice(0,16))}`;
-
-  const typesBox = $('#nexusTypes');
-  if(typesBox){
-    const typen = st.typen || {};
-    const rows = [['claim','Kernaussagen'],['quelle','Quellen'],['thema','Themen']];
-    typesBox.innerHTML = knoten.length ? `<table class="tbl"><thead><tr><th>Typ</th><th class="m">Knoten</th></tr></thead><tbody>
-      ${rows.map(([key,label]) => `<tr><td>${label}</td><td class="m">${num(typen[key],0)}</td></tr>`).join('')}</tbody></table>`
-      : '<div class="empty">Keine Knoten im gewählten Zeitraum.</div>';
-    const typeTag = $('#nexusTypeTag');
-    if(typeTag) typeTag.textContent = knoten.length ? `${num(Object.keys(typen).length,0)} Typen` : 'leer';
-  }
-
-  const contract = $('#nexusContract');
-  if(contract){
-    const aktivText = a.laufend > 0
-      ? `${num(a.laufend,0)} Mission${a.laufend === 1 ? '' : 'en'} laufen; die Beine bewegen sich.`
-      : 'Keine laufende Mission; die Beine bleiben ruhig.';
-    contract.innerHTML = `<p><b>Graph:</b> ${num(zahlen.knoten,0)} Knoten und ${num(zahlen.kanten,0)} Kanten aus dem persistierten Wissensgraph.</p>
-      <p><b>Aktivität:</b> ${esc(a.detail || 'Keine Aktivität gespeichert.')}</p>
-      <p><b>Bewegung:</b> ${esc(aktivText)}</p>
-      <p class="nexus-limit">Die Szene liest <code>/api/nexus/raum</code>. Sie erfindet weder Knoten noch Ereignisse; neue Knoten leuchten nur nach einem echten Refresh auf.</p>`;
-  }
-}
-
-const nexusNodes = $('#nexusNodes');
-if(nexusNodes) nexusNodes.addEventListener('click', e => {
-  const b = e.target.closest('[data-node]');
-  if(!b || !nexus3d) return;
-  nexusSelected = b.dataset.node;
-  nexus3d.selectNode(b.dataset.node);
-  nexusNodes.querySelectorAll('[data-node]').forEach(el => el.classList.toggle('is-selected', el === b));
-});
-const nexusStage = $('#nexusStage');
-if(nexusStage) nexusStage.addEventListener('nexusselection', e => {
-  nexusSelected = e.detail || null;
-  document.querySelectorAll('#nexusNodes [data-node]').forEach(el => {
-    el.classList.toggle('is-selected', el.dataset.node === e.detail);
-  });
-});
 
 /* ---------- Betrieb (Phase 8) ---------- */
 function betriebDauer(sekunden){

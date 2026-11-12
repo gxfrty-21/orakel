@@ -1,5 +1,5 @@
 /**
- * Weltkugel in 2D — Canvas, keine 3D-Engine.
+ * Weltkugel in 2D — Canvas, ohne WebGL.
  *
  * Alle Knoten, Kanten, Quellen und Zahlen kommen aus /api/globe. Gezeichnet
  * wird nur, was dort steht: keine erfundenen Signale, keine Daueraktivität.
