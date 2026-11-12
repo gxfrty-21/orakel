@@ -18,9 +18,9 @@ Zuletzt deployed am 12. November 2026:
 - Service: `orakel` (`1f8e2304-31d5-4c7e-80b3-8010ee2d969e`)
 - Volume: `orakel-volume` (`241709d8-4eb6-40c9-8163-a28edb58b3ed`),
   Mount `/data`, 500 MB
-- Letztes Deployment: `ea11f42e-a107-454b-ac9d-467ffc43319c` — `SUCCESS`
-  (12. November 2026, automatischer GitHub-Build aus `main`, Commit
-  `ad454e0`; `/api/health` liefert diesen Commit)
+- Deploy: automatischer GitHub-Build aus `main`; den ausgelieferten Commit
+  nennt `/api/health` im Feld `commit`. Der erste Build nach dem Merge war
+  `ea11f42e` (Commit `ad454e0`).
 - Domain: Target Port `3000`, TLS von Railway
 - Deploy-Weg: GitHub-Quelle `gxfrty-21/orakel`, Branch `main`, ist wieder
   verbunden; Pushes bauen automatisch. Der CLI-Upload bleibt Fallback, wenn
@@ -156,6 +156,8 @@ Konkret am 12. November 2026:
 - Produktion = derselbe Commit, automatisch als `ea11f42e` gebaut
 - Die frühere CLI-Version `40ab8686` (Stand `e8b7e08`) ist damit ersetzt; das
   Volume blieb erhalten (`artikel=46`, 28.086 Trades).
+- Spätere Pushes bauen automatisch weiter; maßgeblich ist der `commit` in
+  `/api/health`.
 
 Erkennungsmerkmal: Bei CLI-Deploys fehlt `RAILWAY_GIT_COMMIT_SHA`, deshalb
 steht in `/api/health` `commit: null`, und `deploy-check.yml` läuft nicht. Ein
