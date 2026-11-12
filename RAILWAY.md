@@ -180,6 +180,54 @@ Schutz vor einem unbeabsichtigten Rückschritt:
 Merksatz: Ein CLI-Deploy deployt den Workspace, aber aktualisiert nicht das
 Repository. `main` bleibt die Quelle für jeden automatischen Build.
 
+## Push-Authentifizierung
+
+`main` ist durch das Ruleset `main: PR und gruene CI` geschützt: direkte Pushes
+werden abgelehnt, Änderungen laufen über einen Branch und einen Pull Request
+mit den grünen Checks `pytest` und `docker`.
+
+Für einen Branch-Push braucht die Umgebung eigene Zugangsdaten. In dieser
+Chat-Umgebung werden Projekt-Secrets nicht als Umgebungsvariablen
+bereitgestellt; ein hinterlegtes `GH_TOKEN` kommt in der Shell nicht an.
+
+Empfohlener Weg (einmalig pro Umgebung):
+
+1. Fine-grained PAT erzeugen:
+   <https://github.com/settings/personal-access-tokens/new>
+   - Repository access: nur `gxfrty-21/orakel`
+   - Contents: Read and write
+   - Pull requests: Read and write
+   - Workflows: Read and write (nötig, wenn `.github/workflows/` geändert wird)
+   - Metadata: Read-only (wird automatisch gesetzt)
+2. Im Terminal verdeckt einlesen und an `gh` übergeben:
+
+   ```bash
+   read -rsp "GitHub PAT: " TOK
+   printf '%s' "$TOK" | gh auth login --with-token
+   unset TOK
+   ```
+
+3. Push mit dem gh-Credential-Helper, ohne Token in `.git/config`:
+
+   ```bash
+   git -c credential.helper='!gh auth git-credential' \
+     push origin HEAD:dein-branch
+   ```
+
+   `gh` speichert den Login unter `~/.config/gh/`, nicht im Repository.
+
+Alternativen:
+
+- GitHub-Weboberfläche oder GitHub Desktop mit dem eigenen Konto — kein Token
+  im Repository nötig.
+- Ein Deploy-Key mit Schreibrecht für Automatisierung. Er kann Branches pushen,
+  aber `main` nicht direkt ändern; nach Gebrauch wieder entfernen.
+- Project Tokens von Railway helfen hier nicht: sie authentifizieren Railway,
+  nicht GitHub.
+
+Token niemals in den Chat, in Dateien oder in `.git/config` schreiben. Bei
+Verdacht auf Offenlegung: widerrufen und neu erzeugen.
+
 ## Deploy nur bei grüner CI
 
 Railway kann ein Deployment zurückhalten, bis die GitHub-Actions-Läufe des
