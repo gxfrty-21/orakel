@@ -41,6 +41,22 @@ function zeichne(){
     research:renderFlow,kb:renderKb,agents:renderAgents,konf:renderKonf,
     globe:renderGlobe,betrieb:renderBetrieb,ship:renderShip,spider:renderSpider})[current]?.();
 }
+function tabelleKarten(){
+  document.querySelectorAll('main table.tbl').forEach(t=>{
+    if(t.closest('#types')) return;
+    const ths = [...t.querySelectorAll('thead th')].map(th=>th.textContent.trim());
+    if(!ths.length) return;
+    t.classList.add('tblCards');
+    t.querySelectorAll('tbody tr').forEach(tr=>{
+      [...tr.children].forEach((td,i)=>{
+        if(ths[i]) td.setAttribute('data-label', ths[i]);
+      });
+    });
+  });
+}
+const tabellenBeobachter = new MutationObserver(tabelleKarten);
+tabellenBeobachter.observe(document.querySelector('main'), {childList:true, subtree:true});
+tabelleKarten();
 
 /* ---------- Kopfzeile ---------- */
 function renderTop(){
@@ -124,7 +140,7 @@ function renderRisk(){
     <td style="white-space:normal">${[...(q.fehler||[]).map(e=>`<span class="dn">${esc(e)}</span>`),...(q.warnungen||[]).map(e=>`<span class="na">${esc(e)}</span>`)].slice(0,4).join('<br>')||'<span class="na">keine</span>'}</td></tr>`).join('')}
     </tbody></table>` : '<div class="empty">Keine Daten geprüft.</div>';
   const c = R.kosten||{};
-  $('#costs').innerHTML = `<table class="tbl"><tbody>
+  $('#costs').innerHTML = `<table class="tbl tblKey"><tbody>
     <tr><td>Kommission pro Stück</td><td class="m">USD ${c.commission_per_share}</td></tr>
     <tr><td>Mindestkommission</td><td class="m">USD ${c.min_commission}</td></tr>
     <tr><td>Slippage pro Ausführung</td><td class="m">${c.slippage_bps} bps</td></tr>
