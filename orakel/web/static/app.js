@@ -233,6 +233,36 @@ function renderFlow(){
 }
 
 /* ---------- Wissensbank ---------- */
+let vaultOrdner = null, vaultOrdnerLaeuft = false;
+
+function zeichneVaultOrdner(){
+  const el = $('#vaultOrdner');
+  if(!el) return;
+  el.innerHTML = vaultOrdner
+    ? (vaultOrdner.length ? vaultOrdner.map(o=>`<span class="i">${esc(o)}</span>`).join('')
+      : '<span class="i">Keine Ordner mit Notizen.</span>')
+    : '<span class="i">wird geladen …</span>';
+}
+
+async function ladeVaultOrdner(){
+  zeichneVaultOrdner();
+  if(vaultOrdner || vaultOrdnerLaeuft) return;
+  vaultOrdnerLaeuft = true;
+  try{
+    const r = await fetch('/api/vault/graph', {cache:'no-store'});
+    const d = await r.json();
+    if(!r.ok || !d.ok) throw new Error(d.fehler || 'Graph nicht verfügbar');
+    vaultOrdner = (d.ordner || []).map(o=>o.name).filter(Boolean);
+  }catch(e){
+    const el = $('#vaultOrdner');
+    if(el) el.innerHTML = `<span class="i">Ordner konnten nicht geladen werden: ${esc(e.message)}</span>`;
+    return;
+  }finally{
+    vaultOrdnerLaeuft = false;
+  }
+  zeichneVaultOrdner();
+}
+
 function renderKb(){
   const T = R.wissen?.typen||[];
   $('#libTag').textContent = `${T.length} Typen`;
@@ -247,8 +277,8 @@ function renderKb(){
     : '<div class="empty">Noch keine Entscheide.</div>';
   $('#vaultInfo').innerHTML = `<p class="sub" style="margin:0">Der Vault liegt im Ordner <span class="code">vault/</span> und ist mit Obsidian direkt öffnbar:
     Frontmatter, Tags und [[Links]]. Validierungen, Ablehnungen, Datenfehler und Konferenzprotokolle werden dort abgelegt.</p>
-    <div class="lbl">Ordner</div><div class="reasons">${['10-Daten','20-Strategien','30-Validierungen','40-Entscheide','50-Konferenz','60-Fehler','70-Wissen']
-      .map(o=>`<span class="i">${o}</span>`).join('')}</div>`;
+    <div class="lbl">Ordner</div><div class="reasons" id="vaultOrdner"></div>`;
+  ladeVaultOrdner();
   if(window.VaultGraph) window.VaultGraph.aktivieren();
 }
 
