@@ -503,6 +503,20 @@ def konferenz(db: Facts, ctx: dict[str, Any], erzwungen: bool = False) -> dict[s
             "verantwortlich": "A:Hauptzentrale",
         })
 
+    # Sekretariat: Bericht und gesammelte Agenda gehen in das Protokoll ein.
+    try:
+        from .sekretariat import agenda as _sek_agenda, lage as _sek_lage
+
+        _lage = _sek_lage(db)
+        _agenda = _sek_agenda(db)
+        sekretariat_block = {
+            "bericht": _lage,
+            "agenda": _agenda.get("themen") or [],
+            "leitung": ["S1", "S2", "S3"],
+        }
+    except Exception as exc:  # Sekretariat darf die Konferenz nie blockieren
+        sekretariat_block = {"fehler": f"Sekretariat nicht verfügbar: {type(exc).__name__}"}
+
     protokoll = {
         "zeit": jetzt.replace(microsecond=0).isoformat(),
         "faellig": faellig,
@@ -513,6 +527,7 @@ def konferenz(db: Facts, ctx: dict[str, Any], erzwungen: bool = False) -> dict[s
         "beschluss": ("Keine Strategie freigegeben — es wird nicht gehandelt."
                       if not bestanden else
                       f"{len(bestanden)} Strategien bleiben freigegeben; Änderungen nur nach Test."),
+        "sekretariat": sekretariat_block,
     }
     db.konferenz_speichern(protokoll)
     db.zustand_setzen("letzte_konferenz", protokoll["zeit"])

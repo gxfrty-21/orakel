@@ -70,6 +70,10 @@ takt_aktiv = false                 # true = Takt startet mit "orakel serve"
 # Phase 8: Dauerbetrieb. Der Takt selbst kommt aus [paper].takt_sekunden.
 # Der Spider läuft nicht mehr nur beim Start, sondern nach diesem Intervall.
 spider_intervall_minuten = 360
+# Vorlauf in Tagen für automatische Termine von Befunden und Beschlüssen.
+sekretariat_termin_tage = 7
+# Ab dieser Stundenzahl ohne Statusänderung wird eine Aufgabe markiert.
+sekretariat_alt_stunden = 1
 unternehmen_intervall_minuten = 60
 max_missionen_pro_takt = 5
 backoff_basis_sekunden = 60

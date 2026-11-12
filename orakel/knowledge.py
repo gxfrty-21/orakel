@@ -76,6 +76,31 @@ class Vault:
         ziel.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
         return ziel
 
+    def notizen(self, kategorie: str, limit: int = 50) -> list[dict[str, Any]]:
+        """Liest Notizen einer Kategorie, neueste zuerst (nur Frontmatter + Text)."""
+        unter = ORDNER.get(kategorie, ORDNER["wissen"])
+        dateien = sorted((self.wurzel / unter).glob("*.md"),
+                         key=lambda p: p.stat().st_mtime, reverse=True)[:limit]
+        raus: list[dict[str, Any]] = []
+        for pfad in dateien:
+            text = pfad.read_text(encoding="utf-8")
+            titel, erstellt, tags = pfad.stem, None, []
+            m = re.search(r"^titel: (.*)$", text, re.M)
+            if m:
+                try:
+                    titel = json.loads(m.group(1))
+                except Exception:
+                    pass
+            m = re.search(r"^tags: \[(.*)\]$", text, re.M)
+            if m:
+                tags = [t.strip() for t in m.group(1).split(",") if t.strip()]
+            m = re.search(r"^erstellt: (.*)$", text, re.M)
+            if m:
+                erstellt = m.group(1).strip()
+            raus.append({"titel": titel, "erstellt": erstellt, "tags": tags,
+                         "text": text, "pfad": str(pfad)})
+        return raus
+
     def zaehle(self) -> dict[str, int]:
         raus: dict[str, int] = {}
         for kategorie, unter in ORDNER.items():
