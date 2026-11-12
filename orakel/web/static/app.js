@@ -247,7 +247,7 @@ function renderKb(){
     : '<div class="empty">Noch keine Entscheide.</div>';
   $('#vaultInfo').innerHTML = `<p class="sub" style="margin:0">Der Vault liegt im Ordner <span class="code">vault/</span> und ist mit Obsidian direkt öffnbar:
     Frontmatter, Tags und [[Links]]. Validierungen, Ablehnungen, Datenfehler und Konferenzprotokolle werden dort abgelegt.</p>
-    <div class="lbl">Ordner</div><div class="reasons">${['00-Index','10-Daten','20-Strategien','30-Validierungen','40-Entscheide','50-Konferenz','60-Fehler','70-Wissen']
+    <div class="lbl">Ordner</div><div class="reasons">${['10-Daten','20-Strategien','30-Validierungen','40-Entscheide','50-Konferenz','60-Fehler','70-Wissen']
       .map(o=>`<span class="i">${o}</span>`).join('')}</div>`;
   if(window.VaultGraph) window.VaultGraph.aktivieren();
 }
