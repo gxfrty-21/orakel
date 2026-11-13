@@ -251,6 +251,21 @@ async function pruefeKurvenTooltip(page, ansicht, breite) {
   if (versteckt.aktiv) befunde.push('Führungslinie bleibt nach dem Verlassen der Kurve eingeblendet');
   if (versteckt.inhalt) befunde.push('Tooltip-Inhalt bleibt nach dem Verlassen der Kurve stehen');
   if (versteckt.live) befunde.push('Live-Region bleibt nach dem Verlassen der Kurve gefüllt');
+
+  // Erneut überfahren: Anzeige und Ansage müssen wiederkommen.
+  await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2);
+  await page.waitForTimeout(120);
+  const zurueck = await page.evaluate((ansicht) => {
+    const box = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche`);
+    const tipp = box.querySelector('.wfoKurveTipp');
+    const cs = getComputedStyle(tipp);
+    return {
+      sichtbar: cs.visibility === 'visible' && Number(cs.opacity) > 0.9,
+      live: box.querySelector('.wfoKurveLive').textContent.trim(),
+    };
+  }, ansicht);
+  if (!zurueck.sichtbar) befunde.push('Tooltip erscheint nach erneutem Überfahren nicht');
+  if (!/USD\s/.test(zurueck.live)) befunde.push('Live-Region bleibt nach erneutem Überfahren leer');
   return befunde;
 }
 

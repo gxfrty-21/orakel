@@ -146,7 +146,7 @@ tests/           Risiko, Backtest, Daten, Bericht
 laufen. Tabellen werden zusätzlich mit langen deutschen Komposita belastet und
 als Karten geprüft. Im Lab überfährt er ausserdem die Kapitalkurve und prüft
 den Tooltip (Kapitalstand, Datum, Lage im Kasten, Verschwinden von Tooltip und
-Live-Region beim Verlassen); der Hinweis unter der Kurve führt ← und → als
+Live-Region beim Verlassen, Wiederkommen nach erneutem Überfahren); der Hinweis unter der Kurve führt ← und → als
 kbd-Tasten. Geprüft wird die Tastaturbedienung
 (Durchtabben von oben bis zur Kurve, Shift+Tab zurück, Pfeiltasten, Home/Ende,
 Live-Region bleibt visuell verborgen).
