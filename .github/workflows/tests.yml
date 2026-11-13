@@ -143,7 +143,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-playwright-
 
+      # Auch ein hängender Download soll das Job-Limit nicht ausschöpfen.
       - name: Playwright und Chromium installieren
+        timeout-minutes: 5
         working-directory: scripts
         run: |
           npm ci
