@@ -502,9 +502,14 @@ async function pruefeKurvenTastatur(page, ansicht) {
     const a = document.activeElement;
     const svg = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche svg`);
     const klasse = a && a.className ? String(a.className.baseVal ?? a.className).split(' ')[0] : '';
+    const cs = a ? getComputedStyle(a) : null;
+    const r = a ? a.getBoundingClientRect() : null;
     return {
       kurve: a === svg,
       body: !a || a === document.body,
+      sichtbar: !!a && a !== document.body && r.width > 0 && r.height > 0 && cs.visibility !== 'hidden',
+      ring: !!cs && cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0 && cs.outlineColor !== 'rgba(0, 0, 0, 0)',
+      outline: cs ? `${cs.outlineStyle} ${cs.outlineWidth} ${cs.outlineColor}` : '—',
       name: a ? `${a.tagName}${klasse ? '.' + klasse : ''}«${(a.innerText || a.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 30)}»` : 'nichts',
     };
   }, ansicht);
@@ -518,6 +523,10 @@ async function pruefeKurvenTastatur(page, ansicht) {
     await page.waitForTimeout(80);
     weiter = await leseWeiter();
     if (weiter.kurve || weiter.body) befunde.push('Tab führt von der Kapitalkurve zu keinem nächsten Element');
+  }
+  if (!weiter.kurve && !weiter.body) {
+    if (!weiter.sichtbar) befunde.push(`Fokussiertes Element nach Tab ist nicht sichtbar (${weiter.name})`);
+    else if (!weiter.ring) befunde.push(`Fokusring fehlt nach Tab-Wechsel (${weiter.name}: outline ${weiter.outline})`);
   }
 
   await svg.evaluate(el => el.blur());
