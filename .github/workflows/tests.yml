@@ -182,9 +182,9 @@ jobs:
             exit 1
           fi
 
-      # Nur bei Befunden: Screenshots je Ansicht und Breite zum Nachschauen.
+      # Auch bei Abbruch oder Timeout: Der Job gilt dann als abgebrochen.
       - name: Screenshots bei Fehlschlag hochladen
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: text250-screenshots
@@ -193,7 +193,7 @@ jobs:
           retention-days: 7
 
       - name: Serverprotokoll bei Fehlschlag hochladen
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: text250-serverlog
