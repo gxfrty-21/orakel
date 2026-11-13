@@ -525,6 +525,10 @@ async function pruefeKurvenTastatur(page, ansicht) {
   if (!/USD\s/.test(stand.text) || !/\d{2}\.\d{2}\.\d{4}/.test(stand.text)) befunde.push(`Tooltip beim Fokus unvollständig: «${stand.text}»`);
   if (!/USD\s/.test(stand.live)) befunde.push('Live-Region bleibt beim Fokus leer');
   if (!/\d{2}\.\d{2}\.\d{4}/.test(stand.live)) befunde.push('Live-Region ohne Datum beim Fokus');
+  const a11y = await page.locator(`#v-${ansicht} .wfoKurveFlaeche`).ariaSnapshot();
+  const statusZeile = a11y.split('\n').find(z => /^\s*-\s+status:/.test(z)) || '';
+  if (stand.live && !statusZeile) befunde.push('Live-Region fehlt im Accessibility-Baum (kein status-Knoten)');
+  else if (stand.live && !statusZeile.includes(stand.live)) befunde.push(`Live-Region erscheint im Accessibility-Baum nicht mit ihrem Text («${statusZeile.trim()}» statt «${stand.live}»)`);
   befunde.push(...await pruefeKurvenHinweis(page, ansicht));
   befunde.push(...await pruefeLiveVerborgen(page, ansicht));
   befunde.push(...lageBefunde(stand));
