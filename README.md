@@ -153,7 +153,8 @@ kbd-Tasten. Geprüft wird die Tastaturbedienung
 mit sichtbarem Fokusring,
 Pfeiltasten, Home/Ende,
 aria-label nennt Pfeiltasten, Home und Ende, Start/Tief/Hoch/Ende stimmen mit
-der Fusszeile überein, genau eine Live-Region je Kurve,
+der Fusszeile überein, Start/Ende auch mit den Tooltips bei Home/Ende, genau
+eine Live-Region je Kurve,
 die visuell verborgen bleibt, role=status sowie aria-live=polite trägt und
 nicht aria-hidden ist).
 Exit-Code 1 bei einem Befund.

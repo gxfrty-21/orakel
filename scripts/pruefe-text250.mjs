@@ -504,6 +504,13 @@ async function pruefeKurvenTastatur(page, ansicht) {
   if (anfang.live !== startLive) befunde.push(`Live-Region kehrt bei Home nicht zur Startansage zurück («${anfang.live}» statt «${startLive}»)`);
   befunde.push(...lageBefunde(anfang));
 
+  const ariaWert = name => ((stand.aria.split(name + ' USD ')[1] || '').match(/^[0-9'’]+/) || [''])[0];
+  const betragZahl = t => (String(t).match(/USD\s([0-9'’]+)/) || [''])[1] || '';
+  const ariaStart = ariaWert('Start'), ariaEnde = ariaWert('Ende');
+  const tippStart = betragZahl(anfang.text), tippEnde = betragZahl(ende.text);
+  if (ariaStart && tippStart && ariaStart !== tippStart) befunde.push(`aria-label Start USD ${ariaStart} stimmt nicht mit Tooltip bei Home (USD ${tippStart}) überein`);
+  if (ariaEnde && tippEnde && ariaEnde !== tippEnde) befunde.push(`aria-label Ende USD ${ariaEnde} stimmt nicht mit Tooltip bei Ende (USD ${tippEnde}) überein`);
+
   if (tab.erreicht) {
     await page.keyboard.press('Shift+Tab');
     await page.waitForTimeout(80);
