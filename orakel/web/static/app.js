@@ -157,6 +157,56 @@ document.querySelector('#labTabs').onclick = e => {
   renderLab();
 };
 /* Aggregierte Kapitalkurve der Walk-Forward-Testfenster als SVG. */
+const KURVE_B = 600, KURVE_H = 150, KURVE_RAND = 8;
+let kapitalKurveDaten = null;
+
+/* Zeigt Kapitalstand und Datum als Tooltip über der Walk-Forward-Kurve. */
+function drahteKapitalKurve(){
+  const box = document.querySelector('#labDetail .wfoKurveFlaeche');
+  const daten = kapitalKurveDaten;
+  if(!box || !daten || daten.punkte.length < 2) return;
+  const svg = box.querySelector('svg');
+  const zeiger = box.querySelector('.wfoKurveZeiger');
+  const punkt = box.querySelector('.wfoKurvePunkt');
+  const tipp = box.querySelector('.wfoKurveTipp');
+  const { punkte, tief, hoch, spanne } = daten;
+  let aktiv = -1;
+  const datum = t => {
+    const teile = String(t || '').slice(0, 10).split('-');
+    return teile.length === 3 ? `${teile[2]}.${teile[1]}.${teile[0]}` : String(t || '–');
+  };
+  const zeige = ev => {
+    const r = svg.getBoundingClientRect();
+    if(!r.width) return;
+    const anteil = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width));
+    const i = Math.round(anteil * (punkte.length - 1));
+    if(i === aktiv) return;
+    aktiv = i;
+    const p = punkte[i];
+    const xPx = (i / (punkte.length - 1)) * r.width;
+    const yPx = (KURVE_RAND + (hoch - p.v) / spanne * (KURVE_H - 2 * KURVE_RAND)) / KURVE_H * r.height;
+    const xSvg = (i / (punkte.length - 1) * KURVE_B).toFixed(1);
+    zeiger.setAttribute('x1', xSvg); zeiger.setAttribute('x2', xSvg);
+    punkt.style.left = xPx + 'px';
+    punkt.style.top = yPx + 'px';
+    const betrag = document.createElement('b');
+    betrag.textContent = 'USD ' + num(p.v, 0);
+    const tag = document.createElement('span');
+    tag.textContent = datum(p.t);
+    tipp.replaceChildren(betrag, tag);
+    box.classList.add('an');
+    const breite = tipp.offsetWidth, hoehe = tipp.offsetHeight;
+    const links = Math.max(4, Math.min(r.width - breite - 4, xPx - breite / 2));
+    let oben = yPx - hoehe - 10;
+    if(oben < 4) oben = yPx + 10;
+    tipp.style.left = links + 'px';
+    tipp.style.top = Math.max(4, Math.min(r.height - hoehe - 4, oben)) + 'px';
+  };
+  svg.addEventListener('pointermove', zeige);
+  svg.addEventListener('pointerdown', zeige);
+  box.addEventListener('pointerleave', () => { box.classList.remove('an'); aktiv = -1; });
+}
+
 function kapitalKurveBlock(o){
   const roh = (o && o.kapitalkurve || []).filter(p=>Array.isArray(p) && Number.isFinite(Number(p[1])));
   if(roh.length < 2) return '';
@@ -168,7 +218,8 @@ function kapitalKurveBlock(o){
   const start = werte[0], ende = werte[werte.length-1];
   const tief = Math.min(...werte), hoch = Math.max(...werte);
   const spanne = Math.max(1e-9, hoch - tief);
-  const B = 600, H = 150, RAND = 8;
+  kapitalKurveDaten = { punkte: punkte.map(p=>({ t: String(p[0] || ''), v: Number(p[1]) })), tief, hoch, spanne };
+  const B = KURVE_B, H = KURVE_H, RAND = KURVE_RAND;
   const x = i => (i / (punkte.length - 1)) * B;
   const y = w => RAND + (hoch - w) / spanne * (H - 2 * RAND);
   const verlauf = punkte.map((p,i)=>`${x(i).toFixed(1)},${y(Number(p[1])).toFixed(1)}`).join(' ');
@@ -181,13 +232,18 @@ function kapitalKurveBlock(o){
   const aria = `Kapitalkurve der Walk-Forward-Testfenster: Start USD ${num(start,0)}, Tief USD ${num(tief,0)}, Hoch USD ${num(hoch,0)}, Ende USD ${num(ende,0)}`;
   return `<div class="ph" style="border-top:1px solid var(--line)">Walk-Forward-Kapitalkurve<span class="tag">Testfenster verkettet</span></div>
     <div class="wfoKurve">
+    <div class="wfoKurveFlaeche">
     <svg viewBox="0 0 ${B} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(aria)}">
       <line x1="0" y1="${y(start).toFixed(1)}" x2="${B}" y2="${y(start).toFixed(1)}" class="wfoKurveBasis"></line>
       ${grenzen}
       <polygon points="0,${H} ${verlauf} ${B},${H}" fill="${farbe}" opacity=".1"></polygon>
       <polyline points="${verlauf}" fill="none" stroke="${farbe}" stroke-width="1.6"
         vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"></polyline>
+      <line x1="0" y1="0" x2="0" y2="${H}" class="wfoKurveZeiger"></line>
     </svg>
+    <div class="wfoKurvePunkt"></div>
+    <div class="wfoKurveTipp"></div>
+    </div>
     <div class="wfoKurveFuss">
       <span>Start <b>USD ${num(start,0)}</b></span><span>Tief <b>USD ${num(tief,0)}</b></span>
       <span>Hoch <b>USD ${num(hoch,0)}</b></span><span>Ende <b class="${cls(ende-start)}">USD ${num(ende,0)}</b></span>
@@ -266,6 +322,7 @@ function renderLab(){
     ${(o.trades||[]).slice(-10).reverse().map(t=>`<tr><td>${esc(t.einstieg)}</td><td>${esc(t.ausstieg)}</td><td class="m">${num(t.stueck,0)}</td>
     <td class="m ${cls(t.netto)}">${num(t.netto)}</td><td class="m ${cls(t.rendite_pct)}">${num(t.rendite_pct,2)} %</td><td>${esc(t.grund)}</td></tr>`).join('')||'<tr><td colspan="6" class="na">keine Trades</td></tr>'}
     </tbody></table></div>`;
+  drahteKapitalKurve();
 }
 
 /* ---------- Strategien ---------- */
