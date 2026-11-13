@@ -19,8 +19,11 @@
  *   --breiten 360,320,280  Standard 360,320,280
  *   --ansichten lab,kb     Standard alle sieben Ansichten
  *   --ohne-tabellen        Nur Seitenüberläufe prüfen, Tabellen überspringen
+ *   --bilder <verzeichnis> Schreibt bei Befunden je Ansicht und Breite einen Screenshot
  */
 
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { chromium } from 'playwright';
 
 const LANGS = 'Donaudampfschifffahrtsgesellschaftskapitänsmützenhalterungsverordnung';
@@ -34,6 +37,7 @@ function argumente(argv) {
     breiten: [360, 320, 280],
     ansichten: [...STANDARD_ANSICHTEN],
     tabellen: true,
+    bilder: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -41,9 +45,11 @@ function argumente(argv) {
     else if (arg === '--breiten') opts.breiten = argv[++i].split(',').map(Number).filter(n => n >= 200);
     else if (arg === '--ansichten') opts.ansichten = argv[++i].split(',').map(s => s.trim()).filter(Boolean);
     else if (arg === '--ohne-tabellen') opts.tabellen = false;
+    else if (arg === '--bilder') opts.bilder = argv[++i];
     else if (arg === '--hilfe' || arg === '-h') {
       console.log('Aufruf: node scripts/pruefe-text250.mjs [--url URL] [--breiten 360,320,280]\n' +
-        '       [--ansichten overview,risk,lab,betrieb,spider,globe,kb] [--ohne-tabellen]');
+        '       [--ansichten overview,risk,lab,betrieb,spider,globe,kb] [--ohne-tabellen]\n' +
+        '       [--bilder <verzeichnis>]');
       process.exit(0);
     }
     else { console.error(`Unbekannte Option: ${arg}`); process.exit(2); }
@@ -182,10 +188,11 @@ async function main() {
   const opt = argumente(process.argv.slice(2));
   const { validierungen } = await pruefeServer(opt.url);
   console.log(`250-%-Prüflauf: ${opt.ansichten.length} Ansichten × ${opt.breiten.length} Breiten · ${validierungen} Validierungen im Bericht`);
+  if (opt.bilder) mkdirSync(opt.bilder, { recursive: true });
 
   const browser = await chromium.launch({ headless: true });
   const fehler = [];
-  let tabellenGesamt = 0, zellenGesamt = 0;
+  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0;
 
   try {
     for (const breite of opt.breiten) {
@@ -204,6 +211,7 @@ async function main() {
         await skaliere(page, 2.5);
         await page.waitForTimeout(150);
 
+        const vorher = fehler.length;
         const ansichtBefund = await messeAnsicht(page, ansicht, breite);
         if (!ansichtBefund.gerendert) ansichtBefund.befunde.push('Ansicht wurde nicht gerendert');
         for (const text of ansichtBefund.befunde) fehler.push(`${breite}px/${ansicht}: ${text}`);
@@ -215,6 +223,13 @@ async function main() {
           for (const text of tabellenBefund.befunde) fehler.push(`${breite}px/${ansicht}: ${text}`);
         }
         for (const text of await pruefeZoom(page, ansicht)) fehler.push(`${breite}px/${ansicht}: ${text}`);
+
+        if (opt.bilder && fehler.length > vorher) {
+          const datei = join(opt.bilder, `${breite}px-${ansicht}.png`);
+          await page.screenshot({ path: datei, fullPage: true });
+          bilderGesamt++;
+          console.log(`Screenshot: ${datei}`);
+        }
       }
       await page.close();
     }
@@ -228,7 +243,7 @@ async function main() {
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}`);
+  console.log(`OK: keine Überläufe${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {
