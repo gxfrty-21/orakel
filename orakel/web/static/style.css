@@ -876,6 +876,7 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 .globe-rail-head b,.globe-rail-foot,.globe-meta,.globe-legend,.g-legend-item,.vault-count{
   overflow-wrap:anywhere;hyphens:auto}
 .pill,.tag,.toggle,.tab{max-width:100%;overflow-wrap:anywhere}
+.kpi .v{hyphens:auto}
 .pill{white-space:normal}
 .li>span,.li .wlTop>span,.globe-head>div,.globe-hud-top{min-width:0}
 .li .r{white-space:normal}
@@ -898,3 +899,9 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
   .globe-hud-stats{flex-direction:row;flex-wrap:wrap;gap:4px 16px}
   .globe-hud-stats small,.globe-hud-stats b{overflow-wrap:anywhere;hyphens:auto}
 }
+
+/* Vault: Legende, Knotenzähler und Zoom-Bedienung skalieren mit der Schrift mit. */
+.vault-count{white-space:normal;text-align:right}
+.vault-legend span{white-space:normal;overflow-wrap:anywhere}
+.vault-zoom button{width:auto;min-width:max(28px,2.1em);height:auto;min-height:27px;padding:0 4px}
+.vault-zoom button:last-child{width:auto;min-width:max(36px,2.4em)}
