@@ -190,6 +190,10 @@ npm --prefix scripts exec playwright install chromium
 node scripts/pruefe-text250.mjs
 ```
 
+Die Seed-Kurve der neuesten US500-Validierungen beginnt bewusst mit zwei
+unterschiedlichen Punkten (USD 100'000 und 100'100). Damit prüft der Status-Test
+bei Pfeil rechts im CI eine echte Textänderung.
+
 Einschränken lässt sich der Lauf mit `--ansichten lab,kb --breiten 360,280`,
 die Adresse mit `--url http://127.0.0.1:8000`, Tabellen mit `--ohne-tabellen`.
 Mit `--bilder <verzeichnis>` schreibt der Lauf bei Befunden je Ansicht und
