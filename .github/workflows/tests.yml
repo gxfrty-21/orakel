@@ -133,6 +133,16 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
+      # Der Schlüssel hängt an der Playwright-Version im Lockfile: Ändert sie
+      # sich, wird der Browser neu geladen statt einen alten Cache zu nutzen.
+      - name: Playwright-Browser cachen
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('scripts/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
       - name: Playwright und Chromium installieren
         working-directory: scripts
         run: |
