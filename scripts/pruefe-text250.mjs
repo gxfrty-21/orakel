@@ -273,10 +273,26 @@ async function pruefeKurvenTooltip(page, ansicht, breite) {
     const m = String(t).match(/Kapital USD\s([0-9'’]+)/);
     return m ? `USD ${m[1]}` : '';
   };
+  const datum = t => (String(t).match(/\b\d{2}\.\d{2}\.\d{4}\b/) || [''])[0];
+  const prozent = t => {
+    const m = String(t).match(/([+-]?\d+(?:[.,]\d+)?)\s*%/);
+    return m ? String(Number(m[1].replace(',', '.'))) : '';
+  };
+  const liveProzent = t => {
+    if (/unverändert seit Start/.test(t)) return '0';
+    const m = String(t).match(/(plus|minus)\s+([0-9'’]+(?:[.,][0-9]+)?)\s+Prozent/);
+    if (!m) return '';
+    const v = Number(m[2].replace(/['’]/g, '').replace(',', '.'));
+    return String(m[1] === 'minus' ? -v : v);
+  };
   if (!zurueck.sichtbar) befunde.push('Tooltip erscheint nach erneutem Überfahren nicht');
   if (!betrag(zurueck.text)) befunde.push('Tooltip nennt nach erneutem Überfahren keinen Kapitalstand');
   if (!/Kapital USD\s/.test(zurueck.live)) befunde.push('Live-Region bleibt nach erneutem Überfahren ohne Kapitalstand');
   else if (betrag(zurueck.text) && kapital(zurueck.live) !== betrag(zurueck.text)) befunde.push(`Live-Region nennt nach erneutem Überfahren nicht den Wert des Tooltips («${zurueck.live}» statt «${betrag(zurueck.text)}»)`);
+  if (!datum(zurueck.text)) befunde.push('Tooltip nennt nach erneutem Überfahren kein Datum');
+  else if (datum(zurueck.live) !== datum(zurueck.text)) befunde.push(`Live-Region nennt nach erneutem Überfahren nicht das Datum des Tooltips (${datum(zurueck.live) || '—'} statt ${datum(zurueck.text)})`);
+  if (!prozent(zurueck.text) || !liveProzent(zurueck.live)) befunde.push(`Prozentwert nach erneutem Überfahren nicht lesbar (Tooltip «${zurueck.text}», Live «${zurueck.live}»)`);
+  else if (liveProzent(zurueck.live) !== prozent(zurueck.text)) befunde.push(`Live-Region nennt nach erneutem Überfahren nicht den Prozentwert des Tooltips (${liveProzent(zurueck.live)} statt ${prozent(zurueck.text)})`);
   return befunde;
 }
 
