@@ -154,7 +154,8 @@ mit sichtbarem Fokusring,
 Pfeiltasten, Home/Ende,
 aria-label nennt Pfeiltasten, Home und Ende, Start/Tief/Hoch/Ende stimmen mit
 der Fusszeile überein, genau eine Live-Region je Kurve,
-die visuell verborgen bleibt und role=status sowie aria-live=polite trägt).
+die visuell verborgen bleibt, role=status sowie aria-live=polite trägt und
+nicht aria-hidden ist).
 Exit-Code 1 bei einem Befund.
 
 Der CI-Job `text250` setzt auf dem `ubuntu-24.04`-Image auf: Chromium wird ohne
