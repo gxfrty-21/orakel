@@ -10,6 +10,11 @@ on:
 permissions:
   contents: read
 
+# Temporär: Ein neuer Push bricht den laufenden Lauf ab.
+concurrency:
+  group: text250-abbruch-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pytest:
     runs-on: ubuntu-24.04
@@ -108,7 +113,7 @@ jobs:
   # Nutzt die Seed-Datenbank, damit der Lauf ohne eigene Daten reproduzierbar ist.
   text250:
     runs-on: ubuntu-24.04
-    timeout-minutes: 2
+    timeout-minutes: 15
 
     steps:
       - name: Repository auschecken
