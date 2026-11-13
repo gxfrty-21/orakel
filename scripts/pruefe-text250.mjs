@@ -230,6 +230,23 @@ async function pruefeKurvenTooltip(page, ansicht, breite) {
     if (!/\d{2}\.\d{2}\.\d{4}/.test(stand.text)) befunde.push(`Tooltip ohne Datum: «${stand.text}»`);
     befunde.push(...lageBefunde(stand));
   }
+
+  // Zeiger vom Chart weg: Anzeige muss verschwinden.
+  await page.mouse.move(1, 1);
+  await page.waitForTimeout(120);
+  const versteckt = await page.evaluate((ansicht) => {
+    const box = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche`);
+    const tipp = box.querySelector('.wfoKurveTipp');
+    const cs = getComputedStyle(tipp);
+    return {
+      sichtbar: cs.visibility === 'visible' && Number(cs.opacity) > 0.9,
+      aktiv: box.classList.contains('an'),
+      inhalt: tipp.innerText.trim(),
+    };
+  }, ansicht);
+  if (versteckt.sichtbar) befunde.push('Tooltip bleibt nach dem Verlassen der Kurve sichtbar');
+  if (versteckt.aktiv) befunde.push('Führungslinie bleibt nach dem Verlassen der Kurve eingeblendet');
+  if (versteckt.inhalt) befunde.push('Tooltip-Inhalt bleibt nach dem Verlassen der Kurve stehen');
   return befunde;
 }
 
