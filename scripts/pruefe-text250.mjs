@@ -254,6 +254,29 @@ async function pruefeKurvenTooltip(page, ansicht, breite) {
   return befunde;
 }
 
+/** Die Live-Region muss für Screenreader da, aber visuell verborgen sein. */
+async function pruefeLiveVerborgen(page, ansicht) {
+  const stand = await page.evaluate((ansicht) => {
+    const live = document.querySelector(`#v-${ansicht} .wfoKurveLive`);
+    const cs = getComputedStyle(live);
+    const r = live.getBoundingClientRect();
+    return {
+      text: live.textContent.trim(),
+      breite: r.width,
+      hoehe: r.height,
+      display: cs.display,
+      visibility: cs.visibility,
+      overflow: cs.overflow,
+    };
+  }, ansicht);
+  const befunde = [];
+  if (!/USD\s/.test(stand.text)) befunde.push('Live-Region ist beim Fokus nicht gefüllt');
+  if (stand.display === 'none' || stand.visibility === 'hidden') befunde.push('Live-Region ist auch für Screenreader ausgeblendet');
+  if (stand.breite > 1.5 || stand.hoehe > 1.5) befunde.push(`Live-Region ist sichtbar gross (${Math.round(stand.breite)}×${Math.round(stand.hoehe)} px)`);
+  if (stand.overflow !== 'hidden') befunde.push(`Live-Region schneidet ihren Text nicht ab (overflow: ${stand.overflow})`);
+  return befunde;
+}
+
 /** Tabbt von oben durch die Seite, bis die Kapitalkurve den Fokus hat. */
 async function tabbeZurKurve(page, ansicht) {
   await page.evaluate(() => {
@@ -331,6 +354,7 @@ async function pruefeKurvenTastatur(page, ansicht) {
   if (!/USD\s/.test(stand.live)) befunde.push('Live-Region bleibt beim Fokus leer');
   if (!/\d{2}\.\d{2}\.\d{4}/.test(stand.live)) befunde.push('Live-Region ohne Datum beim Fokus');
   if (stand.liveRolle !== 'status' && stand.liveModus !== 'polite') befunde.push('Live-Region ist nicht als Status/Polite markiert');
+  befunde.push(...await pruefeLiveVerborgen(page, ansicht));
   befunde.push(...lageBefunde(stand));
   const betrag = t => (String(t).match(/USD\s[0-9'’.,]+/) || [''])[0];
   const startZeiger = stand.zeiger;
