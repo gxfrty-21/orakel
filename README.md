@@ -152,7 +152,7 @@ kbd-Tasten. Geprüft wird die Tastaturbedienung
 (Durchtabben von oben bis zur Kurve, Shift+Tab zurück, Tab zum nächsten Element,
 Pfeiltasten, Home/Ende,
 aria-label nennt Pfeiltasten, Home und Ende, genau eine Live-Region je Kurve,
-die visuell verborgen bleibt).
+die visuell verborgen bleibt und role=status sowie aria-live=polite trägt).
 Exit-Code 1 bei einem Befund.
 
 Der CI-Job `text250` setzt auf dem `ubuntu-24.04`-Image auf: Chromium wird ohne

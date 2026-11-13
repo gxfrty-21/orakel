@@ -290,8 +290,14 @@ async function pruefeLiveRegionen(page) {
       const anzahl = flaeche.querySelectorAll('.wfoKurveLive').length;
       if (anzahl !== 1) befunde.push(`Kapitalkurve ${i + 1} hat ${anzahl} Live-Regionen statt einer`);
     });
-    const gesamt = document.querySelectorAll('.wfoKurveLive').length;
-    if (gesamt !== flaechen.length) befunde.push(`${gesamt} Live-Regionen für ${flaechen.length} Kapitalkurven`);
+    const alle = [...document.querySelectorAll('.wfoKurveLive')];
+    if (alle.length !== flaechen.length) befunde.push(`${alle.length} Live-Regionen für ${flaechen.length} Kapitalkurven`);
+    alle.forEach((live, i) => {
+      const rolle = live.getAttribute('role');
+      const modus = live.getAttribute('aria-live');
+      if (rolle !== 'status') befunde.push(`Live-Region ${i + 1} hat role="${rolle || '—'}" statt "status"`);
+      if (modus !== 'polite') befunde.push(`Live-Region ${i + 1} hat aria-live="${modus || '—'}" statt "polite"`);
+    });
     return befunde;
   });
 }
@@ -399,8 +405,6 @@ async function pruefeKurvenTastatur(page, ansicht) {
       sichtbar: cs.visibility === 'visible' && Number(cs.opacity) > 0.9,
       text: tipp.innerText.replace(/\s+/g, ' ').trim(),
       live: live.textContent.trim(),
-      liveRolle: live.getAttribute('role'),
-      liveModus: live.getAttribute('aria-live'),
       zeiger: zeiger.getAttribute('x1'),
       scrollY: Math.round(scrollY),
       links: tr.left, rechts: tr.right, oben: tr.top, unten: tr.bottom,
@@ -424,7 +428,6 @@ async function pruefeKurvenTastatur(page, ansicht) {
   if (!/USD\s/.test(stand.text) || !/\d{2}\.\d{2}\.\d{4}/.test(stand.text)) befunde.push(`Tooltip beim Fokus unvollständig: «${stand.text}»`);
   if (!/USD\s/.test(stand.live)) befunde.push('Live-Region bleibt beim Fokus leer');
   if (!/\d{2}\.\d{2}\.\d{4}/.test(stand.live)) befunde.push('Live-Region ohne Datum beim Fokus');
-  if (stand.liveRolle !== 'status' && stand.liveModus !== 'polite') befunde.push('Live-Region ist nicht als Status/Polite markiert');
   befunde.push(...await pruefeKurvenHinweis(page, ansicht));
   befunde.push(...await pruefeLiveVerborgen(page, ansicht));
   befunde.push(...lageBefunde(stand));
