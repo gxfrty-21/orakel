@@ -931,6 +931,7 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 .wfoKurveFuss{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:8px;font-size:12px;color:var(--muted)}
 .wfoKurveFuss b{font-family:var(--mono);font-weight:400;color:var(--fg)}
 .wfoKurveFuss b.up{color:var(--good)}.wfoKurveFuss b.dn{color:var(--bad)}
+.wfoKurveHinweis{margin-top:5px;font-size:11px;color:var(--dim)}
 @media (max-width:620px){
   .wfoKurve{padding:10px 12px 8px}
   .wfoKurve svg{height:8.5em}

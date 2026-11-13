@@ -301,7 +301,8 @@ function kapitalKurveBlock(o){
     <div class="wfoKurveFuss">
       <span>Start <b>USD ${num(start,0)}</b></span><span>Tief <b>USD ${num(tief,0)}</b></span>
       <span>Hoch <b>USD ${num(hoch,0)}</b></span><span>Ende <b class="${cls(ende-start)}">USD ${num(ende,0)}</b></span>
-    </div></div>`;
+    </div>
+    <div class="wfoKurveHinweis" aria-hidden="true">Mit ← → Datenpunkte ablesen</div></div>`;
 }
 
 /* Einzelne Walk-Forward-Fenster eines Kandidaten, aufklappbar. */
