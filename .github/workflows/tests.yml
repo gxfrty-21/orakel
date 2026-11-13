@@ -155,7 +155,7 @@ jobs:
           mkdir -p artifacts/text250
           cp seed/orakel-seed.db /tmp/orakel-text250.db
           ORAKEL_DB_PFAD=/tmp/orakel-text250.db \
-            python -m orakel serve --host 127.0.0.1 --port 3000 > artifacts/text250/server.log 2>&1 &
+            python -c 'import sys; sys.stderr.write("Startfehler simuliert: Dashboard startet nicht\n"); sys.exit(3)' > artifacts/text250/server.log 2>&1 &
           server=$!
           trap 'kill "$server" 2>/dev/null || true' EXIT
 
