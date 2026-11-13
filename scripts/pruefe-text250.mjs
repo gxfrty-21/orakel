@@ -597,6 +597,12 @@ async function pruefeKurvenTastatur(page, ansicht) {
     const schritt = Math.max(1, Math.ceil(roh.length / 240));
     const punkte = roh.filter((_, i) => i % schritt === 0);
     if (punkte.length && punkte[punkte.length - 1] !== roh[roh.length - 1]) punkte.push(roh[roh.length - 1]);
+    const gezeichnet = await page.evaluate((ansicht) => {
+      const verlauf = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche polyline`);
+      const points = verlauf?.getAttribute('points')?.trim() || '';
+      return points ? points.split(/\s+/).length : 0;
+    }, ansicht);
+    if (gezeichnet !== punkte.length) befunde.push(`Kurve zeichnet ${gezeichnet} Punkte, die API-Ausdünnung ergibt ${punkte.length}`);
     const werte = punkte.map(p => Number(p[1]));
     if (werte.length < 2) {
       befunde.push('Extremwerte der API-Punkte liessen sich nicht ermitteln');
