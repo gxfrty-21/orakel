@@ -76,7 +76,7 @@ Unter Windows zusätzlich `pip install MetaTrader5` (nur dort verfügbar) und in
 | Fakten-Datenbank (SQLite) | Kerzen, Validierungen, Trades, Entscheide, Ereignisse, Konto, Agentenläufe, Konferenzen |
 | Datenprüfung | Lücken, Doppelungen, unmögliche Hoch/Tief, Preissprünge, Mindestmenge |
 | Backtest | Kerze für Kerze, Ausführung zur Folge-Eröffnung, ATR-Stop, Gaps, Kommission, Slippage |
-| Richter | Training/Out-of-Sample, Walk-Forward, Monte-Carlo, Nachbar-Parameter, Zufallsvergleich |
+| Richter | Rollierende Walk-Forward-Fenster, versiegelter Holdout, Monte-Carlo, Nachbar-Parameter, Zufallsvergleich |
 | Risiko | 1 % je Trade bis Stop, 10 % Not-Stop, max. 15 Positionen, Engagement, Bargeld, Korrelation |
 | Broker-Schicht | `CsvBroker` (Paper-Replay), `MockBroker`, `MT5Broker` (Windows, Paper-Sperre) |
 | Agenten | 80 bestehende Agenten in 8 Abteilungen, jeder mit echter Aufgabe und Ergebnis in der DB |
@@ -85,6 +85,8 @@ Unter Windows zusätzlich `pip install MetaTrader5` (nur dort verfügbar) und in
 | Wissenszentrum | Obsidian-Vault mit Frontmatter, Tags, `[[Links]]` |
 | Dashboard | Orakel-Design, 12 Ansichten, Live-Polling, 2D-Raumschiff, «Lauf starten» |
 | Dauerbetrieb | persistenter Plan, Backoff, Ressourcenlimits, Jobprotokoll und Betriebsansicht |
+
+Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswahl einmal geöffnet; scheitert er, gibt es keinen Ersatzkandidaten.
 
 ## Risikogrenzen (deine Vorgaben)
 

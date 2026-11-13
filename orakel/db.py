@@ -572,6 +572,10 @@ class Facts:
                 (symbol, schluessel, validierung_id, jetzt()),
             )
 
+    def auswahl_loeschen(self, symbol: str) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM auswahl WHERE symbol=?", (symbol,))
+
     def auswahl(self) -> list[sqlite3.Row]:
         with self.conn() as c:
             return list(c.execute("SELECT * FROM auswahl ORDER BY symbol"))

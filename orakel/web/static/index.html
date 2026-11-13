@@ -62,7 +62,7 @@
     </section>
 
     <section class="view" id="v-lab" hidden>
-      <div class="head"><div><h1>Lab</h1><p class="sub">Jede Strategie wird auf denselben Kerzen geprüft: Trainingsteil, ungesehener Teil, Walk-Forward, Monte-Carlo, Nachbar-Parameter und Zufallsvergleich. Bestanden hat nur, wer alle Regeln erfüllt.</p></div>
+      <div class="head"><div><h1>Lab</h1><p class="sub">Jede Strategie wird auf denselben Kerzen geprüft: rollierende Walk-Forward-Fenster, ein versiegelter Holdout, Monte-Carlo, Nachbar-Parameter und Zufallsvergleich. Der Holdout wird nur für den besten Kandidaten je Symbol einmal geöffnet. Bestanden hat nur, wer alle Regeln erfüllt.</p></div>
         <div class="tabs" id="labTabs">
           <button class="tab on" data-f="all">Alle</button>
           <button class="tab" data-f="bestanden">Bestanden</button>
@@ -399,7 +399,7 @@
   </main>
 </div>
 <script src="/static/vaultgraph.js?v=17"></script>
-<script src="/static/app.js?v=131"></script>
+<script src="/static/app.js?v=132"></script>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>
 </html>

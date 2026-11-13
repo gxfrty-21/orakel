@@ -39,17 +39,22 @@ max_sprung_pct = 25.0
 max_alter_tage = 5
 
 [validierung]
+# Rollierend: festes Trainingsfenster, mehrere nicht überlappende Testfenster.
 train_anteil = 0.7
-walk_forward_fenster = 3
+walk_forward_fenster = 5
+holdout_anteil = 0.15
+min_fold_bars = 50
+min_fold_profitabel = 0.6
+min_train_trades = 5
+min_walk_forward_trades = 25
+min_holdout_trades = 10
 monte_carlo_laeufe = 300
 zufallslaeufe = 20
-min_trades = 25
 min_profit_factor = 1.15
 min_sharpe = 0.3
 max_drawdown_oos_pct = 10.0
 min_robustheit = 0.5
 max_zufall_p = 0.10
-max_kandidaten = 12
 
 [research]
 # Parameter-Raster: nur hier freigegebene Bausteine. Keine KI erfindet Parameter.
