@@ -214,3 +214,5 @@ Zwei neue Ansichten im Dashboard, vollständig aus echten Daten:
   erst über MT5 auf deinem Windows-Rechner.
 
 <!-- Cache-Messung, wird nicht gemergt. -->
+
+<!-- zweite Messung -->
