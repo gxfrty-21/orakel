@@ -136,6 +136,7 @@ jobs:
       # Der Schlüssel hängt an der Playwright-Version im Lockfile: Ändert sie
       # sich, wird der Browser neu geladen statt einen alten Cache zu nutzen.
       - name: Playwright-Browser cachen
+        if: ${{ false }}
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
