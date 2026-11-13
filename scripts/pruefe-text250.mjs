@@ -669,7 +669,7 @@ async function pruefeKurvenTastatur(page, ansicht) {
   if (ariaStart && tippStart && ariaStart !== tippStart) befunde.push(`aria-label Start USD ${ariaStart} stimmt nicht mit Tooltip bei Home (USD ${tippStart}) überein`);
   if (ariaEnde && tippEnde && ariaEnde !== tippEnde) befunde.push(`aria-label Ende USD ${ariaEnde} stimmt nicht mit Tooltip bei Ende (USD ${tippEnde}) überein`);
 
-  // Start, Mitte und Ende inhaltlich gegen die ausgedünnten API-Zeitstempel prüfen.
+  // Start, Viertel, Mitte, Dreiviertel und Ende gegen die API-Zeitstempel prüfen.
   if (apiPunkte.length >= 2) {
     const apiDatum = t => String(t || '').slice(0, 10).split('-').reverse().join('.');
     const apiWert = p => Math.round(Number(p[1]));
@@ -681,15 +681,22 @@ async function pruefeKurvenTastatur(page, ansicht) {
     };
     pruefeApi('Startpunkt', anfang.text, apiPunkte[0]);
     pruefeApi('Endpunkt', ende.text, apiPunkte[apiPunkte.length - 1]);
-    const mitte = Math.floor(apiPunkte.length / 2);
+    const n = apiPunkte.length - 1;
+    const proben = [
+      ['Viertelpunkt', Math.floor(n * 0.25)],
+      ['Mittelpunkt', Math.floor(n / 2)],
+      ['Dreiviertelpunkt', Math.floor(n * 0.75)],
+    ];
     const kasten = await svg.boundingBox();
     if (!kasten) {
-      befunde.push('Kurve für den Mittelpunkt nicht sichtbar');
+      befunde.push('Kurve für die Stichprobenpunkte nicht sichtbar');
     } else {
-      await page.mouse.move(kasten.x + kasten.width * (mitte / (apiPunkte.length - 1)), kasten.y + kasten.height / 2);
-      await page.waitForTimeout(120);
-      const mitteStand = await lese();
-      pruefeApi('Mittelpunkt', mitteStand.text, apiPunkte[mitte]);
+      for (const [name, index] of proben) {
+        await page.mouse.move(kasten.x + kasten.width * (index / n), kasten.y + kasten.height / 2);
+        await page.waitForTimeout(120);
+        const stand = await lese();
+        pruefeApi(name, stand.text, apiPunkte[index]);
+      }
     }
   }
 
