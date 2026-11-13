@@ -334,6 +334,14 @@ async function pruefeLiveRegionen(page) {
         el = el.parentElement;
       }
       if (versteckt) befunde.push(`Live-Region ${i + 1} ist aria-hidden${versteckt === live ? '' : ` (über ${versteckt.tagName.toLowerCase()})`}`);
+      const beschreibe = e => `${e.tagName.toLowerCase()}${e.id ? '#' + e.id : ''}${e.classList.length ? '.' + [...e.classList].slice(0, 2).join('.') : ''}`;
+      let vorfahr = live.parentElement;
+      while (vorfahr) {
+        const cs = getComputedStyle(vorfahr);
+        if (cs.display === 'none') { befunde.push(`Live-Region ${i + 1} liegt in einem display:none-Vorfahren (${beschreibe(vorfahr)})`); break; }
+        if (cs.visibility === 'hidden') { befunde.push(`Live-Region ${i + 1} liegt in einem visibility:hidden-Vorfahren (${beschreibe(vorfahr)})`); break; }
+        vorfahr = vorfahr.parentElement;
+      }
     });
     return befunde;
   });
