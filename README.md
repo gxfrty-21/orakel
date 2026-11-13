@@ -160,7 +160,10 @@ Exit-Code 1 bei einem Befund.
 Der CI-Job `text250` setzt auf dem `ubuntu-24.04`-Image auf: Chromium wird ohne
 `--with-deps` installiert, die nötigen Systembibliotheken kommen aus dem Image.
 Auch ein leerer Playwright-Cache funktioniert; der Browser wird dann frisch
-geladen.
+geladen. Installation und Prüflauf haben je ein Step-Timeout von 5 Minuten; das
+Job-Limit liegt bei 15 Minuten. Serverlog und Screenshots lädt der Job auch bei
+Fehlschlag, Abbruch oder Timeout hoch und bewahrt sie 7 Tage auf. Screenshots
+entstehen nur bei Befunden.
 
 ```bash
 # Dashboard mit Beispieldaten starten, ohne die eigene DB anzufassen
