@@ -250,7 +250,38 @@ async function pruefeKurvenTooltip(page, ansicht, breite) {
   return befunde;
 }
 
-/** Fokussiert die Kurve und prüft Pfeiltasten, Home/Ende und die Live-Region. */
+/** Tabbt von oben durch die Seite, bis die Kapitalkurve den Fokus hat. */
+async function tabbeZurKurve(page, ansicht) {
+  await page.evaluate(() => {
+    if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+    window.scrollTo(0, 0);
+  });
+  await page.waitForTimeout(80);
+  const grenze = 160;
+  let schritte = 0;
+  let letzter = '';
+  let wiederholt = 0;
+  for (let i = 0; i < grenze; i++) {
+    await page.keyboard.press('Tab');
+    schritte++;
+    const info = await page.evaluate((ansicht) => {
+      const a = document.activeElement;
+      const box = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche`);
+      const svg = box && box.querySelector('svg');
+      return {
+        kurve: !!svg && a === svg,
+        name: a ? `${a.tagName}${a.className ? '.' + String(a.className).split(' ')[0] : ''}«${(a.innerText || a.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 30)}»` : 'nichts',
+      };
+    }, ansicht);
+    if (info.kurve) return { erreicht: true, schritte, letzter: info.name };
+    if (info.name === letzter) wiederholt++; else wiederholt = 0;
+    letzter = info.name;
+    if (wiederholt >= 3) break;
+  }
+  return { erreicht: false, schritte, letzter };
+}
+
+/** Tabbt zur Kurve und prüft Pfeiltasten, Home/Ende und die Live-Region. */
 async function pruefeKurvenTastatur(page, ansicht) {
   const svg = page.locator(`#v-${ansicht} .wfoKurveFlaeche svg`);
   if (!(await svg.count())) return null;
@@ -282,7 +313,11 @@ async function pruefeKurvenTastatur(page, ansicht) {
     };
   }, ansicht);
 
-  await svg.evaluate(el => el.focus());
+  const tab = await tabbeZurKurve(page, ansicht);
+  if (!tab.erreicht) {
+    befunde.push(`Kapitalkurve nach ${tab.schritte} Tab-Schritten nicht erreicht (zuletzt: ${tab.letzter})`);
+    await svg.evaluate(el => el.focus());
+  }
   await page.waitForTimeout(100);
   let stand = await lese();
   if (!stand.fokussierbar) befunde.push('Kurve ist nicht per Tab erreichbar (tabindex fehlt)');
