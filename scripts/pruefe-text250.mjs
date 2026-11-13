@@ -558,32 +558,39 @@ async function pruefeKurvenTastatur(page, ansicht) {
   if (ende.scrollY !== scrollStart) befunde.push(`Ende scrollt die Seite (${scrollStart} → ${ende.scrollY})`);
   befunde.push(...lageBefunde(ende));
 
-  // Alle Punkte von Ende rückwärts ablesen und die echten Extremwerte bestimmen.
-  const werte = [];
-  const endeZahl = betragZahl(ende.live) || betragZahl(ende.text);
-  if (endeZahl) werte.push(alsZahl(endeZahl));
-  let letzterZeiger = ende.zeiger;
-  for (let i = 0; i < 260; i++) {
-    await page.keyboard.press('ArrowLeft');
-    const s = await page.evaluate((ansicht) => {
-      const box = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche`);
-      return {
-        zeiger: box.querySelector('.wfoKurveZeiger').getAttribute('x1'),
-        live: box.querySelector('.wfoKurveLive').textContent.trim(),
-      };
-    }, ansicht);
-    if (s.zeiger === letzterZeiger) break;
-    letzterZeiger = s.zeiger;
-    const w = betragZahl(s.live);
-    if (w) werte.push(alsZahl(w));
-  }
-  if (werte.length < 2) {
-    befunde.push('Extremwerte der Kurvenpunkte liessen sich nicht ermitteln');
+  // Extremwerte direkt aus den API-Daten des gewählten Kandidaten bestimmen.
+  const api = await page.evaluate(async () => {
+    const antwort = await fetch('/api/report');
+    const bericht = antwort.ok ? await antwort.json() : null;
+    const li = document.querySelector('#labList .li.on');
+    return {
+      ok: Boolean(bericht),
+      status: antwort.status,
+      validierungen: bericht?.validierungen || [],
+      name: li?.querySelector('b')?.textContent.trim() || '',
+      parameter: li?.querySelector('small')?.textContent.trim() || '',
+    };
+  });
+  const parameterText = p => Object.entries(p || {}).map(([a, b]) => `${a}=${b}`).join(', ');
+  const kandidat = api.validierungen.find(c => `${c.symbol} · ${c.strategie}` === api.name && parameterText(c.parameter) === api.parameter);
+  if (!api.ok) {
+    befunde.push(`API-Daten für die Extremwerte nicht lesbar (HTTP ${api.status})`);
+  } else if (!kandidat) {
+    befunde.push(`Gewählter Kandidat «${api.name}» nicht in den API-Daten gefunden`);
   } else {
-    const tief = ariaWert('Tief'), hoch = ariaWert('Hoch');
-    const tiefWert = Math.min(...werte), hochWert = Math.max(...werte);
-    if (tief && Number(tief.replace(/['’]/g, '')) !== tiefWert) befunde.push(`aria-label Tief USD ${tief} stimmt nicht mit dem Minimum der Punkte (USD ${tiefWert}) überein`);
-    if (hoch && Number(hoch.replace(/['’]/g, '')) !== hochWert) befunde.push(`aria-label Hoch USD ${hoch} stimmt nicht mit dem Maximum der Punkte (USD ${hochWert}) überein`);
+    const roh = (kandidat.kapitalkurve || []).filter(p => Array.isArray(p) && Number.isFinite(Number(p[1])));
+    const schritt = Math.max(1, Math.ceil(roh.length / 240));
+    const punkte = roh.filter((_, i) => i % schritt === 0);
+    if (punkte.length && punkte[punkte.length - 1] !== roh[roh.length - 1]) punkte.push(roh[roh.length - 1]);
+    const werte = punkte.map(p => Number(p[1]));
+    if (werte.length < 2) {
+      befunde.push('Extremwerte der API-Punkte liessen sich nicht ermitteln');
+    } else {
+      const tief = ariaWert('Tief'), hoch = ariaWert('Hoch');
+      const tiefWert = Math.round(Math.min(...werte)), hochWert = Math.round(Math.max(...werte));
+      if (tief && alsZahl(tief) !== tiefWert) befunde.push(`aria-label Tief USD ${tief} stimmt nicht mit dem Minimum der API-Punkte (USD ${tiefWert}) überein`);
+      if (hoch && alsZahl(hoch) !== hochWert) befunde.push(`aria-label Hoch USD ${hoch} stimmt nicht mit dem Maximum der API-Punkte (USD ${hochWert}) überein`);
+    }
   }
 
   await page.keyboard.press('Home');
