@@ -170,6 +170,57 @@ async function stresseTabellen(page, ansicht, breite) {
   }, { ansicht, breite, langesLabel: LANGES_LABEL });
 }
 
+/** Wählt im Lab einen Kandidaten, der eine Kapitalkurve zeigt. */
+async function waehleKurvenKandidat(page) {
+  const kurve = page.locator('#labDetail .wfoKurveFlaeche svg');
+  if (await kurve.count()) return true;
+  const eintraege = page.locator('#labList .li');
+  for (let i = 0, n = await eintraege.count(); i < n; i++) {
+    await eintraege.nth(i).click();
+    await page.waitForTimeout(120);
+    if (await kurve.count()) return true;
+  }
+  return false;
+}
+
+/** Überfährt die Kapitalkurve und prüft den Tooltip samt Lage im Kasten. */
+async function pruefeKurvenTooltip(page, ansicht, breite) {
+  const svg = page.locator(`#v-${ansicht} .wfoKurveFlaeche svg`);
+  if (!(await svg.count())) return null;
+  await svg.scrollIntoViewIfNeeded();
+  const r = await svg.boundingBox();
+  if (!r || !r.width) return ['Kurve hat keine sichtbare Fläche'];
+  const befunde = [];
+  for (const anteil of [0.5, 0.98]) {
+    await page.mouse.move(r.x + r.width * anteil, r.y + r.height / 2);
+    await page.waitForTimeout(120);
+    const stand = await page.evaluate((ansicht) => {
+      const box = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche`);
+      const tipp = box.querySelector('.wfoKurveTipp');
+      const cs = getComputedStyle(tipp);
+      const tr = tipp.getBoundingClientRect();
+      const br = box.getBoundingClientRect();
+      return {
+        sichtbar: cs.visibility === 'visible' && Number(cs.opacity) > 0.9,
+        text: tipp.innerText.replace(/\s+/g, ' ').trim(),
+        links: tr.left, rechts: tr.right,
+        kastenLinks: br.left, kastenRechts: br.right,
+      };
+    }, ansicht);
+    const bei = Math.round(anteil * 100);
+    if (!stand.sichtbar) befunde.push(`Tooltip erscheint bei ${bei} % der Breite nicht`);
+    if (!/USD\s/.test(stand.text)) befunde.push(`Tooltip ohne Kapitalstand: «${stand.text}»`);
+    if (!/\d{2}\.\d{2}\.\d{4}/.test(stand.text)) befunde.push(`Tooltip ohne Datum: «${stand.text}»`);
+    if (stand.links < stand.kastenLinks - 1 || stand.rechts > stand.kastenRechts + 1) {
+      befunde.push(`Tooltip läuft aus dem Kasten (${Math.round(stand.links)}–${Math.round(stand.rechts)} statt ${Math.round(stand.kastenLinks)}–${Math.round(stand.kastenRechts)})`);
+    }
+    if (stand.links < -1 || stand.rechts > breite + 1) {
+      befunde.push(`Tooltip läuft aus dem Viewport (${Math.round(stand.links)}–${Math.round(stand.rechts)} bei ${breite}px)`);
+    }
+  }
+  return befunde;
+}
+
 /** Die Zoom-Knöpfe dürfen ihre Symbole nicht abschneiden. */
 async function pruefeZoom(page, ansicht) {
   return page.evaluate((ansicht) => {
@@ -192,7 +243,8 @@ async function main() {
 
   const browser = await chromium.launch({ headless: true });
   const fehler = [];
-  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0;
+  const hinweise = new Set();
+  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0;
 
   try {
     for (const breite of opt.breiten) {
@@ -208,6 +260,8 @@ async function main() {
       for (const ansicht of opt.ansichten) {
         await page.click(`.nav[data-v="${ansicht}"]`);
         await page.waitForTimeout(WARTEZEIT[ansicht]);
+        let kurveGefunden = null;
+        if (ansicht === 'lab') kurveGefunden = await waehleKurvenKandidat(page);
         await skaliere(page, 2.5);
         await page.waitForTimeout(150);
 
@@ -215,6 +269,16 @@ async function main() {
         const ansichtBefund = await messeAnsicht(page, ansicht, breite);
         if (!ansichtBefund.gerendert) ansichtBefund.befunde.push('Ansicht wurde nicht gerendert');
         for (const text of ansichtBefund.befunde) fehler.push(`${breite}px/${ansicht}: ${text}`);
+
+        if (ansicht === 'lab') {
+          if (kurveGefunden) {
+            const kurvenBefunde = await pruefeKurvenTooltip(page, ansicht, breite);
+            tooltipGesamt++;
+            for (const text of kurvenBefunde || []) fehler.push(`${breite}px/${ansicht}: ${text}`);
+          } else {
+            hinweise.add('Keine Kapitalkurve im Lab gefunden – Tooltip nicht geprüft.');
+          }
+        }
 
         if (opt.tabellen) {
           const tabellenBefund = await stresseTabellen(page, ansicht, breite);
@@ -237,13 +301,15 @@ async function main() {
     await browser.close();
   }
 
+  for (const text of hinweise) console.warn(`Hinweis: ${text}`);
+
   if (fehler.length) {
     console.error(`\nBefunde: ${fehler.length}`);
     for (const zeile of fehler.slice(0, 120)) console.error(`  ✗ ${zeile}`);
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  console.log(`OK: keine Überläufe${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {

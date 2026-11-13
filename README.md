@@ -144,7 +144,8 @@ tests/           Risiko, Backtest, Daten, Bericht
 (Faktor 2,5 auf berechnete Schriftgrössen und Zeilenhöhen). Bei 360, 320 und
 280 px prüft es, ob Inhalte seitlich aus ihrem Kasten oder aus dem Viewport
 laufen. Tabellen werden zusätzlich mit langen deutschen Komposita belastet und
-als Karten geprüft. Exit-Code 1 bei einem Befund.
+als Karten geprüft. Im Lab überfährt er ausserdem die Kapitalkurve und prüft
+den Tooltip (Kapitalstand, Datum, Lage im Kasten). Exit-Code 1 bei einem Befund.
 
 ```bash
 # Dashboard mit Beispieldaten starten, ohne die eigene DB anzufassen
