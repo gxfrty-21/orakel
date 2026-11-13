@@ -619,6 +619,7 @@ async function pruefeKurvenTastatur(page, ansicht) {
   const nach = await lese();
   if (nach.sichtbar) befunde.push('Tooltip bleibt nach dem Verlassen sichtbar');
   if (nach.live) befunde.push('Live-Region bleibt nach dem Verlassen gefüllt');
+  if (nach.ring) befunde.push(`Fokusring der Kapitalkurve bleibt nach dem Verlassen sichtbar (outline ${nach.outline})`);
   return befunde;
 }
 
