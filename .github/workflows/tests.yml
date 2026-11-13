@@ -152,9 +152,10 @@ jobs:
       - name: Dashboard starten und 250-%-Prüflauf ausführen
         run: |
           set -euo pipefail
+          mkdir -p artifacts/text250
           cp seed/orakel-seed.db /tmp/orakel-text250.db
           ORAKEL_DB_PFAD=/tmp/orakel-text250.db \
-            python -m orakel serve --host 127.0.0.1 --port 3000 > /tmp/orakel-text250.log 2>&1 &
+            python -m orakel serve --host 127.0.0.1 --port 3000 > artifacts/text250/server.log 2>&1 &
           server=$!
           trap 'kill "$server" 2>/dev/null || true' EXIT
 
@@ -169,13 +170,13 @@ jobs:
           done
           if [ "$bereit" -ne 1 ]; then
             echo "Dashboard wurde nicht bereit"
-            cat /tmp/orakel-text250.log
+            cat artifacts/text250/server.log
             exit 1
           fi
 
           if ! node scripts/pruefe-text250.mjs --bilder artifacts/text250; then
             echo "--- Serverprotokoll ---"
-            tail -50 /tmp/orakel-text250.log
+            tail -50 artifacts/text250/server.log
             exit 1
           fi
 
@@ -185,6 +186,15 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: text250-screenshots
-          path: artifacts/text250
+          path: artifacts/text250/*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Serverprotokoll bei Fehlschlag hochladen
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: text250-serverlog
+          path: artifacts/text250/server.log
           if-no-files-found: ignore
           retention-days: 7
