@@ -108,7 +108,7 @@ jobs:
   # Nutzt die Seed-Datenbank, damit der Lauf ohne eigene Daten reproduzierbar ist.
   text250:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 2
 
     steps:
       - name: Repository auschecken
@@ -181,6 +181,9 @@ jobs:
             tail -50 artifacts/text250/server.log
             exit 1
           fi
+
+          # Temporär: hält den Job bis zum Timeout/Abbruch am Leben.
+          sleep 240
 
       # Auch bei Abbruch oder Timeout: Der Job gilt dann als abgebrochen.
       - name: Screenshots bei Fehlschlag hochladen
