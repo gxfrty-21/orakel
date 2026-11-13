@@ -211,7 +211,12 @@ function drahteKapitalKurve(){
     }
     const tag = document.createElement('span');
     tag.textContent = datum(p.t);
-    tipp.replaceChildren(zeile, tag);
+    const hochZeile = document.createElement('span');
+    hochZeile.className = 'wfoKurveHoch';
+    const abstandRoh = p.hoch && Math.abs(p.hoch) > 1e-9 ? (p.v - p.hoch) / p.hoch * 100 : 0;
+    const abstand = Math.round(abstandRoh * 10) / 10 || 0;
+    hochZeile.textContent = `Hoch bis hier USD ${num(p.hoch,0)} · ${abstand < 0 ? num(Math.abs(abstand),1) + ' % darunter' : 'am Hoch'}`;
+    tipp.replaceChildren(zeile, tag, hochZeile);
     box.classList.add('an');
     const breite = tipp.offsetWidth, hoehe = tipp.offsetHeight;
     const links = Math.max(4, Math.min(r.width - breite - 4, xPx - breite / 2));
@@ -220,7 +225,10 @@ function drahteKapitalKurve(){
     tipp.style.left = links + 'px';
     tipp.style.top = Math.max(4, Math.min(r.height - hoehe - 4, oben)) + 'px';
     const richtung = prozent == null ? '' : prozent > 0 ? `, plus ${num(prozent,1)} Prozent seit Start` : prozent < 0 ? `, minus ${num(Math.abs(prozent),1)} Prozent seit Start` : ', unverändert seit Start';
-    live.textContent = `Kapital USD ${num(p.v,0)}${richtung}, ${datum(p.t)}`;
+    const hochText = abstand < 0
+      ? `${num(Math.abs(abstand),1)} Prozent unter dem bisherigen Hoch von USD ${num(p.hoch,0)}`
+      : `am bisherigen Hoch von USD ${num(p.hoch,0)}`;
+    live.textContent = `Kapital USD ${num(p.v,0)}${richtung}, ${datum(p.t)}, ${hochText}`;
   };
   const zeige = ev => {
     const r = svg.getBoundingClientRect();
@@ -258,7 +266,12 @@ function kapitalKurveBlock(o){
   const start = werte[0], ende = werte[werte.length-1];
   const tief = Math.min(...werte), hoch = Math.max(...werte);
   const spanne = Math.max(1e-9, hoch - tief);
-  kapitalKurveDaten = { punkte: punkte.map(p=>({ t: String(p[0] || ''), v: Number(p[1]) })), tief, hoch, spanne, start };
+  let spitze = -Infinity;
+  kapitalKurveDaten = { punkte: punkte.map(p=>{
+    const v = Number(p[1]);
+    spitze = Math.max(spitze, v);
+    return { t: String(p[0] || ''), v, hoch: spitze };
+  }), tief, hoch, spanne, start };
   const B = KURVE_B, H = KURVE_H, RAND = KURVE_RAND;
   const x = i => (i / (punkte.length - 1)) * B;
   const y = w => RAND + (hoch - w) / spanne * (H - 2 * RAND);

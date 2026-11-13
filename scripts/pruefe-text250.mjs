@@ -187,7 +187,8 @@ async function waehleKurvenKandidat(page) {
 async function pruefeKurvenTooltip(page, ansicht, breite) {
   const svg = page.locator(`#v-${ansicht} .wfoKurveFlaeche svg`);
   if (!(await svg.count())) return null;
-  await svg.scrollIntoViewIfNeeded();
+  await svg.evaluate(el => el.scrollIntoView({ block: 'center' }));
+  await page.waitForTimeout(120);
   const r = await svg.boundingBox();
   if (!r || !r.width) return ['Kurve hat keine sichtbare Fläche'];
   const befunde = [];
@@ -203,8 +204,9 @@ async function pruefeKurvenTooltip(page, ansicht, breite) {
       return {
         sichtbar: cs.visibility === 'visible' && Number(cs.opacity) > 0.9,
         text: tipp.innerText.replace(/\s+/g, ' ').trim(),
-        links: tr.left, rechts: tr.right,
-        kastenLinks: br.left, kastenRechts: br.right,
+        links: tr.left, rechts: tr.right, oben: tr.top, unten: tr.bottom,
+        kastenLinks: br.left, kastenRechts: br.right, kastenOben: br.top, kastenUnten: br.bottom,
+        viewportHoehe: innerHeight,
       };
     }, ansicht);
     const bei = Math.round(anteil * 100);
@@ -214,8 +216,11 @@ async function pruefeKurvenTooltip(page, ansicht, breite) {
     if (stand.links < stand.kastenLinks - 1 || stand.rechts > stand.kastenRechts + 1) {
       befunde.push(`Tooltip läuft aus dem Kasten (${Math.round(stand.links)}–${Math.round(stand.rechts)} statt ${Math.round(stand.kastenLinks)}–${Math.round(stand.kastenRechts)})`);
     }
-    if (stand.links < -1 || stand.rechts > breite + 1) {
-      befunde.push(`Tooltip läuft aus dem Viewport (${Math.round(stand.links)}–${Math.round(stand.rechts)} bei ${breite}px)`);
+    if (stand.oben < stand.kastenOben - 1 || stand.unten > stand.kastenUnten + 1) {
+      befunde.push(`Tooltip läuft senkrecht aus dem Kasten (${Math.round(stand.oben)}–${Math.round(stand.unten)} statt ${Math.round(stand.kastenOben)}–${Math.round(stand.kastenUnten)})`);
+    }
+    if (stand.links < -1 || stand.rechts > breite + 1 || stand.oben < -1 || stand.unten > stand.viewportHoehe + 1) {
+      befunde.push(`Tooltip läuft aus dem Viewport (${Math.round(stand.links)}–${Math.round(stand.rechts)} × ${Math.round(stand.oben)}–${Math.round(stand.unten)} bei ${breite}×${stand.viewportHoehe})`);
     }
   }
   return befunde;
