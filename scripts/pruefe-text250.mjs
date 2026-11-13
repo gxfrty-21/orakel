@@ -463,9 +463,7 @@ async function pruefeKurvenTastatur(page, ansicht) {
 
   await svg.evaluate(el => el.focus());
   await page.waitForTimeout(60);
-  await page.keyboard.press('Tab');
-  await page.waitForTimeout(80);
-  const weiter = await page.evaluate((ansicht) => {
+  const leseWeiter = () => page.evaluate((ansicht) => {
     const a = document.activeElement;
     const svg = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche svg`);
     const klasse = a && a.className ? String(a.className.baseVal ?? a.className).split(' ')[0] : '';
@@ -475,8 +473,17 @@ async function pruefeKurvenTastatur(page, ansicht) {
       name: a ? `${a.tagName}${klasse ? '.' + klasse : ''}«${(a.innerText || a.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 30)}»` : 'nichts',
     };
   }, ansicht);
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(80);
+  let weiter = await leseWeiter();
   if (weiter.kurve) befunde.push('Tab bleibt auf der Kapitalkurve');
-  else if (weiter.body) befunde.push('Tab führt von der Kapitalkurve zu keinem nächsten Element');
+  else if (weiter.body) {
+    // Am Ende der Tab-Reihenfolge springt der Browser auf body; der nächste Tab muss weiterführen.
+    await page.keyboard.press('Tab');
+    await page.waitForTimeout(80);
+    weiter = await leseWeiter();
+    if (weiter.kurve || weiter.body) befunde.push('Tab führt von der Kapitalkurve zu keinem nächsten Element');
+  }
 
   await svg.evaluate(el => el.blur());
   await page.waitForTimeout(80);
