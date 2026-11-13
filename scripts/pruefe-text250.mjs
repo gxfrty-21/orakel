@@ -261,11 +261,22 @@ async function pruefeKurvenTooltip(page, ansicht, breite) {
     const cs = getComputedStyle(tipp);
     return {
       sichtbar: cs.visibility === 'visible' && Number(cs.opacity) > 0.9,
+      text: tipp.innerText.replace(/\s+/g, ' ').trim(),
       live: box.querySelector('.wfoKurveLive').textContent.trim(),
     };
   }, ansicht);
+  const betrag = t => {
+    const m = String(t).match(/USD\s([0-9'’]+)/);
+    return m ? `USD ${m[1]}` : '';
+  };
+  const kapital = t => {
+    const m = String(t).match(/Kapital USD\s([0-9'’]+)/);
+    return m ? `USD ${m[1]}` : '';
+  };
   if (!zurueck.sichtbar) befunde.push('Tooltip erscheint nach erneutem Überfahren nicht');
-  if (!/USD\s/.test(zurueck.live)) befunde.push('Live-Region bleibt nach erneutem Überfahren leer');
+  if (!betrag(zurueck.text)) befunde.push('Tooltip nennt nach erneutem Überfahren keinen Kapitalstand');
+  if (!/Kapital USD\s/.test(zurueck.live)) befunde.push('Live-Region bleibt nach erneutem Überfahren ohne Kapitalstand');
+  else if (betrag(zurueck.text) && kapital(zurueck.live) !== betrag(zurueck.text)) befunde.push(`Live-Region nennt nach erneutem Überfahren nicht den Wert des Tooltips («${zurueck.live}» statt «${betrag(zurueck.text)}»)`);
   return befunde;
 }
 
