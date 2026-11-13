@@ -162,7 +162,7 @@ Start/Tief/Hoch/Ende stimmen mit der
 Fusszeile überein, Tief/Hoch auch mit den Extremwerten aus den API-Daten, die
 gezeichnete Punktzahl mit deren Ausdünnung sowie Start, Viertel, Mitte,
 Dreiviertel und Ende mit den API-Zeitstempeln und -Werten, jeweils in Tooltip
-und Live-Region,
+und Live-Region, samt nachgerechnetem Prozentwert ab Start,
 Start/Ende auch mit den Tooltips bei Home/Ende, genau
 eine Live-Region je Kurve,
 die visuell verborgen bleibt, role=status sowie aria-live=polite trägt, nicht
