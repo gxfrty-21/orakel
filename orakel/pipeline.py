@@ -6,7 +6,6 @@ import time
 from dataclasses import replace
 from typing import Any
 
-import numpy as np
 import pandas as pd
 
 from . import agents as agenten
@@ -14,12 +13,12 @@ from .config import Config, RisikoGrenzen, load_config
 from .data import df_aus_db, lade_csv, pruefe_daten, synthetische_kerzen
 from .db import Facts, jetzt
 from .intel import IntelNetz
-from .judge import beurteile
+from .judge import beurteile_walk_forward, pruefe_holdout
 from .knowledge import Vault
 from .markt import korrelation_max, markt_uebersicht
 from .report import baue_bericht, schreibe_bericht
 from .risk import KontoZustand, Order, Risikomanager, positionsgroesse
-from .strategies import atr, kandidaten, strategien
+from .strategies import atr, strategien
 
 SYMBOLE_STANDARD = ["EURUSD", "US500"]
 
@@ -98,45 +97,85 @@ def lauf(
                                            "tagesverlust_pct": 0.0})
         db.ereignis("fehler", "Risiko", "Handelsstopp wegen Datenfehlern")
 
-    # ---------- Research + Richter ----------
-    kandidaten_liste = kandidaten(cfg)
-    max_k = int(cfg["validierung"]["max_kandidaten"])
-    rng = np.random.default_rng(42)
-    if len(kandidaten_liste) > max_k:
-        idx = rng.choice(len(kandidaten_liste), size=max_k, replace=False)
-        kandidaten_liste = [kandidaten_liste[i] for i in sorted(idx)]
-
-    urteil_liste: list[dict[str, Any]] = []
+    # ---------- Research + Richter: rollierender Walk-Forward ----------
+    roh: dict[str, list[tuple[Any, Any]]] = {}
     for symbol in symbole:
         df = daten[symbol]
         if len(df) < int(cfg["daten"]["min_kerzen"]):
             continue
-        for strategie, parameter in kandidaten_liste:
+        for strategie in strategien(cfg).values():
             try:
-                u = beurteile(df, symbol, strategie, parameter, cfg, grenzen)
+                u = beurteile_walk_forward(df, symbol, strategie, cfg, grenzen)
             except Exception as exc:
                 db.ereignis("fehler", "Richter", f"{symbol} {strategie.name}: {exc}")
                 fehler.append(f"{symbol} {strategie.name}: {exc}")
                 continue
+            roh.setdefault(symbol, []).append((u, strategie))
+
+    # Der Holdout wird nur für den besten Walk-Forward-Kandidaten je Symbol geöffnet.
+    beste_urteile: dict[str, Any] = {}
+    for symbol, kandidaten in roh.items():
+        bestanden = [(u, s) for u, s in kandidaten if u.urteil == "bestanden"]
+        if not bestanden:
+            continue
+        bester, strategie = max(
+            bestanden,
+            key=lambda paar: (
+                ((paar[0].out_of_sample or {}).get("profit_factor") or 0.0),
+                ((paar[0].out_of_sample or {}).get("netto") or 0.0),
+            ),
+        )
+        try:
+            pruefe_holdout(bester, daten[symbol], strategie, cfg, grenzen)
+        except Exception as exc:
+            bester.urteil = "abgelehnt"
+            bester.gruende.append(f"Versiegelter Holdout konnte nicht geprüft werden: {exc}")
+            db.ereignis("fehler", "Richter", f"{symbol} Holdout: {exc}")
+            fehler.append(f"{symbol} Holdout: {exc}")
+        if bester.urteil == "bestanden":
+            beste_urteile[symbol] = bester
+        for u, _ in bestanden:
+            if u is bester:
+                continue
+            u.urteil = "abgelehnt"
+            u.gruende.append(
+                "Nicht die beste Walk-Forward-Leistung — der versiegelte Holdout "
+                "wird nur für den besten Kandidaten je Symbol geöffnet."
+            )
+
+    # Ohne neue Freigabe darf keine alte Auswahl weiterlaufen — auch nicht für
+    # Symbole, die mangels Daten gar nicht erst geprüft werden konnten.
+    for symbol in symbole:
+        if symbol not in beste_urteile:
+            db.auswahl_loeschen(symbol)
+
+    urteil_liste: list[dict[str, Any]] = []
+    beste: dict[str, dict[str, Any]] = {}
+    for symbol, liste in roh.items():
+        for u, strategie in liste:
             d = u.als_dict()
             vid = db.validierung_speichern(
-                symbol, strategie.name, u.schluessel, parameter, u.urteil,
+                symbol, strategie.name, u.schluessel, u.parameter, u.urteil,
                 strategie.beschreibung, d, u.trades, lauf=lauf_id,
             )
             d["validierung_id"] = vid
             urteil_liste.append(d)
+            if beste_urteile.get(symbol) is u:
+                beste[symbol] = d
             if u.urteil == "bestanden":
                 db.ereignis("info", "Richter",
-                            f"{symbol} {strategie.name} bestanden (PF ungesehen "
-                            f"{(u.out_of_sample.get('profit_factor') or 0):.2f})")
+                            f"{symbol} {strategie.name} bestanden (PF Walk-Forward "
+                            f"{(u.out_of_sample.get('profit_factor') or 0):.2f}, Holdout "
+                            f"{(u.holdout.get('kennzahlen') or {}).get('profit_factor') or 0:.2f})")
                 vault.notiz(
                     "validierungen", f"{symbol} {strategie.name} {u.schluessel}",
-                    f"**Urteil:** bestanden\n\n**Parameter:** `{parameter}`\n\n"
-                    f"**Profit Factor ungesehen:** {u.out_of_sample.get('profit_factor')}\n\n"
-                    f"**Drawdown ungesehen:** {u.out_of_sample.get('max_drawdown_pct')} %\n\n"
-                    f"**Trades:** {len(u.trades)}\n\n**Zeit im Markt:** "
+                    f"**Urteil:** bestanden\n\n**Parameter:** `{u.parameter}`\n\n"
+                    f"**Walk-Forward-Fenster:** {u.walk_forward_bestanden * 100:.0f} % profitabel\n\n"
+                    f"**Profit Factor Walk-Forward:** {u.out_of_sample.get('profit_factor')}\n\n"
+                    f"**Profit Factor Holdout:** {(u.holdout.get('kennzahlen') or {}).get('profit_factor')}\n\n"
+                    f"**Trades Walk-Forward:** {len(u.trades)}\n\n**Zeit im Markt:** "
                     f"{u.gesamt.get('zeit_im_markt_pct')} %",
-                    tags=["validierung", "bestanden", symbol.lower(), strategie.name],
+                    tags=["validierung", "bestanden", symbol.lower(), strategie.name, "holdout"],
                 )
             elif u.urteil == "abgelehnt":
                 vault.notiz(
@@ -145,15 +184,6 @@ def lauf(
                     tags=["validierung", "abgelehnt", symbol.lower(), strategie.name],
                 )
 
-    # ---------- Auswahl ----------
-    beste: dict[str, dict[str, Any]] = {}
-    for d in urteil_liste:
-        if d["urteil"] != "bestanden":
-            continue
-        pf = (d.get("out_of_sample") or {}).get("profit_factor") or 0.0
-        if d["symbol"] not in beste or pf > ((beste[d["symbol"]].get("out_of_sample") or {})
-                                             .get("profit_factor") or 0.0):
-            beste[d["symbol"]] = d
     for symbol, d in beste.items():
         db.auswahl_setzen(symbol, d["schluessel"], int(d["validierung_id"]))
 

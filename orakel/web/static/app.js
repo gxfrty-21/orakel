@@ -158,8 +158,9 @@ document.querySelector('#labTabs').onclick = e => {
 };
 function renderLab(){
   const v = R.validierungen||[], selbst = u => `<span class="pill ${u==='bestanden'?'':u==='abgelehnt'?'r':'g'}">${esc(u).toUpperCase()}</span>`;
-  $('#labKpis').innerHTML = [['Geprüft',v.length,'Kandidaten'],['Bestanden',v.filter(x=>x.urteil==='bestanden').length,'alle Regeln erfüllt'],
-    ['Abgelehnt',v.filter(x=>x.urteil==='abgelehnt').length,'mit Begründung'],['Zu wenig Daten',v.filter(x=>x.urteil==='zu wenig Daten').length,'nicht bewertbar']]
+  $('#labKpis').innerHTML = [['Geprüft',v.length,'Kandidaten'],['Bestanden',v.filter(x=>x.urteil==='bestanden').length,'alle Regeln inkl. Holdout'],
+    ['Holdout',`${v.filter(x=>x.holdout_bestanden===true).length} / ${v.filter(x=>x.holdout_bestanden!=null).length}`,'nur bester Kandidat je Symbol'],
+    ['Abgelehnt',v.filter(x=>x.urteil==='abgelehnt').length,'mit Begründung']]
     .map(q=>`<div class="kpi"><div class="l">${q[0]}</div><div class="v">${q[1]}</div><div class="n">${q[2]}</div></div>`).join('');
   const items = v.filter(x=>labFilter==='all'||x.urteil===labFilter)
     .sort((a,b)=>(b.urteil==='bestanden')-(a.urteil==='bestanden')||((b.out_of_sample||{}).profit_factor||0)-((a.out_of_sample||{}).profit_factor||0));
@@ -171,7 +172,7 @@ function renderLab(){
   document.querySelectorAll('#labList .li').forEach(b=>b.onclick=()=>{labSel=+b.dataset.k;renderLab();});
   const o = items[labSel];
   if(!o){ $('#labDetail').innerHTML = '<div class="empty">Keine Auswahl.</div>'; return; }
-  const I=o.in_sample||{}, O=o.out_of_sample||{}, G=o.gesamt||{};
+  const I=o.in_sample||{}, O=o.out_of_sample||{}, G=o.gesamt||{}, H=o.holdout||{}, Hk=H.kennzahlen||{};
   const mrow = (n,k,f) => `<tr><td>${n}</td><td class="m">${f(I[k])}</td><td class="m">${f(O[k])}</td><td class="m">${f(G[k])}</td></tr>`;
   const usd = v => v==null?'–':(v>=0?'+':'-')+'USD '+num(Math.abs(v),0);
   $('#labDetail').innerHTML = `<div class="card"><span>${selbst(o.urteil)}</span>
@@ -185,8 +186,17 @@ function renderLab(){
     <tr><td>Kaufen und Halten (ungesehen)</td><td class="m">–</td><td class="m">${pct(o.kaufen_halten_oos_pct,1)}</td><td class="m">–</td></tr>
     <tr><td>Robustheit (Nachbar-Parameter profitabel)</td><td class="m">–</td><td class="m">–</td><td class="m">${o.robustheit_anteil==null?'–':Math.round(o.robustheit_anteil*100)+' %'}</td></tr>
     <tr><td>Monte-Carlo Drawdown (95 %)</td><td class="m">–</td><td class="m">–</td><td class="m">${pct(o.monte_carlo_dd_p95,1)}</td></tr>
-    <tr><td>Walk-Forward bestanden</td><td class="m">–</td><td class="m">–</td><td class="m">${o.walk_forward_bestanden==null?'–':Math.round(o.walk_forward_bestanden*100)+' %'}</td></tr>
+    <tr><td>Walk-Forward-Fenster profitabel</td><td class="m">–</td><td class="m">–</td><td class="m">${o.walk_forward_bestanden==null?'–':Math.round(o.walk_forward_bestanden*100)+' %'}</td></tr>
     <tr><td>Zufallsvergleich (p-Wert, kleiner = besser)</td><td class="m">–</td><td class="m">–</td><td class="m">${o.zufall_p_wert==null?'nicht geprüft':num(o.zufall_p_wert,4)}</td></tr>
+    </tbody></table></div>
+    <div class="ph" style="border-top:1px solid var(--line)">Versiegelter Holdout<span class="tag">${H.von?esc(H.von)+' – '+esc(H.bis):'nur bester Kandidat'}</span></div>
+    <div class="tw"><table class="tbl tblKey"><tbody>
+    <tr><td>Ergebnis</td><td class="m">${o.holdout_bestanden==null?'nicht geöffnet':o.holdout_bestanden?'<span class="up">BESTANDEN</span>':'<span class="dn">ABGELEHNT</span>'}</td></tr>
+    <tr><td>Profit Factor</td><td class="m">${Hk.profit_factor==null?'–':num(Hk.profit_factor,2)}</td></tr>
+    <tr><td>Trades</td><td class="m">${Hk.trades??'–'}</td></tr>
+    <tr><td>Nettogewinn</td><td class="m ${cls(Hk.netto)}">${Hk.netto==null?'–':usd(Hk.netto)}</td></tr>
+    <tr><td>Max. Drawdown</td><td class="m">${pct(Hk.max_drawdown_pct,1)}</td></tr>
+    <tr><td>Kaufen und Halten</td><td class="m">${pct(H.kaufen_halten_pct,1)}</td></tr>
     </tbody></table></div>
     <div class="ph" style="border-top:1px solid var(--line)">Letzte Trades<span class="tag">nach Gebühren, rot = Verlust</span></div>
     <div class="tw"><table class="tbl"><thead><tr><th>Einstieg</th><th>Ausstieg</th><th class="m">Stück</th><th class="m">Netto</th><th class="m">Rendite</th><th>Grund</th></tr></thead><tbody>
@@ -209,13 +219,14 @@ function renderStrat(){
     <span><b>${sel.has(o.symbol+'|'+o.schluessel)?'★ ':''}${esc(o.symbol)} · ${esc(o.strategie)}</b><small>${esc(params(o.parameter))}</small></span>
     <span class="r">PF ${num((o.out_of_sample||{}).profit_factor,2)}</span></button>`).join('');
   document.querySelectorAll('#stratList .li').forEach(b=>b.onclick=()=>{stratSel=+b.dataset.k;renderStrat();});
-  const d = v[stratSel], O = d.out_of_sample||{}, G = d.gesamt||{};
+  const d = v[stratSel], O = d.out_of_sample||{}, G = d.gesamt||{}, Hk=(d.holdout||{}).kennzahlen||{};
   const gewaehlt = sel.has(d.symbol+'|'+d.schluessel);
   $('#stratDetail').innerHTML = `<div class="card"><span>${gewaehlt?'<span class="pill">AUSGEWÄHLT FÜR '+esc(d.symbol)+'</span>':'<span class="pill g">BESTANDEN, NICHT AUSGEWÄHLT</span>'}</span>
     <h2>${esc(d.symbol)} · ${esc(d.strategie)}</h2><p class="sub" style="margin:0">${esc(d.beschreibung)}</p></div>
     <div class="kpis" style="padding:0 16px 14px">
-    ${[['Profit Factor ungesehen',num(O.profit_factor,2)],['Trefferquote ungesehen',pct(O.trefferquote_pct)],
-       ['Max. Drawdown ungesehen',pct(O.max_drawdown_pct)],['Trades ungesehen',O.trades??'–']]
+    ${[['Profit Factor Walk-Forward',num(O.profit_factor,2)],['Trefferquote Walk-Forward',pct(O.trefferquote_pct)],
+       ['Max. Drawdown Walk-Forward',pct(O.max_drawdown_pct)],['Trades Walk-Forward',O.trades??'–'],
+       ['Profit Factor Holdout',num(Hk.profit_factor,2)]]
       .map(q=>`<div class="kpi"><div class="l">${q[0]}</div><div class="v">${q[1]}</div></div>`).join('')}</div>
     <div class="tw"><table class="tbl tblKey"><tbody>
     <tr><td>Nettogewinn gesamt</td><td class="m ${cls(G.netto)}">${money(G.netto)}</td></tr>
@@ -231,7 +242,7 @@ function renderFlow(){
   const stationen = [
     ['Daten', `${dq.filter(q=>q.ok).length}/${dq.length} Symbole in Ordnung`, 'Kerzen laden, Lücken, Doppelungen und unmögliche Preise prüfen. Im Paper-Modus löst jeder Fehler einen Handelsstopp aus.'],
     ['Research', `${v.length} Kandidaten`, 'Nur das freigegebene Parameter-Raster. Keine KI erfindet Parameter.'],
-    ['Validierung', `${v.filter(x=>x.urteil==='bestanden').length} bestanden · ${v.filter(x=>x.urteil==='abgelehnt').length} abgelehnt`, 'Training und ungesehener Teil, Walk-Forward, Monte-Carlo, Nachbar-Parameter, Zufallsvergleich.'],
+    ['Validierung', `${v.filter(x=>x.urteil==='bestanden').length} bestanden · ${v.filter(x=>x.urteil==='abgelehnt').length} abgelehnt`, 'Rollierende Walk-Forward-Fenster, versiegelter Holdout, Monte-Carlo, Nachbar-Parameter, Zufallsvergleich.'],
     ['Risiko', `${P.filter(p=>p.genehmigt).length} genehmigt · ${P.filter(p=>!p.genehmigt).length} abgelehnt`, '1 % je Trade bis Stop, 10 % Not-Stop, maximal 15 Positionen, kein Hebel.'],
     ['Ausführung', `${P.filter(p=>(p.status||'').startsWith('Probelauf')).length} Probelauf`, 'Standard ist der Probelauf. Ohne Freigabe wird keine Order gesendet.'],
     ['Wissensbank', `${(R.wissen?.typen||[]).length} Typen · ${(R.entscheide||[]).length} Entscheide`, 'Alles Nachprüfbare landet in SQLite und im Obsidian-Vault.'],
