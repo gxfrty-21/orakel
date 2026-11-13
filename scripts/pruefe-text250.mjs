@@ -345,6 +345,47 @@ async function pruefeKurvenTooltip(page, ansicht, breite) {
       if (gerechnet !== Number(abstand(unterHoch.text))) befunde.push(`Abstand am Punkt unter dem Hoch passt nicht zu Kapitalstand und Hochstand (${gerechnet} % statt ${abstand(unterHoch.text)} %)`);
     }
   }
+
+  // Am gezeichneten Hochpunkt muss der Abstand rechnerisch 0 % sein.
+  const hochPunkt = await page.evaluate((ansicht) => {
+    const svg = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche svg`);
+    const points = (svg?.querySelector('polyline')?.getAttribute('points') || '').trim();
+    if (!points) return null;
+    const punkte = points.split(/\s+/).map(p => p.split(',').map(Number)).filter(p => p.length === 2 && p.every(Number.isFinite));
+    if (!punkte.length) return null;
+    const hoch = punkte.reduce((a, b) => b[1] < a[1] ? b : a);
+    return { x: hoch[0], breite: svg.viewBox.baseVal.width };
+  }, ansicht);
+  if (!hochPunkt) {
+    befunde.push('Hochpunkt der Kurve nicht gefunden');
+  } else {
+    await page.mouse.move(r.x + r.width * (hochPunkt.x / hochPunkt.breite), r.y + r.height / 2);
+    await page.waitForTimeout(120);
+    const amHoch = await page.evaluate((ansicht) => {
+      const box = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche`);
+      const tipp = box.querySelector('.wfoKurveTipp');
+      const cs = getComputedStyle(tipp);
+      return {
+        sichtbar: cs.visibility === 'visible' && Number(cs.opacity) > 0.9,
+        text: tipp.innerText.replace(/\s+/g, ' ').trim(),
+        live: box.querySelector('.wfoKurveLive').textContent.trim(),
+      };
+    }, ansicht);
+    if (!amHoch.sichtbar) befunde.push('Tooltip erscheint am Hochpunkt nicht');
+    else if (!/\bam Hoch\b/.test(amHoch.text)) befunde.push(`Tooltip am Hochpunkt nennt keinen Hochstand («${amHoch.text}»)`);
+    const kapitalText = betrag(amHoch.text), hochText = hoch(amHoch.text);
+    if (!kapitalText || !hochText) {
+      befunde.push('Kapitalstand oder Hochstand am Hochpunkt nicht lesbar');
+    } else {
+      const zahl = s => Number(String(s).replace(/['’]/g, ''));
+      const kapitalWert = zahl(kapitalText.replace(/^USD\s/, ''));
+      const hochWert = zahl(hochText);
+      const gerechnet = Math.round(Math.abs((kapitalWert - hochWert) / hochWert * 100) * 10) / 10;
+      if (gerechnet !== 0) befunde.push(`Abstand am Hochpunkt ist nicht 0 (${gerechnet} % aus Kapitalstand und Hochstand)`);
+      if (abstand(amHoch.text) !== '0') befunde.push(`Abstand am Hochpunkt wird nicht als 0 % angezeigt («${abstand(amHoch.text) || '—'} %»)`);
+      if (liveAbstand(amHoch.live) !== '0') befunde.push(`Live-Region nennt am Hochpunkt nicht 0 % («${amHoch.live}»)`);
+    }
+  }
   return befunde;
 }
 
