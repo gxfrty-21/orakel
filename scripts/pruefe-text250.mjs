@@ -272,6 +272,8 @@ async function pruefeKurvenTastatur(page, ansicht) {
       sichtbar: cs.visibility === 'visible' && Number(cs.opacity) > 0.9,
       text: tipp.innerText.replace(/\s+/g, ' ').trim(),
       live: live.textContent.trim(),
+      liveRolle: live.getAttribute('role'),
+      liveModus: live.getAttribute('aria-live'),
       zeiger: zeiger.getAttribute('x1'),
       scrollY: Math.round(scrollY),
       links: tr.left, rechts: tr.right, oben: tr.top, unten: tr.bottom,
@@ -288,8 +290,12 @@ async function pruefeKurvenTastatur(page, ansicht) {
   if (!stand.sichtbar) befunde.push('Tooltip erscheint beim Fokus nicht');
   if (!/USD\s/.test(stand.text) || !/\d{2}\.\d{2}\.\d{4}/.test(stand.text)) befunde.push(`Tooltip beim Fokus unvollständig: «${stand.text}»`);
   if (!/USD\s/.test(stand.live)) befunde.push('Live-Region bleibt beim Fokus leer');
+  if (!/\d{2}\.\d{2}\.\d{4}/.test(stand.live)) befunde.push('Live-Region ohne Datum beim Fokus');
+  if (stand.liveRolle !== 'status' && stand.liveModus !== 'polite') befunde.push('Live-Region ist nicht als Status/Polite markiert');
   befunde.push(...lageBefunde(stand));
+  const betrag = t => (String(t).match(/USD\s[0-9'’.,]+/) || [''])[0];
   const startZeiger = stand.zeiger;
+  const startLive = stand.live;
   const scrollStart = stand.scrollY;
 
   await page.keyboard.press('ArrowRight');
@@ -297,6 +303,7 @@ async function pruefeKurvenTastatur(page, ansicht) {
   stand = await lese();
   if (stand.zeiger === startZeiger) befunde.push('Pfeil rechts bewegt den Zeiger nicht');
   if (!/USD\s/.test(stand.live)) befunde.push('Live-Region bleibt nach Pfeil rechts leer');
+  else if (betrag(stand.text) && !stand.live.includes(betrag(stand.text))) befunde.push(`Live-Region nennt nicht den Wert des Tooltips («${stand.live}» statt «${betrag(stand.text)}»)`);
   if (stand.scrollY !== scrollStart) befunde.push(`Pfeil rechts scrollt die Seite (${scrollStart} → ${stand.scrollY})`);
   befunde.push(...lageBefunde(stand));
 
@@ -304,6 +311,8 @@ async function pruefeKurvenTastatur(page, ansicht) {
   await page.waitForTimeout(80);
   const ende = await lese();
   if (ende.zeiger === startZeiger) befunde.push('Ende springt nicht an den letzten Punkt');
+  if (ende.live === startLive) befunde.push('Live-Region bleibt bei Ende unverändert');
+  else if (betrag(ende.text) && !ende.live.includes(betrag(ende.text))) befunde.push(`Live-Region nennt bei Ende nicht den Wert des Tooltips («${ende.live}» statt «${betrag(ende.text)}»)`);
   if (ende.scrollY !== scrollStart) befunde.push(`Ende scrollt die Seite (${scrollStart} → ${ende.scrollY})`);
   befunde.push(...lageBefunde(ende));
 
@@ -311,6 +320,7 @@ async function pruefeKurvenTastatur(page, ansicht) {
   await page.waitForTimeout(80);
   const anfang = await lese();
   if (anfang.zeiger !== startZeiger) befunde.push(`Home kehrt nicht zum ersten Punkt zurück (${anfang.zeiger} statt ${startZeiger})`);
+  if (anfang.live !== startLive) befunde.push(`Live-Region kehrt bei Home nicht zur Startansage zurück («${anfang.live}» statt «${startLive}»)`);
   befunde.push(...lageBefunde(anfang));
 
   await svg.evaluate(el => el.blur());
