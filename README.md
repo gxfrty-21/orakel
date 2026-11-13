@@ -154,6 +154,11 @@ aria-label nennt Pfeiltasten, Home und Ende, genau eine Live-Region je Kurve,
 die visuell verborgen bleibt).
 Exit-Code 1 bei einem Befund.
 
+Der CI-Job `text250` setzt auf dem `ubuntu-24.04`-Image auf: Chromium wird ohne
+`--with-deps` installiert, die nötigen Systembibliotheken kommen aus dem Image.
+Auch ein leerer Playwright-Cache funktioniert; der Browser wird dann frisch
+geladen.
+
 ```bash
 # Dashboard mit Beispieldaten starten, ohne die eigene DB anzufassen
 cp seed/orakel-seed.db /tmp/orakel-text250.db
