@@ -675,12 +675,16 @@ async function pruefeKurvenTastatur(page, ansicht) {
     const apiWert = p => Math.round(Number(p[1]));
     const tooltipDatum = t => (String(t).match(/\b\d{2}\.\d{2}\.\d{4}\b/) || [''])[0];
     const tooltipWert = t => alsZahl(betragZahl(t));
-    const pruefeApi = (name, text, p) => {
+    const pruefeApi = (name, text, p, live) => {
       if (tooltipDatum(text) !== apiDatum(p[0])) befunde.push(`${name}: Tooltip-Datum ${tooltipDatum(text) || '—'} statt API ${apiDatum(p[0])}`);
       if (tooltipWert(text) !== apiWert(p)) befunde.push(`${name}: Tooltip-Kapital USD ${tooltipWert(text)} statt API USD ${apiWert(p)}`);
+      if (live) {
+        if (tooltipDatum(live) !== apiDatum(p[0])) befunde.push(`${name}: Live-Datum ${tooltipDatum(live) || '—'} statt API ${apiDatum(p[0])}`);
+        if (tooltipWert(live) !== apiWert(p)) befunde.push(`${name}: Live-Kapital USD ${tooltipWert(live)} statt API USD ${apiWert(p)}`);
+      }
     };
-    pruefeApi('Startpunkt', anfang.text, apiPunkte[0]);
-    pruefeApi('Endpunkt', ende.text, apiPunkte[apiPunkte.length - 1]);
+    pruefeApi('Startpunkt', anfang.text, apiPunkte[0], anfang.live);
+    pruefeApi('Endpunkt', ende.text, apiPunkte[apiPunkte.length - 1], ende.live);
     const n = apiPunkte.length - 1;
     const proben = [
       ['Viertelpunkt', Math.floor(n * 0.25)],
@@ -695,7 +699,7 @@ async function pruefeKurvenTastatur(page, ansicht) {
         await page.mouse.move(kasten.x + kasten.width * (index / n), kasten.y + kasten.height / 2);
         await page.waitForTimeout(120);
         const stand = await lese();
-        pruefeApi(name, stand.text, apiPunkte[index]);
+        pruefeApi(name, stand.text, apiPunkte[index], stand.live);
       }
     }
   }
