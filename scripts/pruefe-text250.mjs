@@ -502,6 +502,9 @@ async function pruefeKurvenTastatur(page, ansicht) {
   befunde.push(...await pruefeLiveVerborgen(page, ansicht));
   befunde.push(...lageBefunde(stand));
   const betrag = t => (String(t).match(/USD\s[0-9'’.,]+/) || [''])[0];
+  const betragZahl = t => (String(t).match(/USD\s([0-9'’]+)/) || [''])[1] || '';
+  const alsZahl = s => Number(String(s).replace(/['’]/g, ''));
+  const ariaWert = name => ((stand.aria.split(name + ' USD ')[1] || '').match(/^[0-9'’]+/) || [''])[0];
   const startZeiger = stand.zeiger;
   const startLive = stand.live;
   const scrollStart = stand.scrollY;
@@ -524,6 +527,34 @@ async function pruefeKurvenTastatur(page, ansicht) {
   if (ende.scrollY !== scrollStart) befunde.push(`Ende scrollt die Seite (${scrollStart} → ${ende.scrollY})`);
   befunde.push(...lageBefunde(ende));
 
+  // Alle Punkte von Ende rückwärts ablesen und die echten Extremwerte bestimmen.
+  const werte = [];
+  const endeZahl = betragZahl(ende.live) || betragZahl(ende.text);
+  if (endeZahl) werte.push(alsZahl(endeZahl));
+  let letzterZeiger = ende.zeiger;
+  for (let i = 0; i < 260; i++) {
+    await page.keyboard.press('ArrowLeft');
+    const s = await page.evaluate((ansicht) => {
+      const box = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche`);
+      return {
+        zeiger: box.querySelector('.wfoKurveZeiger').getAttribute('x1'),
+        live: box.querySelector('.wfoKurveLive').textContent.trim(),
+      };
+    }, ansicht);
+    if (s.zeiger === letzterZeiger) break;
+    letzterZeiger = s.zeiger;
+    const w = betragZahl(s.live);
+    if (w) werte.push(alsZahl(w));
+  }
+  if (werte.length < 2) {
+    befunde.push('Extremwerte der Kurvenpunkte liessen sich nicht ermitteln');
+  } else {
+    const tief = ariaWert('Tief'), hoch = ariaWert('Hoch');
+    const tiefWert = Math.min(...werte), hochWert = Math.max(...werte);
+    if (tief && Number(tief.replace(/['’]/g, '')) !== tiefWert) befunde.push(`aria-label Tief USD ${tief} stimmt nicht mit dem Minimum der Punkte (USD ${tiefWert}) überein`);
+    if (hoch && Number(hoch.replace(/['’]/g, '')) !== hochWert) befunde.push(`aria-label Hoch USD ${hoch} stimmt nicht mit dem Maximum der Punkte (USD ${hochWert}) überein`);
+  }
+
   await page.keyboard.press('Home');
   await page.waitForTimeout(80);
   const anfang = await lese();
@@ -531,8 +562,6 @@ async function pruefeKurvenTastatur(page, ansicht) {
   if (anfang.live !== startLive) befunde.push(`Live-Region kehrt bei Home nicht zur Startansage zurück («${anfang.live}» statt «${startLive}»)`);
   befunde.push(...lageBefunde(anfang));
 
-  const ariaWert = name => ((stand.aria.split(name + ' USD ')[1] || '').match(/^[0-9'’]+/) || [''])[0];
-  const betragZahl = t => (String(t).match(/USD\s([0-9'’]+)/) || [''])[1] || '';
   const ariaStart = ariaWert('Start'), ariaEnde = ariaWert('Ende');
   const tippStart = betragZahl(anfang.text), tippEnde = betragZahl(ende.text);
   if (ariaStart && tippStart && ariaStart !== tippStart) befunde.push(`aria-label Start USD ${ariaStart} stimmt nicht mit Tooltip bei Home (USD ${tippStart}) überein`);

@@ -154,7 +154,8 @@ kbd-Tasten. Geprüft wird die Tastaturbedienung
 Tab zum nächsten Element mit sichtbarem Fokusring,
 Pfeiltasten, Home/Ende,
 aria-label nennt Pfeiltasten, Home und Ende, Start/Tief/Hoch/Ende stimmen mit
-der Fusszeile überein, Start/Ende auch mit den Tooltips bei Home/Ende, genau
+der Fusszeile überein, Tief/Hoch auch mit den Extremwerten der Punkte,
+Start/Ende auch mit den Tooltips bei Home/Ende, genau
 eine Live-Region je Kurve,
 die visuell verborgen bleibt, role=status sowie aria-live=polite trägt, nicht
 aria-hidden ist und in keinem display:none- oder visibility:hidden-Vorfahren
