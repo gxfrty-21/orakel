@@ -145,7 +145,8 @@ tests/           Risiko, Backtest, Daten, Bericht
 280 px prüft es, ob Inhalte seitlich aus ihrem Kasten oder aus dem Viewport
 laufen. Tabellen werden zusätzlich mit langen deutschen Komposita belastet und
 als Karten geprüft. Im Lab überfährt er ausserdem die Kapitalkurve und prüft
-den Tooltip (Kapitalstand, Datum, Lage im Kasten, Verschwinden beim Verlassen)
+den Tooltip (Kapitalstand, Datum, Lage im Kasten, Verschwinden von Tooltip und
+Live-Region beim Verlassen)
 und prüft die Tastaturbedienung
 (Durchtabben von oben bis zur Kurve, Pfeiltasten, Home/Ende, Live-Region).
 Exit-Code 1 bei einem Befund.
