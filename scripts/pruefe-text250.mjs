@@ -308,6 +308,33 @@ async function pruefeKurvenTooltip(page, ansicht, breite) {
   if (hoch(zurueck.text) && liveHoch(zurueck.live) && hoch(zurueck.text) !== liveHoch(zurueck.live)) befunde.push(`Live-Region nennt nach erneutem Überfahren nicht den Hochstand des Tooltips (USD ${liveHoch(zurueck.live)} statt USD ${hoch(zurueck.text)})`);
   if (abstand(zurueck.text) === '' || liveAbstand(zurueck.live) === '') befunde.push(`Abstand zum Hoch nach erneutem Überfahren nicht lesbar (Tooltip «${zurueck.text}», Live «${zurueck.live}»)`);
   else if (liveAbstand(zurueck.live) !== abstand(zurueck.text)) befunde.push(`Live-Region nennt nach erneutem Überfahren nicht den Abstand zum Hoch des Tooltips (${liveAbstand(zurueck.live)} % statt ${abstand(zurueck.text)} %)`);
+
+  // Zusätzlich einen Punkt unter dem Hoch prüfen: der Abstand muss positiv sein.
+  let unterHoch = null;
+  for (const anteil of [0.25, 0.75, 0.1, 0.9, 0.02, 0.98]) {
+    await page.mouse.move(r.x + r.width * anteil, r.y + r.height / 2);
+    await page.waitForTimeout(120);
+    const s = await page.evaluate((ansicht) => {
+      const box = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche`);
+      const tipp = box.querySelector('.wfoKurveTipp');
+      const cs = getComputedStyle(tipp);
+      return {
+        sichtbar: cs.visibility === 'visible' && Number(cs.opacity) > 0.9,
+        text: tipp.innerText.replace(/\s+/g, ' ').trim(),
+        live: box.querySelector('.wfoKurveLive').textContent.trim(),
+      };
+    }, ansicht);
+    if (abstand(s.text) !== '' && Number(abstand(s.text)) > 0) { unterHoch = s; break; }
+  }
+  if (!unterHoch) {
+    befunde.push('Kein Punkt unter dem Hoch mit positivem Abstand gefunden');
+  } else {
+    if (!unterHoch.sichtbar) befunde.push('Tooltip erscheint am Punkt unter dem Hoch nicht');
+    const liveWert = liveAbstand(unterHoch.live);
+    if (liveWert === '') befunde.push(`Abstand am Punkt unter dem Hoch nicht lesbar (Live «${unterHoch.live}»)`);
+    else if (liveWert !== abstand(unterHoch.text)) befunde.push(`Live-Region nennt am Punkt unter dem Hoch nicht den Abstand des Tooltips (${liveWert} % statt ${abstand(unterHoch.text)} %)`);
+    else if (!(Number(liveWert) > 0)) befunde.push('Abstand am Punkt unter dem Hoch ist nicht positiv');
+  }
   return befunde;
 }
 
