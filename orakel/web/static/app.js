@@ -169,7 +169,7 @@ function drahteKapitalKurve(){
   const zeiger = box.querySelector('.wfoKurveZeiger');
   const punkt = box.querySelector('.wfoKurvePunkt');
   const tipp = box.querySelector('.wfoKurveTipp');
-  const { punkte, tief, hoch, spanne } = daten;
+  const { punkte, tief, hoch, spanne, start } = daten;
   let aktiv = -1;
   const datum = t => {
     const teile = String(t || '').slice(0, 10).split('-');
@@ -189,11 +189,21 @@ function drahteKapitalKurve(){
     zeiger.setAttribute('x1', xSvg); zeiger.setAttribute('x2', xSvg);
     punkt.style.left = xPx + 'px';
     punkt.style.top = yPx + 'px';
+    const zeile = document.createElement('span');
+    zeile.className = 'wfoKurveWert';
     const betrag = document.createElement('b');
     betrag.textContent = 'USD ' + num(p.v, 0);
+    zeile.append(betrag);
+    const prozent = start && Math.abs(start) > 1e-9 ? (p.v - start) / start * 100 : null;
+    if(prozent != null){
+      const delta = document.createElement('i');
+      delta.className = cls(prozent);
+      delta.textContent = (prozent > 0 ? '+' : '') + num(prozent, 1) + ' %';
+      zeile.append(delta);
+    }
     const tag = document.createElement('span');
     tag.textContent = datum(p.t);
-    tipp.replaceChildren(betrag, tag);
+    tipp.replaceChildren(zeile, tag);
     box.classList.add('an');
     const breite = tipp.offsetWidth, hoehe = tipp.offsetHeight;
     const links = Math.max(4, Math.min(r.width - breite - 4, xPx - breite / 2));
@@ -218,7 +228,7 @@ function kapitalKurveBlock(o){
   const start = werte[0], ende = werte[werte.length-1];
   const tief = Math.min(...werte), hoch = Math.max(...werte);
   const spanne = Math.max(1e-9, hoch - tief);
-  kapitalKurveDaten = { punkte: punkte.map(p=>({ t: String(p[0] || ''), v: Number(p[1]) })), tief, hoch, spanne };
+  kapitalKurveDaten = { punkte: punkte.map(p=>({ t: String(p[0] || ''), v: Number(p[1]) })), tief, hoch, spanne, start };
   const B = KURVE_B, H = KURVE_H, RAND = KURVE_RAND;
   const x = i => (i / (punkte.length - 1)) * B;
   const y = w => RAND + (hoch - w) / spanne * (H - 2 * RAND);
