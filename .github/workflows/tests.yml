@@ -151,7 +151,11 @@ jobs:
           # kostet pro Lauf 8-11 Sekunden apt-Zeit.
           npx playwright install chromium
 
+      # Ein hängender Browser soll nicht das Job-Limit von 15 Minuten
+      # ausschöpfen. Der Step-Timeout gilt als Fehlschlag, sodass Log und
+      # Screenshots danach hochgeladen werden.
       - name: Dashboard starten und 250-%-Prüflauf ausführen
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           mkdir -p artifacts/text250
