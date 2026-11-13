@@ -334,6 +334,16 @@ async function pruefeKurvenTooltip(page, ansicht, breite) {
     if (liveWert === '') befunde.push(`Abstand am Punkt unter dem Hoch nicht lesbar (Live «${unterHoch.live}»)`);
     else if (liveWert !== abstand(unterHoch.text)) befunde.push(`Live-Region nennt am Punkt unter dem Hoch nicht den Abstand des Tooltips (${liveWert} % statt ${abstand(unterHoch.text)} %)`);
     else if (!(Number(liveWert) > 0)) befunde.push('Abstand am Punkt unter dem Hoch ist nicht positiv');
+    const kapitalText = betrag(unterHoch.text), hochText = hoch(unterHoch.text);
+    if (!kapitalText || !hochText) {
+      befunde.push('Kapitalstand oder Hochstand am Punkt unter dem Hoch nicht lesbar');
+    } else {
+      const zahl = s => Number(String(s).replace(/['’]/g, ''));
+      const kapitalWert = zahl(kapitalText.replace(/^USD\s/, ''));
+      const hochWert = zahl(hochText);
+      const gerechnet = Math.round(Math.abs((kapitalWert - hochWert) / hochWert * 100) * 10) / 10;
+      if (gerechnet !== Number(abstand(unterHoch.text))) befunde.push(`Abstand am Punkt unter dem Hoch passt nicht zu Kapitalstand und Hochstand (${gerechnet} % statt ${abstand(unterHoch.text)} %)`);
+    }
   }
   return befunde;
 }
