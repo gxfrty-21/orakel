@@ -147,7 +147,9 @@ jobs:
         working-directory: scripts
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          # Systembibliotheken bringt das ubuntu-24.04-Image mit; --with-deps
+          # kostet pro Lauf 8-11 Sekunden apt-Zeit.
+          npx playwright install chromium
 
       - name: Dashboard starten und 250-%-Prüflauf ausführen
         run: |
