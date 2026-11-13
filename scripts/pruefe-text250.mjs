@@ -675,12 +675,30 @@ async function pruefeKurvenTastatur(page, ansicht) {
     const apiWert = p => Math.round(Number(p[1]));
     const tooltipDatum = t => (String(t).match(/\b\d{2}\.\d{2}\.\d{4}\b/) || [''])[0];
     const tooltipWert = t => alsZahl(betragZahl(t));
+    const tooltipProzent = t => {
+      const m = String(t).match(/([+-]?\d+(?:[.,]\d+)?)\s*%/);
+      return m ? Number(m[1].replace(',', '.')) : null;
+    };
+    const liveProzent = t => {
+      if (/unverändert seit Start/.test(t)) return 0;
+      const m = String(t).match(/(plus|minus)\s+([0-9'’]+(?:[.,]\d+)?)\s+Prozent/);
+      return m ? Number(m[2].replace(/['’]/g, '').replace(',', '.')) * (m[1] === 'minus' ? -1 : 1) : null;
+    };
+    const startWert = Number(apiPunkte[0][1]);
+    const erwarteterProzent = p => Math.abs(startWert) > 1e-9 ? Math.round((Number(p[1]) - startWert) / startWert * 100 * 10) / 10 || 0 : 0;
     const pruefeApi = (name, text, p, live) => {
       if (tooltipDatum(text) !== apiDatum(p[0])) befunde.push(`${name}: Tooltip-Datum ${tooltipDatum(text) || '—'} statt API ${apiDatum(p[0])}`);
       if (tooltipWert(text) !== apiWert(p)) befunde.push(`${name}: Tooltip-Kapital USD ${tooltipWert(text)} statt API USD ${apiWert(p)}`);
+      const berechnet = erwarteterProzent(p);
+      const tProzent = tooltipProzent(text);
+      if (tProzent == null) befunde.push(`${name}: Tooltip-Prozent nicht lesbar`);
+      else if (tProzent !== berechnet) befunde.push(`${name}: Tooltip-Prozent ${tProzent} statt berechnet ${berechnet} % ab Start`);
       if (live) {
         if (tooltipDatum(live) !== apiDatum(p[0])) befunde.push(`${name}: Live-Datum ${tooltipDatum(live) || '—'} statt API ${apiDatum(p[0])}`);
         if (tooltipWert(live) !== apiWert(p)) befunde.push(`${name}: Live-Kapital USD ${tooltipWert(live)} statt API USD ${apiWert(p)}`);
+        const lProzent = liveProzent(live);
+        if (lProzent == null) befunde.push(`${name}: Live-Prozent nicht lesbar`);
+        else if (lProzent !== berechnet) befunde.push(`${name}: Live-Prozent ${lProzent} statt berechnet ${berechnet} % ab Start`);
       }
     };
     pruefeApi('Startpunkt', anfang.text, apiPunkte[0], anfang.live);
