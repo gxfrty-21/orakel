@@ -210,6 +210,10 @@ gh run download <run-id> -n text250-screenshots -D artifacts/text250-ci
 
 # Vollständiges Job-Log anzeigen (alle Jobs, inklusive text250)
 gh run view <run-id> --log
+
+# Job-ID des text250-Jobs ermitteln und nur dessen Log ansehen
+gh run view <run-id> --json jobs --jq '.jobs[] | select(.name=="text250") | .databaseId'
+gh run view <run-id> --job <job-id> --log
 ```
 
 Die Dateien landen in `artifacts/text250-ci`; Screenshots gibt es nur bei
