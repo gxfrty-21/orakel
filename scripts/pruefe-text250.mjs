@@ -556,6 +556,11 @@ async function pruefeKurvenTastatur(page, ansicht) {
   if (stand.zeiger === startZeiger) befunde.push('Pfeil rechts bewegt den Zeiger nicht');
   if (!/USD\s/.test(stand.live)) befunde.push('Live-Region bleibt nach Pfeil rechts leer');
   else if (betrag(stand.text) && !stand.live.includes(betrag(stand.text))) befunde.push(`Live-Region nennt nicht den Wert des Tooltips («${stand.live}» statt «${betrag(stand.text)}»)`);
+  const a11yNach = await page.locator(`#v-${ansicht} .wfoKurveFlaeche`).ariaSnapshot();
+  const statusNach = a11yNach.split('\n').find(z => /^\s*-\s+status:/.test(z)) || '';
+  if (!statusNach) befunde.push('Status-Knoten fehlt nach Pfeil rechts im Accessibility-Baum');
+  else if (!stand.live || !statusNach.includes(stand.live)) befunde.push(`Status-Knoten nennt nach Pfeil rechts nicht den Text der Live-Region («${statusNach.trim()}» statt «${stand.live}»)`);
+  else if (stand.live !== startLive && statusNach === statusZeile) befunde.push('Status-Knoten bleibt trotz geändertem Live-Text nach Pfeil rechts unverändert');
   if (stand.scrollY !== scrollStart) befunde.push(`Pfeil rechts scrollt die Seite (${scrollStart} → ${stand.scrollY})`);
   befunde.push(...lageBefunde(stand));
 
