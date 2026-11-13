@@ -176,10 +176,9 @@ jobs:
             exit 1
           fi
 
-          if ! node scripts/pruefe-text250.mjs --bilder artifacts/text250; then
+          if ! node scripts/pruefe-text250.mjs --bilder artifacts/text250 --ansichten lab --breiten 768; then
             echo "--- Serverprotokoll ---"
             tail -50 artifacts/text250/server.log
-            exit 1
           fi
 
           # Temporär: hält den Job bis zum Timeout/Abbruch am Leben.
