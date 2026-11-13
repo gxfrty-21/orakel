@@ -438,11 +438,14 @@ async function pruefeKurvenTastatur(page, ansicht) {
     const live = box.querySelector('.wfoKurveLive');
     const zeiger = box.querySelector('.wfoKurveZeiger');
     const cs = getComputedStyle(tipp);
+    const csSvg = getComputedStyle(svg);
     const tr = tipp.getBoundingClientRect();
     const br = box.getBoundingClientRect();
     return {
       fokus: document.activeElement === svg,
       fokussierbar: svg.getAttribute('tabindex') === '0',
+      ring: csSvg.outlineStyle !== 'none' && parseFloat(csSvg.outlineWidth) > 0 && csSvg.outlineColor !== 'rgba(0, 0, 0, 0)',
+      outline: `${csSvg.outlineStyle} ${csSvg.outlineWidth} ${csSvg.outlineColor}`,
       aria: svg.getAttribute('aria-label') || '',
       sichtbar: cs.visibility === 'visible' && Number(cs.opacity) > 0.9,
       text: tipp.innerText.replace(/\s+/g, ' ').trim(),
@@ -464,6 +467,7 @@ async function pruefeKurvenTastatur(page, ansicht) {
   let stand = await lese();
   if (!stand.fokussierbar) befunde.push('Kurve ist nicht per Tab erreichbar (tabindex fehlt)');
   if (!stand.fokus) befunde.push('Kurve lässt sich nicht per Tastatur fokussieren');
+  if (tab.erreicht && !stand.ring) befunde.push(`Fokusring der Kapitalkurve fehlt (outline ${stand.outline})`);
   if (!/Pfeiltasten/.test(stand.aria)) befunde.push('aria-label der Kurve nennt die Pfeiltasten nicht');
   if (!/Home[^.]{0,40}Ende/.test(stand.aria)) befunde.push('aria-label der Kurve nennt Home und Ende nicht');
   befunde.push(...await pruefeAriaWerte(page, ansicht));

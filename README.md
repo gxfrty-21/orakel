@@ -149,8 +149,8 @@ den Tooltip (Kapitalstand, Datum, Lage im Kasten, Verschwinden von Tooltip und
 Live-Region beim Verlassen, Wiederkommen nach erneutem Überfahren mit demselben
 Kapitalstand, Datum und Prozentwert); der Hinweis unter der Kurve führt ← und → als
 kbd-Tasten. Geprüft wird die Tastaturbedienung
-(Durchtabben von oben bis zur Kurve, Shift+Tab zurück, Tab zum nächsten Element
-mit sichtbarem Fokusring,
+(Durchtabben von oben bis zur Kurve, Fokusring auf der Kurve, Shift+Tab zurück,
+Tab zum nächsten Element mit sichtbarem Fokusring,
 Pfeiltasten, Home/Ende,
 aria-label nennt Pfeiltasten, Home und Ende, Start/Tief/Hoch/Ende stimmen mit
 der Fusszeile überein, Start/Ende auch mit den Tooltips bei Home/Ende, genau
