@@ -147,7 +147,7 @@ jobs:
         working-directory: scripts
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          npx playwright install chromium
 
       - name: Dashboard starten und 250-%-Prüflauf ausführen
         run: |
