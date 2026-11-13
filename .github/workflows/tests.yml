@@ -163,8 +163,18 @@ jobs:
             exit 1
           fi
 
-          if ! node scripts/pruefe-text250.mjs; then
+          if ! node scripts/pruefe-text250.mjs --bilder artifacts/text250; then
             echo "--- Serverprotokoll ---"
             tail -50 /tmp/orakel-text250.log
             exit 1
           fi
+
+      # Nur bei Befunden: Screenshots je Ansicht und Breite zum Nachschauen.
+      - name: Screenshots bei Fehlschlag hochladen
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: text250-screenshots
+          path: artifacts/text250
+          if-no-files-found: ignore
+          retention-days: 7
