@@ -156,6 +156,44 @@ document.querySelector('#labTabs').onclick = e => {
   document.querySelectorAll('#labTabs .tab').forEach(t=>t.classList.toggle('on',t===b));
   renderLab();
 };
+/* Aggregierte Kapitalkurve der Walk-Forward-Testfenster als SVG. */
+function kapitalKurveBlock(o){
+  const roh = (o && o.kapitalkurve || []).filter(p=>Array.isArray(p) && Number.isFinite(Number(p[1])));
+  if(roh.length < 2) return '';
+  // Auf höchstens 240 Punkte ausdünnen; der letzte Punkt bleibt erhalten.
+  const schritt = Math.max(1, Math.ceil(roh.length / 240));
+  const punkte = roh.filter((_,i)=>i%schritt===0);
+  if(punkte[punkte.length-1] !== roh[roh.length-1]) punkte.push(roh[roh.length-1]);
+  const werte = punkte.map(p=>Number(p[1]));
+  const start = werte[0], ende = werte[werte.length-1];
+  const tief = Math.min(...werte), hoch = Math.max(...werte);
+  const spanne = Math.max(1e-9, hoch - tief);
+  const B = 600, H = 150, RAND = 8;
+  const x = i => (i / (punkte.length - 1)) * B;
+  const y = w => RAND + (hoch - w) / spanne * (H - 2 * RAND);
+  const verlauf = punkte.map((p,i)=>`${x(i).toFixed(1)},${y(Number(p[1])).toFixed(1)}`).join(' ');
+  const farbe = ende >= start ? 'var(--good)' : 'var(--bad)';
+  const falten = (o.walk_forward_folds||[]).map(f=>f.test_von).filter(Boolean).slice(1);
+  const grenzen = falten.map(ts=>{
+    const i = punkte.findIndex(p=>String(p[0]) >= ts);
+    return i > 0 ? `<line x1="${x(i).toFixed(1)}" y1="0" x2="${x(i).toFixed(1)}" y2="${H}" class="wfoKurveFalte"></line>` : '';
+  }).join('');
+  const aria = `Kapitalkurve der Walk-Forward-Testfenster: Start USD ${num(start,0)}, Tief USD ${num(tief,0)}, Hoch USD ${num(hoch,0)}, Ende USD ${num(ende,0)}`;
+  return `<div class="ph" style="border-top:1px solid var(--line)">Walk-Forward-Kapitalkurve<span class="tag">Testfenster verkettet</span></div>
+    <div class="wfoKurve">
+    <svg viewBox="0 0 ${B} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(aria)}">
+      <line x1="0" y1="${y(start).toFixed(1)}" x2="${B}" y2="${y(start).toFixed(1)}" class="wfoKurveBasis"></line>
+      ${grenzen}
+      <polygon points="0,${H} ${verlauf} ${B},${H}" fill="${farbe}" opacity=".1"></polygon>
+      <polyline points="${verlauf}" fill="none" stroke="${farbe}" stroke-width="1.6"
+        vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"></polyline>
+    </svg>
+    <div class="wfoKurveFuss">
+      <span>Start <b>USD ${num(start,0)}</b></span><span>Tief <b>USD ${num(tief,0)}</b></span>
+      <span>Hoch <b>USD ${num(hoch,0)}</b></span><span>Ende <b class="${cls(ende-start)}">USD ${num(ende,0)}</b></span>
+    </div></div>`;
+}
+
 /* Einzelne Walk-Forward-Fenster eines Kandidaten, aufklappbar. */
 function wfoFoldsBlock(o){
   const folds = (o && o.walk_forward_folds)||[];
@@ -212,6 +250,7 @@ function renderLab(){
     <tr><td>Walk-Forward-Fenster profitabel</td><td class="m">–</td><td class="m">–</td><td class="m">${o.walk_forward_bestanden==null?'–':Math.round(o.walk_forward_bestanden*100)+' %'}</td></tr>
     <tr><td>Zufallsvergleich (p-Wert, kleiner = besser)</td><td class="m">–</td><td class="m">–</td><td class="m">${o.zufall_p_wert==null?'nicht geprüft':num(o.zufall_p_wert,4)}</td></tr>
     </tbody></table></div>
+    ${kapitalKurveBlock(o)}
     ${wfoFoldsBlock(o)}
     <div class="ph" style="border-top:1px solid var(--line)">Versiegelter Holdout<span class="tag">${H.von?esc(H.von)+' – '+esc(H.bis):'nur bester Kandidat'}</span></div>
     <div class="tw"><table class="tbl tblKey"><tbody>
