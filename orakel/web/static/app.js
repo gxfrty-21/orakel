@@ -528,7 +528,7 @@ function renderBetrieb(){
       <td>${betriebZeit(j.letzter_erfolg)}</td></tr>`).join('')}</tbody></table>`
     : '<div class="empty">Keine Jobs im Plan.</div>';
 
-  $('#betriebRes').innerHTML = `<table class="tbl"><tbody>
+  $('#betriebRes').innerHTML = `<table class="tbl tblKey"><tbody>
     <tr><td>Datenbank</td><td class="m">${num(res.db_mb,2)} / ${num(lim.max_db_mb,0)} MB</td><td>${betriebMeter(res.db_mb, lim.max_db_mb)}</td></tr>
     <tr><td>Prozess-RSS</td><td class="m">${res.rss_mb == null ? 'nicht messbar' : num(res.rss_mb,1) + ' / ' + num(lim.max_rss_mb,0) + ' MB'}</td><td>${res.rss_mb == null ? '<span class="na">–</span>' : betriebMeter(res.rss_mb, lim.max_rss_mb)}</td></tr>
     <tr><td>Freier Speicher</td><td class="m">${num(res.freier_speicher_mb,0)} MB frei<span class="betrieb-mobil"> · Min. ${num(lim.min_freier_speicher_mb,0)} MB</span></td><td><span class="na">Minimum ${num(lim.min_freier_speicher_mb,0)} MB</span></td></tr>
