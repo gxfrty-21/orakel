@@ -188,6 +188,20 @@ Job `text250` der Workflow-Datei `.github/workflows/tests.yml`; schlägt er fehl
 lädt er die Bilder als Artefakt `text250-screenshots` und das Serverprotokoll als
 `text250-serverlog` hoch (je 7 Tage).
 
+Nach einem fehlgeschlagenen, abgebrochenen oder abgelaufenen Lauf:
+
+```bash
+# Letzte Läufe des Workflows anzeigen
+gh run list --workflow tests.yml --limit 5
+
+# Serverlog und Screenshots des gewünschten Laufs herunterladen
+gh run download <run-id> -n text250-serverlog -D artifacts/text250-ci
+gh run download <run-id> -n text250-screenshots -D artifacts/text250-ci
+```
+
+Die Dateien landen in `artifacts/text250-ci`; Screenshots gibt es nur bei
+Befunden.
+
 ## Phase 5–11: was jetzt zusätzlich läuft
 
 ### Spider Intelligence (Phase 5)
