@@ -192,7 +192,8 @@ Job `text250` der Workflow-Datei `.github/workflows/tests.yml`; schlägt er fehl
 lädt er die Bilder als Artefakt `text250-screenshots` und das Serverprotokoll als
 `text250-serverlog` hoch (je 7 Tage).
 
-Nach einem fehlgeschlagenen, abgebrochenen oder abgelaufenen Lauf:
+Nach einem fehlgeschlagenen, abgebrochenen oder abgelaufenen Lauf. Die Befehle
+setzen eine angemeldete GitHub CLI voraus (`gh auth login`):
 
 ```bash
 # Letzte Läufe des Workflows anzeigen
