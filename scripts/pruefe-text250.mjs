@@ -269,6 +269,22 @@ async function pruefeKurvenTooltip(page, ansicht, breite) {
   return befunde;
 }
 
+/** Jede Kapitalkurve braucht genau eine Live-Region, keine mehr und keine weniger. */
+async function pruefeLiveRegionen(page) {
+  return page.evaluate(() => {
+    const flaechen = [...document.querySelectorAll('.wfoKurveFlaeche')];
+    if (!flaechen.length) return ['Keine Kapitalkurve für die Live-Region-Prüfung gefunden'];
+    const befunde = [];
+    flaechen.forEach((flaeche, i) => {
+      const anzahl = flaeche.querySelectorAll('.wfoKurveLive').length;
+      if (anzahl !== 1) befunde.push(`Kapitalkurve ${i + 1} hat ${anzahl} Live-Regionen statt einer`);
+    });
+    const gesamt = document.querySelectorAll('.wfoKurveLive').length;
+    if (gesamt !== flaechen.length) befunde.push(`${gesamt} Live-Regionen für ${flaechen.length} Kapitalkurven`);
+    return befunde;
+  });
+}
+
 /** Der Hinweis unter der Kurve zeigt ← und → als echte kbd-Tasten. */
 async function pruefeKurvenHinweis(page, ansicht) {
   return page.evaluate((ansicht) => {
@@ -353,6 +369,7 @@ async function pruefeKurvenTastatur(page, ansicht) {
   const svg = page.locator(`#v-${ansicht} .wfoKurveFlaeche svg`);
   if (!(await svg.count())) return null;
   const befunde = [];
+  befunde.push(...await pruefeLiveRegionen(page));
   await page.mouse.move(0, 0);
   await page.waitForTimeout(80);
   const lese = () => page.evaluate((ansicht) => {
