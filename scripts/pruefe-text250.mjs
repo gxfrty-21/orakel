@@ -219,6 +219,7 @@ async function pruefeKurvenTooltip(page, ansicht, breite) {
       return {
         sichtbar: cs.visibility === 'visible' && Number(cs.opacity) > 0.9,
         text: tipp.innerText.replace(/\s+/g, ' ').trim(),
+        live: box.querySelector('.wfoKurveLive').textContent.trim(),
         links: tr.left, rechts: tr.right, oben: tr.top, unten: tr.bottom,
         kastenLinks: br.left, kastenRechts: br.right, kastenOben: br.top, kastenUnten: br.bottom,
         viewportBreite: innerWidth, viewportHoehe: innerHeight,
@@ -228,6 +229,7 @@ async function pruefeKurvenTooltip(page, ansicht, breite) {
     if (!stand.sichtbar) befunde.push(`Tooltip erscheint bei ${bei} % der Breite nicht`);
     if (!/USD\s/.test(stand.text)) befunde.push(`Tooltip ohne Kapitalstand: «${stand.text}»`);
     if (!/\d{2}\.\d{2}\.\d{4}/.test(stand.text)) befunde.push(`Tooltip ohne Datum: «${stand.text}»`);
+    if (!/USD\s/.test(stand.live)) befunde.push(`Live-Region bleibt bei ${bei} % der Breite leer`);
     befunde.push(...lageBefunde(stand));
   }
 
@@ -242,11 +244,13 @@ async function pruefeKurvenTooltip(page, ansicht, breite) {
       sichtbar: cs.visibility === 'visible' && Number(cs.opacity) > 0.9,
       aktiv: box.classList.contains('an'),
       inhalt: tipp.innerText.trim(),
+      live: box.querySelector('.wfoKurveLive').textContent.trim(),
     };
   }, ansicht);
   if (versteckt.sichtbar) befunde.push('Tooltip bleibt nach dem Verlassen der Kurve sichtbar');
   if (versteckt.aktiv) befunde.push('Führungslinie bleibt nach dem Verlassen der Kurve eingeblendet');
   if (versteckt.inhalt) befunde.push('Tooltip-Inhalt bleibt nach dem Verlassen der Kurve stehen');
+  if (versteckt.live) befunde.push('Live-Region bleibt nach dem Verlassen der Kurve gefüllt');
   return befunde;
 }
 
