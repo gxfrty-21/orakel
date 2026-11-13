@@ -615,6 +615,7 @@ async function pruefeKurvenTastatur(page, ansicht) {
   befunde.push(...lageBefunde(ende));
 
   // Extremwerte direkt aus den API-Daten des gewählten Kandidaten bestimmen.
+  let apiPunkte = [];
   const api = await page.evaluate(async () => {
     const antwort = await fetch('/api/report');
     const bericht = antwort.ok ? await antwort.json() : null;
@@ -638,6 +639,7 @@ async function pruefeKurvenTastatur(page, ansicht) {
     const schritt = Math.max(1, Math.ceil(roh.length / 240));
     const punkte = roh.filter((_, i) => i % schritt === 0);
     if (punkte.length && punkte[punkte.length - 1] !== roh[roh.length - 1]) punkte.push(roh[roh.length - 1]);
+    apiPunkte = punkte;
     const gezeichnet = await page.evaluate((ansicht) => {
       const verlauf = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche polyline`);
       const points = verlauf?.getAttribute('points')?.trim() || '';
@@ -666,6 +668,30 @@ async function pruefeKurvenTastatur(page, ansicht) {
   const tippStart = betragZahl(anfang.text), tippEnde = betragZahl(ende.text);
   if (ariaStart && tippStart && ariaStart !== tippStart) befunde.push(`aria-label Start USD ${ariaStart} stimmt nicht mit Tooltip bei Home (USD ${tippStart}) überein`);
   if (ariaEnde && tippEnde && ariaEnde !== tippEnde) befunde.push(`aria-label Ende USD ${ariaEnde} stimmt nicht mit Tooltip bei Ende (USD ${tippEnde}) überein`);
+
+  // Start, Mitte und Ende inhaltlich gegen die ausgedünnten API-Zeitstempel prüfen.
+  if (apiPunkte.length >= 2) {
+    const apiDatum = t => String(t || '').slice(0, 10).split('-').reverse().join('.');
+    const apiWert = p => Math.round(Number(p[1]));
+    const tooltipDatum = t => (String(t).match(/\b\d{2}\.\d{2}\.\d{4}\b/) || [''])[0];
+    const tooltipWert = t => alsZahl(betragZahl(t));
+    const pruefeApi = (name, text, p) => {
+      if (tooltipDatum(text) !== apiDatum(p[0])) befunde.push(`${name}: Tooltip-Datum ${tooltipDatum(text) || '—'} statt API ${apiDatum(p[0])}`);
+      if (tooltipWert(text) !== apiWert(p)) befunde.push(`${name}: Tooltip-Kapital USD ${tooltipWert(text)} statt API USD ${apiWert(p)}`);
+    };
+    pruefeApi('Startpunkt', anfang.text, apiPunkte[0]);
+    pruefeApi('Endpunkt', ende.text, apiPunkte[apiPunkte.length - 1]);
+    const mitte = Math.floor(apiPunkte.length / 2);
+    const kasten = await svg.boundingBox();
+    if (!kasten) {
+      befunde.push('Kurve für den Mittelpunkt nicht sichtbar');
+    } else {
+      await page.mouse.move(kasten.x + kasten.width * (mitte / (apiPunkte.length - 1)), kasten.y + kasten.height / 2);
+      await page.waitForTimeout(120);
+      const mitteStand = await lese();
+      pruefeApi('Mittelpunkt', mitteStand.text, apiPunkte[mitte]);
+    }
+  }
 
   if (tab.erreicht) {
     await page.keyboard.press('Shift+Tab');
