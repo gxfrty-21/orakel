@@ -151,7 +151,8 @@ Kapitalstand, Datum, Prozentwert und Abstand zum Hoch); der Hinweis unter der
 Kurve führt ← und → als
 kbd-Tasten. Geprüft wird die Tastaturbedienung
 (Durchtabben von oben bis zur Kurve, Fokusring auf der Kurve, Shift+Tab zurück,
-Tab zum nächsten Element mit sichtbarem Fokusring,
+Tab zum nächsten Element mit sichtbarem Fokusring, Fokusring verschwindet nach
+dem Verlassen,
 Pfeiltasten, Home/Ende,
 aria-label nennt Pfeiltasten, Home und Ende, Start/Tief/Hoch/Ende stimmen mit
 der Fusszeile überein, Tief/Hoch auch mit den Extremwerten der Punkte,
