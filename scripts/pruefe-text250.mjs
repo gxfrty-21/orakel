@@ -384,6 +384,7 @@ async function pruefeKurvenTastatur(page, ansicht) {
     return {
       fokus: document.activeElement === svg,
       fokussierbar: svg.getAttribute('tabindex') === '0',
+      aria: svg.getAttribute('aria-label') || '',
       sichtbar: cs.visibility === 'visible' && Number(cs.opacity) > 0.9,
       text: tipp.innerText.replace(/\s+/g, ' ').trim(),
       live: live.textContent.trim(),
@@ -406,6 +407,8 @@ async function pruefeKurvenTastatur(page, ansicht) {
   let stand = await lese();
   if (!stand.fokussierbar) befunde.push('Kurve ist nicht per Tab erreichbar (tabindex fehlt)');
   if (!stand.fokus) befunde.push('Kurve lässt sich nicht per Tastatur fokussieren');
+  if (!/Pfeiltasten/.test(stand.aria)) befunde.push('aria-label der Kurve nennt die Pfeiltasten nicht');
+  if (!/Home[^.]{0,40}Ende/.test(stand.aria)) befunde.push('aria-label der Kurve nennt Home und Ende nicht');
   if (!stand.sichtbar) befunde.push('Tooltip erscheint beim Fokus nicht');
   if (!/USD\s/.test(stand.text) || !/\d{2}\.\d{2}\.\d{4}/.test(stand.text)) befunde.push(`Tooltip beim Fokus unvollständig: «${stand.text}»`);
   if (!/USD\s/.test(stand.live)) befunde.push('Live-Region bleibt beim Fokus leer');
