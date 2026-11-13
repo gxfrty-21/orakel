@@ -461,6 +461,23 @@ async function pruefeKurvenTastatur(page, ansicht) {
     if (!zurueck.korrekt) befunde.push(`Shift+Tab springt nicht zum vorherigen Element (erwartet ${zurueck.vor}, fokussiert ${zurueck.jetzt})`);
   }
 
+  await svg.evaluate(el => el.focus());
+  await page.waitForTimeout(60);
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(80);
+  const weiter = await page.evaluate((ansicht) => {
+    const a = document.activeElement;
+    const svg = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche svg`);
+    const klasse = a && a.className ? String(a.className.baseVal ?? a.className).split(' ')[0] : '';
+    return {
+      kurve: a === svg,
+      body: !a || a === document.body,
+      name: a ? `${a.tagName}${klasse ? '.' + klasse : ''}«${(a.innerText || a.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 30)}»` : 'nichts',
+    };
+  }, ansicht);
+  if (weiter.kurve) befunde.push('Tab bleibt auf der Kapitalkurve');
+  else if (weiter.body) befunde.push('Tab führt von der Kapitalkurve zu keinem nächsten Element');
+
   await svg.evaluate(el => el.blur());
   await page.waitForTimeout(80);
   const nach = await lese();

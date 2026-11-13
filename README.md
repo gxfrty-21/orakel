@@ -148,7 +148,8 @@ als Karten geprüft. Im Lab überfährt er ausserdem die Kapitalkurve und prüft
 den Tooltip (Kapitalstand, Datum, Lage im Kasten, Verschwinden von Tooltip und
 Live-Region beim Verlassen, Wiederkommen nach erneutem Überfahren); der Hinweis unter der Kurve führt ← und → als
 kbd-Tasten. Geprüft wird die Tastaturbedienung
-(Durchtabben von oben bis zur Kurve, Shift+Tab zurück, Pfeiltasten, Home/Ende,
+(Durchtabben von oben bis zur Kurve, Shift+Tab zurück, Tab zum nächsten Element,
+Pfeiltasten, Home/Ende,
 aria-label nennt Pfeiltasten, Home und Ende, genau eine Live-Region je Kurve,
 die visuell verborgen bleibt).
 Exit-Code 1 bei einem Befund.
