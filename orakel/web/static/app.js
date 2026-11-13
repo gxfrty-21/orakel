@@ -169,18 +169,25 @@ function drahteKapitalKurve(){
   const zeiger = box.querySelector('.wfoKurveZeiger');
   const punkt = box.querySelector('.wfoKurvePunkt');
   const tipp = box.querySelector('.wfoKurveTipp');
+  const live = box.querySelector('.wfoKurveLive');
   const { punkte, tief, hoch, spanne, start } = daten;
-  let aktiv = -1;
+  let aktiv = -1, ueber = false;
   const datum = t => {
     const teile = String(t || '').slice(0, 10).split('-');
     return teile.length === 3 ? `${teile[2]}.${teile[1]}.${teile[0]}` : String(t || '–');
   };
-  const zeige = ev => {
+  const verstecke = () => {
+    if(ueber || document.activeElement === svg) return;
+    box.classList.remove('an');
+    tipp.replaceChildren();
+    live.textContent = '';
+    aktiv = -1;
+  };
+  const setze = i => {
     const r = svg.getBoundingClientRect();
     if(!r.width) return;
-    const anteil = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width));
-    const i = Math.round(anteil * (punkte.length - 1));
-    if(i === aktiv) return;
+    i = Math.max(0, Math.min(punkte.length - 1, i));
+    if(i === aktiv && box.classList.contains('an')) return;
     aktiv = i;
     const p = punkte[i];
     const xPx = (i / (punkte.length - 1)) * r.width;
@@ -194,7 +201,8 @@ function drahteKapitalKurve(){
     const betrag = document.createElement('b');
     betrag.textContent = 'USD ' + num(p.v, 0);
     zeile.append(betrag);
-    const prozent = start && Math.abs(start) > 1e-9 ? (p.v - start) / start * 100 : null;
+    const roh = start && Math.abs(start) > 1e-9 ? (p.v - start) / start * 100 : null;
+    const prozent = roh == null ? null : Math.round(roh * 10) / 10 || 0;
     if(prozent != null){
       const delta = document.createElement('i');
       delta.className = cls(prozent);
@@ -211,10 +219,32 @@ function drahteKapitalKurve(){
     if(oben < 4) oben = yPx + 10;
     tipp.style.left = links + 'px';
     tipp.style.top = Math.max(4, Math.min(r.height - hoehe - 4, oben)) + 'px';
+    const richtung = prozent == null ? '' : prozent > 0 ? `, plus ${num(prozent,1)} Prozent seit Start` : prozent < 0 ? `, minus ${num(Math.abs(prozent),1)} Prozent seit Start` : ', unverändert seit Start';
+    live.textContent = `Kapital USD ${num(p.v,0)}${richtung}, ${datum(p.t)}`;
   };
+  const zeige = ev => {
+    const r = svg.getBoundingClientRect();
+    if(!r.width) return;
+    const anteil = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width));
+    setze(Math.round(anteil * (punkte.length - 1)));
+  };
+  svg.addEventListener('pointerenter', () => { ueber = true; });
   svg.addEventListener('pointermove', zeige);
   svg.addEventListener('pointerdown', zeige);
-  box.addEventListener('pointerleave', () => { box.classList.remove('an'); aktiv = -1; });
+  box.addEventListener('pointerleave', () => { ueber = false; verstecke(); });
+  svg.addEventListener('focus', () => { if(aktiv < 0) setze(0); });
+  svg.addEventListener('blur', verstecke);
+  svg.addEventListener('keydown', ev => {
+    const schritt = ev.shiftKey ? 10 : 1;
+    let ziel;
+    if(ev.key === 'ArrowLeft') ziel = (aktiv < 0 ? 0 : aktiv) - schritt;
+    else if(ev.key === 'ArrowRight') ziel = (aktiv < 0 ? 0 : aktiv) + schritt;
+    else if(ev.key === 'Home') ziel = 0;
+    else if(ev.key === 'End') ziel = punkte.length - 1;
+    else return;
+    ev.preventDefault();
+    setze(ziel);
+  });
 }
 
 function kapitalKurveBlock(o){
@@ -239,11 +269,11 @@ function kapitalKurveBlock(o){
     const i = punkte.findIndex(p=>String(p[0]) >= ts);
     return i > 0 ? `<line x1="${x(i).toFixed(1)}" y1="0" x2="${x(i).toFixed(1)}" y2="${H}" class="wfoKurveFalte"></line>` : '';
   }).join('');
-  const aria = `Kapitalkurve der Walk-Forward-Testfenster: Start USD ${num(start,0)}, Tief USD ${num(tief,0)}, Hoch USD ${num(hoch,0)}, Ende USD ${num(ende,0)}`;
+  const aria = `Kapitalkurve der Walk-Forward-Testfenster: Start USD ${num(start,0)}, Tief USD ${num(tief,0)}, Hoch USD ${num(hoch,0)}, Ende USD ${num(ende,0)}. Mit den Pfeiltasten Datenpunkte ablesen, Home und Ende für Anfang und Schluss.`;
   return `<div class="ph" style="border-top:1px solid var(--line)">Walk-Forward-Kapitalkurve<span class="tag">Testfenster verkettet</span></div>
     <div class="wfoKurve">
     <div class="wfoKurveFlaeche">
-    <svg viewBox="0 0 ${B} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(aria)}">
+    <svg viewBox="0 0 ${B} ${H}" preserveAspectRatio="none" role="img" tabindex="0" aria-label="${esc(aria)}">
       <line x1="0" y1="${y(start).toFixed(1)}" x2="${B}" y2="${y(start).toFixed(1)}" class="wfoKurveBasis"></line>
       ${grenzen}
       <polygon points="0,${H} ${verlauf} ${B},${H}" fill="${farbe}" opacity=".1"></polygon>
@@ -253,6 +283,7 @@ function kapitalKurveBlock(o){
     </svg>
     <div class="wfoKurvePunkt"></div>
     <div class="wfoKurveTipp"></div>
+    <div class="wfoKurveLive" role="status" aria-live="polite"></div>
     </div>
     <div class="wfoKurveFuss">
       <span>Start <b>USD ${num(start,0)}</b></span><span>Tief <b>USD ${num(tief,0)}</b></span>
