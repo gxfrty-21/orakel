@@ -212,3 +212,5 @@ Zwei neue Ansichten im Dashboard, vollständig aus echten Daten:
   ausdrücklich, wenn 3D mit den Ressourcen nicht sinnvoll ist.
 - Das Paper-Konto ist eine Simulation in SQLite. Echte Kurse und echte Ausführung kommen
   erst über MT5 auf deinem Windows-Rechner.
+
+<!-- Cache-Messung, wird nicht gemergt. -->
