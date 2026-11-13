@@ -204,6 +204,9 @@ gh run list --workflow tests.yml --limit 5
 # Serverlog und Screenshots des gewünschten Laufs herunterladen
 gh run download <run-id> -n text250-serverlog -D artifacts/text250-ci
 gh run download <run-id> -n text250-screenshots -D artifacts/text250-ci
+
+# Vollständiges Job-Log anzeigen (alle Jobs, inklusive text250)
+gh run view <run-id> --log
 ```
 
 Die Dateien landen in `artifacts/text250-ci`; Screenshots gibt es nur bei
