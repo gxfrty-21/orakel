@@ -318,9 +318,11 @@ async function tabbeZurKurve(page, ansicht) {
       const a = document.activeElement;
       const box = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche`);
       const svg = box && box.querySelector('svg');
+      if (a && a !== svg) window.__text250VorKurve = a;
+      const klasse = a && a.className ? String(a.className.baseVal ?? a.className).split(' ')[0] : '';
       return {
         kurve: !!svg && a === svg,
-        name: a ? `${a.tagName}${a.className ? '.' + String(a.className).split(' ')[0] : ''}«${(a.innerText || a.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 30)}»` : 'nichts',
+        name: a ? `${a.tagName}${klasse ? '.' + klasse : ''}«${(a.innerText || a.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 30)}»` : 'nichts',
       };
     }, ansicht);
     if (info.kurve) return { erreicht: true, schritte, letzter: info.name };
@@ -409,6 +411,20 @@ async function pruefeKurvenTastatur(page, ansicht) {
   if (anfang.zeiger !== startZeiger) befunde.push(`Home kehrt nicht zum ersten Punkt zurück (${anfang.zeiger} statt ${startZeiger})`);
   if (anfang.live !== startLive) befunde.push(`Live-Region kehrt bei Home nicht zur Startansage zurück («${anfang.live}» statt «${startLive}»)`);
   befunde.push(...lageBefunde(anfang));
+
+  if (tab.erreicht) {
+    await page.keyboard.press('Shift+Tab');
+    await page.waitForTimeout(80);
+    const zurueck = await page.evaluate((ansicht) => {
+      const name = e => {
+        const klasse = e && e.className ? String(e.className.baseVal ?? e.className).split(' ')[0] : '';
+        return e ? `${e.tagName}${klasse ? '.' + klasse : ''}«${(e.innerText || e.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 30)}»` : 'nichts';
+      };
+      const vor = window.__text250VorKurve;
+      return { korrekt: !!vor && document.activeElement === vor, vor: name(vor), jetzt: name(document.activeElement) };
+    }, ansicht);
+    if (!zurueck.korrekt) befunde.push(`Shift+Tab springt nicht zum vorherigen Element (erwartet ${zurueck.vor}, fokussiert ${zurueck.jetzt})`);
+  }
 
   await svg.evaluate(el => el.blur());
   await page.waitForTimeout(80);
