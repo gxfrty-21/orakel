@@ -16,3 +16,5 @@ backups/
 orakel-umzug*
 seed/*.db-wal
 seed/*.db-shm
+
+node_modules/

@@ -1,0 +1,15 @@
+{
+  "name": "orakel-pruefungen",
+  "private": true,
+  "description": "Browser-Prüfungen für das Orakel-Dashboard (Textskalierung, Tabellenkarten)",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "pruefe:text250": "node pruefe-text250.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.65.0"
+  }
+}

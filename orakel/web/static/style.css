@@ -900,6 +900,9 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
   .globe-hud-stats small,.globe-hud-stats b{overflow-wrap:anywhere;hyphens:auto}
 }
 
+/* Code-Schnipsel (Befehle, Pfade) brechen bei grosser Schrift im Kasten um. */
+.code,.nacht-status{overflow-wrap:anywhere;hyphens:auto}
+
 /* Vault: Legende, Knotenzähler und Zoom-Bedienung skalieren mit der Schrift mit. */
 .vault-count{white-space:normal;text-align:right}
 .vault-legend span{white-space:normal;overflow-wrap:anywhere}

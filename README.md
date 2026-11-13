@@ -138,6 +138,30 @@ tests/           Risiko, Backtest, Daten, Bericht
 - Der Richter ist fest verdrahtet; keine KI ändert seine Regeln.
 - Jede Zahl im Dashboard stammt aus SQLite — nichts wird geschätzt oder erfunden.
 
+## Browser-Prüfung bei grosser Schrift
+
+`scripts/pruefe-text250.mjs` skaliert die Schrift im Dashboard auf 250 %
+(Faktor 2,5 auf berechnete Schriftgrössen und Zeilenhöhen). Bei 360, 320 und
+280 px prüft es, ob Inhalte seitlich aus ihrem Kasten oder aus dem Viewport
+laufen. Tabellen werden zusätzlich mit langen deutschen Komposita belastet und
+als Karten geprüft. Exit-Code 1 bei einem Befund.
+
+```bash
+# Dashboard mit Beispieldaten starten, ohne die eigene DB anzufassen
+cp seed/orakel-seed.db /tmp/orakel-text250.db
+ORAKEL_DB_PFAD=/tmp/orakel-text250.db python -m orakel serve --port 3000
+
+# Einmalig: Abhängigkeit und Browser installieren
+npm ci --prefix scripts
+npm --prefix scripts exec playwright install chromium
+
+# Prüfen (alle sieben Ansichten, drei Breiten)
+node scripts/pruefe-text250.mjs
+```
+
+Einschränken lässt sich der Lauf mit `--ansichten lab,kb --breiten 360,280`,
+die Adresse mit `--url http://127.0.0.1:8000`, Tabellen mit `--ohne-tabellen`.
+
 ## Phase 5–11: was jetzt zusätzlich läuft
 
 ### Spider Intelligence (Phase 5)
