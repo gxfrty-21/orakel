@@ -254,6 +254,29 @@ async function pruefeKurvenTooltip(page, ansicht, breite) {
   return befunde;
 }
 
+/** Der Hinweis unter der Kurve zeigt ← und → als echte kbd-Tasten. */
+async function pruefeKurvenHinweis(page, ansicht) {
+  return page.evaluate((ansicht) => {
+    const svg = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche svg`);
+    const box = svg && svg.closest('.wfoKurve');
+    const hinweis = box && box.querySelector('.wfoKurveHinweis');
+    if (!hinweis) return ['Kurven-Hinweis fehlt'];
+    const tasten = [...hinweis.querySelectorAll('kbd')];
+    const texte = tasten.map(k => k.textContent.trim());
+    const ohneTasten = hinweis.cloneNode(true);
+    ohneTasten.querySelectorAll('kbd').forEach(k => k.remove());
+    const rest = ohneTasten.textContent.replace(/\s+/g, ' ').trim();
+    const befunde = [];
+    if (!texte.includes('←') || !texte.includes('→')) befunde.push(`Kurven-Hinweis ohne kbd-Tasten für ← und → («${hinweis.textContent.replace(/\s+/g, ' ').trim()}», kbd: ${texte.join(' ') || 'keine'})`);
+    if (/[←→]/.test(rest)) befunde.push(`Pfeile stehen im Hinweis ausserhalb von kbd («${rest}»)`);
+    tasten.forEach((k, i) => {
+      const r = k.getBoundingClientRect();
+      if (!r.width || !r.height || getComputedStyle(k).visibility === 'hidden') befunde.push(`kbd-Taste «${texte[i]}» ist nicht sichtbar`);
+    });
+    return befunde;
+  }, ansicht);
+}
+
 /** Die Live-Region muss für Screenreader da, aber visuell verborgen sein. */
 async function pruefeLiveVerborgen(page, ansicht) {
   const stand = await page.evaluate((ansicht) => {
@@ -354,6 +377,7 @@ async function pruefeKurvenTastatur(page, ansicht) {
   if (!/USD\s/.test(stand.live)) befunde.push('Live-Region bleibt beim Fokus leer');
   if (!/\d{2}\.\d{2}\.\d{4}/.test(stand.live)) befunde.push('Live-Region ohne Datum beim Fokus');
   if (stand.liveRolle !== 'status' && stand.liveModus !== 'polite') befunde.push('Live-Region ist nicht als Status/Polite markiert');
+  befunde.push(...await pruefeKurvenHinweis(page, ansicht));
   befunde.push(...await pruefeLiveVerborgen(page, ansicht));
   befunde.push(...lageBefunde(stand));
   const betrag = t => (String(t).match(/USD\s[0-9'’.,]+/) || [''])[0];
