@@ -183,6 +183,21 @@ async function waehleKurvenKandidat(page) {
   return false;
 }
 
+/** Prüft, ob der Tooltip im Chart-Kasten und im Viewport bleibt. */
+function lageBefunde(stand) {
+  const befunde = [];
+  if (stand.links < stand.kastenLinks - 1 || stand.rechts > stand.kastenRechts + 1) {
+    befunde.push(`Tooltip läuft aus dem Kasten (${Math.round(stand.links)}–${Math.round(stand.rechts)} statt ${Math.round(stand.kastenLinks)}–${Math.round(stand.kastenRechts)})`);
+  }
+  if (stand.oben < stand.kastenOben - 1 || stand.unten > stand.kastenUnten + 1) {
+    befunde.push(`Tooltip läuft senkrecht aus dem Kasten (${Math.round(stand.oben)}–${Math.round(stand.unten)} statt ${Math.round(stand.kastenOben)}–${Math.round(stand.kastenUnten)})`);
+  }
+  if (stand.links < -1 || stand.rechts > stand.viewportBreite + 1 || stand.oben < -1 || stand.unten > stand.viewportHoehe + 1) {
+    befunde.push(`Tooltip läuft aus dem Viewport (${Math.round(stand.links)}–${Math.round(stand.rechts)} × ${Math.round(stand.oben)}–${Math.round(stand.unten)} bei ${stand.viewportBreite}×${stand.viewportHoehe})`);
+  }
+  return befunde;
+}
+
 /** Überfährt die Kapitalkurve und prüft den Tooltip samt Lage im Kasten. */
 async function pruefeKurvenTooltip(page, ansicht, breite) {
   const svg = page.locator(`#v-${ansicht} .wfoKurveFlaeche svg`);
@@ -206,23 +221,86 @@ async function pruefeKurvenTooltip(page, ansicht, breite) {
         text: tipp.innerText.replace(/\s+/g, ' ').trim(),
         links: tr.left, rechts: tr.right, oben: tr.top, unten: tr.bottom,
         kastenLinks: br.left, kastenRechts: br.right, kastenOben: br.top, kastenUnten: br.bottom,
-        viewportHoehe: innerHeight,
+        viewportBreite: innerWidth, viewportHoehe: innerHeight,
       };
     }, ansicht);
     const bei = Math.round(anteil * 100);
     if (!stand.sichtbar) befunde.push(`Tooltip erscheint bei ${bei} % der Breite nicht`);
     if (!/USD\s/.test(stand.text)) befunde.push(`Tooltip ohne Kapitalstand: «${stand.text}»`);
     if (!/\d{2}\.\d{2}\.\d{4}/.test(stand.text)) befunde.push(`Tooltip ohne Datum: «${stand.text}»`);
-    if (stand.links < stand.kastenLinks - 1 || stand.rechts > stand.kastenRechts + 1) {
-      befunde.push(`Tooltip läuft aus dem Kasten (${Math.round(stand.links)}–${Math.round(stand.rechts)} statt ${Math.round(stand.kastenLinks)}–${Math.round(stand.kastenRechts)})`);
-    }
-    if (stand.oben < stand.kastenOben - 1 || stand.unten > stand.kastenUnten + 1) {
-      befunde.push(`Tooltip läuft senkrecht aus dem Kasten (${Math.round(stand.oben)}–${Math.round(stand.unten)} statt ${Math.round(stand.kastenOben)}–${Math.round(stand.kastenUnten)})`);
-    }
-    if (stand.links < -1 || stand.rechts > breite + 1 || stand.oben < -1 || stand.unten > stand.viewportHoehe + 1) {
-      befunde.push(`Tooltip läuft aus dem Viewport (${Math.round(stand.links)}–${Math.round(stand.rechts)} × ${Math.round(stand.oben)}–${Math.round(stand.unten)} bei ${breite}×${stand.viewportHoehe})`);
-    }
+    befunde.push(...lageBefunde(stand));
   }
+  return befunde;
+}
+
+/** Fokussiert die Kurve und prüft Pfeiltasten, Home/Ende und die Live-Region. */
+async function pruefeKurvenTastatur(page, ansicht) {
+  const svg = page.locator(`#v-${ansicht} .wfoKurveFlaeche svg`);
+  if (!(await svg.count())) return null;
+  const befunde = [];
+  await page.mouse.move(0, 0);
+  await page.waitForTimeout(80);
+  const lese = () => page.evaluate((ansicht) => {
+    const box = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche`);
+    const svg = box.querySelector('svg');
+    const tipp = box.querySelector('.wfoKurveTipp');
+    const live = box.querySelector('.wfoKurveLive');
+    const zeiger = box.querySelector('.wfoKurveZeiger');
+    const cs = getComputedStyle(tipp);
+    const tr = tipp.getBoundingClientRect();
+    const br = box.getBoundingClientRect();
+    return {
+      fokus: document.activeElement === svg,
+      fokussierbar: svg.getAttribute('tabindex') === '0',
+      sichtbar: cs.visibility === 'visible' && Number(cs.opacity) > 0.9,
+      text: tipp.innerText.replace(/\s+/g, ' ').trim(),
+      live: live.textContent.trim(),
+      zeiger: zeiger.getAttribute('x1'),
+      scrollY: Math.round(scrollY),
+      links: tr.left, rechts: tr.right, oben: tr.top, unten: tr.bottom,
+      kastenLinks: br.left, kastenRechts: br.right, kastenOben: br.top, kastenUnten: br.bottom,
+      viewportBreite: innerWidth, viewportHoehe: innerHeight,
+    };
+  }, ansicht);
+
+  await svg.evaluate(el => el.focus());
+  await page.waitForTimeout(100);
+  let stand = await lese();
+  if (!stand.fokussierbar) befunde.push('Kurve ist nicht per Tab erreichbar (tabindex fehlt)');
+  if (!stand.fokus) befunde.push('Kurve lässt sich nicht per Tastatur fokussieren');
+  if (!stand.sichtbar) befunde.push('Tooltip erscheint beim Fokus nicht');
+  if (!/USD\s/.test(stand.text) || !/\d{2}\.\d{2}\.\d{4}/.test(stand.text)) befunde.push(`Tooltip beim Fokus unvollständig: «${stand.text}»`);
+  if (!/USD\s/.test(stand.live)) befunde.push('Live-Region bleibt beim Fokus leer');
+  befunde.push(...lageBefunde(stand));
+  const startZeiger = stand.zeiger;
+  const scrollStart = stand.scrollY;
+
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(80);
+  stand = await lese();
+  if (stand.zeiger === startZeiger) befunde.push('Pfeil rechts bewegt den Zeiger nicht');
+  if (!/USD\s/.test(stand.live)) befunde.push('Live-Region bleibt nach Pfeil rechts leer');
+  if (stand.scrollY !== scrollStart) befunde.push(`Pfeil rechts scrollt die Seite (${scrollStart} → ${stand.scrollY})`);
+  befunde.push(...lageBefunde(stand));
+
+  await page.keyboard.press('End');
+  await page.waitForTimeout(80);
+  const ende = await lese();
+  if (ende.zeiger === startZeiger) befunde.push('Ende springt nicht an den letzten Punkt');
+  if (ende.scrollY !== scrollStart) befunde.push(`Ende scrollt die Seite (${scrollStart} → ${ende.scrollY})`);
+  befunde.push(...lageBefunde(ende));
+
+  await page.keyboard.press('Home');
+  await page.waitForTimeout(80);
+  const anfang = await lese();
+  if (anfang.zeiger !== startZeiger) befunde.push(`Home kehrt nicht zum ersten Punkt zurück (${anfang.zeiger} statt ${startZeiger})`);
+  befunde.push(...lageBefunde(anfang));
+
+  await svg.evaluate(el => el.blur());
+  await page.waitForTimeout(80);
+  const nach = await lese();
+  if (nach.sichtbar) befunde.push('Tooltip bleibt nach dem Verlassen sichtbar');
+  if (nach.live) befunde.push('Live-Region bleibt nach dem Verlassen gefüllt');
   return befunde;
 }
 
@@ -249,7 +327,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const fehler = [];
   const hinweise = new Set();
-  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0;
+  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0;
 
   try {
     for (const breite of opt.breiten) {
@@ -278,10 +356,13 @@ async function main() {
         if (ansicht === 'lab') {
           if (kurveGefunden) {
             const kurvenBefunde = await pruefeKurvenTooltip(page, ansicht, breite);
-            tooltipGesamt++;
+            if (kurvenBefunde) tooltipGesamt++;
             for (const text of kurvenBefunde || []) fehler.push(`${breite}px/${ansicht}: ${text}`);
+            const tastaturBefunde = await pruefeKurvenTastatur(page, ansicht);
+            if (tastaturBefunde) tastaturGesamt++;
+            for (const text of tastaturBefunde || []) fehler.push(`${breite}px/${ansicht}: ${text}`);
           } else {
-            hinweise.add('Keine Kapitalkurve im Lab gefunden – Tooltip nicht geprüft.');
+            hinweise.add('Keine Kapitalkurve im Lab gefunden – Tooltip und Tastatur nicht geprüft.');
           }
         }
 
@@ -314,7 +395,7 @@ async function main() {
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  console.log(`OK: keine Überläufe${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {
