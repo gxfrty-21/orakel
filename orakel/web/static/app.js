@@ -156,6 +156,29 @@ document.querySelector('#labTabs').onclick = e => {
   document.querySelectorAll('#labTabs .tab').forEach(t=>t.classList.toggle('on',t===b));
   renderLab();
 };
+/* Einzelne Walk-Forward-Fenster eines Kandidaten, aufklappbar. */
+function wfoFoldsBlock(o){
+  const folds = (o && o.walk_forward_folds)||[];
+  if(!folds.length) return '';
+  const datum = t => t ? esc(String(t).slice(0,10)) : '–';
+  const betrag = v => v==null?'–':(v>=0?'+':'-')+'USD '+num(Math.abs(v),0);
+  return `<details class="wfoFolds"><summary>Walk-Forward-Fenster
+    <small>${folds.length} Fenster · ${folds.filter(f=>f.profitable).length} profitabel</small></summary>
+    <div class="tw"><table class="tbl"><thead><tr><th>Fenster</th><th>Training</th><th>Test</th>
+    <th>Parameter im Fenster</th><th class="m">Trades Training</th><th class="m">Trades Test</th>
+    <th class="m">Profit Factor</th><th class="m">Netto</th><th>Ergebnis</th></tr></thead><tbody>
+    ${folds.map(f=>{
+      const F=f.test||{}, P=f.train||{}, ok=!!f.profitable;
+      return `<tr><td>Fenster ${esc(f.nr)}</td><td>${datum(f.train_von)} – ${datum(f.train_bis)}</td>
+      <td>${datum(f.test_von)} – ${datum(f.test_bis)}</td><td style="white-space:normal">${esc(params(f.parameter)||'–')}</td>
+      <td class="m">${P.trades??'–'}</td><td class="m">${F.trades??'–'}</td>
+      <td class="m">${F.profit_factor==null?'–':num(F.profit_factor,2)}</td>
+      <td class="m ${cls(F.netto)}">${betrag(F.netto)}</td>
+      <td><span class="pill ${ok?'':'r'}"${f.grund?` title="${esc(f.grund)}"`:''}>${f.grund?'KEIN PARAMETER':ok?'PROFITABEL':'VERLUST'}</span></td></tr>`;
+    }).join('')}
+    </tbody></table></div></details>`;
+}
+
 function renderLab(){
   const v = R.validierungen||[], selbst = u => `<span class="pill ${u==='bestanden'?'':u==='abgelehnt'?'r':'g'}">${esc(u).toUpperCase()}</span>`;
   $('#labKpis').innerHTML = [['Geprüft',v.length,'Kandidaten'],['Bestanden',v.filter(x=>x.urteil==='bestanden').length,'alle Regeln inkl. Holdout'],
@@ -175,24 +198,6 @@ function renderLab(){
   const I=o.in_sample||{}, O=o.out_of_sample||{}, G=o.gesamt||{}, H=o.holdout||{}, Hk=H.kennzahlen||{};
   const mrow = (n,k,f) => `<tr><td>${n}</td><td class="m">${f(I[k])}</td><td class="m">${f(O[k])}</td><td class="m">${f(G[k])}</td></tr>`;
   const usd = v => v==null?'–':(v>=0?'+':'-')+'USD '+num(Math.abs(v),0);
-  // Einzelne Walk-Forward-Fenster: Trainings- und Testblock jedes Folds, aufklappbar.
-  const folds = o.walk_forward_folds||[];
-  const fdatum = t => t ? esc(String(t).slice(0,10)) : '–';
-  const foldBlock = folds.length ? `<details class="wfoFolds"><summary>Walk-Forward-Fenster
-    <small>${folds.length} Fenster · ${folds.filter(f=>f.profitable).length} profitabel</small></summary>
-    <div class="tw"><table class="tbl"><thead><tr><th>Fenster</th><th>Training</th><th>Test</th>
-    <th>Parameter im Fenster</th><th class="m">Trades Training</th><th class="m">Trades Test</th>
-    <th class="m">Profit Factor</th><th class="m">Netto</th><th>Ergebnis</th></tr></thead><tbody>
-    ${folds.map(f=>{
-      const F=f.test||{}, P=f.train||{}, ok=!!f.profitable;
-      return `<tr><td>Fenster ${esc(f.nr)}</td><td>${fdatum(f.train_von)} – ${fdatum(f.train_bis)}</td>
-      <td>${fdatum(f.test_von)} – ${fdatum(f.test_bis)}</td><td style="white-space:normal">${esc(params(f.parameter)||'–')}</td>
-      <td class="m">${P.trades??'–'}</td><td class="m">${F.trades??'–'}</td>
-      <td class="m">${F.profit_factor==null?'–':num(F.profit_factor,2)}</td>
-      <td class="m ${cls(F.netto)}">${usd(F.netto)}</td>
-      <td><span class="pill ${ok?'':'r'}"${f.grund?` title="${esc(f.grund)}"`:''}>${f.grund?'KEIN PARAMETER':ok?'PROFITABEL':'VERLUST'}</span></td></tr>`;
-    }).join('')}
-    </tbody></table></div></details>` : '';
   $('#labDetail').innerHTML = `<div class="card"><span>${selbst(o.urteil)}</span>
     <h2>${esc(o.symbol)} · ${esc(o.strategie)}</h2>
     <p class="sub" style="margin:0">${esc(o.beschreibung)}<br>Parameter: ${esc(params(o.parameter))}${o.oos_ab?' · ungesehen ab '+esc(o.oos_ab):''}</p>
@@ -207,7 +212,7 @@ function renderLab(){
     <tr><td>Walk-Forward-Fenster profitabel</td><td class="m">–</td><td class="m">–</td><td class="m">${o.walk_forward_bestanden==null?'–':Math.round(o.walk_forward_bestanden*100)+' %'}</td></tr>
     <tr><td>Zufallsvergleich (p-Wert, kleiner = besser)</td><td class="m">–</td><td class="m">–</td><td class="m">${o.zufall_p_wert==null?'nicht geprüft':num(o.zufall_p_wert,4)}</td></tr>
     </tbody></table></div>
-    ${foldBlock}
+    ${wfoFoldsBlock(o)}
     <div class="ph" style="border-top:1px solid var(--line)">Versiegelter Holdout<span class="tag">${H.von?esc(H.von)+' – '+esc(H.bis):'nur bester Kandidat'}</span></div>
     <div class="tw"><table class="tbl tblKey"><tbody>
     <tr><td>Ergebnis</td><td class="m">${o.holdout_bestanden==null?'nicht geöffnet':o.holdout_bestanden?'<span class="up">BESTANDEN</span>':'<span class="dn">ABGELEHNT</span>'}</td></tr>
@@ -252,7 +257,8 @@ function renderStrat(){
     <tr><td>Rendite gesamt</td><td class="m ${cls(G.rendite_pct)}">${pct(G.rendite_pct,1)}</td></tr>
     <tr><td>Kaufen und Halten (ungesehen)</td><td class="m">${pct(d.kaufen_halten_oos_pct,1)}</td></tr>
     <tr><td>Gebühren gesamt</td><td class="m">${money(G.gebuehren)}</td></tr>
-    <tr><td>Zeit im Markt</td><td class="m">${pct(G.zeit_im_markt_pct,0)}</td></tr></tbody></table></div>`;
+    <tr><td>Zeit im Markt</td><td class="m">${pct(G.zeit_im_markt_pct,0)}</td></tr></tbody></table></div>
+    ${wfoFoldsBlock(d)}`;
 }
 
 /* ---------- Research ---------- */
