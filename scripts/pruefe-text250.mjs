@@ -293,6 +293,21 @@ async function pruefeKurvenTooltip(page, ansicht, breite) {
   else if (datum(zurueck.live) !== datum(zurueck.text)) befunde.push(`Live-Region nennt nach erneutem Überfahren nicht das Datum des Tooltips (${datum(zurueck.live) || '—'} statt ${datum(zurueck.text)})`);
   if (!prozent(zurueck.text) || !liveProzent(zurueck.live)) befunde.push(`Prozentwert nach erneutem Überfahren nicht lesbar (Tooltip «${zurueck.text}», Live «${zurueck.live}»)`);
   else if (liveProzent(zurueck.live) !== prozent(zurueck.text)) befunde.push(`Live-Region nennt nach erneutem Überfahren nicht den Prozentwert des Tooltips (${liveProzent(zurueck.live)} statt ${prozent(zurueck.text)})`);
+  const hoch = t => (String(t).match(/Hoch bis hier USD\s([0-9'’]+)/) || [''])[1] || '';
+  const liveHoch = t => (String(t).match(/bisherigen Hoch von USD\s([0-9'’]+)/) || [''])[1] || '';
+  const abstand = t => {
+    if (/\bam Hoch\b/.test(t)) return '0';
+    const m = String(t).match(/([0-9'’]+(?:[.,][0-9]+)?)\s*%\s*darunter/);
+    return m ? String(Number(m[1].replace(/['’]/g, '').replace(',', '.'))) : '';
+  };
+  const liveAbstand = t => {
+    if (/\bam bisherigen Hoch\b/.test(t)) return '0';
+    const m = String(t).match(/([0-9'’]+(?:[.,][0-9]+)?)\s+Prozent unter dem bisherigen Hoch/);
+    return m ? String(Number(m[1].replace(/['’]/g, '').replace(',', '.'))) : '';
+  };
+  if (hoch(zurueck.text) && liveHoch(zurueck.live) && hoch(zurueck.text) !== liveHoch(zurueck.live)) befunde.push(`Live-Region nennt nach erneutem Überfahren nicht den Hochstand des Tooltips (USD ${liveHoch(zurueck.live)} statt USD ${hoch(zurueck.text)})`);
+  if (abstand(zurueck.text) === '' || liveAbstand(zurueck.live) === '') befunde.push(`Abstand zum Hoch nach erneutem Überfahren nicht lesbar (Tooltip «${zurueck.text}», Live «${zurueck.live}»)`);
+  else if (liveAbstand(zurueck.live) !== abstand(zurueck.text)) befunde.push(`Live-Region nennt nach erneutem Überfahren nicht den Abstand zum Hoch des Tooltips (${liveAbstand(zurueck.live)} % statt ${abstand(zurueck.text)} %)`);
   return befunde;
 }
 
