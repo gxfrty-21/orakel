@@ -302,6 +302,26 @@ async function pruefeLiveRegionen(page) {
   });
 }
 
+/** Die vier Eckwerte im aria-label müssen zur sichtbaren Fusszeile passen. */
+async function pruefeAriaWerte(page, ansicht) {
+  return page.evaluate((ansicht) => {
+    const box = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche`);
+    const fuss = box && box.closest('.wfoKurve').querySelector('.wfoKurveFuss');
+    const aria = (box && box.querySelector('svg') && box.querySelector('svg').getAttribute('aria-label')) || '';
+    const text = fuss ? fuss.innerText.replace(/\s+/g, ' ').trim() : '';
+    const wert = (t, name) => (t.match(new RegExp(`${name}\\s+USD\\s+([0-9'’]+)`)) || [])[1] || '';
+    const befunde = [];
+    for (const name of ['Start', 'Tief', 'Hoch', 'Ende']) {
+      const a = wert(aria, name);
+      const f = wert(text, name);
+      if (!a) befunde.push(`aria-label nennt ${name} nicht mit USD-Betrag`);
+      else if (!f) befunde.push(`Fusszeile nennt ${name} nicht mit USD-Betrag`);
+      else if (a !== f) befunde.push(`aria-label nennt ${name} USD ${a}, Fusszeile USD ${f}`);
+    }
+    return befunde;
+  }, ansicht);
+}
+
 /** Der Hinweis unter der Kurve zeigt ← und → als echte kbd-Tasten. */
 async function pruefeKurvenHinweis(page, ansicht) {
   return page.evaluate((ansicht) => {
@@ -424,6 +444,7 @@ async function pruefeKurvenTastatur(page, ansicht) {
   if (!stand.fokus) befunde.push('Kurve lässt sich nicht per Tastatur fokussieren');
   if (!/Pfeiltasten/.test(stand.aria)) befunde.push('aria-label der Kurve nennt die Pfeiltasten nicht');
   if (!/Home[^.]{0,40}Ende/.test(stand.aria)) befunde.push('aria-label der Kurve nennt Home und Ende nicht');
+  befunde.push(...await pruefeAriaWerte(page, ansicht));
   if (!stand.sichtbar) befunde.push('Tooltip erscheint beim Fokus nicht');
   if (!/USD\s/.test(stand.text) || !/\d{2}\.\d{2}\.\d{4}/.test(stand.text)) befunde.push(`Tooltip beim Fokus unvollständig: «${stand.text}»`);
   if (!/USD\s/.test(stand.live)) befunde.push('Live-Region bleibt beim Fokus leer');
