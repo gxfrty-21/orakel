@@ -313,6 +313,12 @@ async function pruefeLiveRegionen(page) {
       const modus = live.getAttribute('aria-live');
       if (rolle !== 'status') befunde.push(`Live-Region ${i + 1} hat role="${rolle || '—'}" statt "status"`);
       if (modus !== 'polite') befunde.push(`Live-Region ${i + 1} hat aria-live="${modus || '—'}" statt "polite"`);
+      let el = live, versteckt = null;
+      while (el) {
+        if ((el.getAttribute('aria-hidden') || '').toLowerCase() === 'true') { versteckt = el; break; }
+        el = el.parentElement;
+      }
+      if (versteckt) befunde.push(`Live-Region ${i + 1} ist aria-hidden${versteckt === live ? '' : ` (über ${versteckt.tagName.toLowerCase()})`}`);
     });
     return befunde;
   });
