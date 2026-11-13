@@ -147,7 +147,8 @@ laufen. Tabellen werden zusätzlich mit langen deutschen Komposita belastet und
 als Karten geprüft. Im Lab überfährt er ausserdem die Kapitalkurve und prüft
 den Tooltip (Kapitalstand, Datum, Lage im Kasten, Verschwinden von Tooltip und
 Live-Region beim Verlassen, Wiederkommen nach erneutem Überfahren mit demselben
-Kapitalstand, Datum, Prozentwert und Abstand zum Hoch); der Hinweis unter der
+Kapitalstand, Datum, Prozentwert und Abstand zum Hoch, dazu ein Punkt unter dem
+Hoch mit positivem Abstand); der Hinweis unter der
 Kurve führt ← und → als
 kbd-Tasten. Geprüft wird die Tastaturbedienung
 (Durchtabben von oben bis zur Kurve, Fokusring auf der Kurve, Shift+Tab zurück,
