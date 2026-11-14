@@ -202,6 +202,13 @@ Massnahmen vergleicht er jede Zelle mit dem API-Feld, damit auch ein bewusst
 leerer Verantwortlicher korrekt als leer erkannt wird. Die Zusammenfassung
 meldet `Inhalte 12× geprüft` (vier Ansichten × drei Breiten).
 
+Der separate Aufruf `--negativtest` lädt dieselben vier Ansichten, prüft
+zuerst den sauberen Zustand und schreibt dann absichtlich falsche Kerndaten
+ins DOM: einen falschen Strategie-KPI, eine falsche Research-Kandidatenzahl,
+eine falsche Agenten-Kopfzahl und einen falschen Konferenz-Testplan. Jeder
+Fall muss einen Befund auslösen; die CI verlangt `Negativtest OK: 4/4`, damit
+die Inhaltsprüfung nicht stillschweigend leer läuft.
+
 Der Standardlauf umfasst alle zwölf Ansichten inklusive Strategien, Research,
 Agentenraum und Konferenz. Der CI-Job
 `text250` setzt auf dem `ubuntu-24.04`-Image auf: Chromium wird ohne

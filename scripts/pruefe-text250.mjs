@@ -41,6 +41,7 @@ function argumente(argv) {
     ansichten: [...STANDARD_ANSICHTEN],
     tabellen: true,
     bilder: null,
+    negativtest: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -49,10 +50,11 @@ function argumente(argv) {
     else if (arg === '--ansichten') opts.ansichten = argv[++i].split(',').map(s => s.trim()).filter(Boolean);
     else if (arg === '--ohne-tabellen') opts.tabellen = false;
     else if (arg === '--bilder') opts.bilder = argv[++i];
+    else if (arg === '--negativtest') opts.negativtest = true;
     else if (arg === '--hilfe' || arg === '-h') {
       console.log('Aufruf: node scripts/pruefe-text250.mjs [--url URL] [--breiten 360,320,280]\n' +
         '       [--ansichten overview,risk,lab,strat,research,globe,betrieb,ship,spider,kb,agents,konf] [--ohne-tabellen]\n' +
-        '       [--bilder <verzeichnis>]');
+        '       [--bilder <verzeichnis>] [--negativtest]');
       process.exit(0);
     }
     else { console.error(`Unbekannte Option: ${arg}`); process.exit(2); }
@@ -871,7 +873,12 @@ async function pruefeInhalte(page, ansicht) {
     if (ansicht === 'strat') {
       return {
         bestanden: v.filter(x => x.urteil === 'bestanden')
-          .map(x => ({ symbol: x.symbol, strategie: x.strategie })),
+          .map(x => ({
+            symbol: x.symbol,
+            strategie: x.strategie,
+            out_of_sample: x.out_of_sample || {},
+            holdout_kennzahlen: (x.holdout || {}).kennzahlen || {},
+          })),
         auswahl: (d.auswahl || []).map(x => ({ symbol: x.symbol, schluessel: x.schluessel })),
       };
     }
@@ -933,6 +940,20 @@ async function pruefeInhalte(page, ansicht) {
       const erwarteteKpis = ['Profit Factor Walk-Forward', 'Trefferquote Walk-Forward', 'Max. Drawdown Walk-Forward', 'Trades Walk-Forward', 'Profit Factor Holdout'];
       if (kpiLabels.length !== erwarteteKpis.length || kpiLabels.some((x, i) => x !== erwarteteKpis[i])) {
         befunde.push(`Strategie-KPIs unvollständig (${kpiLabels.join(', ') || 'keine'})`);
+      }
+      const num = (wert, stellen = 2) => (wert == null || isNaN(wert)) ? '–'
+        : Number(wert).toLocaleString('de-CH', { minimumFractionDigits: stellen, maximumFractionDigits: stellen });
+      const pct = (wert, stellen = 1) => wert == null ? '–' : num(wert, stellen) + ' %';
+      const gewaehlt = daten.bestanden.find(x => `${x.symbol} · ${x.strategie}` === detailName);
+      if (!gewaehlt) {
+        befunde.push(`Strategiedetail «${detailName}» nicht in den bestandenen Berichtsdaten gefunden`);
+      } else {
+        const o = gewaehlt.out_of_sample || {}, h = gewaehlt.holdout_kennzahlen || {};
+        const erwarteteWerte = [num(o.profit_factor), pct(o.trefferquote_pct), pct(o.max_drawdown_pct), String(o.trades ?? '–'), num(h.profit_factor)];
+        const werte = alle('#stratDetail .kpis .kpi .v').map(sauber);
+        if (werte.length !== erwarteteWerte.length || werte.some((x, i) => x !== erwarteteWerte[i])) {
+          befunde.push(`Strategie-KPI-Werte weichen ab (${werte.join(' · ') || 'keine'} statt ${erwarteteWerte.join(' · ')})`);
+        }
       }
       const tabelle = eins('#stratDetail table.tbl');
       const zeilen = tabelle ? [...tabelle.querySelectorAll('tbody tr')].map(tr => sauber(tr.cells[0])) : [];
@@ -1045,6 +1066,13 @@ async function pruefeAgentenInhalte(page, runs) {
   erwartet.forEach(([key, name], i) => {
     if (tabTexte[i] !== `${key} · ${name}`) befunde.push(`Abteilungstab ${i + 1}: «${tabTexte[i] || 'fehlt'}» statt «${key} · ${name}»`);
   });
+  const aktiverTab = await page.locator('#depTabs .tab.on').first().textContent();
+  const aktiverKey = (aktiverTab || '').split('·')[0].trim();
+  const aktiveRuns = runs.filter(r => r.abteilung === aktiverKey);
+  const startTag = await page.locator('#agTag').textContent();
+  if (!(startTag || '').includes(`${aktiveRuns.length} Agenten`)) {
+    befunde.push(`Agenten-Kopfzeile «${(startTag || '').trim()}» nennt nicht ${aktiveRuns.length} Agenten der aktiven Abteilung`);
+  }
   const aktivitaet = await page.locator('#agRuns .li').count();
   if (aktivitaet !== Math.min(runs.length, 40)) befunde.push(`Agenten-Aktivität: ${aktivitaet} statt ${Math.min(runs.length, 40)} Einträge`);
 
@@ -1075,9 +1103,92 @@ async function pruefeAgentenInhalte(page, runs) {
   return befunde;
 }
 
+/**
+ * Schreibt absichtlich falsche Kerndaten ins DOM und verlangt, dass
+ * pruefeInhalte sie erkennt. So kann die Inhaltsprüfung nicht stillschweigend
+ * leer laufen, wenn eine Ansicht oder ein Selektor einmal wegfällt.
+ */
+async function pruefeNegativtest(url) {
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1 });
+  const seitenfehler = [];
+  page.on('pageerror', err => seitenfehler.push(String(err)));
+
+  try {
+    await page.goto(`${url}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(
+      () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
+      null, { timeout: 15000 },
+    );
+    await page.waitForTimeout(250);
+
+    const faelle = [
+      {
+        ansicht: 'strat',
+        mutieren: () => page.evaluate(() => {
+          const el = document.querySelector('#stratDetail .kpis .kpi .v');
+          if (!el) throw new Error('Strategie-KPI nicht gefunden');
+          el.textContent = '999.999';
+        }),
+      },
+      {
+        ansicht: 'research',
+        mutieren: () => page.evaluate(() => {
+          const el = document.querySelector('#flow .station:nth-child(2) small');
+          if (!el) throw new Error('Research-Zahl nicht gefunden');
+          el.textContent = '9999 Kandidaten';
+        }),
+      },
+      {
+        ansicht: 'agents',
+        mutieren: () => page.evaluate(() => {
+          const el = document.querySelector('#agTag');
+          if (!el) throw new Error('Agenten-Kopfzeile nicht gefunden');
+          el.textContent = '999 Agenten · 0 ohne Befund';
+        }),
+      },
+      {
+        ansicht: 'konf',
+        mutieren: () => page.evaluate(() => {
+          const el = document.querySelector('#konfBody table.tbl tbody tr td:nth-child(3)');
+          if (!el) throw new Error('Konferenz-Testplan nicht gefunden');
+          el.textContent = 'FALSCH 9999';
+        }),
+      },
+    ];
+
+    const erkannt = [];
+    for (const fall of faelle) {
+      await page.click(`.nav[data-v="${fall.ansicht}"]`);
+      await page.waitForTimeout(WARTEZEIT[fall.ansicht] || 500);
+      const sauber = await pruefeInhalte(page, fall.ansicht);
+      if (!sauber || sauber.length) {
+        throw new Error(`${fall.ansicht}: sauberer Zustand meldet bereits Befunde: ${(sauber || []).join('; ')}`);
+      }
+
+      await fall.mutieren();
+      const befund = await pruefeInhalte(page, fall.ansicht);
+      if (!befund || !befund.length) {
+        throw new Error(`${fall.ansicht}: absichtlich falscher Inhalt wurde nicht erkannt`);
+      }
+      erkannt.push(fall.ansicht);
+      console.log(`Negativtest ${fall.ansicht}: erkannt – ${befund[0]}`);
+    }
+
+    if (seitenfehler.length) throw new Error(`Seitenfehler: ${seitenfehler.join('; ')}`);
+    console.log(`Negativtest OK: ${erkannt.length}/${faelle.length} falsche Inhalte erkannt`);
+  } finally {
+    await browser.close();
+  }
+}
+
 async function main() {
   const opt = argumente(process.argv.slice(2));
   const { validierungen } = await pruefeServer(opt.url);
+  if (opt.negativtest) {
+    await pruefeNegativtest(opt.url);
+    return;
+  }
   console.log(`250-%-Prüflauf: ${opt.ansichten.length} Ansichten × ${opt.breiten.length} Breiten · ${validierungen} Validierungen im Bericht`);
   if (opt.bilder) mkdirSync(opt.bilder, { recursive: true });
 
