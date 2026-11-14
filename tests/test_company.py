@@ -34,6 +34,12 @@ def test_roster_hat_103_eindeutige_profile():
     assert len({p.rufname for p in PROFILES}) == 103
 
 
+def test_schiff_zahlen_nennen_elf_cluster_und_103_agenten(cfg):
+    _, store = _store(cfg)
+
+    assert store.schiff_zahlen() == {"cluster": 11, "agenten": 103}
+
+
 def test_migration_erhaelt_bestehende_daten(cfg):
     db = Facts(cfg.db_pfad)
     db.artikel_speichern(

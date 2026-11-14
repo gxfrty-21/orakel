@@ -67,7 +67,7 @@ jobs:
           raise SystemExit(1)
           PY
 
-      - name: Health, Datenbestand und Login prüfen
+      - name: Health, Schiffsdaten und Login prüfen
         run: |
           python3 - <<'PY'
           import json
@@ -77,9 +77,20 @@ jobs:
           if daten.get("ok") is not True:
               raise SystemExit(f"Health meldet kein ok: {daten}")
           artikel = daten.get("artikel")
-          print(f"health ok=true, artikel={artikel}, commit={daten.get('commit')}")
           if not isinstance(artikel, int) or artikel <= 0:
               raise SystemExit(f"Unerwartete Artikelzahl: {artikel!r}")
+
+          schiff = daten.get("schiff")
+          if not isinstance(schiff, dict):
+              raise SystemExit(f"Health enthält keine Schiffsdaten: {schiff!r}")
+          cluster = schiff.get("cluster")
+          agenten = schiff.get("agenten")
+          if cluster != 11:
+              raise SystemExit(f"Unerwartete Clusterzahl: {cluster!r}")
+          if agenten != 103:
+              raise SystemExit(f"Unerwartete Agentenzahl: {agenten!r}")
+          print(f"health ok=true, artikel={artikel}, commit={daten.get('commit')}, "
+                f"cluster={cluster}, agenten={agenten}")
           PY
           status=$(curl --silent --max-time 15 --output /dev/null \
             --write-out '%{http_code}' "$BASIS/")

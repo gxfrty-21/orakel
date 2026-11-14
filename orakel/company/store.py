@@ -425,6 +425,15 @@ class CompanyStore:
             return int(cur.lastrowid or 0)
 
     # ---------- Übersicht ----------
+    def schiff_zahlen(self) -> dict[str, int]:
+        """Cluster- und Agentenzahl für die öffentliche Health-/Smoke-Prüfung."""
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT COUNT(*) AS agenten, COUNT(DISTINCT dept) AS cluster"
+                " FROM agent_profiles"
+            ).fetchone()
+        return {"cluster": int(row["cluster"]), "agenten": int(row["agenten"])}
+
     def stats(self) -> dict[str, Any]:
         counts = self.task_counts()
         with self._conn() as c:
