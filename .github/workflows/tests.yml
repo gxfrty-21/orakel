@@ -189,15 +189,15 @@ jobs:
           fi
 
           # Der Negativtest schreibt absichtlich falsche Kerndaten ins DOM und
-          # muss für jede der vier Inhaltsansichten einen Befund erzeugen.
+          # muss für jede der vier Inhaltsansichten und den fehlenden Abteilungstab einen Befund erzeugen.
           if ! node scripts/pruefe-text250.mjs --negativtest > artifacts/text250/negativtest.log 2>&1; then
             echo "--- Negativtest fehlgeschlagen ---"
             cat artifacts/text250/negativtest.log
             exit 1
           fi
           cat artifacts/text250/negativtest.log
-          if ! grep -q 'Negativtest OK: 4/4' artifacts/text250/negativtest.log; then
-            echo "Negativtest hat nicht alle vier Inhaltsansichten geprüft"
+          if ! grep -q 'Negativtest OK: 5/5' artifacts/text250/negativtest.log; then
+            echo "Negativtest hat nicht alle fünf Fälle geprüft"
             exit 1
           fi
 
