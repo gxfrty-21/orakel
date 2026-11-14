@@ -211,8 +211,9 @@ jobs:
           fi
 
       # Eigener, fokussierter Lauf: Die fünf API-Stichproben werden auf einer
-      # frischen Seed-Kopie ausschliesslich per Tastatur angesteuert. Der Lauf
-      # muss die Zusammenfassung ausgeben, damit ein stilles Überspringen auffällt.
+      # frischen Seed-Kopie ausschliesslich per Tastatur angesteuert. Zusätzlich
+      # prüft der Lauf die elf Schiffscluster samt erwarteter Agentenzahl. Beide
+      # Zusammenfassungen müssen erscheinen, damit ein stilles Überspringen auffällt.
       - name: Seed-Tastaturlauf ausführen
         timeout-minutes: 5
         run: |
@@ -240,7 +241,7 @@ jobs:
           fi
 
           if ! node scripts/pruefe-text250.mjs --url http://127.0.0.1:3100 \
-               --ansichten lab --breiten 360,320,280 --ohne-tabellen \
+               --ansichten lab,ship --breiten 360,320,280 --ohne-tabellen \
                --bilder artifacts/text250 > artifacts/text250/seed-tastatur.log 2>&1; then
             echo "--- Seed-Tastaturlauf fehlgeschlagen ---"
             cat artifacts/text250/seed-tastatur.log
@@ -250,6 +251,10 @@ jobs:
           cat artifacts/text250/seed-tastatur.log
           if ! grep -q 'Tastatur 3× geprüft' artifacts/text250/seed-tastatur.log; then
             echo "Seed-Tastaturlauf hat die Tastaturprüfung nicht ausgeführt"
+            exit 1
+          fi
+          if ! grep -q 'Inhalte 3× geprüft' artifacts/text250/seed-tastatur.log; then
+            echo "Seed-Tastaturlauf hat die Schiffscluster-Prüfung nicht ausgeführt"
             exit 1
           fi
 
