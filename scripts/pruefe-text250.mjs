@@ -1171,8 +1171,18 @@ async function pruefeNegativtest(url) {
     ];
 
     const erkannt = [];
-    for (const fall of faelle) {
+    for (const [index, fall] of faelle.entries()) {
       const fallName = fall.name || fall.ansicht;
+      // Jeder Fall startet auf einer frischen Seite: Der Acht-Sekunden-Refresh
+      // darf eine absichtliche DOM-Mutation nicht zwischenzeitlich zurücksetzen.
+      if (index > 0) {
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await page.waitForFunction(
+          () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
+          null, { timeout: 15000 },
+        );
+        await page.waitForTimeout(250);
+      }
       const nav = page.locator(`.nav[data-v="${fall.ansicht}"]`);
       if (await nav.count()) await nav.click();
       else await page.evaluate(v => zeige(v), fall.ansicht);
