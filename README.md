@@ -47,9 +47,19 @@ nur Daten aus SQLite, ohne Tasks zu erzeugen oder Handler zu starten:
   Konferenz, offene Entscheidungen und die zehn wichtigsten offenen Aufgaben.
 - `GET /api/company/agents` — alle 103 Profile mit Status, offenen Aufgaben und
   letzter Aufgabe.
+- `GET /api/company/agents/{id}` — Profil, Historie, aktuelle Aufgabe und
+  Nachrichten eines Agenten.
 - `GET /api/company/tasks` — Aufgabenqueue; standardmäßig nur offene Aufgaben,
   filterbar mit `dept`, `state` (`offen`, `alle` oder ein Zustand), `mindestprioritaet`
   und `limit`.
+- `GET /api/company/messages` — Nachrichten und Threads, filterbar mit `agent`,
+  `dept`, `thread_id`, `seit` und `limit`.
+- `GET /api/company/rooms` — 2D-Raumregister mit Abteilungen,
+  Gemeinschafts- und Agentenräumen sowie dynamischem Raumstatus.
+- `GET /api/company/conference/latest` — letzte Konferenz mit Teilnahme,
+  Beiträgen, Abstimmungen, Entscheidungen und Massnahmen.
+- `GET /api/company/stream` — SSE-Snapshots für Übersicht, Aufgaben,
+  Nachrichten und Konferenz (8-Sekunden-Takt).
 
 Jede Antwort nennt `data_state` (`live`/`empty`), `generated_at` in UTC und
 `source_refs`. Fehlende Daten bleiben leer; es gibt keine Ersatzzahlen. Die
@@ -99,7 +109,7 @@ Unter Windows zusätzlich `pip install MetaTrader5` (nur dort verfügbar) und in
 | Risiko | 1 % je Trade bis Stop, 10 % Not-Stop, max. 15 Positionen, Engagement, Bargeld, Korrelation |
 | Broker-Schicht | `CsvBroker` (Paper-Replay), `MockBroker`, `MT5Broker` (Windows, Paper-Sperre) |
 | Agenten | 80 bestehende Agenten in 8 Abteilungen, jeder mit echter Aufgabe und Ergebnis in der DB |
-| Company-Schicht | Phase 1: 103 Profile, SQLite-Queue mit Lease/Retry, Policy-Engine, Audit-Kette; Company-Lese-API für Übersicht, Agenten und Aufgaben; 2D-Agenten-Querschnitt mit 103 Räumen; 3D noch nicht |
+| Company-Schicht | Phase 1: 103 Profile, SQLite-Queue mit Lease/Retry, Policy-Engine, Audit-Kette; Company-Lese-API für Übersicht, Agenten, Aufgaben, Details, Nachrichten, Räume und Konferenz; 2D-Agenten-Querschnitt mit 103 Räumen; 3D noch nicht |
 | Konferenz | 00:00 Europe/Zurich, Nachholen verpasster Termine, Protokoll im Vault |
 | Wissenszentrum | Obsidian-Vault mit Frontmatter, Tags, `[[Links]]` |
 | Dashboard | Orakel-Design, 12 Ansichten, Live-Polling, 2D-Agenten-Querschnitt, «Lauf starten» |

@@ -306,6 +306,343 @@ def agenten(store: CompanyStore) -> dict[str, Any]:
     }
 
 
+def _json_obj(roh: Any) -> dict[str, Any]:
+    try:
+        wert = json.loads(roh or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return wert if isinstance(wert, dict) else {}
+
+
+def _status_profil(aktiv: bool, offen: int, laeuft: int, blockiert: int) -> tuple[str, str]:
+    if not aktiv:
+        return "inaktiv", "inaktiv"
+    if laeuft:
+        return "laeuft", "läuft"
+    if blockiert:
+        return "blockiert", "blockiert"
+    if offen:
+        return "wartet", "wartet auf Aufgabe"
+    return "frei", "frei"
+
+
+def _profil(row: Any) -> dict[str, Any]:
+    return {
+        "agent_id": row["agent_id"],
+        "rufname": row["rufname"],
+        "dept": row["dept"],
+        "dept_name": row["dept_name"],
+        "role": row["role"],
+        "rank": row["rank"],
+        "mission": row["mission"],
+        "station": row["station"],
+        "avatar": row["avatar"],
+        "autonomy": int(row["autonomy"]),
+        "active": bool(row["active"]),
+        "reports_to": row["reports_to"],
+        "backup": row["backup"],
+        "data_scope": _json_list(row["data_scope_json"]),
+        "tools": _json_list(row["tools_json"]),
+        "memory_scope": row["memory_scope"],
+        "kpi": row["kpi"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _nachricht(row: Any) -> dict[str, Any]:
+    return {
+        "id": int(row["id"]),
+        "thread_id": row["thread_id"],
+        "from_agent": row["from_agent"],
+        "to_agent": row["to_agent"],
+        "from_rufname": row["from_rufname"] if "from_rufname" in row.keys() else None,
+        "from_dept": row["from_dept"] if "from_dept" in row.keys() else None,
+        "to_rufname": row["to_rufname"] if "to_rufname" in row.keys() else None,
+        "to_dept": row["to_dept"] if "to_dept" in row.keys() else None,
+        "kind": row["kind"],
+        "priority": row["priority"],
+        "subject": row["subject"],
+        "body": row["body"],
+        "evidence": _json_list(row["evidence_json"]),
+        "requires_ack": bool(row["requires_ack"]),
+        "ack_at": row["ack_at"],
+        "created_at": row["created_at"],
+        "expires_at": row["expires_at"],
+    }
+
+
+def agent_detail(store: CompanyStore, agent_id: str) -> dict[str, Any] | None:
+    """Profil, aktuelle Aufgabe, Historie und Nachrichten eines Agenten."""
+    kennung = (agent_id or "").strip().upper()
+    row = store.profil(kennung)
+    if not row:
+        return None
+    aufgaben = store.tasks_fuer_agent(kennung, limit=50)
+    nachrichten = store.nachrichten_fuer_agent(kennung, limit=25)
+    offene = [t for t in aufgaben if t["state"] in OFFENE_STATES]
+    laufend = [t for t in offene if t["state"] == "running"]
+    blockiert = [t for t in offene if t["state"] == "blocked"]
+    aktuell = ([max(laufend, key=lambda t: (int(t["priority"]), int(t["id"])))]
+               if laufend else
+               [max(offene, key=lambda t: (int(t["priority"]), int(t["id"])))]
+               if offene else [])
+    status, status_text = _status_profil(bool(row["active"]), len(offene),
+                                        len(laufend), len(blockiert))
+    quellen = [f"agent:{kennung}"]
+    quellen.extend(f"task:{t['id']}" for t in aufgaben[:20])
+    quellen.extend(f"message:{m['id']}" for m in nachrichten[:10])
+    return {
+        **_meta("live", quellen),
+        "profil": _profil(row),
+        "status": status,
+        "status_text": status_text,
+        "offene_aufgaben": [_aufgabe(t) for t in offene],
+        "aktuelle_aufgabe": _aufgabe(aktuell[0]) if aktuell else None,
+        "historie": [_aufgabe(t) for t in aufgaben],
+        "nachrichten": [_nachricht(m) for m in nachrichten],
+        "zaehlung": {
+            "offen": len(offene),
+            "laeuft": len(laufend),
+            "blockiert": len(blockiert),
+        },
+    }
+
+
+def nachrichten(
+    store: CompanyStore,
+    *,
+    agent: str | None = None,
+    dept: str | None = None,
+    thread_id: str | None = None,
+    seit: str | None = None,
+    limit: int = 100,
+) -> dict[str, Any]:
+    """Nachrichten und Threads, filterbar nach Agent, Abteilung und Zeitpunkt."""
+    kennung = (agent or "").strip().upper() or None
+    abteilung = (dept or "").strip().upper() or None
+    thread = (thread_id or "").strip() or None
+    grenze = max(1, min(500, int(limit)))
+    seit_iso = None
+    if seit:
+        try:
+            zeit = datetime.fromisoformat(seit.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("seit muss ein ISO-8601-Zeitpunkt sein") from exc
+        if zeit.tzinfo is None:
+            zeit = zeit.replace(tzinfo=timezone.utc)
+        seit_iso = zeit.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+
+    rows = store.nachrichten_gefiltert(agent=kennung, dept=abteilung,
+                                       thread_id=thread, seit=seit_iso, limit=grenze)
+    liste = [_nachricht(r) for r in rows]
+    threads: dict[str, dict[str, Any]] = {}
+    for nachricht in liste:
+        eintrag = threads.setdefault(nachricht["thread_id"], {
+            "thread_id": nachricht["thread_id"],
+            "anzahl": 0,
+            "letzte": nachricht["created_at"],
+            "teilnehmer": set(),
+        })
+        eintrag["anzahl"] += 1
+        if nachricht["created_at"] > eintrag["letzte"]:
+            eintrag["letzte"] = nachricht["created_at"]
+        eintrag["teilnehmer"].update([nachricht["from_agent"], nachricht["to_agent"]])
+    thread_liste = []
+    for eintrag in threads.values():
+        thread_liste.append({**eintrag, "teilnehmer": sorted(eintrag["teilnehmer"])})
+    thread_liste.sort(key=lambda t: (t["letzte"], t["thread_id"]), reverse=True)
+
+    return {
+        **_meta("live" if liste else "empty", [f"message:{m['id']}" for m in liste[:20]]
+                or ["company:messages"]),
+        "nachrichten": liste,
+        "threads": thread_liste,
+        "gesamt": len(liste),
+        "filter": {
+            "agent": kennung,
+            "dept": abteilung,
+            "thread_id": thread,
+            "seit": seit_iso,
+            "limit": grenze,
+        },
+    }
+
+
+def _konferenz_leer() -> dict[str, Any]:
+    return {
+        **_meta("empty", ["company:conference"]),
+        "konferenz": None,
+        "teilnahme": [],
+        "beitraege": [],
+        "abstimmungen": [],
+        "entscheidungen": [],
+        "massnahmen": [],
+    }
+
+
+def konferenz(store: CompanyStore) -> dict[str, Any]:
+    """Letzte Konferenz mit Teilnahme, Beiträgen, Abstimmungen und Massnahmen."""
+    with store.facts.conn() as c:
+        session = c.execute(
+            "SELECT * FROM conference_sessions ORDER BY scheduled_date DESC, id DESC LIMIT 1"
+        ).fetchone()
+        if not session:
+            return _konferenz_leer()
+        session_id = int(session["id"])
+        teilnahme = list(c.execute(
+            """
+            SELECT a.*, p.rufname, p.dept, p.dept_name
+            FROM conference_attendance a
+            LEFT JOIN agent_profiles p ON p.agent_id=a.agent_id
+            WHERE a.session_id=? ORDER BY a.role, a.agent_id
+            """, (session_id,)))
+        beitraege = list(c.execute(
+            """
+            SELECT s.*, p.rufname, p.dept, p.dept_name
+            FROM conference_statements s
+            LEFT JOIN agent_profiles p ON p.agent_id=s.agent_id
+            WHERE s.session_id=? ORDER BY s.id
+            """, (session_id,)))
+        abstimmungen = list(c.execute(
+            """
+            SELECT v.*, d.title AS decision_title, d.status AS decision_status
+            FROM conference_votes v
+            LEFT JOIN company_decisions d ON d.id=v.decision_id
+            WHERE v.session_id=? ORDER BY v.id
+            """, (session_id,)))
+        entscheidungen = list(c.execute(
+            "SELECT * FROM company_decisions WHERE session_id=? ORDER BY id",
+            (session_id,)))
+        massnahmen = list(c.execute(
+            """
+            SELECT a.*, d.title AS decision_title
+            FROM company_actions a
+            LEFT JOIN company_decisions d ON d.id=a.decision_id
+            WHERE d.session_id=? ORDER BY a.id
+            """, (session_id,)))
+
+    daten = dict(session)
+    daten["protocol"] = _json_obj(daten.pop("protocol_json", None))
+    quellen = [f"conference:{session_id}"]
+    quellen.extend(f"decision:{r['id']}" for r in entscheidungen)
+    quellen.extend(f"action:{r['id']}" for r in massnahmen)
+    return {
+        **_meta("live", quellen),
+        "konferenz": daten,
+        "teilnahme": [{
+            **dict(r), "present": bool(r["present"]),
+        } for r in teilnahme],
+        "beitraege": [{
+            **dict(r), "evidence": _json_list(r["evidence_json"]),
+        } for r in beitraege],
+        "abstimmungen": [dict(r) for r in abstimmungen],
+        "entscheidungen": [{
+            **dict(r), "evidence": _json_list(r["evidence_json"]),
+        } for r in entscheidungen],
+        "massnahmen": [dict(r) for r in massnahmen],
+    }
+
+
+def raeume(store: CompanyStore) -> dict[str, Any]:
+    """2D-Raumregister: Abteilungen, Gemeinschaftsräume und Agentenräume."""
+    profile = store.profile_alle()
+    if not profile:
+        return {
+            **_meta("empty", ["company:profiles", "company:tasks"]),
+            "abteilungen": [], "gemeinschaftsraeume": [],
+            "agentenraeume": [], "dynamischer_status": [],
+            "gesamt": {"abteilungen": 0, "gemeinschaftsraeume": 0, "agentenraeume": 0},
+        }
+    platzhalter = ",".join("?" for _ in OFFENE_STATES)
+    with store.facts.conn() as c:
+        aufgaben = list(c.execute(
+            f"SELECT * FROM agent_tasks WHERE state IN ({platzhalter})", OFFENE_STATES))
+        status_rows = list(c.execute("SELECT * FROM room_state ORDER BY room_id"))
+        letzte_konferenz = c.execute(
+            "SELECT id, scheduled_date, phase, status FROM conference_sessions"
+            " ORDER BY scheduled_date DESC, id DESC LIMIT 1"
+        ).fetchone()
+
+    offen_je_agent: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"offen": 0, "laeuft": 0, "blockiert": 0})
+    task_je_agent: dict[str, Any] = {}
+    for task in aufgaben:
+        agent_id = str(task["assigned_to"])
+        zaehler = offen_je_agent[agent_id]
+        zaehler["offen"] += 1
+        if task["state"] == "running":
+            zaehler["laeuft"] += 1
+        if task["state"] == "blocked":
+            zaehler["blockiert"] += 1
+        bisher = task_je_agent.get(agent_id)
+        if (bisher is None
+                or (task["state"] == "running" and bisher["state"] != "running")
+                or (task["state"] == bisher["state"]
+                    and int(task["priority"]) > int(bisher["priority"]))):
+            task_je_agent[agent_id] = task
+
+    depts: dict[str, dict[str, Any]] = {}
+    agentenraeume = []
+    for p in profile:
+        agent_id = str(p["agent_id"])
+        zaehler = offen_je_agent.get(agent_id, {"offen": 0, "laeuft": 0, "blockiert": 0})
+        status, status_text = _status_profil(
+            bool(p["active"]), zaehler["offen"], zaehler["laeuft"], zaehler["blockiert"])
+        task = task_je_agent.get(agent_id)
+        d = depts.setdefault(str(p["dept"]), {
+            "room_id": f"dept:{p['dept']}", "typ": "abteilung", "code": p["dept"],
+            "name": p["dept_name"], "agenten": 0, "offene_aufgaben": 0,
+            "laeuft": 0, "blockiert": 0,
+        })
+        d["agenten"] += 1
+        d["offene_aufgaben"] += zaehler["offen"]
+        d["laeuft"] += zaehler["laeuft"]
+        d["blockiert"] += zaehler["blockiert"]
+        agentenraeume.append({
+            "room_id": f"agent:{agent_id}", "typ": "agent", "agent_id": agent_id,
+            "station_id": p["station"], "name": p["rufname"], "dept": p["dept"],
+            "dept_name": p["dept_name"], "status": status, "status_text": status_text,
+            "offene_aufgaben": zaehler["offen"], "laeuft": zaehler["laeuft"],
+            "blockiert": zaehler["blockiert"],
+            "task_id": int(task["id"]) if task else None,
+            "task_title": task["title"] if task else None,
+        })
+
+    for d in depts.values():
+        d["status"], d["status_text"] = _status_profil(
+            True, int(d["offene_aufgaben"]), int(d["laeuft"]), int(d["blockiert"]))
+
+    gemeinschaft = [{
+        "room_id": "common:agents", "typ": "gemeinschaft", "name": "Agentenraum",
+        "agenten": len(profile), "status": "live", "status_text": "live",
+    }]
+    if letzte_konferenz:
+        gemeinschaft.append({
+            "room_id": "common:conference", "typ": "gemeinschaft", "name": "Konferenz",
+            "session_id": int(letzte_konferenz["id"]),
+            "scheduled_date": letzte_konferenz["scheduled_date"],
+            "phase": letzte_konferenz["phase"], "status": letzte_konferenz["status"],
+            "status_text": letzte_konferenz["status"],
+        })
+
+    quellen = ["company:profiles", "company:tasks"]
+    if letzte_konferenz:
+        quellen.append(f"conference:{letzte_konferenz['id']}")
+    quellen.extend(f"room_state:{r['room_id']}" for r in status_rows)
+    return {
+        **_meta("live", quellen),
+        "abteilungen": list(depts.values()),
+        "gemeinschaftsraeume": gemeinschaft,
+        "agentenraeume": agentenraeume,
+        "dynamischer_status": [dict(r) for r in status_rows],
+        "gesamt": {
+            "abteilungen": len(depts), "gemeinschaftsraeume": len(gemeinschaft),
+            "agentenraeume": len(agentenraeume),
+        },
+    }
+
+
 def aufgaben(
     store: CompanyStore,
     *,

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import base64
+import json
 import os
 import secrets
 import threading
@@ -8,13 +10,17 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import agents
 from .betrieb import betrieb_health, betrieb_status
+from .company.api import agent_detail as company_agent_detail
 from .company.api import agenten as company_agenten
 from .company.api import aufgaben as company_aufgaben
+from .company.api import konferenz as company_konferenz
+from .company.api import nachrichten as company_nachrichten
+from .company.api import raeume as company_raeume
 from .company.api import uebersicht as company_uebersicht
 from .company.store import CompanyStore
 from .config import load_config
@@ -174,6 +180,77 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
             return JSONResponse({"ok": False, "fehler": str(exc),
                                  "code": "company_filter_invalid"}, status_code=400)
         return JSONResponse(daten, headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/company/agents/{agent_id}")
+    def company_agent(agent_id: str) -> JSONResponse:
+        """Profil, Historie, aktuelle Aufgabe und Nachrichten eines Agenten."""
+        cfg = load_config(cfg_pfad)
+        store = CompanyStore(Facts(cfg.db_pfad))
+        daten = company_agent_detail(store, agent_id)
+        if daten is None:
+            return JSONResponse({"ok": False, "fehler": "Agent nicht gefunden",
+                                 "code": "company_agent_not_found"}, status_code=404)
+        return JSONResponse(daten, headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/company/messages")
+    def company_messages(
+        agent: str | None = None,
+        dept: str | None = None,
+        thread_id: str | None = None,
+        seit: str | None = None,
+        limit: int = Query(100, ge=1, le=500),
+    ) -> JSONResponse:
+        """Nachrichten und Threads, filterbar nach Agent, Abteilung und Zeit."""
+        cfg = load_config(cfg_pfad)
+        store = CompanyStore(Facts(cfg.db_pfad))
+        try:
+            daten = company_nachrichten(store, agent=agent, dept=dept,
+                                        thread_id=thread_id, seit=seit, limit=limit)
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "fehler": str(exc),
+                                 "code": "company_filter_invalid"}, status_code=400)
+        return JSONResponse(daten, headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/company/rooms")
+    def company_rooms() -> JSONResponse:
+        """2D-Raumregister mit Abteilungen, Gemeinschafts- und Agentenräumen."""
+        cfg = load_config(cfg_pfad)
+        store = CompanyStore(Facts(cfg.db_pfad))
+        return JSONResponse(company_raeume(store),
+                            headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/company/conference/latest")
+    def company_conference_latest() -> JSONResponse:
+        """Letzte Konferenz mit Teilnahme, Beiträgen, Abstimmungen und Massnahmen."""
+        cfg = load_config(cfg_pfad)
+        store = CompanyStore(Facts(cfg.db_pfad))
+        return JSONResponse(company_konferenz(store),
+                            headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/company/stream")
+    async def company_stream(request: Request) -> StreamingResponse:
+        """SSE-Snapshots für Status, Aufgaben, Nachrichten und Konferenz."""
+        cfg = load_config(cfg_pfad)
+
+        async def snapshots():
+            while True:
+                if await request.is_disconnected():
+                    break
+                store = CompanyStore(Facts(cfg.db_pfad))
+                daten = {
+                    "overview": company_uebersicht(store),
+                    "tasks": company_aufgaben(store, limit=100),
+                    "messages": company_nachrichten(store, limit=50),
+                    "conference": company_konferenz(store),
+                }
+                yield ("retry: 8000\nevent: snapshot\ndata: "
+                       + json.dumps(daten, ensure_ascii=False) + "\n\n")
+                await asyncio.sleep(8)
+
+        return StreamingResponse(
+            snapshots(), media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
 
     @app.get("/api/sekretariat")
     def sekretariat() -> JSONResponse:

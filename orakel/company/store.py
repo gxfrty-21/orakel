@@ -409,6 +409,41 @@ class CompanyStore:
             return [dict(r) for r in c.execute(
                 "SELECT * FROM agent_messages ORDER BY id DESC LIMIT ?", (limit,))]
 
+    def nachrichten_gefiltert(self, *, agent: str | None = None, dept: str | None = None,
+                              thread_id: str | None = None, seit: str | None = None,
+                              limit: int = 100) -> list[dict[str, Any]]:
+        """Nachrichten mit Profilnamen, optional nach Agent, Abteilung oder Zeit."""
+        where: list[str] = []
+        parameter: list[Any] = []
+        if thread_id:
+            where.append("m.thread_id=?")
+            parameter.append(thread_id)
+        if agent:
+            where.append("(m.from_agent=? OR m.to_agent=?)")
+            parameter.extend([agent, agent])
+        if dept:
+            where.append("(pfrom.dept=? OR pto.dept=?)")
+            parameter.extend([dept, dept])
+        if seit:
+            where.append("m.created_at>=?")
+            parameter.append(seit)
+        sql = """
+            SELECT m.*, pfrom.rufname AS from_rufname, pfrom.dept AS from_dept,
+                   pto.rufname AS to_rufname, pto.dept AS to_dept
+            FROM agent_messages m
+            LEFT JOIN agent_profiles pfrom ON pfrom.agent_id=m.from_agent
+            LEFT JOIN agent_profiles pto ON pto.agent_id=m.to_agent
+        """
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY m.id DESC LIMIT ?"
+        werte = [*parameter, max(1, min(500, int(limit)))]
+        with self._conn() as c:
+            return [dict(r) for r in c.execute(sql, werte)]
+
+    def nachrichten_fuer_agent(self, agent_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        return self.nachrichten_gefiltert(agent=agent_id, limit=limit)
+
     def entscheidung_speichern(self, *, level: int, title: str, kind: str,
                                rationale: str, owner: str,
                                evidence: Sequence[str] = (), deadline: str | None = None,
