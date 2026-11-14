@@ -191,6 +191,17 @@ aria-hidden ist und in keinem display:none- oder visibility:hidden-Vorfahren
 liegt).
 Exit-Code 1 bei einem Befund.
 
+Für Strategien, Research, Agentenraum und Konferenz gleicht der Lauf zusätzlich
+die Kerndaten mit `/api/report` ab: Zahl und Namen der bestandenen Strategien,
+markierte Auswahl, fünf KPIs und die fünf Kernzeilen; die sechs
+Research-Stationen mit ihren Nummern und den aus dem Bericht berechneten
+Zahlen; alle acht Abteilungstabs im Agentenraum mit Agentenzahl, Kopfzeile und
+den letzten 40 Aktivitäten; schliesslich die vier Konferenz-Panels mit
+Beschluss, Modus, Berichten, Diskussion und Massnahmentabelle. Bei den
+Massnahmen vergleicht er jede Zelle mit dem API-Feld, damit auch ein bewusst
+leerer Verantwortlicher korrekt als leer erkannt wird. Die Zusammenfassung
+meldet `Inhalte 12× geprüft` (vier Ansichten × drei Breiten).
+
 Der Standardlauf umfasst alle zwölf Ansichten inklusive Strategien, Research,
 Agentenraum und Konferenz. Der CI-Job
 `text250` setzt auf dem `ubuntu-24.04`-Image auf: Chromium wird ohne

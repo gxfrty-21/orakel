@@ -850,6 +850,231 @@ async function pruefeZoom(page, ansicht) {
   }, ansicht);
 }
 
+/**
+ * Prüft die Kerndaten der inhaltlichen Ansichten gegen /api/report.
+ * Layout wird separat gemessen; hier zählt, dass die richtigen Zahlen und
+ * Datensätze aus dem Bericht tatsächlich in der Ansicht ankommen.
+ */
+async function pruefeInhalte(page, ansicht) {
+  if (!['strat', 'research', 'agents', 'konf'].includes(ansicht)) return null;
+
+  const daten = await page.evaluate(async (ansicht) => {
+    let antwort;
+    try {
+      antwort = await fetch('/api/report', { cache: 'no-store' });
+    } catch (fehler) {
+      return { fehler: `API-Bericht nicht erreichbar (${fehler.message})` };
+    }
+    if (!antwort.ok) return { fehler: `API-Bericht antwortet mit HTTP ${antwort.status}` };
+    const d = await antwort.json();
+    const v = d.validierungen || [];
+    if (ansicht === 'strat') {
+      return {
+        bestanden: v.filter(x => x.urteil === 'bestanden')
+          .map(x => ({ symbol: x.symbol, strategie: x.strategie })),
+        auswahl: (d.auswahl || []).map(x => ({ symbol: x.symbol, schluessel: x.schluessel })),
+      };
+    }
+    if (ansicht === 'research') {
+      const dq = d.datenqualitaet || [], plan = d.plan || [], wissen = d.wissen || {};
+      return {
+        dqGesamt: dq.length,
+        dqOk: dq.filter(q => q.ok).length,
+        validierungen: v.length,
+        bestanden: v.filter(x => x.urteil === 'bestanden').length,
+        abgelehnt: v.filter(x => x.urteil === 'abgelehnt').length,
+        planJa: plan.filter(p => p.genehmigt).length,
+        planNein: plan.filter(p => !p.genehmigt).length,
+        probelauf: plan.filter(p => String(p.status || '').startsWith('Probelauf')).length,
+        wissenTypen: (wissen.typen || []).length,
+        entscheide: (d.entscheide || []).length,
+      };
+    }
+    if (ansicht === 'agents') {
+      return { runs: (d.agenten || []).map(r => ({ abteilung: r.abteilung, agent: r.agent, aufgabe: r.aufgabe, ok: r.ok })) };
+    }
+    return { konferenz: d.konferenz || null };
+  }, ansicht);
+
+  if (daten.fehler) return [daten.fehler];
+  if (ansicht === 'agents') return pruefeAgentenInhalte(page, daten.runs);
+
+  return page.evaluate(({ ansicht, daten }) => {
+    const befunde = [];
+    const sauber = el => (el && el.textContent || '').replace(/\s+/g, ' ').trim();
+    const txt = wert => String(wert ?? '').replace(/\s+/g, ' ').trim();
+    const alle = sel => [...document.querySelectorAll(sel)];
+    const eins = sel => document.querySelector(sel);
+
+    if (ansicht === 'strat') {
+      const liste = alle('#stratList .li');
+      const detail = eins('#stratDetail');
+      if (!daten.bestanden.length) {
+        if (!/Keine bestandene Strategie/.test(sauber(eins('#stratList')))) befunde.push('Leerer Strategienzustand fehlt in der Liste');
+        if (!/keine Strategie freigegeben/i.test(sauber(detail))) befunde.push('Leerer Strategienzustand fehlt im Detail');
+        return befunde;
+      }
+      if (liste.length !== daten.bestanden.length) {
+        befunde.push(`Strategienliste: ${liste.length} statt ${daten.bestanden.length} bestandene Einträge`);
+      }
+      for (const v of daten.bestanden) {
+        const name = `${v.symbol} · ${v.strategie}`;
+        if (!liste.some(li => sauber(li.querySelector('b')).replace(/^★\s*/, '') === name)) {
+          befunde.push(`Bestandene Strategie «${name}» fehlt in der Liste`);
+        }
+      }
+      const aktiv = eins('#stratList .li.on');
+      const detailName = sauber(eins('#stratDetail h2'));
+      if (!aktiv) befunde.push('Keine aktive Strategie in der Liste markiert');
+      else if (detailName !== sauber(aktiv.querySelector('b')).replace(/^★\s*/, '')) {
+        befunde.push(`Strategiedetail zeigt «${detailName}» statt der markierten Strategie`);
+      }
+      const kpiLabels = alle('#stratDetail .kpis .kpi .l').map(sauber);
+      const erwarteteKpis = ['Profit Factor Walk-Forward', 'Trefferquote Walk-Forward', 'Max. Drawdown Walk-Forward', 'Trades Walk-Forward', 'Profit Factor Holdout'];
+      if (kpiLabels.length !== erwarteteKpis.length || kpiLabels.some((x, i) => x !== erwarteteKpis[i])) {
+        befunde.push(`Strategie-KPIs unvollständig (${kpiLabels.join(', ') || 'keine'})`);
+      }
+      const tabelle = eins('#stratDetail table.tbl');
+      const zeilen = tabelle ? [...tabelle.querySelectorAll('tbody tr')].map(tr => sauber(tr.cells[0])) : [];
+      const erwarteteZeilen = ['Nettogewinn gesamt', 'Rendite gesamt', 'Kaufen und Halten (ungesehen)', 'Gebühren gesamt', 'Zeit im Markt'];
+      if (zeilen.length !== erwarteteZeilen.length || zeilen.some((x, i) => x !== erwarteteZeilen[i])) {
+        befunde.push(`Strategie-Kerntabelle unvollständig (${zeilen.join(', ') || 'keine'})`);
+      }
+      if (daten.auswahl.length && !liste.some(li => sauber(li.querySelector('b')).startsWith('★'))) {
+        befunde.push('Ausgewählte Strategie ist in der Liste nicht mit ★ markiert');
+      }
+      return befunde;
+    }
+
+    if (ansicht === 'research') {
+      const stationen = alle('#flow .station');
+      const erwarteteNamen = ['Daten', 'Research', 'Validierung', 'Risiko', 'Ausführung', 'Wissensbank'];
+      if (stationen.length !== erwarteteNamen.length) befunde.push(`Research-Ablauf: ${stationen.length} statt ${erwarteteNamen.length} Stationen`);
+      stationen.forEach((station, i) => {
+        if (sauber(station.querySelector('.nr')) !== String(i + 1).padStart(2, '0')) befunde.push(`Station ${i + 1}: Nummer fehlt oder ist falsch`);
+        if (sauber(station.querySelector('b')) !== erwarteteNamen[i]) befunde.push(`Station ${i + 1}: «${sauber(station.querySelector('b'))}» statt «${erwarteteNamen[i]}»`);
+        if (station.querySelectorAll('small').length < 2) befunde.push(`Station ${i + 1}: Beschreibung fehlt`);
+      });
+      const texte = stationen.map(sauber);
+      const erwartet = [
+        `${daten.dqOk}/${daten.dqGesamt} Symbole`,
+        `${daten.validierungen} Kandidaten`,
+        `${daten.bestanden} bestanden · ${daten.abgelehnt} abgelehnt`,
+        `${daten.planJa} genehmigt · ${daten.planNein} abgelehnt`,
+        `${daten.probelauf} Probelauf`,
+        `${daten.wissenTypen} Typen · ${daten.entscheide} Entscheide`,
+      ];
+      erwartet.forEach((text, i) => {
+        if (!texte[i] || !texte[i].includes(text)) befunde.push(`Station ${i + 1}: erwartet «${text}», angezeigt «${texte[i] || 'nichts'}»`);
+      });
+      const prinzipien = alle('#principles .reasons');
+      if (prinzipien.length !== 6) befunde.push(`Research-Grundsätze: ${prinzipien.length} statt 6`);
+      if (!/Paper-Trading/.test(sauber(eins('#principles')))) befunde.push('Research-Grundsätze nennen Paper-Trading nicht');
+      return befunde;
+    }
+
+    const k = daten.konferenz;
+    const body = eins('#konfBody');
+    if (!k) {
+      if (!/Noch keine Konferenz abgehalten/.test(sauber(body))) befunde.push('Leerer Konferenzzustand fehlt');
+      return befunde;
+    }
+    const panels = alle('#konfBody .panel');
+    if (panels.length !== 4) befunde.push(`Konferenz: ${panels.length} statt 4 Panels`);
+    const titel = panels.map(p => sauber(p.querySelector('.ph')?.firstChild || p.querySelector('.ph')));
+    const erwarteteTitel = ['Protokoll', 'Berichte der Abteilungen', 'Diskussion', 'Massnahmen'];
+    if (titel.join('|') !== erwarteteTitel.join('|')) befunde.push(`Konferenz-Panels: «${titel.join(' · ')}»`);
+    const beschluss = sauber(eins('#konfBody .card h2'));
+    if (beschluss !== txt(k.beschluss)) befunde.push(`Konferenz-Beschluss «${beschluss}» statt «${txt(k.beschluss)}»`);
+    const modus = sauber(eins('#konfBody .card .sub'));
+    if (!modus.includes(`Modus: ${txt(k.modus)}`)) befunde.push(`Konferenz-Modus fehlt («${modus}»)`);
+    const panelMit = name => panels.find(p => sauber(p.querySelector('.ph')?.firstChild || p.querySelector('.ph')).startsWith(name));
+    const berichtePanel = panelMit('Berichte der Abteilungen');
+    const diskussionPanel = panelMit('Diskussion');
+    const massnahmenPanel = panelMit('Massnahmen');
+    const berichte = berichtePanel ? [...berichtePanel.querySelectorAll('.li')] : [];
+    const diskussion = diskussionPanel ? [...diskussionPanel.querySelectorAll('.li')] : [];
+    const berichteApi = k.berichte || [], diskussionApi = k.diskussion || [];
+    if (berichte.length !== berichteApi.length) befunde.push(`Konferenz-Berichte: ${berichte.length} statt ${berichteApi.length}`);
+    if (diskussion.length !== diskussionApi.length) befunde.push(`Konferenz-Diskussion: ${diskussion.length} statt ${diskussionApi.length}`);
+    berichte.forEach((li, i) => {
+      const b = berichteApi[i] || {};
+      if (sauber(li.querySelector('b')) !== txt(b.name)) befunde.push(`Konferenz-Bericht ${i + 1}: Name «${sauber(li.querySelector('b'))}» statt «${txt(b.name)}»`);
+      if (!sauber(li.querySelector('small')).includes(txt(b.text))) befunde.push(`Konferenz-Bericht ${i + 1}: Text fehlt oder weicht ab`);
+      if (sauber(li.querySelector('.pill')) !== txt(b.abteilung)) befunde.push(`Konferenz-Bericht ${i + 1}: Abteilung «${sauber(li.querySelector('.pill'))}» statt «${txt(b.abteilung)}»`);
+    });
+    diskussion.forEach((li, i) => {
+      const d = diskussionApi[i] || {};
+      if (sauber(li.querySelector('b')) !== `${txt(d.von)} → ${txt(d.an)}`) befunde.push(`Konferenz-Diskussion ${i + 1}: Absender/Empfänger weicht ab`);
+      if (!sauber(li.querySelector('small')).includes(txt(d.text))) befunde.push(`Konferenz-Diskussion ${i + 1}: Text fehlt oder weicht ab`);
+    });
+    const tabelle = massnahmenPanel?.querySelector('table.tbl');
+    if (!tabelle) befunde.push('Konferenz-Massnahmentabelle fehlt');
+    else {
+      const kopf = [...tabelle.querySelectorAll('thead th')].map(sauber);
+      const erwarteterKopf = ['Massnahme', 'Begründung', 'Testplan', 'Verantwortlich'];
+      if (kopf.join('|') !== erwarteterKopf.join('|')) befunde.push(`Massnahmen-Kopf: «${kopf.join(' · ')}»`);
+      const zeilen = [...tabelle.querySelectorAll('tbody tr')];
+      const massnahmen = k.massnahmen || [];
+      if (zeilen.length !== massnahmen.length) befunde.push(`Konferenz-Massnahmen: ${zeilen.length} statt ${massnahmen.length}`);
+      const felder = ['beschreibung', 'begruendung', 'testplan', 'verantwortlicher'];
+      zeilen.forEach((tr, i) => {
+        const masse = massnahmen[i] || {};
+        if (tr.cells.length !== 4) { befunde.push(`Konferenz-Massnahme ${i + 1}: ${tr.cells.length} statt 4 Spalten`); return; }
+        felder.forEach((feld, spalte) => {
+          if (sauber(tr.cells[spalte]) !== txt(masse[feld])) {
+            befunde.push(`Konferenz-Massnahme ${i + 1}: ${feld} «${sauber(tr.cells[spalte])}» statt «${txt(masse[feld])}»`);
+          }
+        });
+      });
+    }
+    return befunde;
+  }, { ansicht, daten });
+}
+
+async function pruefeAgentenInhalte(page, runs) {
+  const befunde = [];
+  const erwartet = [
+    ['A', 'Hauptzentrale'], ['B', 'Spider Intelligence'], ['C', 'Labor'], ['D', 'Trading Floor'],
+    ['E', 'Forschungsabteilung'], ['F', 'Risikomanagement'], ['G', 'Wissenszentrum'], ['H', 'Entwicklungsabteilung'],
+  ];
+  const tabs = page.locator('#depTabs .tab');
+  const tabAnzahl = await tabs.count();
+  if (tabAnzahl !== erwartet.length) befunde.push(`Agentenraum: ${tabAnzahl} statt ${erwartet.length} Abteilungstabs`);
+  const tabTexte = (await tabs.allTextContents()).map(t => t.replace(/\s+/g, ' ').trim());
+  erwartet.forEach(([key, name], i) => {
+    if (tabTexte[i] !== `${key} · ${name}`) befunde.push(`Abteilungstab ${i + 1}: «${tabTexte[i] || 'fehlt'}» statt «${key} · ${name}»`);
+  });
+  const aktivitaet = await page.locator('#agRuns .li').count();
+  if (aktivitaet !== Math.min(runs.length, 40)) befunde.push(`Agenten-Aktivität: ${aktivitaet} statt ${Math.min(runs.length, 40)} Einträge`);
+
+  for (let i = 0; i < Math.min(tabAnzahl, erwartet.length); i++) {
+    const [key, name] = erwartet[i];
+    await tabs.nth(i).click();
+    await page.waitForTimeout(80);
+    const meine = runs.filter(r => r.abteilung === key);
+    const stand = await page.evaluate(() => {
+      const sauber = el => (el && el.textContent || '').replace(/\s+/g, ' ').trim();
+      return {
+        tag: sauber(document.querySelector('#agTag')),
+        anzahl: document.querySelectorAll('#agList .li').length,
+        leer: !!document.querySelector('#agList .empty'),
+        namen: [...document.querySelectorAll('#agList .li b')].map(sauber).filter(Boolean),
+      };
+    });
+    if (stand.anzahl !== meine.length) befunde.push(`${key} ${name}: ${stand.anzahl} statt ${meine.length} Agenten`);
+    if (!meine.length && !stand.leer) befunde.push(`${key} ${name}: Leerzustand fehlt`);
+    if (meine.length && stand.leer) befunde.push(`${key} ${name}: Liste zeigt trotz ${meine.length} Läufen einen Leerzustand`);
+    if (!stand.tag.includes(`${meine.length} Agenten`)) befunde.push(`${key} ${name}: Kopfzahl «${stand.tag}» nennt nicht ${meine.length} Agenten`);
+    for (const lauf of meine.slice(0, 5)) {
+      const agentName = String(lauf.agent || '').split(':')[1] || lauf.agent;
+      if (agentName && !stand.namen.includes(agentName)) befunde.push(`${key} ${name}: Agent «${agentName}» fehlt in der Liste`);
+    }
+  }
+  if (tabAnzahl) await tabs.first().click();
+  return befunde;
+}
+
 async function main() {
   const opt = argumente(process.argv.slice(2));
   const { validierungen } = await pruefeServer(opt.url);
@@ -859,7 +1084,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const fehler = [];
   const hinweise = new Set();
-  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0;
+  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, inhaltGesamt = 0;
 
   try {
     for (const breite of opt.breiten) {
@@ -892,6 +1117,12 @@ async function main() {
         const ansichtBefund = await messeAnsicht(page, ansicht, breite);
         if (!ansichtBefund.gerendert) ansichtBefund.befunde.push('Ansicht wurde nicht gerendert');
         for (const text of ansichtBefund.befunde) fehler.push(`${breite}px/${ansicht}: ${text}`);
+
+        const inhaltsBefunde = await pruefeInhalte(page, ansicht);
+        if (inhaltsBefunde) {
+          inhaltGesamt++;
+          for (const text of inhaltsBefunde) fehler.push(`${breite}px/${ansicht}: ${text}`);
+        }
 
         if (ansicht === 'lab') {
           if (kurveGefunden) {
@@ -935,7 +1166,7 @@ async function main() {
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  console.log(`OK: keine Überläufe${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {
