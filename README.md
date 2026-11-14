@@ -191,28 +191,30 @@ aria-hidden ist und in keinem display:none- oder visibility:hidden-Vorfahren
 liegt).
 Exit-Code 1 bei einem Befund.
 
-Für Strategien, Research, Agentenraum und Konferenz gleicht der Lauf zusätzlich
-die Kerndaten mit `/api/report` ab: Zahl und Namen der bestandenen Strategien,
-markierte Auswahl, fünf KPIs und die fünf Kernzeilen; die sechs
-Research-Stationen mit ihren Nummern und den aus dem Bericht berechneten
-Zahlen; die acht Tabs der bisherigen Agentenraum-Inhaltsprüfung (nicht die elf
-Schiffsabteilungen) mit Agentenzahl, Kopfzeile und den letzten 40 Aktivitäten;
-schliesslich die vier Konferenz-Panels mit Beschluss, Modus, Berichten, Diskussion
-und Massnahmentabelle. Bei den
-Massnahmen vergleicht er jede Zelle mit dem API-Feld, damit auch ein bewusst
-leerer Verantwortlicher korrekt als leer erkannt wird. Die Zusammenfassung
-meldet `Inhalte 12× geprüft` (vier Ansichten × drei Breiten).
+Für Strategien, Research, das Raumschiff, Agentenraum und Konferenz gleicht der
+Lauf zusätzlich die Kerndaten mit `/api/report` ab: Zahl und Namen der
+bestandenen Strategien, markierte Auswahl, fünf KPIs und die fünf Kernzeilen;
+die sechs Research-Stationen mit ihren Nummern und den aus dem Bericht
+berechneten Zahlen; die elf sichtbaren Schiffsabteilungscluster A–J und S samt
+Vollständigkeit; die acht Tabs der bisherigen Agentenraum-Inhaltsprüfung (nicht
+die elf Schiffsabteilungen) mit Agentenzahl, Kopfzeile und den letzten 40
+Aktivitäten; schliesslich die vier Konferenz-Panels mit Beschluss, Modus,
+Berichten, Diskussion und Massnahmentabelle. Bei den Massnahmen vergleicht er
+jede Zelle mit dem API-Feld, damit auch ein bewusst leerer Verantwortlicher
+korrekt als leer erkannt wird. Die Zusammenfassung meldet
+`Inhalte 15× geprüft` (fünf Ansichten × drei Breiten).
 
-Der separate Aufruf `--negativtest` lädt dieselben vier Ansichten, prüft
+Der separate Aufruf `--negativtest` lädt die betroffenen fünf Ansichten, prüft
 zuerst den sauberen Zustand und schreibt dann absichtlich falsche Kerndaten
 ins DOM: einen falschen Strategie-KPI, eine falsche Research-Kandidatenzahl,
-eine falsche Agenten-Kopfzahl, einen entfernten Abteilungstab im Agentenraum
-und einen falschen Konferenz-Testplan. Jeder Fall muss einen Befund auslösen;
-die CI verlangt `Negativtest OK: 5/5`, damit die Inhaltsprüfung auch
-Strukturänderungen im Agentenraum nicht stillschweigend übersieht.
+eine falsche Agenten-Kopfzahl, einen entfernten Abteilungstab im Agentenraum,
+einen entfernten sichtbaren Schiffsabteilungscluster und einen falschen
+Konferenz-Testplan. Jeder Fall muss einen Befund auslösen; die CI verlangt
+`Negativtest OK: 6/6`, damit die Inhaltsprüfung auch Strukturänderungen im
+Agentenraum und am Raumschiff nicht stillschweigend übersieht.
 
 Der Standardlauf umfasst alle zwölf Ansichten inklusive der weiterhin geprüften
-Inhaltsansichten Agentenraum und Konferenz. Der CI-Job
+Inhaltsansichten Agentenraum, Konferenz und Raumschiff. Der CI-Job
 `text250` setzt auf dem `ubuntu-24.04`-Image auf: Chromium wird ohne
 `--with-deps` installiert, die nötigen Systembibliotheken kommen aus dem Image.
 Auch ein leerer Playwright-Cache funktioniert; der Browser wird dann frisch
