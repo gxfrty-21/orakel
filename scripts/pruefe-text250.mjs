@@ -20,9 +20,10 @@
  *   --ansichten lab,kb     Standard alle zwölf Ansichten
  *   --ohne-tabellen        Nur Seitenüberläufe prüfen, Tabellen überspringen
  *   --bilder <verzeichnis> Schreibt bei Befunden je Ansicht und Breite Screenshot und HTML
+ *   --selbsttest-cluster   Prüft einen fehlenden Schiffscluster und den Screenshotpfad
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 
@@ -42,6 +43,7 @@ function argumente(argv) {
     tabellen: true,
     bilder: null,
     negativtest: false,
+    selbsttestCluster: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -51,10 +53,11 @@ function argumente(argv) {
     else if (arg === '--ohne-tabellen') opts.tabellen = false;
     else if (arg === '--bilder') opts.bilder = argv[++i];
     else if (arg === '--negativtest') opts.negativtest = true;
+    else if (arg === '--selbsttest-cluster') opts.selbsttestCluster = true;
     else if (arg === '--hilfe' || arg === '-h') {
       console.log('Aufruf: node scripts/pruefe-text250.mjs [--url URL] [--breiten 360,320,280]\n' +
         '       [--ansichten overview,risk,lab,strat,research,globe,betrieb,ship,spider,kb,agents,konf] [--ohne-tabellen]\n' +
-        '       [--bilder <verzeichnis>] [--negativtest]');
+        '       [--bilder <verzeichnis>] [--negativtest] [--selbsttest-cluster]');
       process.exit(0);
     }
     else { console.error(`Unbekannte Option: ${arg}`); process.exit(2); }
@@ -1315,9 +1318,92 @@ function schiffsclusterBildName(breite, nummer, meldung) {
   return `${breite}px-ship-cluster-${String(nummer).padStart(2, '0')}-${artefaktSlug(detail) || 'befund'}.png`;
 }
 
+
+async function schreibeDiagnose(page, opt, breite, ansicht, neue) {
+  if (!opt.bilder || !neue.length) return { bilder: [], html: null };
+  const html = join(opt.bilder, `${breite}px-${ansicht}.html`);
+  writeFileSync(html, await page.content());
+  console.log(`HTML: ${html}`);
+
+  const bilder = [];
+  const clusterFehler = ansicht === 'ship'
+    ? neue.filter(text => /\/ship:\s*Raumschiff:/.test(text))
+    : [];
+  if (clusterFehler.length) {
+    for (const [index, meldung] of clusterFehler.entries()) {
+      const datei = join(opt.bilder, schiffsclusterBildName(breite, index + 1, meldung));
+      await page.screenshot({ path: datei, fullPage: true });
+      bilder.push(datei);
+      console.log(`Screenshot: ${datei}`);
+    }
+    const weitere = neue.filter(text => !clusterFehler.includes(text));
+    if (weitere.length) {
+      const datei = join(opt.bilder,
+        `${breite}px-ship-layout-${artefaktSlug(weitere[0]) || 'befund'}.png`);
+      await page.screenshot({ path: datei, fullPage: true });
+      bilder.push(datei);
+      console.log(`Screenshot: ${datei}`);
+    }
+  } else {
+    const datei = join(opt.bilder, `${breite}px-${ansicht}.png`);
+    await page.screenshot({ path: datei, fullPage: true });
+    bilder.push(datei);
+    console.log(`Screenshot: ${datei}`);
+  }
+  return { bilder, html };
+}
+
+async function pruefeScreenshotSelbsttest(url, bilderPfad) {
+  if (!bilderPfad) throw new Error('--selbsttest-cluster benötigt --bilder <verzeichnis>');
+  mkdirSync(bilderPfad, { recursive: true });
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 360, height: 900 }, deviceScaleFactor: 1 });
+    await page.goto(`${url}/?v=selbsttest-cluster`, { waitUntil: 'domcontentloaded' });
+    await page.locator('.nav[data-v="ship"]').click();
+    await page.waitForFunction(
+      () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
+      null, { timeout: 10000 },
+    );
+    await page.waitForFunction(() => document.querySelectorAll('#shipWorld .ship-dept').length === 11,
+      null, { timeout: 10000 });
+    // Der erste Datenrender darf den absichtlich entfernten Cluster nicht
+    // gleich wieder einsetzen; danach bleibt das DOM bis zum 8-s-Refresh stabil.
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => {
+      const cluster = [...document.querySelectorAll('#shipWorld .ship-dept')];
+      const s = cluster.find(el => (el.querySelector('.ship-dept-code')?.textContent || '').trim() === 'S');
+      if (!s) throw new Error('Schiffscluster S nicht gefunden');
+      s.remove();
+    });
+    const befunde = await pruefeSchiffCluster(page);
+    const fehlend = befunde.find(text => text.includes('Abteilung S fehlt'));
+    if (!fehlend) throw new Error(`Fehlender Cluster S wurde nicht gemeldet: ${befunde.join('; ')}`);
+    const neue = [`360px/ship: ${fehlend}`];
+    const { bilder, html } = await schreibeDiagnose(page, { bilder: bilderPfad }, 360, 'ship', neue);
+    const erwartet = join(bilderPfad, '360px-ship-cluster-01-abteilung-s-fehlt.png');
+    if (!bilder.includes(erwartet)) {
+      throw new Error(`Screenshotpfad fehlt: erwartet ${erwartet}, erhalten ${bilder.join(', ')}`);
+    }
+    if (!existsSync(erwartet) || statSync(erwartet).size === 0) {
+      throw new Error(`Screenshot ist leer oder fehlt: ${erwartet}`);
+    }
+    if (!html || !existsSync(html) || statSync(html).size === 0) {
+      throw new Error(`HTML-Diagnose ist leer oder fehlt: ${html}`);
+    }
+    console.log(`Selbsttest OK: fehlender Schiffscluster S · ${erwartet}`);
+  } finally {
+    await browser.close();
+  }
+}
+
 async function main() {
   const opt = argumente(process.argv.slice(2));
   const { validierungen } = await pruefeServer(opt.url);
+  if (opt.selbsttestCluster) {
+    await pruefeScreenshotSelbsttest(opt.url, opt.bilder);
+    return;
+  }
   if (opt.negativtest) {
     await pruefeNegativtest(opt.url);
     return;
@@ -1392,34 +1478,8 @@ async function main() {
         for (const text of await pruefeZoom(page, ansicht)) fehler.push(`${breite}px/${ansicht}: ${text}`);
 
         if (opt.bilder && fehler.length > vorher) {
-          const neue = fehler.slice(vorher);
-          const htmlDatei = join(opt.bilder, `${breite}px-${ansicht}.html`);
-          writeFileSync(htmlDatei, await page.content());
-          console.log(`HTML: ${htmlDatei}`);
-          const clusterFehler = ansicht === 'ship'
-            ? neue.filter(text => /\/ship:\s*Raumschiff:/.test(text))
-            : [];
-          if (clusterFehler.length) {
-            for (const [index, meldung] of clusterFehler.entries()) {
-              const datei = join(opt.bilder, schiffsclusterBildName(breite, index + 1, meldung));
-              await page.screenshot({ path: datei, fullPage: true });
-              bilderGesamt++;
-              console.log(`Screenshot: ${datei}`);
-            }
-            const weitere = neue.filter(text => !clusterFehler.includes(text));
-            if (weitere.length) {
-              const datei = join(opt.bilder,
-                `${breite}px-ship-layout-${artefaktSlug(weitere[0]) || 'befund'}.png`);
-              await page.screenshot({ path: datei, fullPage: true });
-              bilderGesamt++;
-              console.log(`Screenshot: ${datei}`);
-            }
-          } else {
-            const datei = join(opt.bilder, `${breite}px-${ansicht}.png`);
-            await page.screenshot({ path: datei, fullPage: true });
-            bilderGesamt++;
-            console.log(`Screenshot: ${datei}`);
-          }
+          const { bilder } = await schreibeDiagnose(page, opt, breite, ansicht, fehler.slice(vorher));
+          bilderGesamt += bilder.length;
         }
       }
       await page.close();
