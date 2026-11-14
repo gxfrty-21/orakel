@@ -17,7 +17,7 @@
  * Optionen:
  *   --url <adresse>        Standard http://127.0.0.1:3000
  *   --breiten 360,320,280  Standard 360,320,280
- *   --ansichten lab,kb     Standard alle acht Ansichten
+ *   --ansichten lab,kb     Standard alle zwölf Ansichten
  *   --ohne-tabellen        Nur Seitenüberläufe prüfen, Tabellen überspringen
  *   --bilder <verzeichnis> Schreibt bei Befunden je Ansicht und Breite einen Screenshot
  */
@@ -28,8 +28,11 @@ import { chromium } from 'playwright';
 
 const LANGS = 'Donaudampfschifffahrtsgesellschaftskapitänsmützenhalterungsverordnung';
 const LANGES_LABEL = 'Bevölkerungsentwicklungsprognoseberechnungsgrundlagenverordnung';
-const STANDARD_ANSICHTEN = ['overview', 'risk', 'lab', 'betrieb', 'spider', 'globe', 'kb', 'ship'];
-const WARTEZEIT = { overview: 300, risk: 350, lab: 400, betrieb: 750, spider: 650, globe: 1300, kb: 1500, ship: 1500 };
+const STANDARD_ANSICHTEN = ['overview', 'risk', 'lab', 'strat', 'research', 'globe', 'betrieb', 'ship', 'spider', 'kb', 'agents', 'konf'];
+const WARTEZEIT = {
+  overview: 300, risk: 350, lab: 400, strat: 500, research: 500, globe: 1300,
+  betrieb: 750, ship: 1500, spider: 650, kb: 1500, agents: 500, konf: 500,
+};
 
 function argumente(argv) {
   const opts = {
@@ -48,7 +51,7 @@ function argumente(argv) {
     else if (arg === '--bilder') opts.bilder = argv[++i];
     else if (arg === '--hilfe' || arg === '-h') {
       console.log('Aufruf: node scripts/pruefe-text250.mjs [--url URL] [--breiten 360,320,280]\n' +
-        '       [--ansichten overview,risk,lab,betrieb,spider,globe,kb,ship] [--ohne-tabellen]\n' +
+        '       [--ansichten overview,risk,lab,strat,research,globe,betrieb,ship,spider,kb,agents,konf] [--ohne-tabellen]\n' +
         '       [--bilder <verzeichnis>]');
       process.exit(0);
     }
