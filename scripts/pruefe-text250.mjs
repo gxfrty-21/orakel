@@ -757,6 +757,23 @@ async function pruefeKurvenTastatur(page, ansicht) {
         const stand = await lese();
         pruefeApi(name, stand.text, apiPunkte[index], stand.live, hochWerte[index]);
       }
+      // Dieselben fünf Stichproben per Tastatur ansteuern: Home, dann mit
+      // Pfeil rechts bis Viertel, Mitte und Dreiviertel, zuletzt Ende.
+      await svg.evaluate(el => el.focus());
+      await page.keyboard.press('Home');
+      await page.waitForTimeout(80);
+      let tastaturIndex = 0;
+      let tastaturStand = await lese();
+      pruefeApi('Tastatur-Startpunkt', tastaturStand.text, apiPunkte[0], tastaturStand.live, hochWerte[0]);
+      for (const [name, index] of [...proben, ['Endpunkt', n]]) {
+        while (tastaturIndex < index) {
+          await page.keyboard.press('ArrowRight');
+          tastaturIndex++;
+        }
+        await page.waitForTimeout(60);
+        tastaturStand = await lese();
+        pruefeApi(`Tastatur-${name}`, tastaturStand.text, apiPunkte[index], tastaturStand.live, hochWerte[index]);
+      }
     }
   }
 

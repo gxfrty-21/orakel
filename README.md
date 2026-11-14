@@ -162,7 +162,8 @@ Start/Tief/Hoch/Ende stimmen mit der
 Fusszeile überein, Tief/Hoch auch mit den Extremwerten aus den API-Daten, die
 gezeichnete Punktzahl mit deren Ausdünnung sowie Start, Viertel, Mitte,
 Dreiviertel und Ende mit den API-Zeitstempeln und -Werten, jeweils in Tooltip
-und Live-Region, samt nachgerechnetem Prozentwert ab Start, Abstand zum Hoch
+und Live-Region — per Maus und nochmals über Home, Pfeil rechts und Ende per
+Tastatur, samt nachgerechnetem Prozentwert ab Start, Abstand zum Hoch
 und angezeigtem Hochstand (Tooltip und Live-Region gegen das fortgeschriebene
 API-Hoch),
 Start/Ende auch mit den Tooltips bei Home/Ende, genau
