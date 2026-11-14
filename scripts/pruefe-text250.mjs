@@ -1159,7 +1159,9 @@ async function pruefeNegativtest(url) {
 
     const erkannt = [];
     for (const fall of faelle) {
-      await page.click(`.nav[data-v="${fall.ansicht}"]`);
+      const nav = page.locator(`.nav[data-v="${fall.ansicht}"]`);
+      if (await nav.count()) await nav.click();
+      else await page.evaluate(v => zeige(v), fall.ansicht);
       await page.waitForTimeout(WARTEZEIT[fall.ansicht] || 500);
       const sauber = await pruefeInhalte(page, fall.ansicht);
       if (!sauber || sauber.length) {
@@ -1209,7 +1211,9 @@ async function main() {
       await page.waitForTimeout(250);
 
       for (const ansicht of opt.ansichten) {
-        await page.click(`.nav[data-v="${ansicht}"]`);
+        const nav = page.locator(`.nav[data-v="${ansicht}"]`);
+        if (await nav.count()) await nav.click();
+        else await page.evaluate(v => zeige(v), ansicht);
         await page.waitForTimeout(WARTEZEIT[ansicht]);
         if (ansicht === 'ship') {
           // Die Company-API wird beim Öffnen asynchron geladen. Auf ihren
