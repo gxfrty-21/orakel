@@ -1295,6 +1295,26 @@ async function pruefeNegativtest(url) {
   }
 }
 
+function artefaktSlug(text) {
+  return String(text)
+    .toLowerCase()
+    .replace(/ä/g, 'ae')
+    .replace(/ö/g, 'oe')
+    .replace(/ü/g, 'ue')
+    .replace(/ß/g, 'ss')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+    .replace(/-+$/g, '');
+}
+
+function schiffsclusterBildName(breite, nummer, meldung) {
+  const detail = meldung
+    .replace(/^\d+px\/[^:]+:\s*/, '')
+    .replace(/^Raumschiff:\s*/, '');
+  return `${breite}px-ship-cluster-${String(nummer).padStart(2, '0')}-${artefaktSlug(detail) || 'befund'}.png`;
+}
+
 async function main() {
   const opt = argumente(process.argv.slice(2));
   const { validierungen } = await pruefeServer(opt.url);
@@ -1372,10 +1392,31 @@ async function main() {
         for (const text of await pruefeZoom(page, ansicht)) fehler.push(`${breite}px/${ansicht}: ${text}`);
 
         if (opt.bilder && fehler.length > vorher) {
-          const datei = join(opt.bilder, `${breite}px-${ansicht}.png`);
-          await page.screenshot({ path: datei, fullPage: true });
-          bilderGesamt++;
-          console.log(`Screenshot: ${datei}`);
+          const neue = fehler.slice(vorher);
+          const clusterFehler = ansicht === 'ship'
+            ? neue.filter(text => /\/ship:\s*Raumschiff:/.test(text))
+            : [];
+          if (clusterFehler.length) {
+            for (const [index, meldung] of clusterFehler.entries()) {
+              const datei = join(opt.bilder, schiffsclusterBildName(breite, index + 1, meldung));
+              await page.screenshot({ path: datei, fullPage: true });
+              bilderGesamt++;
+              console.log(`Screenshot: ${datei}`);
+            }
+            const weitere = neue.filter(text => !clusterFehler.includes(text));
+            if (weitere.length) {
+              const datei = join(opt.bilder,
+                `${breite}px-ship-layout-${artefaktSlug(weitere[0]) || 'befund'}.png`);
+              await page.screenshot({ path: datei, fullPage: true });
+              bilderGesamt++;
+              console.log(`Screenshot: ${datei}`);
+            }
+          } else {
+            const datei = join(opt.bilder, `${breite}px-${ansicht}.png`);
+            await page.screenshot({ path: datei, fullPage: true });
+            bilderGesamt++;
+            console.log(`Screenshot: ${datei}`);
+          }
         }
       }
       await page.close();

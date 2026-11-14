@@ -42,6 +42,19 @@ function pruefe(bedingung, meldung) {
   if (!bedingung) throw new Error(meldung);
 }
 
+function artefaktSlug(text) {
+  return String(text)
+    .toLowerCase()
+    .replace(/ä/g, 'ae')
+    .replace(/ö/g, 'oe')
+    .replace(/ü/g, 'ue')
+    .replace(/ß/g, 'ss')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+    .replace(/-+$/g, '');
+}
+
 function transformWerte(text) {
   const treffer = text.match(/translate\(([-\d.]+)px,\s*([-\d.]+)px\)\s*scale\(([-\d.]+)\)/);
   if (!treffer) throw new Error(`Unerwartete Schiffs-Transform: ${text}`);
@@ -122,6 +135,7 @@ async function main() {
   const page = await context.newPage();
   const cdp = await context.newCDPSession(page);
   let erfolgreich = false;
+  let fehlerText = '';
 
   try {
     await ladeSchiff(page);
@@ -216,9 +230,13 @@ async function main() {
     }
     erfolgreich = true;
     console.log(`Touch OK: Pan ${Math.round(Math.abs(nachPan.x - vorPan.x))} px · Pinch ${(vorPinch.zoom * 100).toFixed(0)} % → ${(nachPinch.zoom * 100).toFixed(0)} % · ${cluster.clusters} Cluster ohne Doppelung · Tippen öffnet ${raumName}`);
+  } catch (fehler) {
+    fehlerText = fehler instanceof Error ? fehler.message : String(fehler);
+    throw fehler;
   } finally {
     if (!erfolgreich && opts.bilder) {
-      await page.screenshot({ path: join(opts.bilder, 'touch-fehler.png'), fullPage: true }).catch(() => {});
+      const datei = join(opts.bilder, `touch-fehler-${artefaktSlug(fehlerText) || 'unbekannt'}.png`);
+      await page.screenshot({ path: datei, fullPage: true }).catch(() => {});
     }
     await browser.close();
   }
