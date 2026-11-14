@@ -1123,6 +1123,9 @@ function shipStatusKey(a){
   return a.status === 'laeuft' ? 'laeuft' : a.status === 'blockiert' ? 'blockiert' : a.status === 'wartet' ? 'wartet' : 'frei';
 }
 
+const SHIP_ROOM_TYPEN = { A:'command', B:'server', C:'lab', D:'trading', E:'research', F:'risk',
+  G:'archive', H:'workshop', I:'observatory', J:'security', S:'meeting' };
+
 function renderShipWorld(){
   const box = $('#shipWorld');
   if(!box) return;
@@ -1140,37 +1143,59 @@ function renderShipWorld(){
   const commonOn = typ => shipAuswahl.typ === typ ? ' on' : '';
 
   box.innerHTML = `
-    <div class="ship-common">
-      <button class="common-room${commonOn('agents')}" data-common="agents" aria-pressed="${shipAuswahl.typ === 'agents' ? 'true' : 'false'}">
-        <span class="cr-icon">AR</span><span class="cr-txt"><b>Agentenraum</b><small>${agenten.length} Agenten · ${depts.length} Abteilungen</small></span>
-      </button>
-      <button class="common-room konf${commonOn('konf')}" data-common="konf" aria-pressed="${shipAuswahl.typ === 'konf' ? 'true' : 'false'}">
-        <span class="cr-icon">KO</span><span class="cr-txt"><b>Konferenz</b><small>${konf ? `${(konf.berichte || []).length} Berichte · ${(konf.massnahmen || []).length} Massnahmen` : 'Keine Konferenz'}</small></span>
-      </button>
-    </div>
-    <div class="ship-depts">
-      ${depts.map((d, i) => {
-        const farbe = SHIP_FARBEN[i % SHIP_FARBEN.length];
-        const offen = d.liste.reduce((n,a) => n + (Number(a.offene_aufgaben) || 0), 0);
-        return `<section class="ship-dept" style="--dept:${farbe}">
-          <div class="ship-dept-head"><span class="ship-dept-code">${esc(d.code)}</span>
-            <span class="ship-dept-name">${esc(d.name)}</span>
-            <span class="ship-dept-meta">${d.liste.length} · ${offen} offen</span></div>
-          <div class="ship-dept-rooms">${d.liste.length ? d.liste.map(a => {
-            const st = shipStatusKey(a);
-            const offenA = Number(a.offene_aufgaben) || 0;
-            const titel = `${a.rufname} · ${a.role} · ${a.dept_name} · ${a.status_text || a.status}${offenA ? ` · ${offenA} offen` : ''}`;
-            return `<button class="agent-room status-${st}${shipAuswahl.typ === 'agent' && shipAuswahl.id === a.agent_id ? ' on' : ''}"
-              data-agent="${esc(a.agent_id)}" aria-pressed="${shipAuswahl.typ === 'agent' && shipAuswahl.id === a.agent_id ? 'true' : 'false'}" title="${esc(titel)}" aria-label="${esc(titel)}">
-              <span class="ar-avatar" style="--dept:${farbe}">${esc((a.rufname || '?').slice(0,1).toUpperCase())}</span>
-              <span class="ar-name">${esc(a.rufname)}</span><span class="ar-role">${esc(a.role)}</span>
-              <span class="ar-state"><i class="p"></i>${esc(a.status_text || a.status)}${offenA ? ` · ${offenA}` : ''}</span>
-            </button>`;
-          }).join('') : '<div class="empty">Keine Agenten.</div>'}</div>
-        </section>`;
-      }).join('')}
-    </div>
-    <div class="ship-engine"><span class="eng-label">ANTRIEB / COMPANY</span><span class="eng-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="eng-state">● ${Number(s.aktiv)||0} aktiv · ${Number(s.blockiert)||0} blockiert · ${Number(aufgaben.offen)||0} offen</span></div>`;
+    <div class="ship-hull">
+      <span class="ship-rail ship-rail-l" aria-hidden="true"></span>
+      <span class="ship-rail ship-rail-r" aria-hidden="true"></span>
+      <div class="ship-brand">
+        <span class="sb-kicker">ORAKEL // DECK 07</span>
+        <b>INTERSTELLAR OPERATIONS</b>
+        <small><i></i> STATUS · ${agenten.length} CREW · ${depts.length} DIVISIONEN</small>
+      </div>
+      <div class="ship-common">
+        <button class="common-room${commonOn('agents')}" data-common="agents" aria-pressed="${shipAuswahl.typ === 'agents' ? 'true' : 'false'}">
+          <span class="cr-visual" aria-hidden="true"><span class="cr-holo"></span></span>
+          <span class="cr-txt"><small>COMMAND DECK</small><b>Agentenraum</b><em>${agenten.length} AGENTEN · ${depts.length} DIVISIONEN</em></span>
+        </button>
+        <button class="common-room konf${commonOn('konf')}" data-common="konf" aria-pressed="${shipAuswahl.typ === 'konf' ? 'true' : 'false'}">
+          <span class="cr-visual" aria-hidden="true"><span class="cr-holo"></span></span>
+          <span class="cr-txt"><small>BRIEFING ROOM</small><b>Konferenz</b><em>${konf ? `${(konf.berichte || []).length} BERICHTE · ${(konf.massnahmen || []).length} MASSNAHMEN` : 'KEINE KONFERENZ'}</em></span>
+        </button>
+      </div>
+      <div class="ship-depts">
+        ${depts.map((d, i) => {
+          const farbe = SHIP_FARBEN[i % SHIP_FARBEN.length];
+          const offen = d.liste.reduce((n,a) => n + (Number(a.offene_aufgaben) || 0), 0);
+          const wide = d.code === 'S' ? ' wide' : '';
+          const fehlend = Math.max(0, 5 - d.liste.length);
+          return `<section class="ship-dept${wide}" style="--dept:${farbe}">
+            <div class="ship-dept-head"><span class="ship-dept-code">${esc(d.code)}</span>
+              <span class="ship-dept-name">${esc(d.name)}</span>
+              <span class="ship-dept-meta">${d.liste.length} · ${offen} OFFEN</span></div>
+            <div class="ship-dept-rooms">${d.liste.length ? d.liste.map((a, rIdx) => {
+              const st = shipStatusKey(a);
+              const offenA = Number(a.offene_aufgaben) || 0;
+              const titel = `${a.rufname} · ${a.role} · ${a.dept_name} · ${a.status_text || a.status}${offenA ? ` · ${offenA} offen` : ''}`;
+              const typ = SHIP_ROOM_TYPEN[a.dept] || 'desk';
+              return `<button class="agent-room status-${st} room-${typ} room-v${rIdx % 3}${shipAuswahl.typ === 'agent' && shipAuswahl.id === a.agent_id ? ' on' : ''}"
+                data-agent="${esc(a.agent_id)}" aria-pressed="${shipAuswahl.typ === 'agent' && shipAuswahl.id === a.agent_id ? 'true' : 'false'}" title="${esc(titel)}" aria-label="${esc(titel)}">
+                <span class="ar-sign"><i class="ar-led"></i><b>${esc(a.rufname)}</b></span>
+                <span class="ar-interior">
+                  <span class="ar-screen"></span><span class="ar-desk"></span><span class="ar-chair"></span>
+                  <span class="ar-prop"></span><span class="ar-person"></span>
+                </span>
+                <span class="ar-foot"><span class="ar-state"><i></i>${esc(a.status_text || a.status)}</span><span class="ar-tasks">${offenA ? `+${offenA}` : '—'}</span></span>
+              </button>`;
+            }).join('') : '<div class="empty">Keine Agenten.</div>'}${Array.from({length:fehlend}, (_, fi) => `<span class="ship-void void-${fi}" aria-hidden="true"><b>${fi ? 'WARP CORE' : 'HANGAR 07'}</b><i></i><em>${fi ? 'ENERGIE' : 'ANDOCKBAY'}</em></span>`).join('')}</div>
+          </section>`;
+        }).join('')}
+      </div>
+      <div class="ship-engine">
+        <span class="eng-label">PROPULSION // COMPANY</span>
+        <span class="eng-bars">${Array.from({length:12}, () => '<i></i>').join('')}</span>
+        <span class="eng-state">● ${Number(s.aktiv)||0} AKTIV · ${Number(s.blockiert)||0} BLOCKIERT · ${Number(aufgaben.offen)||0} OFFEN</span>
+        <span class="eng-thruster" aria-hidden="true"></span><span class="eng-thruster" aria-hidden="true"></span>
+      </div>
+    </div>`;
 
   box.querySelectorAll('[data-agent]').forEach(b => b.onclick = () => setShipSelection('agent', b.dataset.agent));
   box.querySelectorAll('[data-common]').forEach(b => b.onclick = () => setShipSelection(b.dataset.common));
