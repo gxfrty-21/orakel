@@ -1,7 +1,7 @@
 # Raumbuch — Orakel Interstellar Headquarters
 
-**Status:** Planung; der 3D-Prototyp wurde am 12. November 2026 entfernt. Aktuell ist die 2D-Ansicht `#v-ship`.<br>
-**Stand:** 12. November 2026<br>
+**Status:** Planung; der 3D-Prototyp wurde am 12. November 2026 entfernt. Aktuell ist der 2D-Agenten-Querschnitt `#v-ship` mit 103 Räumen in elf Abteilungen.<br>
+**Stand:** 14. November 2026<br>
 **Maßstab:** 1 Three.js-Einheit = 1 Meter (nur Planung)
 **Hülle:** ca. 280 m lang, 140 m breit, 68 m hoch  
 **Decks:** 8 (E0–E7), je 8 m Strukturhöhe, 7 m lichte Höhe  
@@ -12,9 +12,10 @@ Verwaltungszentrum. Die Form ist aerodynamisch genug für eine Raumstation, aber
 bewusst als Innenarchitektur gedacht: breite Korridore, Glasfronten, hohe Räume und
 ein zentraler Lichthof.
 
-> **Aktueller Stand (12.11.2026):** Die 3D-Welt ist zurückgestellt. Die aktuelle
-> Raumschiff-Ansicht ist der 2D-Querschnitt `#v-ship`. Die 3D-Beschreibungen in
-> diesem Raumbuch sind Planung/History, keine laufende Funktion.
+> **Aktueller Stand (14.11.2026):** Die 3D-Welt ist zurückgestellt. Die aktuelle
+> Raumschiff-Ansicht ist der 2D-Agenten-Querschnitt `#v-ship` mit 103 Company-Räumen
+> in elf Abteilungen. Die 3D-Beschreibungen in diesem Raumbuch sind Planung/History,
+> keine laufende Funktion.
 
 ## 0. Historischer Prototyp: Main Command Center (E6)
 
@@ -409,7 +410,7 @@ der auf Daten wartet, zeigt „WARTEND“ und den Grund.
 
 - Keine First-Person-Pflicht.
 - 3D-Übersicht mit Orbit, Zoom und Raumantippen.
-- 2D-Deckplan als Fallback.
+- 2D-Agenten-Querschnitt als Fallback.
 - Agentenlisten und Raumdetails als Bottom-Sheet.
 - Performance-Modus: reduzierte Partikel, weniger Schatten, kein Volumenlicht.
 

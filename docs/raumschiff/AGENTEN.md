@@ -1,8 +1,8 @@
 # Agentenstruktur — 100 Fachagenten + 3 Sekretäre
 
-**Status:** Profile und Tages-Tasks in Phase 1 umgesetzt; 3D/Management/Konferenz offen  
+**Status:** Profile und Tages-Tasks in Phase 1 umgesetzt; 103 Profile im 2D-Agenten-Querschnitt sichtbar; Management/Konferenz offen<br>
 **Gesamtzahl:** 103 Personen (100 Fachagenten, 3 Sekretäre)  
-**Abteilungen:** 10 × 10 Fachagenten  
+**Abteilungen:** 10 Fachabteilungen (A–J) × 10 plus Executive Secretariat (S) × 3; im Schiff elf Abteilungsgruppen<br>
 **Grundlage:** die 80 bestehenden Rollen aus `orakel/agents.py`, unverändert
 übernommen und um zwei Abteilungen ergänzt
 
