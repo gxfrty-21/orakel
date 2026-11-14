@@ -259,7 +259,7 @@ button.li:hover{background:var(--panel2)}
 .deck-rooms{display:grid;gap:8px}
 .deck-a .deck-rooms{grid-template-columns:repeat(4,minmax(0,1fr))}
 .deck-b .deck-rooms{grid-template-columns:repeat(5,minmax(0,1fr))}
-.ship-room{position:relative;display:flex;flex-direction:column;gap:4px;min-height:104px;padding:10px 10px 9px;
+.ship-room{position:relative;display:flex;flex-direction:column;gap:4px;min-height:104px;min-width:0;padding:10px 10px 9px;
   text-align:left;border:1px solid rgba(255,63,164,.22);border-radius:6px;color:var(--muted);overflow:hidden;
   background:linear-gradient(180deg,rgba(52,16,56,.55),rgba(16,8,26,.85))}
 .ship-room:before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.35;
@@ -271,11 +271,13 @@ button.li:hover{background:var(--panel2)}
 .ship-room.is-befund{border-color:rgba(255,84,112,.55)}
 .ship-room.is-wide{grid-column:span 2}
 .ship-room-code{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--accent2)}
-.ship-room-name{font-weight:500;font-size:12.5px;line-height:1.25;color:var(--fg)}
-.ship-room-meta{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:auto}
+.ship-room-name{font-weight:500;font-size:12.5px;line-height:1.25;color:var(--fg);min-width:0;overflow-wrap:anywhere}
+.ship-room-meta{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:auto;min-width:0;overflow-wrap:anywhere}
 .ship-room .dots{display:flex;gap:3px;flex-wrap:wrap}
 .ship-room .dots i{display:block;width:5px;height:5px;border-radius:50%;background:var(--good)}
 .ship-room .dots i.warn{background:var(--bad)}
+.ship-room .dots i.wait{background:var(--amber)}
+.ship-room .dots i.free{background:var(--dim)}
 
 /* Deck C: Executive — echte Zahlen, keine erfundene Aktivität */
 .deck-c{border-color:rgba(255,184,77,.28);background:rgba(26,16,10,.55)}

@@ -7,6 +7,7 @@ let globeView = null, globeFailed = false, globeWindow = '24h', globeRequest = 0
 let nachtDaten = null, nachtFehler = null;
 let graphWindow = '7d', graphDaten = null, kalibrierungDaten = null;
 let betriebDaten = null, betriebFehler = null, betriebTimer = null;
+let companyDaten = null, companyFehler = null, companyTimer = null, companyLaden = false;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = (v,d=2) => (v==null||isNaN(v)) ? '–' : Number(v).toLocaleString('de-CH',{minimumFractionDigits:d,maximumFractionDigits:d});
 const pct = (v,d=1) => v==null ? '–' : num(v,d)+' %';
@@ -30,6 +31,11 @@ function zeige(v){ current=v;
   if(v === 'betrieb' && !betriebTimer){
     ladeBetrieb();
     betriebTimer = setInterval(ladeBetrieb, 30000);
+  }
+  if(v !== 'ship' && companyTimer){ clearInterval(companyTimer); companyTimer = null; }
+  if(v === 'ship' && !companyTimer){
+    ladeCompany();
+    companyTimer = setInterval(ladeCompany, 30000);
   }
   document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   document.querySelectorAll('.view').forEach(s=>s.hidden = s.id !== 'v-'+v);
@@ -742,17 +748,48 @@ if(betriebRefreshBtn) betriebRefreshBtn.onclick = () => ladeBetrieb();
 const DECK_A = ['A','B','E','C'];
 const DECK_B = ['D','F','G','H'];
 
+function companyAbteilung(k){
+  return ((companyDaten && companyDaten.overview && companyDaten.overview.abteilungen) || [])
+    .find(d => d.code === k) || null;
+}
+
+function companyAgentenDept(k){
+  return ((companyDaten && companyDaten.agents && companyDaten.agents.agenten) || [])
+    .filter(a => a.dept === k);
+}
+
+function hatCompanyDaten(){
+  return !!(companyDaten && companyDaten.agents && Number(companyDaten.agents.gesamt) > 0);
+}
+
 function shipRaum(k, breit, proAbteilung){
   const liste = proAbteilung[k] || [];
   const befunde = liste.filter(r=>!r.ok).length;
   const on = k === depSel;
-  const zustand = liste.length ? (befunde ? 'befund' : 'ok') : 'leer';
+  const company = hatCompanyDaten();
+  const cdept = companyAbteilung(k);
+  const cagenten = companyAgentenDept(k);
+  const offen = company && cdept ? Number(cdept.offen) || 0 : 0;
+  const laeuft = company && cdept ? Number(cdept.laeuft) || 0 : 0;
+  const blockiert = company && cdept ? Number(cdept.blockiert) || 0 : 0;
+  const zustand = company ? (blockiert ? 'befund' : 'ok')
+    : (liste.length ? (befunde ? 'befund' : 'ok') : 'leer');
+  const anzahl = company ? cagenten.length : liste.length;
+  const meta = company
+    ? `${anzahl} Agenten · ${offen} offen${laeuft ? ` · ${laeuft} läuft` : ''}${blockiert ? ` · ${blockiert} blockiert` : ''}`
+    : (liste.length ? `${liste.length} Agenten` : 'KEINE DATEN') + (befunde ? ` · ${befunde} Befund` : '');
+  const punkte = company
+    ? cagenten.slice(0,10).map(a=>`<i class="${a.status==='blockiert'?'warn':a.status==='laeuft'?'ok':a.status==='wartet'?'wait':'free'}"></i>`).join('')
+    : liste.slice(0,10).map(r=>`<i class="${r.ok?'ok':'warn'}"></i>`).join('');
+  const aria = company
+    ? `${anzahl} Agenten, ${offen} offen${blockiert?`, ${blockiert} blockiert`:''}`
+    : `${liste.length} Agenten${befunde?`, ${befunde} Befund`:''}`;
   return `<button class="ship-room is-${zustand}${on?' on':''}${breit?' is-wide':''}" data-d="${k}" aria-pressed="${on?'true':'false'}"
-    aria-label="${esc(DEP[k])}: ${liste.length} Agenten${befunde?`, ${befunde} Befund`:''}">
+    aria-label="${esc(DEP[k])}: ${aria}">
     <span class="ship-room-code">${k}</span>
     <span class="ship-room-name">${esc(DEP[k])}</span>
-    <span class="ship-room-meta">${liste.length ? `${liste.length} Agenten` : 'KEINE DATEN'}${befunde?` · ${befunde} Befund` : ''}</span>
-    <span class="dots">${liste.slice(0,10).map(r=>`<i class="${r.ok?'ok':'warn'}"></i>`).join('')}</span>
+    <span class="ship-room-meta">${meta}</span>
+    <span class="dots">${punkte}</span>
   </button>`;
 }
 
@@ -962,28 +999,111 @@ function renderCEO(runs){
     </div>`;
 }
 
-function renderShip(){
-  const runs = R.agenten || [];
+function proAbteilungAusRuns(){
+  const runs = (R && R.agenten) || [];
   const proAbteilung = {};
   runs.forEach(r => { (proAbteilung[r.abteilung] = proAbteilung[r.abteilung] || []).push(r); });
+  return proAbteilung;
+}
 
+function renderDeckRooms(){
+  const proAbteilung = proAbteilungAusRuns();
   $('#deckA').innerHTML = DECK_A.map(k=>shipRaum(k, false, proAbteilung)).join('');
   $('#deckB').innerHTML = DECK_B.map(k=>shipRaum(k, k==='D', proAbteilung)).join('');
   document.querySelectorAll('#v-ship .ship-room').forEach(b => b.onclick = () => { depSel = b.dataset.d; renderShip(); });
-  const detail = $('#shipModeDetail');
-  if(detail) detail.textContent = `${runs.length} Agentenläufe · ${Object.keys(proAbteilung).length} von 8 Abteilungen aktiv`;
-  renderCEO(runs);
-  ladeSekretariat();
-  ladeSitzung();
+}
 
+async function ladeCompany(){
+  if(companyLaden) return;
+  companyLaden = true;
+  try{
+    const antworten = await Promise.all([
+      fetch('/api/company/overview', {cache:'no-store'}),
+      fetch('/api/company/agents', {cache:'no-store'}),
+      fetch('/api/company/tasks?limit=12', {cache:'no-store'}),
+    ]);
+    if(antworten.some(r => !r.ok)) throw new Error('HTTP ' + antworten.find(r => !r.ok).status);
+    const [overview, agents, tasks] = await Promise.all(antworten.map(r=>r.json()));
+    companyDaten = {overview, agents, tasks};
+    companyFehler = null;
+  }catch(e){
+    companyDaten = null;
+    companyFehler = String((e && e.message) || e);
+  }finally{
+    companyLaden = false;
+  }
+  renderCompany();
+}
+
+function renderCompany(){
+  if(!$('#companyPanel')) return;
+  renderDeckRooms();
+  renderAbteilung();
+  const detail = $('#shipModeDetail'), tag = $('#companyTag');
+  const kpis = $('#companyKpis'), liste = $('#companyTasks'), taskTag = $('#companyTaskTag');
+  if(!companyDaten){
+    if(detail) detail.textContent = companyFehler ? 'Company-API nicht erreichbar' : 'Company-API wird geladen …';
+    if(tag) tag.textContent = companyFehler ? 'API-FEHLER' : 'lädt';
+    if(taskTag) taskTag.textContent = '–';
+    if(kpis) kpis.innerHTML = `<div class="kpi"><div class="l">Company-API</div><div class="v">–</div><div class="n">${companyFehler?esc(companyFehler):'wird geladen'}</div></div>`;
+    if(liste) liste.innerHTML = `<div class="empty">${companyFehler?'Company-API nicht erreichbar.':'Offene Aufgaben werden geladen …'}</div>`;
+    return;
+  }
+  const o = companyDaten.overview || {}, a = companyDaten.agents || {}, t = companyDaten.tasks || {};
+  const s = o.agenten_status || {}, p = o.profile || {};
+  const offen = Number((o.aufgaben && o.aufgaben.offen) || 0);
+  const agenten = Number(a.gesamt || p.gesamt || 0);
+  if(detail) detail.textContent = `${agenten} Agenten · ${s.aktiv||0} aktiv · ${s.blockiert||0} blockiert · ${offen} offen`;
+  if(tag) tag.textContent = o.data_state === 'empty' ? 'keine Daten' : `live · ${kurzZeit(o.generated_at) || 'Stand unbekannt'}`;
+  if(kpis) kpis.innerHTML = [
+    ['Agenten', agenten, `${s.frei||0} frei`],
+    ['aktiv', s.aktiv||0, 'laufende Aufgaben'],
+    ['blockiert', s.blockiert||0, 'brauchen Aufmerksamkeit'],
+    ['offene Aufgaben', offen, `${s.wartend||0} wartend`],
+  ].map(([l,v,n])=>`<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="n">${n}</div></div>`).join('');
+  const aufgaben = t.aufgaben || [];
+  if(taskTag) taskTag.textContent = `${Number(t.gesamt)||0} offen${aufgaben.length < (Number(t.gesamt)||0) ? ` · ${aufgaben.length} gezeigt` : ''}`;
+  if(liste) liste.innerHTML = aufgaben.length ? aufgaben.map(task=>{
+    const pill = task.state === 'blocked' ? 'r' : task.state === 'running' ? 'b' : 'w';
+    const frist = task.due_at ? ` · fällig ${kurzZeit(task.due_at)}` : '';
+    return `<div class="li"><span><b>${esc(task.title)}</b><small>${esc(task.rufname||task.assigned_to)} · ${esc(task.dept_name||task.dept)} · ${esc(task.state_text)}${frist}</small></span><span class="pill ${pill}">${esc(task.state_text)}</span></div>`;
+  }).join('') : '<div class="empty">Keine offenen Aufgaben.</div>';
+}
+
+function renderAbteilung(){
+  const proAbteilung = proAbteilungAusRuns();
   const meine = proAbteilung[depSel] || [];
-  $('#roomTag').textContent = `${meine.length} Agenten · ${meine.filter(r=>r.ok).length} ohne Befund`;
-  $('#roomAgents').innerHTML = meine.length ? meine.map(r=>`<div class="li"><span><b>${esc((r.agent||'').split(':')[1]||r.agent)}</b>
-    <small>${esc(r.aufgabe)}</small></span><span class="pill ${r.ok?'':'r'}">${r.ok?'OK':'BEFUND'}</span></div>`).join('')
-    : '<div class="empty">Noch kein Lauf für diese Abteilung.</div>';
+  const company = hatCompanyDaten();
+  const cagenten = companyAgentenDept(depSel);
+  if(company && cagenten.length){
+    const offen = cagenten.reduce((n,a)=>n+(Number(a.offene_aufgaben)||0), 0);
+    const laeuft = cagenten.filter(a=>a.status==='laeuft').length;
+    $('#roomTag').textContent = `${cagenten.length} Agenten · ${offen} offen${laeuft?` · ${laeuft} läuft`:''}`;
+    $('#roomAgents').innerHTML = cagenten.map(a=>{
+      const pill = a.status==='blockiert'?'r':a.status==='laeuft'?'b':a.status==='wartet'?'w':'g';
+      const letzte = a.letzte_task && a.letzte_task.title && a.letzte_task.title !== a.role ? a.letzte_task.title : '';
+      const teile = [esc(a.role)];
+      if(a.offene_aufgaben) teile.push(`${a.offene_aufgaben} offen`);
+      if(letzte) teile.push(esc(letzte));
+      return `<div class="li"><span><b>${esc(a.rufname)}</b><small>${teile.join(' · ')}</small></span><span class="pill ${pill}">${esc(a.status_text)}</span></div>`;
+    }).join('');
+  }else{
+    $('#roomTag').textContent = `${meine.length} Agenten · ${meine.filter(r=>r.ok).length} ohne Befund`;
+    $('#roomAgents').innerHTML = meine.length ? meine.map(r=>`<div class="li"><span><b>${esc((r.agent||'').split(':')[1]||r.agent)}</b>
+      <small>${esc(r.aufgabe)}</small></span><span class="pill ${r.ok?'':'r'}">${r.ok?'OK':'BEFUND'}</span></div>`).join('')
+      : '<div class="empty">Noch kein Lauf für diese Abteilung.</div>';
+  }
   $('#roomRuns').innerHTML = meine.length ? meine.map(r=>`<div class="li"><span><b style="font-weight:400">${esc(r.ergebnis)}</b>
     <small>${esc((r.agent||'').split(':')[1]||r.agent)}</small></span></div>`).join('')
     : '<div class="empty">Keine Rohrpost.</div>';
+}
+
+function renderShip(){
+  if(!companyDaten && !companyLaden) ladeCompany();
+  renderCompany();
+  renderCEO((R && R.agenten) || []);
+  ladeSekretariat();
+  ladeSitzung();
 }
 
 /* ---------- Spider + Intelligence ---------- */
