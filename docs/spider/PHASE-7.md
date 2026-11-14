@@ -82,7 +82,7 @@ pausiert. Der Button `Bewegung pausieren` stoppt bzw. startet die Animation.
 
 ## 4. Oberfläche und Schnittstelle
 
-Neuer Navigationspunkt **Nexus** mit:
+Die **Nexus**-Ansicht mit:
 
 - Zeitraumwahl `24 h`, `7 Tage`, `30 Tage`, `Alle`,
 - echter Statusanzeige (`AKTIV`, `RUHIG`, `LEER`),

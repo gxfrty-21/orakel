@@ -26,7 +26,7 @@ Three.js und blieb ohne Bundler. Sie enthielt:
 - acht Stationen für die echten Abteilungen A–H,
 - ein zentrales Hologramm mit Takt-, Job-, Datenbank- und Agentenwerten,
 - drei Wandschirme für Dauerbetrieb, Risiko/Paper und Agentenaktivität,
-- interaktive Deckskarte mit Direktreisen zu allen acht Stationen,
+- interaktive Karte mit Direktreisen zu allen acht Stationen,
 - First-Person-Navigation mit WASD, Maus-Look, Shift und Pointer Lock,
 - einfache Wand- und Tischkollisionen,
 - eine synchronisierte Seitenleiste mit den echten Läufen aus `/api/report` und
@@ -40,7 +40,7 @@ keine Broker-Orders. Die übrigen Decks und Räume bleiben Planung.
 `command-view.js`; sie sind am 12. November 2026 entfernt worden.
 
 **Bedienung damals:** WASD gehen, Maus umsehen, Shift rennen, `M` öffnete die
-Deckskarte, ESC gab die Maus frei. Die übrigen in Kapitel 6 geplanten Tasten waren
+Karte, ESC gab die Maus frei. Die übrigen in Kapitel 6 geplanten Tasten waren
 nicht angebunden.
 
 ## 1. Gesamtform und Erschließung
