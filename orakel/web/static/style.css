@@ -883,7 +883,7 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 .ship-stage{display:grid;grid-template-columns:minmax(0,1fr) 326px;gap:12px;height:min(80vh,860px);min-height:600px}
 .ship-viewport{position:relative;min-width:0;overflow:hidden;border:1px solid #4e255f;border-radius:4px;
   background:#05020a;box-shadow:inset 0 0 90px #000,0 0 26px rgba(255,45,154,.10);
-  touch-action:none;cursor:grab;isolation:isolate}
+  touch-action:none;cursor:grab;isolation:isolate;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 .ship-viewport:active{cursor:grabbing}
 .ship-viewport::before{content:"";position:absolute;inset:0;z-index:0;opacity:.9;pointer-events:none;
   background-image:
@@ -1200,3 +1200,11 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 .room-v1 .ar-chair{right:18%}
 .room-v2 .ar-screen{right:7%}
 @media(max-width:760px){.ship-viewport{height:500px}}
+/* Kompakte Abteilungslegende in der Ops-Konsole */
+.sd-legend-block{margin-top:10px}
+.sd-legend{display:grid;grid-template-columns:1fr;gap:2px;margin-top:6px}
+.sd-legend .sd-dept{padding:4px 6px;gap:6px;background:rgba(56,232,255,.025);border-color:rgba(56,232,255,.12)}
+.sd-legend .sd-dept .sw{width:6px;height:6px;flex:0 0 6px;border-radius:50%;box-shadow:0 0 6px var(--dept)}
+.sd-legend .sd-dept b{font-size:9px;letter-spacing:.02em}
+.sd-legend .sd-dept small{font-size:6.5px}
+.sd-legend .sd-dept:hover{background:rgba(56,232,255,.07);border-color:var(--dept)}
