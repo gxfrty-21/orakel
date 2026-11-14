@@ -492,6 +492,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     def health() -> dict[str, Any]:
         cfg = load_config(cfg_pfad)
         db = Facts(cfg.db_pfad)
+        store = CompanyStore(db)
         return {"ok": True, "letzter_lauf": db.zustand("letzter_lauf"),
                 "halt": db.zustand("risiko_stopp"),
                 "paper_tick": db.zustand("paper_letzter_tick"),
@@ -499,6 +500,9 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                 # Kompakt und ohne Secrets; der volle Plan liegt hinter Login
                 # unter /api/betrieb.
                 "betrieb": betrieb_health(cfg, db),
+                # Nur Kennzahlen, damit die Deploy-Nachprüfung die Schiffsdaten
+                # ohne Login verifizieren kann.
+                "schiff": store.schiff_zahlen(),
                 # Railway setzt den SHA bei Deploys aus GitHub; die Nachprüfung
                 # nach dem Deploy vergleicht ihn mit dem erwarteten Commit.
                 "commit": os.environ.get("RAILWAY_GIT_COMMIT_SHA") or None}

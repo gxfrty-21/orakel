@@ -79,8 +79,9 @@ python -m orakel betrieb --json    # vollständige Monitoringdaten
 ```
 
 Im Dashboard gibt es dafür den Punkt **Betrieb**; die geschützte API liegt
-unter `GET /api/betrieb`. `/api/health` bleibt offen und nennt nur eine
-kompakte Betriebszeile. Details und ehrliche Grenzen:
+unter `GET /api/betrieb`. `/api/health` bleibt offen und nennt eine kompakte
+Betriebszeile sowie die Schiffs-Kennzahlen (11 Cluster, 103 Agenten). Details
+und ehrliche Grenzen:
 [docs/spider/PHASE-8.md](docs/spider/PHASE-8.md).
 
 Unter Windows zusätzlich `pip install MetaTrader5` (nur dort verfügbar) und in
