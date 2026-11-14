@@ -20,6 +20,7 @@
  *   --ansichten lab,kb     Standard alle zwölf Ansichten
  *   --ohne-tabellen        Nur Seitenüberläufe prüfen, Tabellen überspringen
  *   --bilder <verzeichnis> Schreibt bei Befunden je Ansicht und Breite Screenshot und HTML
+ *   --bild-praefix <name>  Gibt Screenshots und HTML einen eindeutigen Namenspräfix
  *   --selbsttest-cluster   Prüft einen fehlenden Schiffscluster und den Screenshotpfad
  */
 
@@ -42,6 +43,7 @@ function argumente(argv) {
     ansichten: [...STANDARD_ANSICHTEN],
     tabellen: true,
     bilder: null,
+    bildPraefix: '',
     negativtest: false,
     selbsttestCluster: false,
   };
@@ -52,12 +54,16 @@ function argumente(argv) {
     else if (arg === '--ansichten') opts.ansichten = argv[++i].split(',').map(s => s.trim()).filter(Boolean);
     else if (arg === '--ohne-tabellen') opts.tabellen = false;
     else if (arg === '--bilder') opts.bilder = argv[++i];
+    else if (arg === '--bild-praefix') {
+      opts.bildPraefix = artefaktSlug(argv[++i] || '').slice(0, 40);
+      if (!opts.bildPraefix) { console.error('--bild-praefix benötigt einen Namen.'); process.exit(2); }
+    }
     else if (arg === '--negativtest') opts.negativtest = true;
     else if (arg === '--selbsttest-cluster') opts.selbsttestCluster = true;
     else if (arg === '--hilfe' || arg === '-h') {
       console.log('Aufruf: node scripts/pruefe-text250.mjs [--url URL] [--breiten 360,320,280]\n' +
         '       [--ansichten overview,risk,lab,strat,research,globe,betrieb,ship,spider,kb,agents,konf] [--ohne-tabellen]\n' +
-        '       [--bilder <verzeichnis>] [--negativtest] [--selbsttest-cluster]');
+        '       [--bilder <verzeichnis>] [--bild-praefix <name>] [--negativtest] [--selbsttest-cluster]');
       process.exit(0);
     }
     else { console.error(`Unbekannte Option: ${arg}`); process.exit(2); }
@@ -1391,17 +1397,18 @@ function artefaktSlug(text) {
     .replace(/-+$/g, '');
 }
 
-function schiffsclusterBildName(breite, nummer, meldung) {
+function schiffsclusterBildName(breite, nummer, meldung, praefix = '') {
   const detail = meldung
     .replace(/^\d+px\/[^:]+:\s*/, '')
     .replace(/^Raumschiff:\s*/, '');
-  return `${breite}px-ship-cluster-${String(nummer).padStart(2, '0')}-${artefaktSlug(detail) || 'befund'}.png`;
+  return `${praefix}${breite}px-ship-cluster-${String(nummer).padStart(2, '0')}-${artefaktSlug(detail) || 'befund'}.png`;
 }
 
 
 async function schreibeDiagnose(page, opt, breite, ansicht, neue) {
   if (!opt.bilder || !neue.length) return { bilder: [], html: null };
-  const html = join(opt.bilder, `${breite}px-${ansicht}.html`);
+  const praefix = opt.bildPraefix ? `${opt.bildPraefix}-` : '';
+  const html = join(opt.bilder, `${praefix}${breite}px-${ansicht}.html`);
   writeFileSync(html, await page.content());
   console.log(`HTML: ${html}`);
 
@@ -1411,7 +1418,7 @@ async function schreibeDiagnose(page, opt, breite, ansicht, neue) {
     : [];
   if (clusterFehler.length) {
     for (const [index, meldung] of clusterFehler.entries()) {
-      const datei = join(opt.bilder, schiffsclusterBildName(breite, index + 1, meldung));
+      const datei = join(opt.bilder, schiffsclusterBildName(breite, index + 1, meldung, praefix));
       await page.screenshot({ path: datei, fullPage: true });
       bilder.push(datei);
       console.log(`Screenshot: ${datei}`);
@@ -1419,13 +1426,13 @@ async function schreibeDiagnose(page, opt, breite, ansicht, neue) {
     const weitere = neue.filter(text => !clusterFehler.includes(text));
     if (weitere.length) {
       const datei = join(opt.bilder,
-        `${breite}px-ship-layout-${artefaktSlug(weitere[0]) || 'befund'}.png`);
+        `${praefix}${breite}px-ship-layout-${artefaktSlug(weitere[0]) || 'befund'}.png`);
       await page.screenshot({ path: datei, fullPage: true });
       bilder.push(datei);
       console.log(`Screenshot: ${datei}`);
     }
   } else {
-    const datei = join(opt.bilder, `${breite}px-${ansicht}.png`);
+    const datei = join(opt.bilder, `${praefix}${breite}px-${ansicht}.png`);
     await page.screenshot({ path: datei, fullPage: true });
     bilder.push(datei);
     console.log(`Screenshot: ${datei}`);
@@ -1433,7 +1440,7 @@ async function schreibeDiagnose(page, opt, breite, ansicht, neue) {
   return { bilder, html };
 }
 
-async function pruefeScreenshotSelbsttest(url, bilderPfad) {
+async function pruefeScreenshotSelbsttest(url, bilderPfad, bildPraefix = '') {
   if (!bilderPfad) throw new Error('--selbsttest-cluster benötigt --bilder <verzeichnis>');
   mkdirSync(bilderPfad, { recursive: true });
   const browser = await chromium.launch({ headless: true });
@@ -1460,8 +1467,9 @@ async function pruefeScreenshotSelbsttest(url, bilderPfad) {
     const fehlend = befunde.find(text => text.includes('Abteilung S fehlt'));
     if (!fehlend) throw new Error(`Fehlender Cluster S wurde nicht gemeldet: ${befunde.join('; ')}`);
     const neue = [`360px/ship: ${fehlend}`];
-    const { bilder, html } = await schreibeDiagnose(page, { bilder: bilderPfad }, 360, 'ship', neue);
-    const erwartet = join(bilderPfad, '360px-ship-cluster-01-abteilung-s-fehlt.png');
+    const { bilder, html } = await schreibeDiagnose(page, { bilder: bilderPfad, bildPraefix }, 360, 'ship', neue);
+    const praefix = bildPraefix ? `${bildPraefix}-` : '';
+    const erwartet = join(bilderPfad, `${praefix}360px-ship-cluster-01-abteilung-s-fehlt.png`);
     if (!bilder.includes(erwartet)) {
       throw new Error(`Screenshotpfad fehlt: erwartet ${erwartet}, erhalten ${bilder.join(', ')}`);
     }
@@ -1481,7 +1489,7 @@ async function main() {
   const opt = argumente(process.argv.slice(2));
   const { validierungen } = await pruefeServer(opt.url);
   if (opt.selbsttestCluster) {
-    await pruefeScreenshotSelbsttest(opt.url, opt.bilder);
+    await pruefeScreenshotSelbsttest(opt.url, opt.bilder, opt.bildPraefix);
     return;
   }
   if (opt.negativtest) {
