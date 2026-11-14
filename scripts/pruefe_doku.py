@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Prüft relative Markdown-Links, Überschriften-Anker und veraltete Schiffsbegriffe.
+"""Prüft relative Markdown-Links, Markdown- und HTML-Anker sowie alte Schiffsbegriffe.
 
 Der Lauf ist bewusst ohne Zusatzpakete nutzbar, damit er in der CI schnell
 bleibt. Relative Pfade werden vom jeweiligen Dokument aus aufgelöst. Bei
 Links mit Sprungmarke wird zusätzlich geprüft, ob die Zielseite eine
-passende Überschrift besitzt. Weblinks und Mailto-Links werden übersprungen.
+passende Markdown-Überschrift oder HTML-Überschrift mit id-Attribut besitzt.
+Weblinks und Mailto-Links werden übersprungen.
 """
 from __future__ import annotations
 
 import argparse
 import html
+from html.parser import HTMLParser
 import re
 import subprocess
 import sys
@@ -53,6 +55,27 @@ HTML_LINK = re.compile(
 FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})")
 ATX_HEADING = re.compile(r"^[ \t]{0,3}(#{1,6})[ \t]+(.*?)(?:[ \t]+#+[ \t]*)?$")
 SETEXT_HEADING = re.compile(r"^[ \t]{0,3}(=+|-+)[ \t]*$")
+HTML_HEADING_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
+
+
+class _HtmlAnkerParser(HTMLParser):
+    """Sammelt explizite id-Attribute von HTML-Überschriften."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.anker: set[str] = set()
+
+    def handle_starttag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
+        if tag.lower() not in HTML_HEADING_TAGS:
+            return
+        for name, wert in attrs:
+            if name.lower() != "id" or wert is None:
+                continue
+            wert = html.unescape(wert).strip()
+            if wert:
+                self.anker.add(wert)
 
 
 def _blank(text: str) -> str:
@@ -97,11 +120,21 @@ def _sichtbar_im_markdown(text: str) -> str:
     return _maskiere_kommentare(_maskiere_fenced(text))
 
 
-def _ueberschriften_anker(text: str) -> set[str]:
-    """Bildet die GitHub-ähnlichen Anker der Überschriften einer Datei.
+def _html_ueberschriften_anker(text: str) -> set[str]:
+    """Liefert explizite id-Attribute aus HTML-Überschriften."""
+    parser = _HtmlAnkerParser()
+    parser.feed(_maskiere_code(text))
+    parser.close()
+    return parser.anker
 
-    Fenced Code darf keine Scheinüberschriften beisteuern. Inline-Code und
-    einfache Hervorhebungen werden für den Anker wie gerenderter Text behandelt.
+
+def _ueberschriften_anker(text: str) -> set[str]:
+    """Bildet die Anker der Überschriften einer Datei.
+
+    Markdown-Überschriften erhalten GitHub-ähnliche Anker. HTML-Überschriften
+    zählen über ihr explizites id-Attribut. Fenced Code, Inline-Code und
+    HTML-Kommentare dürfen keine Scheinüberschriften beisteuern; einfache
+    Hervorhebungen werden für den Anker wie gerenderter Text behandelt.
     """
     sichtbar = _sichtbar_im_markdown(text)
     zeilen = sichtbar.splitlines()
@@ -129,6 +162,7 @@ def _ueberschriften_anker(text: str) -> set[str]:
             nummer += 1
             wert = f"{basis}-{nummer}"
         anker.add(wert)
+    anker.update(_html_ueberschriften_anker(text))
     return anker
 
 
@@ -270,7 +304,7 @@ def pruefe(root: Path) -> tuple[list[Path], int, list[str]]:
 
 
 def negativtest() -> int:
-    """Prüft, dass kaputte Links, falsche Anker und ein alter Decks-Begriff auffallen."""
+    """Prüft, dass kaputte Links, falsche Anker und alte Decks-Begriffe auffallen."""
     with tempfile.TemporaryDirectory(prefix="orakel-doku-") as tmp:
         root = Path(tmp)
         (root / "docs").mkdir()
@@ -279,7 +313,14 @@ def negativtest() -> int:
             "## 1. Test (Anker)\n"
             "## Use _italics_\n"
             "## foo_bar\n"
-            "## Gültiges Ziel\n",
+            "## Gültiges Ziel\n"
+            "<h2 id=\"html-anker\">HTML-Anker</h2>\n"
+            "<h3 id='html-einfach'>HTML-Anker mit einfachen Anführungszeichen</h3>\n"
+            "<H4 ID=\"html-gross\">HTML-Anker in Grossschreibung</H4>\n"
+            "<h2 id=\"html-anderer\">HTML-Text ist kein Anker</h2>\n"
+            "```html\n"
+            "<h2 id=\"html-im-code\">Kein Anker im Code</h2>\n"
+            "```\n",
             encoding="utf-8",
         )
         (root / "README.md").write_text(
@@ -291,9 +332,14 @@ def negativtest() -> int:
             "[gültiger Satzzeichen-Anker](docs/ok.md#1-test-anker)\n"
             "[gültiger Kursiv-Anker](docs/ok.md#use-italics)\n"
             "[gültiger Unterstrich-Anker](docs/ok.md#foo_bar)\n"
+            "[gültiger HTML-Anker](docs/ok.md#html-anker)\n"
+            "[gültiger HTML-Anker mit einfachen Anführungszeichen](docs/ok.md#html-einfach)\n"
+            "[gültiger HTML-Anker in Grossschreibung](docs/ok.md#html-gross)\n"
             "[gültiger Direktanker](#haupt)\n"
             "[fehlt](docs/fehlt.md)\n"
             "[falscher Dateianker](docs/ok.md#fehlt)\n"
+            "[falscher HTML-Textanker](docs/ok.md#html-text-ist-kein-anker)\n"
+            "[falscher HTML-Anker im Code](docs/ok.md#html-im-code)\n"
             "[falscher Direktanker](#fehlt)\n"
             "Das Schiff hat drei Decks.\n"
             "Die Deckkarte zeigt acht Stationen.\n"
@@ -308,23 +354,23 @@ def negativtest() -> int:
         link_fehler = any("fehlende Datei" in befund for befund in befunde)
         anker_fehler = [befund for befund in befunde if "Überschriften-Anker" in befund]
         begriff_fehler = [befund for befund in befunde if "veralteter Raumschiff- oder Navigationsbegriff" in befund]
-        if not link_fehler or len(anker_fehler) != 2 or len(begriff_fehler) != 7:
+        if not link_fehler or len(anker_fehler) != 4 or len(begriff_fehler) != 7:
             print(
                 "Dokutest FEHLGESCHLAGEN: erwartet wurden ein fehlender Link, "
-                "zwei falsche Anker und sieben veraltete Begriffe, gefunden: "
+                "vier falsche Anker und sieben veraltete Begriffe, gefunden: "
                 f"{befunde or 'keine Befunde'}",
                 file=sys.stderr,
             )
             return 1
         print(
             f"Dokutest OK: {len(dateien)} Dateien, {link_anzahl} relative Links, "
-            "fehlender Link, zwei falsche Anker und sieben veraltete Raumschiff- und Navigationsbegriffe erkannt"
+            "fehlender Link, vier falsche Anker und sieben veraltete Raumschiff- und Navigationsbegriffe erkannt"
         )
     return 0
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Prüft relative Doku-Links, Überschriften-Anker und veraltete Raumschiff- und Navigationsbegriffe.")
+    parser = argparse.ArgumentParser(description="Prüft relative Doku-Links, Markdown- und HTML-Anker sowie veraltete Raumschiff- und Navigationsbegriffe.")
     parser.add_argument("--root", type=Path, default=ROOT, help="Repository-Wurzel (Standard: Projektordner)")
     parser.add_argument("--negativtest", action="store_true", help="Prüft die Prüfung mit absichtlich falschen Doku-Daten")
     args = parser.parse_args()

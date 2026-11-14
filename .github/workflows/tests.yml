@@ -36,7 +36,8 @@ jobs:
         run: python -m pytest -q
 
   # Eigener sichtbarer Job: Prüft die versionierten Markdown-Dateien auf
-  # relative Links, Anker und veraltete Raumschiff- und Navigationsbegriffe.
+  # relative Links, Markdown- und HTML-Anker sowie alte Raumschiff- und
+  # Navigationsbegriffe.
   # Der Negativtest stellt sicher, dass ein kaputter Link und alte Begriffe
   # tatsächlich auffallen.
   doku:
