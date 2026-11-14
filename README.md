@@ -264,7 +264,9 @@ bei Pfeil rechts im CI eine echte Textänderung.
 Einschränken lässt sich der Lauf mit `--ansichten lab,kb --breiten 360,280`,
 die Adresse mit `--url http://127.0.0.1:8000`, Tabellen mit `--ohne-tabellen`.
 Mit `--bilder <verzeichnis>` schreibt der Lauf bei Befunden je Ansicht und
-Breite einen Screenshot. In GitHub Actions läuft derselbe Prüflauf als eigener
+Breite einen Screenshot. Schiffscluster-Befunde erhalten eigene Namen wie
+`320px-ship-cluster-01-abteilung-b-hat-11-statt-10-agenten.png`. In GitHub
+Actions läuft derselbe Prüflauf als eigener
 Job `text250` der Workflow-Datei `.github/workflows/tests.yml`; schlägt er fehl,
 lädt er die Bilder als Artefakt `text250-screenshots` und das Serverprotokoll als
 `text250-serverlog` hoch (je 7 Tage).
