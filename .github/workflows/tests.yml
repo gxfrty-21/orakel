@@ -35,9 +35,24 @@ jobs:
       - name: Tests ausführen
         run: python -m pytest -q
 
-      # Prüft die versionierten Markdown-Dateien auf relative Links, Anker und
-      # veraltete Raumschiff- und Navigationsbegriffe. Der Negativtest stellt
-      # sicher, dass ein kaputter Link und alte Begriffe tatsächlich auffallen.
+  # Eigener sichtbarer Job: Prüft die versionierten Markdown-Dateien auf
+  # relative Links, Anker und veraltete Raumschiff- und Navigationsbegriffe.
+  # Der Negativtest stellt sicher, dass ein kaputter Link und alte Begriffe
+  # tatsächlich auffallen.
+  doku:
+    name: Doku-Prüfung
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
       - name: Doku-Links, Anker und Begriffe prüfen
         run: |
           python scripts/pruefe_doku.py --negativtest
