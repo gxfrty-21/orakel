@@ -886,7 +886,15 @@ async function pruefeSchiffCluster(page) {
 
   const erwartet = { A:10, B:10, C:10, D:10, E:10, F:10, G:10, H:10, I:10, J:10, S:3 };
   const codes = Object.keys(erwartet);
+  const erwarteteAgenten = Object.values(erwartet).reduce((summe, anzahl) => summe + anzahl, 0);
   const befunde = [];
+  if (stand.ids.length !== erwarteteAgenten) {
+    befunde.push(`Raumschiff: ${stand.ids.length} statt ${erwarteteAgenten} Agenten insgesamt`);
+  }
+  const eindeutigeIds = new Set(stand.ids).size;
+  if (eindeutigeIds !== erwarteteAgenten) {
+    befunde.push(`Raumschiff: ${eindeutigeIds} statt ${erwarteteAgenten} eindeutige Agenten-IDs`);
+  }
   if (stand.anzahl !== codes.length) befunde.push(`Raumschiff: ${stand.anzahl} statt ${codes.length} Abteilungscluster`);
   if (stand.sichtbar !== codes.length) befunde.push(`Raumschiff: ${stand.sichtbar} statt ${codes.length} sichtbare Abteilungscluster`);
   const fehlend = codes.filter(code => !stand.codes.includes(code));
@@ -1486,7 +1494,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const fehler = [];
   const hinweise = new Set();
-  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, inhaltGesamt = 0, legendeGesamt = 0;
+  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0;
 
   try {
     for (const breite of opt.breiten) {
@@ -1528,6 +1536,7 @@ async function main() {
           for (const text of inhaltsBefunde) fehler.push(`${breite}px/${ansicht}: ${text}`);
         }
         if (ansicht === 'ship') {
+          agentenPruefungen++;
           legendeGesamt++;
           for (const text of await pruefeOpsLegende(page)) fehler.push(`${breite}px/${ansicht}: ${text}`);
         }
@@ -1572,7 +1581,7 @@ async function main() {
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  console.log(`OK: keine Überläufe${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {
