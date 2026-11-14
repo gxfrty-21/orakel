@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+staged=$(git diff --cached --name-only)
+if ! printf '%s\n' "$staged" | grep -Eq '\.md$|^scripts/pruefe_doku\.py$'; then
+    exit 0
+fi
+
+if [ -x "$root/.venv/bin/python" ]; then
+    python="$root/.venv/bin/python"
+else
+    python=python3
+fi
+
+printf '%s\n' "Doku-Prüfung: Markdown- oder Prüfskript-Änderung erkannt."
+exec "$python" "$root/scripts/pruefe_doku.py"
