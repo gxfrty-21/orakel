@@ -166,8 +166,8 @@ werden zusätzlich gegen die aus den Überschriften erzeugten GitHub-Anker gepr�
 auch reine Sprungmarken innerhalb derselben Datei. Der Lauf schlägt fehl, wenn ein Ziel
 oder ein Anker fehlt oder ein alter Deck- oder Navigationsbegriff auftaucht.
 `--negativtest` erzeugt absichtlich einen kaputten Link, zwei falsche Anker und
-mehrere alte Deck- und Navigationsangaben; alles muss erkannt werden. Der
-`pytest`-Job führt beide Läufe aus.
+mehrere alte Deck- und Navigationsangaben; alles muss erkannt werden. Der eigene
+CI-Job `doku` führt beide Läufe aus.
 
 ## Browser-Prüfung bei grosser Schrift
 
