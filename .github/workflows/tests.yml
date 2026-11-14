@@ -294,3 +294,98 @@ jobs:
             artifacts/text250/seed-tastatur.log
           if-no-files-found: ignore
           retention-days: 7
+
+  # Prüft die Schiffsansicht mit echten Touch-Events (CDP): Ein-Finger-Pan,
+  # Zwei-Finger-Pinch und Tippen auf einen Raum. Eigener sichtbarer Job, damit
+  # ein gebrochenes Touch-Verhalten nicht im Textskalierungs-Lauf untergeht.
+  touch:
+    name: Touch-Test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Node einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: scripts/package-lock.json
+
+      - name: Python-Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Playwright-Browser cachen
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('scripts/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      - name: Playwright und Chromium installieren
+        timeout-minutes: 5
+        working-directory: scripts
+        run: |
+          npm ci
+          npx playwright install chromium
+
+      - name: Seed-Dashboard starten und Touch-Test ausführen
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/touch
+          cp seed/orakel-seed.db /tmp/orakel-touch.db
+          ORAKEL_DB_PFAD=/tmp/orakel-touch.db \
+            python -m orakel serve --host 127.0.0.1 --port 3200 > artifacts/touch/server.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+
+          bereit=0
+          for versuch in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:3200/api/report > /dev/null; then
+              echo "Seed-Dashboard bereit nach ${versuch} Versuch(en)"
+              bereit=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$bereit" -ne 1 ]; then
+            echo "Seed-Dashboard wurde nicht bereit"
+            cat artifacts/touch/server.log
+            exit 1
+          fi
+
+          if ! node scripts/pruefe-touch.mjs --url http://127.0.0.1:3200 \
+               --bilder artifacts/touch > artifacts/touch/touch.log 2>&1; then
+            echo "--- Touch-Test fehlgeschlagen ---"
+            cat artifacts/touch/touch.log
+            echo "--- Serverprotokoll ---"
+            tail -50 artifacts/touch/server.log
+            exit 1
+          fi
+          cat artifacts/touch/touch.log
+          if ! grep -q 'Touch OK:' artifacts/touch/touch.log; then
+            echo "Touch-Test hat keine Erfolgsmeldung erzeugt"
+            exit 1
+          fi
+
+      - name: Touch-Artefakte bei Fehlschlag hochladen
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: touch-fehler
+          path: artifacts/touch/*
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,173 @@
+#!/usr/bin/env node
+/**
+ * Automatisierter Touch-Test für die Schiffsansicht.
+ *
+ * Geprüft werden echte Touch-Events über das Chromium-DevTools-Protokoll:
+ *   - Ein-Finger-Pan verschiebt das Schiff,
+ *   - Zwei-Finger-Pinch zoomt danach hinein,
+ *   - Tippen auf einen Raum öffnet die Ops-Details.
+ *
+ * Der Test ist für die Seed-Datenbank gedacht und läuft ohne Test-Framework.
+ *
+ * Aufruf:
+ *   node scripts/pruefe-touch.mjs [--url http://127.0.0.1:3000] [--bilder artifacts/touch]
+ */
+
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { chromium } from 'playwright';
+
+const opts = {
+  url: 'http://127.0.0.1:3000',
+  bilder: null,
+};
+const argv = process.argv.slice(2);
+for (let i = 0; i < argv.length; i++) {
+  if (argv[i] === '--url') opts.url = argv[++i];
+  else if (argv[i] === '--bilder') opts.bilder = argv[++i];
+  else if (argv[i] === '--hilfe' || argv[i] === '-h') {
+    console.log('Aufruf: node scripts/pruefe-touch.mjs [--url URL] [--bilder VERZEICHNIS]');
+    process.exit(0);
+  } else {
+    console.error(`Unbekannte Option: ${argv[i]}`);
+    process.exit(2);
+  }
+}
+opts.url = opts.url.replace(/\/$/, '');
+if (opts.bilder) mkdirSync(opts.bilder, { recursive: true });
+
+function pruefe(bedingung, meldung) {
+  if (!bedingung) throw new Error(meldung);
+}
+
+function transformWerte(text) {
+  const treffer = text.match(/translate\(([-\d.]+)px,\s*([-\d.]+)px\)\s*scale\(([-\d.]+)\)/);
+  if (!treffer) throw new Error(`Unerwartete Schiffs-Transform: ${text}`);
+  return { x: Number(treffer[1]), y: Number(treffer[2]), zoom: Number(treffer[3]) };
+}
+
+async function touch(cdp, type, punkte) {
+  await cdp.send('Input.dispatchTouchEvent', {
+    type,
+    touchPoints: punkte.map(p => ({
+      id: p.id,
+      x: p.x,
+      y: p.y,
+      radiusX: 1,
+      radiusY: 1,
+      force: 1,
+    })),
+  });
+}
+
+async function schiffTransform(page) {
+  return transformWerte(await page.locator('#shipWorld').evaluate(el => el.style.transform));
+}
+
+async function ladeSchiff(page) {
+  await page.goto(`${opts.url}/?v=touch`, { waitUntil: 'networkidle' });
+  await page.locator('.nav[data-v="ship"]').tap();
+  await page.waitForFunction(() => document.querySelectorAll('#shipWorld .agent-room').length === 103);
+  await page.waitForFunction(() => /\d+\s*%/.test(document.querySelector('#shipZoomWert')?.textContent || ''));
+  await page.waitForTimeout(300);
+}
+
+async function mitte(page) {
+  const box = await page.locator('#shipViewport').boundingBox();
+  pruefe(box && box.width > 200 && box.height > 200, 'Schiffsviewport ist nicht sichtbar');
+  return {
+    cx: Math.round(box.x + box.width / 2),
+    cy: Math.round(box.y + box.height / 2),
+  };
+}
+
+async function main() {
+  const browser = await chromium.launch();
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    screen: { width: 390, height: 844 },
+    deviceScaleFactor: 3,
+    isMobile: true,
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  const cdp = await context.newCDPSession(page);
+  let erfolgreich = false;
+
+  try {
+    await ladeSchiff(page);
+    const { cx, cy } = await mitte(page);
+
+    // Ein Finger pannt. Der Zoom darf dabei unverändert bleiben.
+    const vorPan = await schiffTransform(page);
+    await touch(cdp, 'touchStart', [{ id: 1, x: cx, y: cy }]);
+    await page.waitForTimeout(80);
+    await touch(cdp, 'touchMove', [{ id: 1, x: cx + 52, y: cy + 30 }]);
+    await page.waitForTimeout(120);
+    await touch(cdp, 'touchEnd', []);
+    await page.waitForTimeout(450);
+    const nachPan = await schiffTransform(page);
+    pruefe(Math.abs(nachPan.x - vorPan.x) >= 20,
+      `Pan hat das Schiff nicht verschoben (${vorPan.x} → ${nachPan.x})`);
+    pruefe(Math.abs(nachPan.zoom - vorPan.zoom) < 0.001, 'Pan hat den Zoom verändert');
+
+    // Zwei Finger zoomen direkt nach dem Pan. Der Pinch startet in der
+    // sichtbaren Viewport-Mitte und wird nach aussen geführt.
+    const vorPinch = await schiffTransform(page);
+    await touch(cdp, 'touchStart', [
+      { id: 2, x: cx - 40, y: cy },
+      { id: 3, x: cx + 40, y: cy },
+    ]);
+    await page.waitForTimeout(80);
+    await touch(cdp, 'touchMove', [
+      { id: 2, x: cx - 70, y: cy },
+      { id: 3, x: cx + 70, y: cy },
+    ]);
+    await page.waitForTimeout(100);
+    await touch(cdp, 'touchMove', [
+      { id: 2, x: cx - 100, y: cy },
+      { id: 3, x: cx + 100, y: cy },
+    ]);
+    await page.waitForTimeout(120);
+    await touch(cdp, 'touchEnd', []);
+    await page.waitForTimeout(450);
+    const nachPinch = await schiffTransform(page);
+    pruefe(nachPinch.zoom > vorPinch.zoom * 1.15,
+      `Pinch hat nicht ausreichend gezoomt (${vorPinch.zoom} → ${nachPinch.zoom})`);
+
+    // Frisch laden, damit der Tipp-Test wieder die volle Fit-Ansicht hat.
+    await ladeSchiff(page);
+    const ersterRaum = page.locator('#shipWorld .agent-room').first();
+    const raumName = (await ersterRaum.locator('.ar-sign b').innerText()).trim();
+    await ersterRaum.tap();
+    await page.waitForTimeout(450);
+    const auswahl = await page.evaluate(() => ({
+      on: document.querySelectorAll('#shipWorld .agent-room.on').length,
+      kicker: document.querySelector('#shipSideInhalt .sd-kicker')?.textContent?.trim() || '',
+      legend: document.querySelectorAll('#shipLegend [data-dept]').length,
+      scrollW: document.documentElement.scrollWidth,
+      viewportW: innerWidth,
+    }));
+    pruefe(auswahl.on === 1, `Tippen hat keinen Raum ausgewählt (${auswahl.on})`);
+    pruefe(auswahl.kicker.startsWith('AGENTENRAUM'),
+      `Tippen hat die Ops-Details nicht geöffnet (${auswahl.kicker})`);
+    pruefe(auswahl.legend === 11, `Legende zeigt ${auswahl.legend} statt 11 Abteilungen`);
+    pruefe(auswahl.scrollW === auswahl.viewportW, 'Seite hat horizontalen Überlauf');
+
+    if (opts.bilder) {
+      await page.screenshot({ path: join(opts.bilder, 'touch-final.png'), fullPage: true });
+    }
+    erfolgreich = true;
+    console.log(`Touch OK: Pan ${Math.round(Math.abs(nachPan.x - vorPan.x))} px · Pinch ${(vorPinch.zoom * 100).toFixed(0)} % → ${(nachPinch.zoom * 100).toFixed(0)} % · Tippen öffnet ${raumName}`);
+  } finally {
+    if (!erfolgreich && opts.bilder) {
+      await page.screenshot({ path: join(opts.bilder, 'touch-fehler.png'), fullPage: true }).catch(() => {});
+    }
+    await browser.close();
+  }
+}
+
+main().catch(fehler => {
+  console.error(`Touch-Test fehlgeschlagen: ${fehler.message}`);
+  process.exit(1);
+});
