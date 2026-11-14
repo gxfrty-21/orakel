@@ -866,21 +866,33 @@ async function pruefeSchiffCluster(page) {
 
   const stand = await page.evaluate(() => {
     const cluster = [...document.querySelectorAll('#shipWorld .ship-dept')];
+    const gruppen = cluster.map(el => ({
+      code: (el.querySelector('.ship-dept-code')?.textContent || '').trim(),
+      agenten: el.querySelectorAll('.agent-room').length,
+    })).filter(g => g.code);
     return {
       anzahl: cluster.length,
       sichtbar: cluster.filter(el => el.getClientRects().length > 0).length,
-      codes: cluster.map(el => (el.querySelector('.ship-dept-code')?.textContent || '').trim()).filter(Boolean),
+      codes: gruppen.map(g => g.code),
+      agenten: Object.fromEntries(gruppen.map(g => [g.code, g.agenten])),
     };
   });
 
-  const erwartet = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'S'];
+  const erwartet = { A:10, B:10, C:10, D:10, E:10, F:10, G:10, H:10, I:10, J:10, S:3 };
+  const codes = Object.keys(erwartet);
   const befunde = [];
-  if (stand.anzahl !== erwartet.length) befunde.push(`Raumschiff: ${stand.anzahl} statt ${erwartet.length} Abteilungscluster`);
-  if (stand.sichtbar !== erwartet.length) befunde.push(`Raumschiff: ${stand.sichtbar} statt ${erwartet.length} sichtbare Abteilungscluster`);
-  const fehlend = erwartet.filter(code => !stand.codes.includes(code));
+  if (stand.anzahl !== codes.length) befunde.push(`Raumschiff: ${stand.anzahl} statt ${codes.length} Abteilungscluster`);
+  if (stand.sichtbar !== codes.length) befunde.push(`Raumschiff: ${stand.sichtbar} statt ${codes.length} sichtbare Abteilungscluster`);
+  const fehlend = codes.filter(code => !stand.codes.includes(code));
   if (fehlend.length) befunde.push(`Raumschiff: Abteilung ${fehlend.join(', ')} fehlt`);
-  const unbekannt = stand.codes.filter(code => !erwartet.includes(code));
+  const unbekannt = stand.codes.filter(code => !codes.includes(code));
   if (unbekannt.length) befunde.push(`Raumschiff: unbekannte Abteilung ${unbekannt.join(', ')}`);
+  for (const [code, soll] of Object.entries(erwartet)) {
+    if (!(code in stand.agenten)) continue;
+    if (stand.agenten[code] !== soll) {
+      befunde.push(`Raumschiff: Abteilung ${code} hat ${stand.agenten[code]} statt ${soll} Agenten`);
+    }
+  }
   return befunde;
 }
 
@@ -1201,6 +1213,18 @@ async function pruefeNegativtest(url) {
           const s = cluster.find(el => (el.querySelector('.ship-dept-code')?.textContent || '').trim() === 'S');
           if (!s) throw new Error('Schiffscluster S nicht gefunden');
           s.remove();
+        }),
+      },
+      {
+        ansicht: 'ship',
+        name: 'Raumschiff-Abteilung leer',
+        mutieren: () => page.evaluate(() => {
+          const cluster = [...document.querySelectorAll('#shipWorld .ship-dept')];
+          const a = cluster.find(el => (el.querySelector('.ship-dept-code')?.textContent || '').trim() === 'A');
+          if (!a) throw new Error('Schiffscluster A nicht gefunden');
+          const raeume = [...a.querySelectorAll('.agent-room')];
+          if (!raeume.length) throw new Error('Agentenräume in Cluster A nicht gefunden');
+          raeume.forEach(el => el.remove());
         }),
       },
       {
