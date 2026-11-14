@@ -971,6 +971,16 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 .ship-dept-meta{min-width:0;margin-left:auto;overflow:hidden;text-overflow:ellipsis;font-family:var(--mono);font-size:6.5px;letter-spacing:.04em;color:#9b89a8;white-space:nowrap}
 .ship-dept-rooms{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;padding:2px;margin:0}
 
+/* Abteilungsfilter: die Legende hebt den gewählten Sektor im Querschnitt hervor. */
+.ship-dept{transition:opacity .18s ease,filter .18s ease,border-color .18s ease,box-shadow .18s ease}
+.ship-common,.ship-engine{transition:opacity .18s ease}
+.ship-world.filter-aktiv .ship-common,.ship-world.filter-aktiv .ship-engine{opacity:.42}
+.ship-world.filter-aktiv .ship-dept:not(.is-filter-active){opacity:.24;filter:saturate(.3) brightness(.72)}
+.ship-dept.is-filter-active{border-color:var(--dept);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--dept) 52%,transparent),0 0 18px color-mix(in srgb,var(--dept) 38%,transparent)}
+.ship-dept.is-filter-active .ship-dept-head{background:linear-gradient(90deg,color-mix(in srgb,var(--dept) 27%,#0c0812),#09060e 72%)}
+.ship-dept.is-filter-active .agent-room{filter:saturate(1.15) brightness(1.06)}
+
 .agent-room{position:relative;display:block;min-width:0;height:76px;padding:0;overflow:hidden;text-align:left;color:var(--muted);
   border:1px solid #2c2438;border-radius:1px;background:#06040b;box-shadow:inset 0 0 0 1px #000,0 1px 0 rgba(255,255,255,.04);cursor:pointer}
 .agent-room::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;opacity:.7;
@@ -1234,4 +1244,8 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 .ship-legend .sd-legend .sd-dept b{font-size:8px;letter-spacing:.01em}
 .ship-legend .sd-legend .sd-dept small{display:none}
 .ship-legend .sd-legend .sd-dept:hover{background:rgba(56,232,255,.07);border-color:var(--dept)}
+.ship-legend .sd-legend .sd-dept.is-active{color:#fff;border-color:var(--dept);
+  background:color-mix(in srgb,var(--dept) 18%,rgba(56,232,255,.04));
+  box-shadow:inset 3px 0 0 var(--dept),0 0 10px color-mix(in srgb,var(--dept) 30%,transparent)}
+.ship-legend .sd-legend .sd-dept.is-active .sw{box-shadow:0 0 10px var(--dept),0 0 3px #fff}
 @media(max-width:760px){.ship-side{max-height:none;overflow:visible}.ship-side-inhalt{overflow:visible}}
