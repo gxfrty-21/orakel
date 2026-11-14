@@ -205,9 +205,10 @@ meldet `Inhalte 12× geprüft` (vier Ansichten × drei Breiten).
 Der separate Aufruf `--negativtest` lädt dieselben vier Ansichten, prüft
 zuerst den sauberen Zustand und schreibt dann absichtlich falsche Kerndaten
 ins DOM: einen falschen Strategie-KPI, eine falsche Research-Kandidatenzahl,
-eine falsche Agenten-Kopfzahl und einen falschen Konferenz-Testplan. Jeder
-Fall muss einen Befund auslösen; die CI verlangt `Negativtest OK: 4/4`, damit
-die Inhaltsprüfung nicht stillschweigend leer läuft.
+eine falsche Agenten-Kopfzahl, einen entfernten Abteilungstab im Agentenraum
+und einen falschen Konferenz-Testplan. Jeder Fall muss einen Befund auslösen;
+die CI verlangt `Negativtest OK: 5/5`, damit die Inhaltsprüfung auch
+Strukturänderungen im Agentenraum nicht stillschweigend übersieht.
 
 Der Standardlauf umfasst alle zwölf Ansichten inklusive Strategien, Research,
 Agentenraum und Konferenz. Der CI-Job

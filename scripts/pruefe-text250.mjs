@@ -1125,6 +1125,7 @@ async function pruefeNegativtest(url) {
     const faelle = [
       {
         ansicht: 'strat',
+        name: 'Strategie-KPI',
         mutieren: () => page.evaluate(() => {
           const el = document.querySelector('#stratDetail .kpis .kpi .v');
           if (!el) throw new Error('Strategie-KPI nicht gefunden');
@@ -1133,6 +1134,7 @@ async function pruefeNegativtest(url) {
       },
       {
         ansicht: 'research',
+        name: 'Research-Zahl',
         mutieren: () => page.evaluate(() => {
           const el = document.querySelector('#flow .station:nth-child(2) small');
           if (!el) throw new Error('Research-Zahl nicht gefunden');
@@ -1141,6 +1143,7 @@ async function pruefeNegativtest(url) {
       },
       {
         ansicht: 'agents',
+        name: 'Agenten-Kopfzahl',
         mutieren: () => page.evaluate(() => {
           const el = document.querySelector('#agTag');
           if (!el) throw new Error('Agenten-Kopfzeile nicht gefunden');
@@ -1148,7 +1151,17 @@ async function pruefeNegativtest(url) {
         }),
       },
       {
+        ansicht: 'agents',
+        name: 'Agenten-Abteilungstab',
+        mutieren: () => page.evaluate(() => {
+          const tabs = [...document.querySelectorAll('#depTabs .tab')];
+          if (!tabs.length) throw new Error('Abteilungstabs nicht gefunden');
+          tabs[tabs.length - 1].remove();
+        }),
+      },
+      {
         ansicht: 'konf',
+        name: 'Konferenz-Testplan',
         mutieren: () => page.evaluate(() => {
           const el = document.querySelector('#konfBody table.tbl tbody tr td:nth-child(3)');
           if (!el) throw new Error('Konferenz-Testplan nicht gefunden');
@@ -1159,22 +1172,23 @@ async function pruefeNegativtest(url) {
 
     const erkannt = [];
     for (const fall of faelle) {
+      const fallName = fall.name || fall.ansicht;
       const nav = page.locator(`.nav[data-v="${fall.ansicht}"]`);
       if (await nav.count()) await nav.click();
       else await page.evaluate(v => zeige(v), fall.ansicht);
       await page.waitForTimeout(WARTEZEIT[fall.ansicht] || 500);
       const sauber = await pruefeInhalte(page, fall.ansicht);
       if (!sauber || sauber.length) {
-        throw new Error(`${fall.ansicht}: sauberer Zustand meldet bereits Befunde: ${(sauber || []).join('; ')}`);
+        throw new Error(`${fallName}: sauberer Zustand meldet bereits Befunde: ${(sauber || []).join('; ')}`);
       }
 
       await fall.mutieren();
       const befund = await pruefeInhalte(page, fall.ansicht);
       if (!befund || !befund.length) {
-        throw new Error(`${fall.ansicht}: absichtlich falscher Inhalt wurde nicht erkannt`);
+        throw new Error(`${fallName}: absichtlich falscher Inhalt wurde nicht erkannt`);
       }
-      erkannt.push(fall.ansicht);
-      console.log(`Negativtest ${fall.ansicht}: erkannt – ${befund[0]}`);
+      erkannt.push(fallName);
+      console.log(`Negativtest ${fallName}: erkannt – ${befund[0]}`);
     }
 
     if (seitenfehler.length) throw new Error(`Seitenfehler: ${seitenfehler.join('; ')}`);
