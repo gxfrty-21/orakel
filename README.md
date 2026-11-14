@@ -36,7 +36,23 @@ python -m venv .venv
 
 Die Company-Schicht ist additiv und standardmäßig **nicht** in den laufenden
 Paper-Takt eingebunden (`[unternehmen] aktiv = false`). Sie enthält noch keine
-3D-Welt, keine Company-API, keine LLM-Anbindung und keine echten Orders.
+3D-Welt, keine LLM-Anbindung und keine echten Orders.
+
+### Company-Lese-API
+
+Die ersten Phase-2-Endpunkte liegen geschützt unter `/api/company` und liefern
+nur Daten aus SQLite, ohne Tasks zu erzeugen oder Handler zu starten:
+
+- `GET /api/company/overview` — Kennzahlen, Agentenstatus, Abteilungen, letzte
+  Konferenz, offene Entscheidungen und die zehn wichtigsten offenen Aufgaben.
+- `GET /api/company/agents` — alle 103 Profile mit Status, offenen Aufgaben und
+  letzter Aufgabe.
+- `GET /api/company/tasks` — Aufgabenqueue; standardmäßig nur offene Aufgaben,
+  filterbar mit `dept`, `state` (`offen`, `alle` oder ein Zustand), `mindestprioritaet`
+  und `limit`.
+
+Jede Antwort nennt `data_state` (`live`/`empty`), `generated_at` in UTC und
+`source_refs`. Fehlende Daten bleiben leer; es gibt keine Ersatzzahlen.
 
 ## Dauerbetrieb mit Login und HTTPS
 
@@ -80,7 +96,7 @@ Unter Windows zusätzlich `pip install MetaTrader5` (nur dort verfügbar) und in
 | Risiko | 1 % je Trade bis Stop, 10 % Not-Stop, max. 15 Positionen, Engagement, Bargeld, Korrelation |
 | Broker-Schicht | `CsvBroker` (Paper-Replay), `MockBroker`, `MT5Broker` (Windows, Paper-Sperre) |
 | Agenten | 80 bestehende Agenten in 8 Abteilungen, jeder mit echter Aufgabe und Ergebnis in der DB |
-| Company-Schicht | Phase 1: 103 Profile, SQLite-Queue mit Lease/Retry, Policy-Engine, Audit-Kette; 3D/API noch nicht |
+| Company-Schicht | Phase 1: 103 Profile, SQLite-Queue mit Lease/Retry, Policy-Engine, Audit-Kette; Company-Lese-API für Übersicht, Agenten und Aufgaben; 3D noch nicht |
 | Konferenz | 00:00 Europe/Zurich, Nachholen verpasster Termine, Protokoll im Vault |
 | Wissenszentrum | Obsidian-Vault mit Frontmatter, Tags, `[[Links]]` |
 | Dashboard | Orakel-Design, 12 Ansichten, Live-Polling, 2D-Raumschiff, «Lauf starten» |

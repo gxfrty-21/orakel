@@ -7,12 +7,16 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import agents
 from .betrieb import betrieb_health, betrieb_status
+from .company.api import agenten as company_agenten
+from .company.api import aufgaben as company_aufgaben
+from .company.api import uebersicht as company_uebersicht
+from .company.store import CompanyStore
 from .config import load_config
 from .db import Facts
 from .globe import STANDARD_ZEITRAUM, baue_globe
@@ -135,6 +139,41 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     @app.get("/api/report")
     def report() -> JSONResponse:
         return JSONResponse(_bericht(cfg_pfad), headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/company/overview")
+    def company_overview() -> JSONResponse:
+        """Kennzahlen, Agentenstatus und offene Aufgaben der Company-Schicht."""
+        cfg = load_config(cfg_pfad)
+        store = CompanyStore(Facts(cfg.db_pfad))
+        return JSONResponse(company_uebersicht(store),
+                            headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/company/agents")
+    def company_agents() -> JSONResponse:
+        """Alle 103 Profile mit Status, offenen Aufgaben und letzter Aufgabe."""
+        cfg = load_config(cfg_pfad)
+        store = CompanyStore(Facts(cfg.db_pfad))
+        return JSONResponse(company_agenten(store),
+                            headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/company/tasks")
+    def company_tasks(
+        dept: str | None = None,
+        state: str | None = None,
+        mindestprioritaet: int | None = Query(None, ge=0, le=100),
+        limit: int = Query(100, ge=1, le=500),
+    ) -> JSONResponse:
+        """Aufgabenqueue; ohne Statusfilter nur offene Aufgaben."""
+        cfg = load_config(cfg_pfad)
+        store = CompanyStore(Facts(cfg.db_pfad))
+        try:
+            daten = company_aufgaben(store, dept=dept, state=state,
+                                     mindestprioritaet=mindestprioritaet,
+                                     limit=limit)
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "fehler": str(exc),
+                                 "code": "company_filter_invalid"}, status_code=400)
+        return JSONResponse(daten, headers={"Cache-Control": "no-store"})
 
     @app.get("/api/sekretariat")
     def sekretariat() -> JSONResponse:

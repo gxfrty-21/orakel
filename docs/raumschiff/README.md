@@ -13,8 +13,9 @@ vorlegen. Phase 1 ist inzwischen als additive Company-Schicht umgesetzt: 103 Pro
 SQLite-Queue, Policy-Engine, Audit-Kette und CLI. Ein begehbarer 3D-Prototyp des
 Main Command Centers existierte kurzzeitig und wurde am 12. November 2026 wieder
 entfernt. Die aktuelle Umsetzung ist der 2D-Querschnitt mit drei Decks, acht
-Abteilungen, Meetingraum und Sekretariat; Company-API sowie Management- und
-Konferenzlogik bleiben offen.
+Abteilungen, Meetingraum und Sekretariat; die Company-Lese-API für Übersicht,
+Agentenstatus und offene Aufgaben ist umgesetzt, die übrige Company-API sowie
+Management- und Konferenzlogik bleiben offen.
 
 ## Kurzfassung
 
@@ -65,7 +66,8 @@ wäre die im Masterprompt verbotene Dekoration. 3D ist derzeit nicht freigegeben
 - 3D-Welt und begehbare Decks sind nicht umgesetzt; der Prototyp wurde am
   12. November 2026 entfernt. Die 2D-Ansicht ist bewusst die aktuelle Stufe.
 - Die Company-Schicht ist additiv und mit `[unternehmen] aktiv = false` nicht in den
-  laufenden Takt eingebunden; Company-API und freie Agentenkommunikation fehlen.
+  laufenden Takt eingebunden; die Company-Lese-API ist da, freie
+  Agentenkommunikation und die übrigen API-Endpunkte fehlen.
 - Keine Agenten-Gedächtnisse pro Person; der Vault ist gemeinsames Gedächtnis.
 - Keine Abteilungsleiter-Ratssitzung als Ebene 2; die Konferenz protokolliert
   Validierungszahlen, statt autonom zu führen.
@@ -160,14 +162,16 @@ Die Anzeigen lesen `/api/report`, `/api/betrieb` und `/api/sekretariat`; fehlend
 Werte werden als `KEINE DATEN` angezeigt. Die Ansicht ist eine Darstellung, keine
 neue Datenquelle und keine Automation.
 
-**Noch nicht umgesetzt:** Company-API, 3D-Welt und begehbare Decks (zurückgestellt),
+**Noch nicht umgesetzt:** die übrige Company-API (Detailprofil, Nachrichten,
+Räume, Konferenz, SSE), 3D-Welt und begehbare Decks (zurückgestellt),
 vollständige Agentenkommunikation und -gedächtnisse, autonomes Management,
 Mitternachtskonferenz als Führungsgremium, LLM und echte Broker-Orders (bewusst kein
 Codepfad).
 
-Die 2D-Ansicht ist der aktuelle sichtbare Teil von Phase 2. Als Nächstes folgen die
-Company-API und die inhaltliche Vertiefung der Agentenarbeit — weiterhin ohne echte
-Orders. Ein 3D-Ausbau ist nicht freigegeben.
+Die 2D-Ansicht ist der aktuelle sichtbare Teil von Phase 2. Die Company-Lese-API
+für Übersicht, Agentenstatus und offene Aufgaben ist umgesetzt. Als Nächstes folgen
+die übrige Company-API und die inhaltliche Vertiefung der Agentenarbeit — weiterhin
+ohne echte Orders. Ein 3D-Ausbau ist nicht freigegeben.
 
 ## Offene Entscheidungen für die nächsten Phasen
 
@@ -177,7 +181,8 @@ Die Freigabe für Phase 1 wurde erteilt; die 2D-Ansicht ist umgesetzt. Die früh
 1. Die Aufteilung 8 Decks / 10 Abteilungen / 100 + 3 Agenten bleibt Planung.
 2. 3D (First-Person, Three.js, restliche Decks) ist nicht freigegeben.
 3. Keine LLM-Pflicht: Die Agenten arbeiten deterministisch und datengebunden.
-4. Offen bleiben Company-API, Agentenkommunikation, Management und Konferenz.
+4. Offen bleiben die übrige Company-API, Agentenkommunikation, Management und
+   Konferenz.
 
 Der aktuelle Arbeitsstand liegt in `orakel/company/` und
 `orakel/migrations/001_company.sql`; die 2D-Ansicht liegt in
