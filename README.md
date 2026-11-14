@@ -163,10 +163,11 @@ tests/           Risiko, Backtest, Daten, Bericht
 relative Links, vorhandene Überschriften-Anker sowie veraltete Deck- und
 Navigationsbegriffe. Jeder relative Pfad wird vom jeweiligen Dokument aus
 aufgelöst; externe URLs werden übersprungen. Relative Links mit `#Sprungmarke`
-werden zusätzlich gegen die aus den Überschriften erzeugten GitHub-Anker geprüft,
-auch reine Sprungmarken innerhalb derselben Datei. Der Lauf schlägt fehl, wenn ein Ziel
-oder ein Anker fehlt oder ein alter Deck- oder Navigationsbegriff auftaucht.
-`--negativtest` erzeugt absichtlich einen kaputten Link, zwei falsche Anker und
+werden zusätzlich gegen die aus Markdown-Überschriften erzeugten GitHub-Anker und
+explizite `id`-Attribute in HTML-Überschriften (`<h1>`–`<h6>`) geprüft, auch reine
+Sprungmarken innerhalb derselben Datei. Der Lauf schlägt fehl, wenn ein Ziel oder
+ein Anker fehlt oder ein alter Deck- oder Navigationsbegriff auftaucht.
+`--negativtest` erzeugt absichtlich einen kaputten Link, vier falsche Anker und
 mehrere alte Deck- und Navigationsangaben; alles muss erkannt werden. Der eigene
 CI-Job `doku` führt beide Läufe aus.
 
