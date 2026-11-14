@@ -855,7 +855,8 @@ async function pruefeZoom(page, ansicht) {
 /**
  * Prüft, ob alle elf sichtbaren Abteilungscluster des Raumschiffs gerendert
  * sind. Die Cluster kommen aus der Company-API und werden asynchron geladen;
- * ein fehlender oder doppelter Buchstabe muss auffallen.
+ * ein fehlender oder doppelter Buchstabe sowie ein Agent in mehreren Clustern
+ * müssen auffallen.
  */
 async function pruefeSchiffCluster(page) {
   await page.waitForFunction(() => {
@@ -869,12 +870,14 @@ async function pruefeSchiffCluster(page) {
     const gruppen = cluster.map(el => ({
       code: (el.querySelector('.ship-dept-code')?.textContent || '').trim(),
       agenten: el.querySelectorAll('.agent-room').length,
+      ids: [...el.querySelectorAll('.agent-room')].map(raum => raum.dataset.agent).filter(Boolean),
     })).filter(g => g.code);
     return {
       anzahl: cluster.length,
       sichtbar: cluster.filter(el => el.getClientRects().length > 0).length,
       codes: gruppen.map(g => g.code),
       agenten: Object.fromEntries(gruppen.map(g => [g.code, g.agenten])),
+      ids: gruppen.flatMap(g => g.ids),
     };
   });
 
@@ -887,6 +890,8 @@ async function pruefeSchiffCluster(page) {
   if (fehlend.length) befunde.push(`Raumschiff: Abteilung ${fehlend.join(', ')} fehlt`);
   const unbekannt = stand.codes.filter(code => !codes.includes(code));
   if (unbekannt.length) befunde.push(`Raumschiff: unbekannte Abteilung ${unbekannt.join(', ')}`);
+  const mehrfach = [...new Set(stand.ids.filter((id, i) => stand.ids.indexOf(id) !== i))];
+  if (mehrfach.length) befunde.push(`Raumschiff: Agent ${mehrfach.join(', ')} erscheint in mehreren Clustern`);
   for (const [code, soll] of Object.entries(erwartet)) {
     if (!(code in stand.agenten)) continue;
     if (stand.agenten[code] !== soll) {
@@ -1225,6 +1230,20 @@ async function pruefeNegativtest(url) {
           const raeume = [...a.querySelectorAll('.agent-room')];
           if (!raeume.length) throw new Error('Agentenräume in Cluster A nicht gefunden');
           raeume.forEach(el => el.remove());
+        }),
+      },
+      {
+        ansicht: 'ship',
+        name: 'Raumschiff-Agent zusätzlich',
+        mutieren: () => page.evaluate(() => {
+          const cluster = [...document.querySelectorAll('#shipWorld .ship-dept')];
+          const a = cluster.find(el => (el.querySelector('.ship-dept-code')?.textContent || '').trim() === 'A');
+          const b = cluster.find(el => (el.querySelector('.ship-dept-code')?.textContent || '').trim() === 'B');
+          if (!a || !b) throw new Error('Schiffscluster A und B nicht gefunden');
+          const raum = a.querySelector('.agent-room');
+          const ziel = b.querySelector('.ship-dept-rooms');
+          if (!raum || !ziel) throw new Error('Agentenraum oder Zielcluster nicht gefunden');
+          ziel.appendChild(raum.cloneNode(true));
         }),
       },
       {

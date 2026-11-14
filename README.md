@@ -222,10 +222,11 @@ zuerst den sauberen Zustand und schreibt dann absichtlich falsche Kerndaten
 ins DOM: einen falschen Strategie-KPI, eine falsche Research-Kandidatenzahl,
 eine falsche Agenten-Kopfzahl, einen entfernten Abteilungstab im Agentenraum,
 einen entfernten sichtbaren Schiffsabteilungscluster, einen geleerten
-Schiffscluster und einen falschen Konferenz-Testplan. Jeder Fall muss einen
-Befund auslösen; die CI verlangt
-`Negativtest OK: 7/7`, damit die Inhaltsprüfung auch Strukturänderungen im
-Agentenraum und am Raumschiff nicht stillschweigend übersieht.
+Schiffscluster, einen zusätzlichen Agenten in einem zweiten Schiffscluster und
+einen falschen Konferenz-Testplan. Jeder Fall muss einen Befund auslösen; die
+CI verlangt `Negativtest OK: 8/8`, damit die Inhaltsprüfung auch
+Strukturänderungen im Agentenraum und am Raumschiff nicht stillschweigend
+übersieht.
 
 Der Standardlauf umfasst alle zwölf Ansichten inklusive der weiterhin geprüften
 Inhaltsansichten Agentenraum, Konferenz und Raumschiff. Der CI-Job

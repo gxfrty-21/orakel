@@ -189,8 +189,9 @@ Werte bleiben leer. Agentenstatus und offene Aufgaben aktualisieren sich alle
 keine neue Datenquelle und keine Automation.
 
 Geprüft wird der Querschnitt mit 209 pytest-Tests, dem 250-%-Lauf über zwölf
-Ansichten und drei Breiten sowie dem Negativtest, der fünf absichtliche Fehler —
-darunter ein fehlender Abteilungstab — erkennen muss. Der sichtbare
+Ansichten und drei Breiten sowie dem Negativtest, der acht absichtliche Fehler —
+darunter ein fehlender Abteilungstab und ein zusätzlicher Agent in einem zweiten
+Schiffscluster — erkennen muss. Der sichtbare
 Agenten-Querschnitt und die Detailspalte werden zusätzlich im Browser auf 103
 Räume, elf Abteilungen, zwei Gemeinschaftsräume und Zoom ohne Seitenfehler geprüft.
 
