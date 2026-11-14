@@ -245,8 +245,9 @@ jobs:
 
       # Eigener, fokussierter Lauf: Die fünf API-Stichproben werden auf einer
       # frischen Seed-Kopie ausschliesslich per Tastatur angesteuert. Zusätzlich
-      # prüft der Lauf die elf Schiffscluster samt erwarteter Agentenzahl. Beide
-      # Zusammenfassungen müssen erscheinen, damit ein stilles Überspringen auffällt.
+      # prüft der Lauf die elf Schiffscluster samt erwarteter Agentenzahl und die
+      # Ops-Abteilungslegende. Alle Zusammenfassungen müssen erscheinen, damit ein
+      # stilles Überspringen auffällt.
       - name: Seed-Tastaturlauf ausführen
         timeout-minutes: 5
         run: |
@@ -288,6 +289,10 @@ jobs:
           fi
           if ! grep -q 'Inhalte 3× geprüft' artifacts/text250/seed-tastatur.log; then
             echo "Seed-Tastaturlauf hat die Schiffscluster-Prüfung nicht ausgeführt"
+            exit 1
+          fi
+          if ! grep -q 'Legende 3× geprüft' artifacts/text250/seed-tastatur.log; then
+            echo "Seed-Tastaturlauf hat die Ops-Abteilungslegende nicht geprüft"
             exit 1
           fi
 
