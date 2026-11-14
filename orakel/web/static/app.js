@@ -1246,11 +1246,11 @@ function setShipSelection(typ, id){
     b.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
   renderShipDetail();
-  const side = $('#shipSide'); if(side) side.scrollTop = 0;
+  const side = $('#shipSideInhalt'); if(side) side.scrollTop = 0;
 }
 
 function renderShipDetail(){
-  const side = $('#shipSide');
+  const side = $('#shipSideInhalt');
   if(!side) return;
   if(!companyDaten){
     side.innerHTML = `<span class="sd-kicker">RAUMSCHIFF</span><h2>Verbindung</h2><p>${companyFehler ? 'Company-API nicht erreichbar: ' + esc(companyFehler) : 'Agentenlage wird geladen …'}</p>`;
