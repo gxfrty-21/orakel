@@ -5,7 +5,8 @@
  * Geprüft werden echte Touch-Events über das Chromium-DevTools-Protokoll:
  *   - Ein-Finger-Pan verschiebt das Schiff,
  *   - Zwei-Finger-Pinch zoomt danach hinein,
- *   - Tippen auf einen Raum öffnet die Ops-Details.
+ *   - Tippen auf einen Raum öffnet die Ops-Details,
+ *   - die Abteilungslegende startet schmal eingeklappt und lässt sich aufklappen.
  *
  * Der Test ist für die Seed-Datenbank gedacht und läuft ohne Test-Framework.
  *
@@ -96,6 +97,9 @@ async function main() {
 
   try {
     await ladeSchiff(page);
+    const legende = page.locator('#shipLegend');
+    pruefe(!(await legende.evaluate(el => el.open)),
+      'Legende ist auf schmalen Bildschirmen standardmässig offen');
     const { cx, cy } = await mitte(page);
 
     // Ein Finger pannt. Der Zoom darf dabei unverändert bleiben.
@@ -153,6 +157,24 @@ async function main() {
       `Tippen hat die Ops-Details nicht geöffnet (${auswahl.kicker})`);
     pruefe(auswahl.legend === 11, `Legende zeigt ${auswahl.legend} statt 11 Abteilungen`);
     pruefe(auswahl.scrollW === auswahl.viewportW, 'Seite hat horizontalen Überlauf');
+
+    // Die kompakte Legende muss sich per Tippen aufklappen lassen und dann
+    // alle elf Abteilungen sichtbar machen.
+    const legendeKopf = legende.locator('summary');
+    await legendeKopf.tap();
+    await page.waitForTimeout(200);
+    const legendeAuf = await legende.evaluate(el => el.open);
+    const kopfText = (await legendeKopf.innerText()).replace(/\s+/g, ' ').trim();
+    const sichtbareDepts = await legende.locator('[data-dept]').evaluateAll(nodes =>
+      nodes.filter(n => {
+        const r = n.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      }).length);
+    pruefe(legendeAuf, 'Legende lässt sich nicht aufklappen');
+    pruefe(kopfText.includes('SEKTOREN') && kopfText.includes('11 ABTEILUNGEN'),
+      `Legendenkopf ist nicht kompakt (${kopfText})`);
+    pruefe(sichtbareDepts === 11,
+      `Aufgeklappte Legende zeigt ${sichtbareDepts} statt 11 Abteilungen`);
 
     if (opts.bilder) {
       await page.screenshot({ path: join(opts.bilder, 'touch-final.png'), fullPage: true });
