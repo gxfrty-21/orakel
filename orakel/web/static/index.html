@@ -35,8 +35,6 @@
     <button class="nav" data-v="ship"><b>Raumschiff</b><small>Abteilungen und Agenten</small></button>
     <button class="nav" data-v="spider"><b>Spider</b><small>Quellen und Erkenntnisse</small></button>
     <button class="nav" data-v="kb"><b>Wissensbank</b><small>Schlüsse aus Ergebnissen</small></button>
-    <button class="nav" data-v="agents"><b>Agentenraum</b><small>Wer hat was getan</small></button>
-    <button class="nav" data-v="konf"><b>Konferenz</b><small>Mitternachtsprotokoll</small></button>
   </nav>
 
   <main>
@@ -254,77 +252,74 @@
     <section class="view ship-view" id="v-ship" hidden>
       <div class="ship-head">
         <div>
-          <span class="ship-kicker">ORAKEL / RAUMSCHIFF · 2D-QUERSCHNITT</span>
+          <span class="ship-kicker">ORAKEL / RAUMSCHIFF · AGENTEN-QUERSCHNITT</span>
           <h1>Raumschiff</h1>
-          <p class="sub">Drei Decks, acht Abteilungen. Jeder Raum zeigt ausschliesslich Daten aus SQLite. Agentenstatus und offene Aufgaben kommen live aus der Company-API; fehlt eine Grundlage, steht «KEINE DATEN».</p>
+          <p class="sub">103 Agenten in elf Abteilungen. Jeder Raum gehört einem Agenten; ein Klick öffnet rechts Rolle, Status und Aufgabe. Zoomen und Verschieben zeigt das ganze Schiff; fehlt eine Grundlage, steht «KEINE DATEN».</p>
         </div>
         <div class="ship-mode" id="shipMode"><span class="ship-dot"></span><span><b>VERBUNDEN</b><small id="shipModeDetail">–</small></span></div>
       </div>
-      <div class="ship-hull">
-        <div class="ship-deck deck-a">
-          <span class="deck-label">DECK A · BRÜCKE</span>
-          <div class="deck-rooms" id="deckA"></div>
-        </div>
-        <div class="ship-deck deck-b">
-          <span class="deck-label">DECK B · HAUPTDECK</span>
-          <div class="deck-rooms" id="deckB"></div>
-        </div>
-        <div class="ship-deck deck-c">
-          <span class="deck-label">DECK C · EXECUTIVE</span>
-          <div class="deck-rooms" id="deckC"></div>
-        </div>
-      </div>
-      <div class="grid2">
-        <div class="panel"><div class="ph">Abteilung<span class="sp"></span><span class="tag" id="roomTag"></span></div><div class="list scroll" id="roomAgents"></div></div>
-        <div class="panel"><div class="ph">Rohrpost<span class="sp"></span><span class="tag">letzte Ergebnisse</span></div><div class="list scroll" id="roomRuns"></div></div>
-      </div>
-      <div class="panel" id="companyPanel">
-        <div class="ph">Company-Lage<span class="sp"></span><span class="tag" id="companyTag">wird geladen …</span></div>
-        <div class="kpis" id="companyKpis"></div>
-        <div class="ph">Offene Aufgaben<span class="sp"></span><span class="tag" id="companyTaskTag">–</span></div>
-        <div class="list scroll" id="companyTasks"></div>
-      </div>
-      <div class="panel" id="mtgPanel">
-        <div class="ph">Meetingraum<span class="sp"></span><span class="tag" id="mtgTag">Sitzung</span></div>
-        <div id="mtgBody"><div class="empty">Sitzung wird geladen …</div></div>
-        <div class="mtgTakt"><label for="mtgTakt">Aktualisierung</label>
-          <select id="mtgTakt">
-            <option value="2000">alle 2 s</option>
-            <option value="5000">alle 5 s</option>
-            <option value="10000">alle 10 s</option>
-            <option value="30000">alle 30 s</option>
-            <option value="0">pausiert</option>
-          </select>
-          <label for="mtgAltWahl">Markierung ab</label>
-          <select id="mtgAltWahl">
-            <option value="0">wie Konfiguration</option>
-            <option value="1">1 Std.</option>
-            <option value="2">2 Std.</option>
-            <option value="4">4 Std.</option>
-            <option value="8">8 Std.</option>
-            <option value="24">24 Std.</option>
-          </select>
-          <span class="mtgAltKopf">
-            <button type="button" id="mtgAltZahl" class="mtgTaktStand mtgAltZahl" aria-pressed="false">0 veraltet</button>
-            <button type="button" id="mtgBlockZahl" class="mtgTaktStand mtgAltZahl" aria-pressed="false" hidden>0 Blöcke</button>
-          </span>
+      <div class="ship-stage">
+        <div class="ship-viewport" id="shipViewport">
+          <div class="ship-world" id="shipWorld"><div class="empty">Wird geladen …</div></div>
+          <div class="ship-zoom" role="group" aria-label="Raumschiff vergrössern oder verkleinern">
+            <button type="button" data-ship-zoom="out" aria-label="Herauszoomen">−</button>
+            <span id="shipZoomWert">100 %</span>
+            <button type="button" data-ship-zoom="in" aria-label="Hineinzoomen">+</button>
+            <button type="button" data-ship-zoom="fit">Fit</button>
           </div>
-        <div class="mtgLogKopf"><span>Letzte Aktualisierungen</span>
-          <button type="button" id="mtgLogLeeren" class="toggle">Leeren</button></div>
-        <div id="mtgLog" class="mtgLog"></div>
-        <div id="mtgProto"></div>
+        </div>
+        <aside class="ship-side" id="shipSide" aria-live="polite"></aside>
       </div>
-      <div class="panel" id="sekPanel">
-        <div class="ph">Sekretariat<span class="sp"></span><span class="tag">Mira · Jonas · Lea</span></div>
-        <div class="sekAgendaHead"><span>Agenda der nächsten Sitzung</span><button type="button" id="sekAgendaBtn" class="toggle">Sammeln</button></div>
-        <div class="sekAgenda" id="sekAgenda"><div class="empty">Noch keine Agenda gesammelt.</div></div>
-        <div class="sekTabs" id="sekTabs"></div>
-        <div class="sekThread" id="sekThread"><div class="empty">Wird geladen …</div></div>
-        <form class="sekForm" id="sekForm">
-          <input id="sekInput" autocomplete="off" placeholder="Frage an das Sekretariat …">
-          <button type="submit" class="toggle main">Senden</button>
-        </form>
-      </div>
+      <details class="ship-more">
+        <summary>Lage, Meetingraum und Sekretariat</summary>
+        <div class="panel" id="companyPanel">
+          <div class="ph">Company-Lage<span class="sp"></span><span class="tag" id="companyTag">wird geladen …</span></div>
+          <div class="kpis" id="companyKpis"></div>
+          <div class="ph">Offene Aufgaben<span class="sp"></span><span class="tag" id="companyTaskTag">–</span></div>
+          <div class="list scroll" id="companyTasks"></div>
+        </div>
+        <div class="panel" id="mtgPanel">
+          <div class="ph">Meetingraum<span class="sp"></span><span class="tag" id="mtgTag">Sitzung</span></div>
+          <div id="mtgBody"><div class="empty">Sitzung wird geladen …</div></div>
+          <div class="mtgTakt"><label for="mtgTakt">Aktualisierung</label>
+            <select id="mtgTakt">
+              <option value="2000">alle 2 s</option>
+              <option value="5000">alle 5 s</option>
+              <option value="10000">alle 10 s</option>
+              <option value="30000">alle 30 s</option>
+              <option value="0">pausiert</option>
+            </select>
+            <label for="mtgAltWahl">Markierung ab</label>
+            <select id="mtgAltWahl">
+              <option value="0">wie Konfiguration</option>
+              <option value="1">1 Std.</option>
+              <option value="2">2 Std.</option>
+              <option value="4">4 Std.</option>
+              <option value="8">8 Std.</option>
+              <option value="24">24 Std.</option>
+            </select>
+            <span class="mtgAltKopf">
+              <button type="button" id="mtgAltZahl" class="mtgTaktStand mtgAltZahl" aria-pressed="false">0 veraltet</button>
+              <button type="button" id="mtgBlockZahl" class="mtgTaktStand mtgAltZahl" aria-pressed="false" hidden>0 Blöcke</button>
+            </span>
+            </div>
+          <div class="mtgLogKopf"><span>Letzte Aktualisierungen</span>
+            <button type="button" id="mtgLogLeeren" class="toggle">Leeren</button></div>
+          <div id="mtgLog" class="mtgLog"></div>
+          <div id="mtgProto"></div>
+        </div>
+        <div class="panel" id="sekPanel">
+          <div class="ph">Sekretariat<span class="sp"></span><span class="tag">Mira · Jonas · Lea</span></div>
+          <div class="sekAgendaHead"><span>Agenda der nächsten Sitzung</span><button type="button" id="sekAgendaBtn" class="toggle">Sammeln</button></div>
+          <div class="sekAgenda" id="sekAgenda"><div class="empty">Noch keine Agenda gesammelt.</div></div>
+          <div class="sekTabs" id="sekTabs"></div>
+          <div class="sekThread" id="sekThread"><div class="empty">Wird geladen …</div></div>
+          <form class="sekForm" id="sekForm">
+            <input id="sekInput" autocomplete="off" placeholder="Frage an das Sekretariat …">
+            <button type="submit" class="toggle main">Senden</button>
+          </form>
+        </div>
+      </details>
     </section>
 
 

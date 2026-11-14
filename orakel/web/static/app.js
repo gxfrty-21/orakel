@@ -8,6 +8,7 @@ let nachtDaten = null, nachtFehler = null;
 let graphWindow = '7d', graphDaten = null, kalibrierungDaten = null;
 let betriebDaten = null, betriebFehler = null, betriebTimer = null;
 let companyDaten = null, companyFehler = null, companyTimer = null, companyLaden = false;
+let shipAuswahl = { typ: 'overview' }, shipZoom = 1, shipX = 0, shipY = 0, shipZoomInit = false, shipDrag = null;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = (v,d=2) => (v==null||isNaN(v)) ? '–' : Number(v).toLocaleString('de-CH',{minimumFractionDigits:d,maximumFractionDigits:d});
 const pct = (v,d=1) => v==null ? '–' : num(v,d)+' %';
@@ -1028,8 +1029,7 @@ async function ladeCompany(){
 
 function renderCompany(){
   if(!$('#companyPanel')) return;
-  renderDeckRooms();
-  renderAbteilung();
+  renderShipWorld();
   const detail = $('#shipModeDetail'), tag = $('#companyTag');
   const kpis = $('#companyKpis'), liste = $('#companyTasks'), taskTag = $('#companyTaskTag');
   if(!companyDaten){
@@ -1092,10 +1092,249 @@ function renderAbteilung(){
 function renderShip(){
   if(!companyDaten && !companyLaden) ladeCompany();
   renderCompany();
-  renderCEO((R && R.agenten) || []);
   ladeSekretariat();
   ladeSitzung();
+  if(!shipZoomInit) requestAnimationFrame(fitShip);
 }
+
+/* ---------- Agenten-Querschnitt: 103 Räume ---------- */
+const SHIP_FARBEN = ['#38e8ff','#ff3fa4','#ffb84d','#9b6cff','#55e6a5','#ff7a59','#5aa9ff','#ff5edb','#c6ff5e','#ff9f43','#74ffd0'];
+
+const SHIP_DEPT_NAMEN = { A:'Hauptzentrale', B:'Spider Intelligence', C:'Labor', D:'Trading Floor',
+  E:'Forschungsabteilung', F:'Risikomanagement', G:'Wissenszentrum', H:'Entwicklungsabteilung',
+  I:'Globale Intelligence', J:'Sicherheit', S:'Executive-Sekretariat' };
+
+function shipDeptList(){
+  const o = (companyDaten && companyDaten.overview) || {};
+  const agenten = (companyDaten && companyDaten.agents && companyDaten.agents.agenten) || [];
+  const depts = (o.abteilungen || []).slice();
+  const seen = new Set(depts.map(d => d.code));
+  agenten.forEach(a => {
+    if(!seen.has(a.dept)){
+      seen.add(a.dept);
+      depts.push({ code:a.dept, name:a.dept_name || a.dept, agenten:0 });
+    }
+  });
+  return depts.sort((a,b) => (a.code === 'S' ? 999 : a.code.charCodeAt(0)) - (b.code === 'S' ? 999 : b.code.charCodeAt(0)))
+    .map(d => ({ ...d, name:SHIP_DEPT_NAMEN[d.code] || d.name, liste: agenten.filter(a => a.dept === d.code) }));
+}
+
+function shipStatusKey(a){
+  return a.status === 'laeuft' ? 'laeuft' : a.status === 'blockiert' ? 'blockiert' : a.status === 'wartet' ? 'wartet' : 'frei';
+}
+
+function renderShipWorld(){
+  const box = $('#shipWorld');
+  if(!box) return;
+  if(!companyDaten){
+    box.innerHTML = `<div class="empty">${companyFehler ? 'Company-API nicht erreichbar: ' + esc(companyFehler) : 'Agentenräume werden geladen …'}</div>`;
+    renderShipDetail();
+    return;
+  }
+  const depts = shipDeptList();
+  const agenten = (companyDaten.agents && companyDaten.agents.agenten) || [];
+  if(shipAuswahl.typ === 'agent' && !agenten.some(a => a.agent_id === shipAuswahl.id)) shipAuswahl = { typ:'overview' };
+  const s = (companyDaten.overview && companyDaten.overview.agenten_status) || {};
+  const aufgaben = (companyDaten.overview && companyDaten.overview.aufgaben) || {};
+  const konf = R && R.konferenz;
+  const commonOn = typ => shipAuswahl.typ === typ ? ' on' : '';
+
+  box.innerHTML = `
+    <div class="ship-common">
+      <button class="common-room${commonOn('agents')}" data-common="agents" aria-pressed="${shipAuswahl.typ === 'agents' ? 'true' : 'false'}">
+        <span class="cr-icon">AR</span><span class="cr-txt"><b>Agentenraum</b><small>${agenten.length} Agenten · ${depts.length} Abteilungen</small></span>
+      </button>
+      <button class="common-room konf${commonOn('konf')}" data-common="konf" aria-pressed="${shipAuswahl.typ === 'konf' ? 'true' : 'false'}">
+        <span class="cr-icon">KO</span><span class="cr-txt"><b>Konferenz</b><small>${konf ? `${(konf.berichte || []).length} Berichte · ${(konf.massnahmen || []).length} Massnahmen` : 'Keine Konferenz'}</small></span>
+      </button>
+    </div>
+    <div class="ship-depts">
+      ${depts.map((d, i) => {
+        const farbe = SHIP_FARBEN[i % SHIP_FARBEN.length];
+        const offen = d.liste.reduce((n,a) => n + (Number(a.offene_aufgaben) || 0), 0);
+        return `<section class="ship-dept" style="--dept:${farbe}">
+          <div class="ship-dept-head"><span class="ship-dept-code">${esc(d.code)}</span>
+            <span class="ship-dept-name">${esc(d.name)}</span>
+            <span class="ship-dept-meta">${d.liste.length} · ${offen} offen</span></div>
+          <div class="ship-dept-rooms">${d.liste.length ? d.liste.map(a => {
+            const st = shipStatusKey(a);
+            const offenA = Number(a.offene_aufgaben) || 0;
+            const titel = `${a.rufname} · ${a.role} · ${a.dept_name} · ${a.status_text || a.status}${offenA ? ` · ${offenA} offen` : ''}`;
+            return `<button class="agent-room status-${st}${shipAuswahl.typ === 'agent' && shipAuswahl.id === a.agent_id ? ' on' : ''}"
+              data-agent="${esc(a.agent_id)}" aria-pressed="${shipAuswahl.typ === 'agent' && shipAuswahl.id === a.agent_id ? 'true' : 'false'}" title="${esc(titel)}" aria-label="${esc(titel)}">
+              <span class="ar-avatar" style="--dept:${farbe}">${esc((a.rufname || '?').slice(0,1).toUpperCase())}</span>
+              <span class="ar-name">${esc(a.rufname)}</span><span class="ar-role">${esc(a.role)}</span>
+              <span class="ar-state"><i class="p"></i>${esc(a.status_text || a.status)}${offenA ? ` · ${offenA}` : ''}</span>
+            </button>`;
+          }).join('') : '<div class="empty">Keine Agenten.</div>'}</div>
+        </section>`;
+      }).join('')}
+    </div>
+    <div class="ship-engine"><span class="eng-label">ANTRIEB / COMPANY</span><span class="eng-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="eng-state">● ${Number(s.aktiv)||0} aktiv · ${Number(s.blockiert)||0} blockiert · ${Number(aufgaben.offen)||0} offen</span></div>`;
+
+  box.querySelectorAll('[data-agent]').forEach(b => b.onclick = () => setShipSelection('agent', b.dataset.agent));
+  box.querySelectorAll('[data-common]').forEach(b => b.onclick = () => setShipSelection(b.dataset.common));
+  applyShipTransform();
+  if(!shipZoomInit) requestAnimationFrame(fitShip);
+  renderShipDetail();
+}
+
+function setShipSelection(typ, id){
+  shipAuswahl = typ === 'agent' ? { typ:'agent', id } : { typ };
+  document.querySelectorAll('#shipWorld [data-agent]').forEach(b => {
+    const on = typ === 'agent' && b.dataset.agent === id;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('#shipWorld [data-common]').forEach(b => {
+    const on = b.dataset.common === typ;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  renderShipDetail();
+  const side = $('#shipSide'); if(side) side.scrollTop = 0;
+}
+
+function renderShipDetail(){
+  const side = $('#shipSide');
+  if(!side) return;
+  if(!companyDaten){
+    side.innerHTML = `<span class="sd-kicker">RAUMSCHIFF</span><h2>Verbindung</h2><p>${companyFehler ? 'Company-API nicht erreichbar: ' + esc(companyFehler) : 'Agentenlage wird geladen …'}</p>`;
+    return;
+  }
+  const depts = shipDeptList();
+  const agenten = (companyDaten.agents && companyDaten.agents.agenten) || [];
+  const s = (companyDaten.overview && companyDaten.overview.agenten_status) || {};
+  const aufgaben = (companyDaten.overview && companyDaten.overview.aufgaben) || {};
+
+  if(shipAuswahl.typ === 'agents'){
+    side.innerHTML = `<span class="sd-kicker">GEMEINSCHAFTSRAUM</span><h2>Agentenraum</h2>
+      <p>${agenten.length} Agenten in ${depts.length} Abteilungen. Eine Abteilung wählen, um ihren ersten Agenten zu öffnen.</p>
+      <div class="sd-kpis"><div class="sd-kpi"><small>GESAMT</small><b>${agenten.length}</b></div>
+        <div class="sd-kpi"><small>AKTIV</small><b>${Number(s.aktiv)||0}</b></div><div class="sd-kpi"><small>OFFEN</small><b>${Number(aufgaben.offen)||0}</b></div></div>
+      <div class="sd-depts">${depts.map((d,i) => `<button class="sd-dept" data-dept="${esc(d.code)}" style="--dept:${SHIP_FARBEN[i % SHIP_FARBEN.length]}">
+        <span class="sw"></span><b>${esc(d.code)} · ${esc(d.name)}</b><small>${d.liste.length}</small></button>`).join('')}</div>`;
+    side.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => {
+      const a = agenten.find(x => x.dept === b.dataset.dept);
+      if(a) setShipSelection('agent', a.agent_id);
+    });
+    return;
+  }
+
+  if(shipAuswahl.typ === 'konf'){
+    const k = R && R.konferenz;
+    if(!k){
+      side.innerHTML = `<span class="sd-kicker">GEMEINSCHAFTSRAUM</span><h2>Konferenz</h2><p>Noch keine Konferenz abgehalten.</p>`;
+      return;
+    }
+    side.innerHTML = `<span class="sd-kicker">GEMEINSCHAFTSRAUM</span><h2>Konferenz</h2>
+      <p>${esc(k.beschluss || 'Kein Beschluss gespeichert.')}</p>
+      <div class="sd-kpis"><div class="sd-kpi"><small>BERICHTE</small><b>${(k.berichte || []).length}</b></div>
+        <div class="sd-kpi"><small>DISKUSSION</small><b>${(k.diskussion || []).length}</b></div><div class="sd-kpi"><small>MASSNAHMEN</small><b>${(k.massnahmen || []).length}</b></div></div>
+      <div class="sd-block"><small>MODUS · ${esc(k.zeit ? kurzZeit(k.zeit) : '–')}</small><b>${esc(k.modus || '–')}</b></div>
+      <div class="sd-block"><small>MASSNAHMEN</small>${(k.massnahmen || []).slice(0,4).map(m => `<div class="sd-measure"><b>${esc(m.beschreibung || '–')}</b>${esc(m.verantwortlicher || 'Nicht zugewiesen')}</div>`).join('') || '<p>Keine Massnahmen.</p>'}</div>`;
+    return;
+  }
+
+  if(shipAuswahl.typ === 'agent'){
+    const a = agenten.find(x => x.agent_id === shipAuswahl.id);
+    if(a){
+      const di = depts.findIndex(d => d.code === a.dept);
+      const farbe = SHIP_FARBEN[di >= 0 ? di % SHIP_FARBEN.length : 0];
+      const st = shipStatusKey(a);
+      const letzte = a.letzte_task || null;
+      side.innerHTML = `<span class="sd-kicker">AGENTENRAUM · ${esc(a.dept)}</span>
+        <div class="sd-head"><span class="sd-avatar" style="--dept:${farbe}">${esc((a.rufname || '?').slice(0,1).toUpperCase())}</span>
+          <span class="sd-head-txt"><small>${esc(a.agent_id)} · ${esc(a.station || '–')}</small><b>${esc(a.rufname)}</b></span></div>
+        <p>${esc(a.role)} · ${esc(a.dept_name)}</p>
+        <div class="sd-status ${st}"><span class="p"></span>${esc(a.status_text || a.status)}${a.active ? ' · an Bord' : ' · inaktiv'}</div>
+        <div class="sd-kpis"><div class="sd-kpi"><small>OFFEN</small><b>${Number(a.offene_aufgaben)||0}</b></div>
+          <div class="sd-kpi"><small>LÄUFT</small><b>${Number(a.davon_laufend)||0}</b></div><div class="sd-kpi"><small>BLOCKIERT</small><b>${Number(a.davon_blockiert)||0}</b></div></div>
+        <div class="sd-block"><small>AUFTRAG</small><p>${esc(a.mission || 'Keine Mission hinterlegt.')}</p></div>
+        <div class="sd-block"><small>LETZTE AUFGABE</small><b>${esc(letzte && letzte.title ? letzte.title : 'Keine Aufgabe')}</b><p>${esc(letzte && letzte.state_text ? letzte.state_text : '–')}</p></div>
+        <div class="sd-block"><small>BERICHTET AN</small><b>${esc(a.reports_to || '–')}</b><p>Autonomie ${esc(a.autonomy ?? '–')} · Abteilung ${esc(a.dept)}</p></div>`;
+      return;
+    }
+    shipAuswahl = { typ:'overview' };
+  }
+
+  side.innerHTML = `<span class="sd-kicker">SCHIFFSLAGE</span><h2>${agenten.length} Agenten an Bord</h2>
+    <p>${depts.length} Abteilungen. Ein Raum öffnet rechts Rolle, Status und Aufgabe.</p>
+    <div class="sd-kpis"><div class="sd-kpi"><small>AKTIV</small><b>${Number(s.aktiv)||0}</b></div>
+      <div class="sd-kpi"><small>BLOCKIERT</small><b>${Number(s.blockiert)||0}</b></div><div class="sd-kpi"><small>OFFEN</small><b>${Number(aufgaben.offen)||0}</b></div></div>
+    <div class="sd-block"><small>BEDIENUNG</small><b>Raum anklicken</b><p>Ziehen verschiebt das Schiff. Mit +/− oder dem Mausrad zoomen; «Fit» zeigt alles.</p></div>
+    <div class="sd-block"><small>COMMON ROOMS</small><p>Agentenraum und Konferenz liegen als eigene Räume oben im Querschnitt.</p></div>`;
+}
+
+function applyShipTransform(){
+  const w = $('#shipWorld');
+  if(!w) return;
+  w.style.transform = `translate(${shipX}px, ${shipY}px) scale(${shipZoom})`;
+  const z = $('#shipZoomWert'); if(z) z.textContent = `${Math.round(shipZoom * 100)} %`;
+}
+
+function fitShip(){
+  const vp = $('#shipViewport'), w = $('#shipWorld');
+  if(!vp || !w || !vp.clientWidth || !w.offsetWidth) return;
+  if(!w.querySelector('.agent-room')) return;
+  const faktor = Math.min((vp.clientWidth - 18) / w.offsetWidth, (vp.clientHeight - 18) / w.offsetHeight, 1);
+  shipZoom = Math.max(0.22, Math.min(2.5, faktor));
+  shipX = (vp.clientWidth - w.offsetWidth * shipZoom) / 2;
+  shipY = (vp.clientHeight - w.offsetHeight * shipZoom) / 2;
+  shipZoomInit = true;
+  applyShipTransform();
+}
+
+function zoomShip(faktor){
+  const vp = $('#shipViewport');
+  if(!vp) return;
+  const alt = shipZoom;
+  const neu = Math.max(0.22, Math.min(2.5, shipZoom * faktor));
+  if(neu === alt) return;
+  const mx = vp.clientWidth / 2, my = vp.clientHeight / 2;
+  shipX = mx - (mx - shipX) * (neu / alt);
+  shipY = my - (my - shipY) * (neu / alt);
+  shipZoom = neu;
+  applyShipTransform();
+}
+
+function initShipControls(){
+  const vp = $('#shipViewport');
+  if(!vp) return;
+  vp.querySelectorAll('[data-ship-zoom]').forEach(b => b.onclick = () => {
+    if(b.dataset.shipZoom === 'in') zoomShip(1.18);
+    else if(b.dataset.shipZoom === 'out') zoomShip(0.85);
+    else fitShip();
+  });
+  vp.addEventListener('wheel', e => {
+    if(e.target.closest('.ship-zoom')) return;
+    e.preventDefault();
+    zoomShip(e.deltaY < 0 ? 1.12 : 0.89);
+  }, { passive:false });
+  vp.addEventListener('pointerdown', e => {
+    if(e.target.closest('button')) return;
+    shipDrag = { x:e.clientX, y:e.clientY, sx:shipX, sy:shipY };
+    vp.setPointerCapture(e.pointerId);
+  });
+  vp.addEventListener('pointermove', e => {
+    if(!shipDrag) return;
+    shipX = shipDrag.sx + (e.clientX - shipDrag.x);
+    shipY = shipDrag.sy + (e.clientY - shipDrag.y);
+    applyShipTransform();
+  });
+  const ende = () => { shipDrag = null; };
+  vp.addEventListener('pointerup', ende);
+  vp.addEventListener('pointercancel', ende);
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const bereich = $('#v-ship');
+      if(bereich && !bereich.hidden) fitShip();
+    }, 160);
+  });
+}
+initShipControls();
 
 /* ---------- Spider + Intelligence ---------- */
 async function ladeNacht(){
@@ -2250,5 +2489,8 @@ function updateTaktStand(){
   zeigeMissionLog();
   setzeMissionTakt(missionTakt, false);
 })();
+
+/* Schmale Brücke für die Prüfskripte: die Ansichten bleiben ohne eigene Nav-Einträge erreichbar. */
+window.zeige = zeige;
 
 })();
