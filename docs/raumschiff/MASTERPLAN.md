@@ -1,6 +1,7 @@
 # Masterplan — Technik, autonomes Management und Umsetzung
 
-**Status:** P0 und P1 umgesetzt; P2–P7 nicht begonnen  
+**Status:** P0 und P1 umgesetzt; P2 begonnen (Company-Lese-API für Übersicht,
+Agentenstatus und offene Aufgaben); 3D-Hülle und P3–P7 nicht begonnen<br>
 **Gehört zu:** [README.md](README.md), [RAUMBUCH.md](RAUMBUCH.md), [AGENTEN.md](AGENTEN.md)  
 **Grundsatz:** erst echte Unternehmenssubstanz, dann 3D; Paper-only bleibt unverhandelbar.
 
@@ -1088,7 +1089,7 @@ Datenbindung gehen vor Tempo.
 |---|---|---:|---|
 | P0 | Analyse, Grundriss, Architektur, dieses Dossier | erledigt | Freigabevorlage |
 | P1 | Unternehmensfundament: Profile, Queue, Policy, DB, Tests | umgesetzt | 103 Profile, echte Tasks, keine 3D |
-| P2 | Company-API + 3D-Hülle: Atrium, ein Deck, Karte, Steuerung | 2–3 Wochen | begehbare Hülle mit echten Statusdaten |
+| P2 | Company-API + 3D-Hülle: Atrium, ein Deck, Karte, Steuerung | 2–3 Wochen | Company-Lese-API umgesetzt; 3D-Hülle offen |
 | P3 | Erste zwei Abteilungen: A + D, 20 Agenten, echte Arbeit | 3–4 Wochen | vertikaler Funktionsbeweis |
 | P4 | Executive Deck, Sekretariat, CEO-Sicht und Fragen | 2–3 Wochen | S1–S3 + CEO-Büro |
 | P5 | Alle Abteilungen, 103 Agenten, alle Räume, Kommunikation | 4–6 Wochen | vollständiges Unternehmen |
