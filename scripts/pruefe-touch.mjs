@@ -7,6 +7,7 @@
  *   - Zwei-Finger-Pinch zoomt danach hinein,
  *   - Tippen auf einen Raum öffnet die Ops-Details,
  *   - die Abteilungslegende startet schmal eingeklappt und lässt sich aufklappen,
+ *   - die Legende filtert die Räume der gewählten Abteilung im Schiff,
  *   - kein Agent erscheint gleichzeitig in mehreren Schiffsclustern,
  *   - die mobilen Raumgrössen bleiben erhalten,
  *   - nach «Fit» liegen alle 103 Räume und elf Abteilungen im Schiffsviewport.
@@ -265,10 +266,64 @@ async function main() {
         return r.width > 0 && r.height > 0;
       }).length);
     pruefe(legendeAuf, 'Legende lässt sich nicht aufklappen');
-    pruefe(kopfText.includes('SEKTOREN') && kopfText.includes('11 ABTEILUNGEN'),
+    pruefe(kopfText.includes('SEKTOREN') && kopfText.includes('FILTER')
+      && kopfText.includes('11 ABTEILUNGEN'),
       `Legendenkopf ist nicht kompakt (${kopfText})`);
     pruefe(sichtbareDepts === 11,
       `Aufgeklappte Legende zeigt ${sichtbareDepts} statt 11 Abteilungen`);
+
+    // Die Legende ist ein Filter: ein Tippen hebt die Räume der Abteilung
+    // hervor, ohne den bereits geöffneten Agenten in der Seitenleiste zu ersetzen.
+    const filterA = legende.locator('[data-dept="A"]');
+    const kickerVorFilter = await page.locator('#shipSideInhalt .sd-kicker').innerText();
+    await filterA.tap();
+    await page.waitForTimeout(250);
+    const filterAn = await page.evaluate(() => {
+      const btn = document.querySelector('#shipLegend [data-dept="A"]');
+      const world = document.querySelector('#shipWorld');
+      const aktiv = world?.querySelector('.ship-dept.is-filter-active');
+      const gedimmt = world?.querySelector('.ship-dept:not(.is-filter-active)');
+      const deckkraft = el => el ? Number(getComputedStyle(el).opacity) : null;
+      return {
+        gedrueckt: btn?.getAttribute('aria-pressed') === 'true',
+        titel: btn?.title || '',
+        aktiv: world?.classList.contains('filter-aktiv') || false,
+        hervorgehoben: world?.querySelectorAll('.ship-dept.is-filter-active').length || 0,
+        raeume: world?.querySelectorAll('.ship-dept.is-filter-active .agent-room').length || 0,
+        gedimmt: world?.querySelectorAll('.ship-dept:not(.is-filter-active)').length || 0,
+        aktivDeckkraft: deckkraft(aktiv),
+        gedimmtDeckkraft: deckkraft(gedimmt),
+        seite: document.querySelector('#shipSideInhalt .sd-kicker')?.textContent?.trim() || '',
+      };
+    });
+    pruefe(filterAn.gedrueckt, 'Legendenfilter meldet keinen aktiven Zustand');
+    pruefe(filterAn.titel === 'Filter lösen', `Legendenfilter hat den Titel «${filterAn.titel}»`);
+    pruefe(filterAn.aktiv, 'Legendenfilter aktiviert die Hervorhebung im Schiff nicht');
+    pruefe(filterAn.hervorgehoben === 1 && filterAn.raeume === 10,
+      `Legendenfilter hebt ${filterAn.hervorgehoben} Abteilung mit ${filterAn.raeume} statt 10 Räumen hervor`);
+    pruefe(filterAn.gedimmt === 10,
+      `Legendenfilter dimmt ${filterAn.gedimmt} statt 10 andere Abteilungen`);
+    pruefe(filterAn.aktivDeckkraft === 1 && filterAn.gedimmtDeckkraft < 0.5,
+      `Legendenfilter setzt die Deckkraft nicht (${filterAn.aktivDeckkraft} / ${filterAn.gedimmtDeckkraft})`);
+    pruefe(filterAn.seite === kickerVorFilter,
+      'Legendenfilter hat die geöffneten Agentendetails ersetzt');
+
+    await filterA.tap();
+    await page.waitForTimeout(150);
+    const filterAus = await page.evaluate(() => {
+      const btn = document.querySelector('#shipLegend [data-dept="A"]');
+      const world = document.querySelector('#shipWorld');
+      return {
+        gedrueckt: btn?.getAttribute('aria-pressed') === 'true',
+        titel: btn?.title || '',
+        aktiv: world?.classList.contains('filter-aktiv') || false,
+        hervorgehoben: world?.querySelectorAll('.ship-dept.is-filter-active').length || 0,
+      };
+    });
+    pruefe(!filterAus.gedrueckt && !filterAus.aktiv && filterAus.hervorgehoben === 0,
+      'Legendenfilter lässt sich durch erneutes Tippen nicht lösen');
+    pruefe(filterAus.titel === 'Abteilung im Schiff hervorheben',
+      `Gelöster Legendenfilter hat den Titel «${filterAus.titel}»`);
 
     if (opts.bilder) {
       await page.screenshot({ path: join(opts.bilder, 'touch-final.png'), fullPage: true });
@@ -295,7 +350,7 @@ async function main() {
 
     erfolgreich = true;
     const fitText = (fit) => `${fit.zoom} · min. ${fit.raeume.minBreite.toFixed(1)}×${fit.raeume.minHoehe.toFixed(1)} px · ${fit.raeume.anzahl - fit.raeume.ausserhalb}/${fit.raeume.anzahl} sichtbar`;
-    console.log(`Touch OK: Pan ${Math.round(Math.abs(nachPan.x - vorPan.x))} px · Pinch ${(vorPinch.zoom * 100).toFixed(0)} % → ${(nachPinch.zoom * 100).toFixed(0)} % · ${cluster.clusters} Cluster ohne Doppelung · Tippen öffnet ${raumName} · Fit 390 px ${fitText(fit390)} · Fit 320 px ${fitText(fit320)}`);
+    console.log(`Touch OK: Pan ${Math.round(Math.abs(nachPan.x - vorPan.x))} px · Pinch ${(vorPinch.zoom * 100).toFixed(0)} % → ${(nachPinch.zoom * 100).toFixed(0)} % · ${cluster.clusters} Cluster ohne Doppelung · Tippen öffnet ${raumName} · Filter A 10 Räume / gelöst · Fit 390 px ${fitText(fit390)} · Fit 320 px ${fitText(fit320)}`);
   } catch (fehler) {
     fehlerText = fehler instanceof Error ? fehler.message : String(fehler);
     throw fehler;

@@ -8,7 +8,7 @@ let nachtDaten = null, nachtFehler = null;
 let graphWindow = '7d', graphDaten = null, kalibrierungDaten = null;
 let betriebDaten = null, betriebFehler = null, betriebTimer = null;
 let companyDaten = null, companyFehler = null, companyTimer = null, companyLaden = false;
-let shipAuswahl = { typ: 'overview' }, shipZoom = 1, shipX = 0, shipY = 0, shipZoomInit = false;
+let shipAuswahl = { typ: 'overview' }, shipDeptFilter = null, shipZoom = 1, shipX = 0, shipY = 0, shipZoomInit = false;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = (v,d=2) => (v==null||isNaN(v)) ? '–' : Number(v).toLocaleString('de-CH',{minimumFractionDigits:d,maximumFractionDigits:d});
 const pct = (v,d=1) => v==null ? '–' : num(v,d)+' %';
@@ -1132,8 +1132,10 @@ function shipDeptFarbe(code){
   return SHIP_FARBEN[(i >= 0 ? i : 0) % SHIP_FARBEN.length];
 }
 
-function shipDeptKnoepfe(depts, kompakt = false){
-  return `<div class="sd-depts${kompakt ? ' sd-legend' : ''}">${depts.map(d => `<button class="sd-dept" data-dept="${esc(d.code)}" style="--dept:${shipDeptFarbe(d.code)}" title="Ersten Agenten dieser Abteilung öffnen">
+function shipDeptKnoepfe(depts, kompakt = false, filter = false){
+  const titel = filter ? 'Abteilung im Schiff hervorheben' : 'Ersten Agenten dieser Abteilung öffnen';
+  const gedrueckt = filter ? ' aria-controls="shipWorld" aria-pressed="false"' : '';
+  return `<div class="sd-depts${kompakt ? ' sd-legend' : ''}">${depts.map(d => `<button type="button" class="sd-dept" data-dept="${esc(d.code)}" style="--dept:${shipDeptFarbe(d.code)}" title="${titel}"${gedrueckt}>
     <span class="sw"></span><b>${esc(d.code)} · ${esc(d.name)}</b><small>${d.liste.length}</small></button>`).join('')}</div>`;
 }
 
@@ -1141,6 +1143,37 @@ function bindeShipDeptKnoepfe(side, agenten){
   side.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => {
     const a = agenten.find(x => x.dept === b.dataset.dept);
     if(a) setShipSelection('agent', a.agent_id);
+  });
+}
+
+function syncShipDeptFilter(){
+  const world = $('#shipWorld');
+  const legend = $('#shipLegend');
+  const depts = world ? [...world.querySelectorAll('.ship-dept')] : [];
+  if(shipDeptFilter && !depts.some(el => el.dataset.dept === shipDeptFilter)) shipDeptFilter = null;
+  const aktiv = shipDeptFilter;
+  if(world){
+    world.classList.toggle('filter-aktiv', !!aktiv);
+    depts.forEach(el => el.classList.toggle('is-filter-active', !!aktiv && el.dataset.dept === aktiv));
+  }
+  if(legend){
+    legend.querySelectorAll('[data-dept]').forEach(b => {
+      const on = !!aktiv && b.dataset.dept === aktiv;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      b.title = on ? 'Filter lösen' : 'Abteilung im Schiff hervorheben';
+    });
+  }
+}
+
+function setShipDeptFilter(code){
+  shipDeptFilter = shipDeptFilter === code ? null : code;
+  syncShipDeptFilter();
+}
+
+function bindeShipFilterKnoepfe(box){
+  box.querySelectorAll('[data-dept]').forEach(b => {
+    b.onclick = () => setShipDeptFilter(b.dataset.dept);
   });
 }
 
@@ -1159,9 +1192,10 @@ function renderShipLegend(depts, agenten){
   const box = $('#shipLegend');
   if(!box) return;
   box.hidden = false;
-  box.innerHTML = `<summary class="sl-head"><small>SEKTOREN</small><b>${depts.length} ABTEILUNGEN</b><i class="sl-pfeil" aria-hidden="true"></i></summary>${shipDeptKnoepfe(depts, true)}`;
+  box.innerHTML = `<summary class="sl-head"><small>SEKTOREN · FILTER</small><b>${depts.length} ABTEILUNGEN</b><i class="sl-pfeil" aria-hidden="true"></i></summary>${shipDeptKnoepfe(depts, true, true)}`;
   syncShipLegend();
-  bindeShipDeptKnoepfe(box, agenten);
+  bindeShipFilterKnoepfe(box);
+  syncShipDeptFilter();
 }
 
 function renderShipWorld(){
@@ -1207,7 +1241,7 @@ function renderShipWorld(){
           const offen = d.liste.reduce((n,a) => n + (Number(a.offene_aufgaben) || 0), 0);
           const wide = d.code === 'S' ? ' wide' : '';
           const fehlend = Math.max(0, 5 - d.liste.length);
-          return `<section class="ship-dept${wide}" style="--dept:${farbe}">
+          return `<section class="ship-dept${wide}" data-dept="${esc(d.code)}" style="--dept:${farbe}">
             <div class="ship-dept-head"><span class="ship-dept-code">${esc(d.code)}</span>
               <span class="ship-dept-name">${esc(d.name)}</span>
               <span class="ship-dept-meta">${d.liste.length} · ${offen} OFFEN</span></div>
@@ -1246,6 +1280,15 @@ function renderShipWorld(){
 }
 
 function setShipSelection(typ, id){
+  if(shipDeptFilter){
+    const raum = typ === 'agent'
+      ? [...document.querySelectorAll('#shipWorld [data-agent]')].find(b => b.dataset.agent === id)
+      : null;
+    if(!raum || raum.closest('.ship-dept')?.dataset.dept !== shipDeptFilter){
+      shipDeptFilter = null;
+      syncShipDeptFilter();
+    }
+  }
   shipAuswahl = typ === 'agent' ? { typ:'agent', id } : { typ };
   document.querySelectorAll('#shipWorld [data-agent]').forEach(b => {
     const on = typ === 'agent' && b.dataset.agent === id;
