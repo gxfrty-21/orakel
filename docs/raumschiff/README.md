@@ -177,8 +177,8 @@ bisherigen Panels für Lage, Meetingraum und Sekretariat bleiben unter
 «Lage, Meetingraum und Sekretariat» eingeklappt erhalten.
 
 Ein Klick auf einen Raum öffnet rechts Rolle, Status, offene und laufende Aufgaben,
-Mission, letzte Aufgabe und Berichtslinie. `+`/`−`, Mausrad und `Fit` steuern den
-Zoom; Ziehen verschiebt das Schiff. Die Darstellung ist eine SVG/CSS-Illustration
+Mission, letzte Aufgabe und Berichtslinie. `+`/`−`, Mausrad, Zwei-Finger-Gesten und
+`Fit` steuern den Zoom; Ziehen verschiebt das Schiff. Die Darstellung ist eine SVG/CSS-Illustration
 ohne 3D-Framework und bleibt bei 250 % Schrift in zwölf Ansichten und drei Breiten
 ohne Überläufe.
 

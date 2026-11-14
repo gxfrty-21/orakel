@@ -8,7 +8,7 @@ let nachtDaten = null, nachtFehler = null;
 let graphWindow = '7d', graphDaten = null, kalibrierungDaten = null;
 let betriebDaten = null, betriebFehler = null, betriebTimer = null;
 let companyDaten = null, companyFehler = null, companyTimer = null, companyLaden = false;
-let shipAuswahl = { typ: 'overview' }, shipZoom = 1, shipX = 0, shipY = 0, shipZoomInit = false, shipDrag = null;
+let shipAuswahl = { typ: 'overview' }, shipZoom = 1, shipX = 0, shipY = 0, shipZoomInit = false;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = (v,d=2) => (v==null||isNaN(v)) ? '–' : Number(v).toLocaleString('de-CH',{minimumFractionDigits:d,maximumFractionDigits:d});
 const pct = (v,d=1) => v==null ? '–' : num(v,d)+' %';
@@ -1126,6 +1126,24 @@ function shipStatusKey(a){
 const SHIP_ROOM_TYPEN = { A:'command', B:'server', C:'lab', D:'trading', E:'research', F:'risk',
   G:'archive', H:'workshop', I:'observatory', J:'security', S:'meeting' };
 
+function shipDeptFarbe(code){
+  const depts = shipDeptList();
+  const i = depts.findIndex(d => d.code === code);
+  return SHIP_FARBEN[(i >= 0 ? i : 0) % SHIP_FARBEN.length];
+}
+
+function shipDeptKnoepfe(depts, kompakt = false){
+  return `<div class="sd-depts${kompakt ? ' sd-legend' : ''}">${depts.map(d => `<button class="sd-dept" data-dept="${esc(d.code)}" style="--dept:${shipDeptFarbe(d.code)}" title="Ersten Agenten dieser Abteilung öffnen">
+    <span class="sw"></span><b>${esc(d.code)} · ${esc(d.name)}</b><small>${d.liste.length}</small></button>`).join('')}</div>`;
+}
+
+function bindeShipDeptKnoepfe(side, agenten){
+  side.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => {
+    const a = agenten.find(x => x.dept === b.dataset.dept);
+    if(a) setShipSelection('agent', a.agent_id);
+  });
+}
+
 function renderShipWorld(){
   const box = $('#shipWorld');
   if(!box) return;
@@ -1162,8 +1180,8 @@ function renderShipWorld(){
         </button>
       </div>
       <div class="ship-depts">
-        ${depts.map((d, i) => {
-          const farbe = SHIP_FARBEN[i % SHIP_FARBEN.length];
+        ${depts.map(d => {
+          const farbe = shipDeptFarbe(d.code);
           const offen = d.liste.reduce((n,a) => n + (Number(a.offene_aufgaben) || 0), 0);
           const wide = d.code === 'S' ? ' wide' : '';
           const fehlend = Math.max(0, 5 - d.liste.length);
@@ -1237,12 +1255,8 @@ function renderShipDetail(){
       <p>${agenten.length} Agenten in ${depts.length} Abteilungen. Eine Abteilung wählen, um ihren ersten Agenten zu öffnen.</p>
       <div class="sd-kpis"><div class="sd-kpi"><small>GESAMT</small><b>${agenten.length}</b></div>
         <div class="sd-kpi"><small>AKTIV</small><b>${Number(s.aktiv)||0}</b></div><div class="sd-kpi"><small>OFFEN</small><b>${Number(aufgaben.offen)||0}</b></div></div>
-      <div class="sd-depts">${depts.map((d,i) => `<button class="sd-dept" data-dept="${esc(d.code)}" style="--dept:${SHIP_FARBEN[i % SHIP_FARBEN.length]}">
-        <span class="sw"></span><b>${esc(d.code)} · ${esc(d.name)}</b><small>${d.liste.length}</small></button>`).join('')}</div>`;
-    side.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => {
-      const a = agenten.find(x => x.dept === b.dataset.dept);
-      if(a) setShipSelection('agent', a.agent_id);
-    });
+      <div class="sd-block"><small>ABTEILUNGEN</small>${shipDeptKnoepfe(depts)}</div>`;
+    bindeShipDeptKnoepfe(side, agenten);
     return;
   }
 
@@ -1264,8 +1278,7 @@ function renderShipDetail(){
   if(shipAuswahl.typ === 'agent'){
     const a = agenten.find(x => x.agent_id === shipAuswahl.id);
     if(a){
-      const di = depts.findIndex(d => d.code === a.dept);
-      const farbe = SHIP_FARBEN[di >= 0 ? di % SHIP_FARBEN.length : 0];
+      const farbe = shipDeptFarbe(a.dept);
       const st = shipStatusKey(a);
       const letzte = a.letzte_task || null;
       side.innerHTML = `<span class="sd-kicker">AGENTENRAUM · ${esc(a.dept)}</span>
@@ -1287,8 +1300,10 @@ function renderShipDetail(){
     <p>${depts.length} Abteilungen. Ein Raum öffnet rechts Rolle, Status und Aufgabe.</p>
     <div class="sd-kpis"><div class="sd-kpi"><small>AKTIV</small><b>${Number(s.aktiv)||0}</b></div>
       <div class="sd-kpi"><small>BLOCKIERT</small><b>${Number(s.blockiert)||0}</b></div><div class="sd-kpi"><small>OFFEN</small><b>${Number(aufgaben.offen)||0}</b></div></div>
-    <div class="sd-block"><small>BEDIENUNG</small><b>Raum anklicken</b><p>Ziehen verschiebt das Schiff. Mit +/− oder dem Mausrad zoomen; «Fit» zeigt alles.</p></div>
-    <div class="sd-block"><small>COMMON ROOMS</small><p>Agentenraum und Konferenz liegen als eigene Räume oben im Querschnitt.</p></div>`;
+    <div class="sd-block"><small>BEDIENUNG</small><b>Raum antippen</b><p>Ziehen verschiebt das Schiff. Mit +/−, Mausrad oder zwei Fingern zoomen; «Fit» zeigt alles.</p></div>
+    <div class="sd-block"><small>COMMON ROOMS</small><p>Agentenraum und Konferenz liegen als eigene Räume oben im Querschnitt.</p></div>
+    <div class="sd-block sd-legend-block"><small>SEKTOREN · ${depts.length} ABTEILUNGEN</small>${shipDeptKnoepfe(depts, true)}</div>`;
+  bindeShipDeptKnoepfe(side, agenten);
 }
 
 function applyShipTransform(){
@@ -1336,20 +1351,95 @@ function initShipControls(){
     e.preventDefault();
     zoomShip(e.deltaY < 0 ? 1.12 : 0.89);
   }, { passive:false });
+
+  // Maus und Touch teilen sich denselben Pointerpfad. Ein zweiter Finger
+  // zoomt um den Berührungsmittelpunkt; ein einzelner Finger verschiebt.
+  const zeiger = new Map();
+  let drag = null, pinch = null, klickGesperrt = false, sperrTimer = null;
+  const abstand = (a,b) => Math.hypot(a.x-b.x, a.y-b.y);
+  const sperreKlick = () => {
+    klickGesperrt = true;
+    clearTimeout(sperrTimer);
+    sperrTimer = setTimeout(() => { klickGesperrt = false; }, 400);
+  };
+  const startePinch = () => {
+    if(zeiger.size < 2) return;
+    const [a,b] = [...zeiger.values()];
+    const mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
+    pinch = {
+      abstand: Math.max(1, abstand(a,b)),
+      zoom: shipZoom,
+      mx, my,
+      wx: (mx - shipX) / shipZoom,
+      wy: (my - shipY) / shipZoom,
+    };
+    drag = null;
+  };
+  vp.addEventListener('click', e => {
+    if(!klickGesperrt) return;
+    e.preventDefault();
+    e.stopPropagation();
+    klickGesperrt = false;
+    clearTimeout(sperrTimer);
+  }, true);
+
   vp.addEventListener('pointerdown', e => {
-    if(e.target.closest('button')) return;
-    shipDrag = { x:e.clientX, y:e.clientY, sx:shipX, sy:shipY };
-    vp.setPointerCapture(e.pointerId);
-  });
+    klickGesperrt = false;
+    clearTimeout(sperrTimer);
+    if(e.target.closest('.ship-zoom')) return;
+    if(e.pointerType === 'mouse' && e.button !== 0) return;
+    zeiger.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    try { vp.setPointerCapture(e.pointerId); } catch {}
+    if(zeiger.size === 1){
+      drag = { x:e.clientX, y:e.clientY, sx:shipX, sy:shipY, bewegt:false };
+      pinch = null;
+    }else if(zeiger.size === 2){
+      startePinch();
+      sperreKlick();
+    }
+  }, { passive:true });
+
   vp.addEventListener('pointermove', e => {
-    if(!shipDrag) return;
-    shipX = shipDrag.sx + (e.clientX - shipDrag.x);
-    shipY = shipDrag.sy + (e.clientY - shipDrag.y);
+    if(!zeiger.has(e.pointerId)) return;
+    zeiger.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    if(pinch && zeiger.size >= 2){
+      const [a,b] = [...zeiger.values()];
+      const faktor = Math.max(1, abstand(a,b)) / pinch.abstand;
+      const neu = Math.max(0.22, Math.min(2.5, pinch.zoom * faktor));
+      const mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
+      shipZoom = neu;
+      shipX = mx - pinch.wx * neu;
+      shipY = my - pinch.wy * neu;
+      applyShipTransform();
+      sperreKlick();
+      e.preventDefault();
+      return;
+    }
+    if(!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if(!drag.bewegt && Math.hypot(dx,dy) > 8){
+      drag.bewegt = true;
+      sperreKlick();
+    }
+    if(!drag.bewegt) return;
+    shipX = drag.sx + dx;
+    shipY = drag.sy + dy;
     applyShipTransform();
-  });
-  const ende = () => { shipDrag = null; };
-  vp.addEventListener('pointerup', ende);
-  vp.addEventListener('pointercancel', ende);
+    e.preventDefault();
+  }, { passive:false });
+
+  const beenden = e => {
+    zeiger.delete(e.pointerId);
+    if(zeiger.size < 2) pinch = null;
+    if(zeiger.size === 1){
+      const p = [...zeiger.values()][0];
+      drag = { x:p.x, y:p.y, sx:shipX, sy:shipY, bewegt:false };
+    }else if(zeiger.size === 0){
+      drag = null;
+    }
+  };
+  vp.addEventListener('pointerup', beenden);
+  vp.addEventListener('pointercancel', beenden);
   let resizeTimer = null;
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
