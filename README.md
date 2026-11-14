@@ -172,6 +172,18 @@ mehrere alte Deck- und Navigationsangaben; alles muss erkannt werden. Der eigene
 CI-Job `doku` führt beide Läufe aus, sobald Markdown-Dateien oder das Prüfskript
 geändert wurden; andernfalls wird er übersprungen.
 
+### Lokaler Pre-Commit-Hook
+
+Der versionierte Hook `.githooks/pre-commit` startet die Doku-Prüfung, sobald
+Markdown-Dateien oder `scripts/pruefe_doku.py` gestaged sind. Einmalig im
+Repository aktivieren:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+Ohne relevante Änderungen beendet sich der Hook sofort.
+
 ## Browser-Prüfung bei grosser Schrift
 
 `scripts/pruefe-text250.mjs` skaliert die Schrift im Dashboard auf 250 %
