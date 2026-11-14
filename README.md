@@ -198,9 +198,9 @@ geladen. Installation und Prüflauf haben je ein Step-Timeout von 5 Minuten; das
 Job-Limit liegt bei 15 Minuten. Serverlog und Screenshots lädt der Job auch bei
 Fehlschlag, Abbruch oder Timeout hoch und bewahrt sie 7 Tage auf. Screenshots
 entstehen nur bei Befunden. Ein eigener Step `Seed-Tastaturlauf` startet eine
-frische Seed-Kopie auf Port 3100 und prüft die fünf Stichproben ausschliesslich
-über Home, Pfeil rechts und Ende; er verlangt in der Ausgabe
-`Tastatur 1× geprüft`, damit ein stilles Überspringen als Fehler auffällt.
+frische Seed-Kopie auf Port 3100 und prüft die fünf Stichproben bei 360, 320
+und 280 px ausschliesslich über Home, Pfeil rechts und Ende; er verlangt in der
+Ausgabe `Tastatur 3× geprüft`, damit ein stilles Überspringen als Fehler auffällt.
 
 ```bash
 # Dashboard mit Beispieldaten starten, ohne die eigene DB anzufassen
