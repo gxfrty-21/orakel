@@ -1163,8 +1163,8 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
   radial-gradient(38% 46% at 88% 72%,rgba(45,226,255,.20),transparent 70%),
   radial-gradient(34% 34% at 58% 8%,rgba(139,92,246,.30),transparent 70%);
   filter:blur(24px)}
-.ship-side::before{content:"OPS // AGENT CONSOLE";display:block;position:sticky;top:-14px;z-index:3;margin:-14px -14px 10px;
-  padding:7px 14px;border-bottom:1px solid rgba(56,232,255,.28);background:rgba(4,12,14,.97);
+.ship-side::before{content:"OPS // AGENT CONSOLE";display:block;position:sticky;top:0;z-index:3;margin:0 0 10px;
+  padding:7px 0;border-bottom:1px solid rgba(56,232,255,.28);background:rgba(4,12,14,.97);
   font-family:var(--mono);font-size:7px;letter-spacing:.15em;color:#74ffd0}
 .agent-room{box-shadow:inset 0 0 0 1px #000,inset 0 -9px 13px -6px #000,0 2px 0 #000}
 .agent-room:hover{transform:translateY(-1px)}
@@ -1210,12 +1210,11 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
   .common-room{min-height:84px}
 }
 @media(max-width:520px){.ship-stage{margin-left:-8px;margin-right:-8px}}
-/* Kompakte Abteilungslegende neben dem Schiff */
-.ship-aside{display:grid;grid-template-rows:auto minmax(0,1fr);gap:8px;min-width:0;min-height:0}
-.ship-side{min-height:0}
-.ship-legend{min-width:0;padding:9px 10px;border:1px solid #28515a;border-top:2px solid #38e8ff;border-radius:2px;
-  background:repeating-linear-gradient(0deg,rgba(56,232,255,.025) 0 1px,transparent 1px 4px),linear-gradient(180deg,rgba(8,25,27,.96),rgba(5,8,14,.98));
-  box-shadow:inset 0 0 30px rgba(56,232,255,.045),0 0 14px rgba(56,232,255,.05);color:#c8e6e2}
+/* Kompakte Abteilungslegende in der Ops-Konsole */
+.ship-side{min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.ship-side-inhalt{flex:1 1 auto;min-height:0;overflow:auto;padding-top:9px;padding-right:2px}
+.ship-side-inhalt::-webkit-scrollbar{width:6px}.ship-side-inhalt::-webkit-scrollbar-thumb{background:#28515a;border-radius:3px}
+.ship-legend{flex:0 0 auto;min-width:0;padding:9px 0 10px;border-bottom:1px solid rgba(56,232,255,.12);color:#c8e6e2}
 .sl-head{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;min-width:0;margin-bottom:6px}
 .sl-head small{font-family:var(--mono);font-size:6.5px;letter-spacing:.14em;color:#74ffd0}
 .sl-head b{min-width:0;margin-left:auto;font-family:var(--mono);font-size:6.5px;font-weight:400;letter-spacing:.08em;color:#6e9694;text-align:right;overflow-wrap:anywhere}
@@ -1226,4 +1225,4 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 .ship-legend .sd-legend .sd-dept b{font-size:8px;letter-spacing:.01em}
 .ship-legend .sd-legend .sd-dept small{display:none}
 .ship-legend .sd-legend .sd-dept:hover{background:rgba(56,232,255,.07);border-color:var(--dept)}
-@media(max-width:760px){.ship-aside{grid-template-rows:auto auto}}
+@media(max-width:760px){.ship-side{max-height:none;overflow:visible}.ship-side-inhalt{overflow:visible}}
