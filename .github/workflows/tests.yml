@@ -11,6 +11,52 @@ permissions:
   contents: read
 
 jobs:
+  # Der Doku-Job wird nur bei Markdown- oder Prüfskript-Änderungen gestartet.
+  # Ein per if übersprungener Job meldet Erfolg und bleibt als Required Check nutzbar.
+  changes:
+    name: Doku-relevante Änderungen ermitteln
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    outputs:
+      doku: ${{ steps.filter.outputs.doku }}
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Markdown- und Prüfskript-Änderungen ermitteln
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PUSH_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          geaendert=""
+          range=""
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            range="$BASE_SHA...$HEAD_SHA"
+          elif [ -z "${BEFORE_SHA:-}" ] || [ "${BEFORE_SHA//0/}" = "" ]; then
+            geaendert=$(git ls-tree -r --name-only "$PUSH_SHA")
+          else
+            range="$BEFORE_SHA..$PUSH_SHA"
+          fi
+
+          if [ -z "$geaendert" ] && [ -n "$range" ]; then
+            geaendert=$(git diff --name-only "$range")
+          fi
+
+          if printf '%s\n' "$geaendert" | grep -Eq '\.md$|^scripts/pruefe_doku\.py$'; then
+            echo "doku=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "doku=false" >> "$GITHUB_OUTPUT"
+          fi
+
   pytest:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -42,6 +88,8 @@ jobs:
   # tatsächlich auffallen.
   doku:
     name: Doku-Prüfung
+    needs: changes
+    if: needs.changes.outputs.doku == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
