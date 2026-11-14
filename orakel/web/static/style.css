@@ -880,7 +880,7 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 }
 
 /* Agenten-Querschnitt: Hülle, Miniaturräume, Neon und Ops-Konsole */
-.ship-stage{display:grid;grid-template-columns:minmax(0,1fr) 326px;gap:12px;height:min(76vh,820px);min-height:600px}
+.ship-stage{display:grid;grid-template-columns:minmax(0,1fr) 326px;gap:12px;height:min(80vh,860px);min-height:600px}
 .ship-viewport{position:relative;min-width:0;overflow:hidden;border:1px solid #4e255f;border-radius:4px;
   background:#05020a;box-shadow:inset 0 0 90px #000,0 0 26px rgba(255,45,154,.10);
   touch-action:none;cursor:grab;isolation:isolate}
@@ -899,11 +899,11 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
     radial-gradient(42% 40% at 84% 70%,rgba(45,226,255,.16),transparent 72%),
     radial-gradient(34% 34% at 62% 12%,rgba(139,92,246,.25),transparent 70%);
   filter:blur(26px);animation:ship-nebula 22s ease-in-out infinite alternate}
-.ship-world{position:absolute;left:0;top:0;z-index:1;width:1080px;padding:14px 14px 20px;transform-origin:0 0;will-change:transform}
+.ship-world{position:absolute;left:0;top:0;z-index:1;width:1220px;padding:12px 12px 14px;transform-origin:0 0;will-change:transform}
 @keyframes ship-stars{to{background-position:240px 210px,-310px 250px,420px -330px,-280px -230px}}
 @keyframes ship-nebula{to{transform:translate3d(2%,-1%,0) scale(1.04);opacity:.62}}
 
-.ship-hull{position:relative;padding:18px 22px 20px;overflow:hidden;isolation:isolate;
+.ship-hull{position:relative;padding:16px 22px 14px;overflow:hidden;isolation:isolate;
   clip-path:polygon(2.5% 0,97.5% 0,100% 2.5%,100% 89%,94% 100%,6% 100%,0 89%,0 2.5%);
   background:
     repeating-linear-gradient(90deg,transparent 0 72px,rgba(255,255,255,.025) 72px 73px),
@@ -923,15 +923,15 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 .ship-rail::before{top:14%}.ship-rail::after{bottom:14%}
 
 .ship-brand{position:relative;z-index:2;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 9px;min-width:0;
-  padding:0 2px 8px;margin-bottom:7px;border-bottom:1px solid rgba(255,255,255,.09);font-family:var(--mono)}
+  padding:0 2px 5px;margin-bottom:5px;border-bottom:1px solid rgba(255,255,255,.09);font-family:var(--mono)}
 .ship-brand .sb-kicker{font-size:6.5px;letter-spacing:.18em;color:#ff83c6;white-space:nowrap}
 .ship-brand b{font-size:10px;font-weight:400;letter-spacing:.16em;color:#fff;white-space:nowrap}
 .ship-brand small{display:flex;align-items:center;gap:4px;margin-left:auto;font-size:6px;letter-spacing:.08em;color:#9b8ba8;white-space:nowrap}
 .ship-brand small i{width:4px;height:4px;border-radius:50%;background:var(--accent2);box-shadow:0 0 5px var(--accent2)}
 
-.ship-common{position:relative;z-index:2;display:grid;grid-template-columns:1fr 1.1fr;gap:6px;margin-bottom:7px}
+.ship-common{position:relative;z-index:2;display:grid;grid-template-columns:1fr 1.1fr;gap:6px;margin-bottom:5px}
 .common-room{position:relative;display:grid;grid-template-columns:62px minmax(0,1fr);align-items:center;gap:9px;min-width:0;
-  min-height:64px;padding:7px 10px 7px 7px;text-align:left;overflow:hidden;color:var(--fg);cursor:pointer;
+  min-height:60px;padding:6px 10px 6px 7px;text-align:left;overflow:hidden;color:var(--fg);cursor:pointer;
   border:1px solid rgba(255,63,164,.42);border-radius:2px;
   background:linear-gradient(100deg,rgba(74,22,62,.78),rgba(12,7,19,.96) 64%);
   box-shadow:inset 0 0 26px rgba(255,63,164,.08),0 0 0 1px #050208}
@@ -950,26 +950,26 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 .cr-holo::before{content:"";position:absolute;left:50%;top:5px;width:1px;height:15px;background:#74ffd0;box-shadow:0 0 6px #74ffd0}
 @keyframes cr-pulse{50%{opacity:.48;transform:translateX(-50%) scaleX(.88)}}
 .cr-txt{min-width:0}
-.cr-txt small{display:block;font-family:var(--mono);font-size:6px;letter-spacing:.14em;color:#ff9bcf;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cr-txt small{display:block;font-family:var(--mono);font-size:6.5px;letter-spacing:.14em;color:#ff9bcf;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .common-room.konf .cr-txt small{color:#ffd28a}
-.cr-txt b{display:block;margin-top:1px;font-size:13px;font-weight:500;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cr-txt em{display:block;margin-top:2px;font-family:var(--mono);font-size:6px;font-style:normal;color:#a491b2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cr-txt b{display:block;margin-top:1px;font-size:14px;font-weight:500;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cr-txt em{display:block;margin-top:2px;font-family:var(--mono);font-size:6.5px;font-style:normal;color:#a491b2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-.ship-depts{position:relative;z-index:2;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.ship-depts{position:relative;z-index:2;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
 .ship-depts::before{content:"";position:absolute;top:-2px;bottom:-2px;left:50%;width:12px;margin-left:-6px;z-index:-1;
   background:linear-gradient(90deg,transparent,#ff3fa42e,#38e8ff2e,transparent);
   border-left:1px solid rgba(56,232,255,.16);border-right:1px solid rgba(255,63,164,.16);pointer-events:none}
-.ship-dept{--dept:#38e8ff;position:relative;min-width:0;padding:0 0 4px;border:1px solid color-mix(in srgb,var(--dept) 42%,#2a2038);
+.ship-dept{--dept:#38e8ff;position:relative;min-width:0;padding:0 0 2px;border:1px solid color-mix(in srgb,var(--dept) 42%,#2a2038);
   border-radius:1px;background:linear-gradient(180deg,#140e1d,#08060d 78%);box-shadow:inset 0 0 20px #000}
 .ship-dept::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;z-index:2;pointer-events:none;
   background:linear-gradient(90deg,transparent,var(--dept),transparent);box-shadow:0 0 10px var(--dept)}
-.ship-dept-head{display:flex;align-items:center;gap:5px;min-width:0;padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.08);
+.ship-dept-head{display:flex;align-items:center;gap:5px;min-width:0;padding:2px 6px;border-bottom:1px solid rgba(255,255,255,.08);
   background:linear-gradient(90deg,color-mix(in srgb,var(--dept) 16%,#0c0812),#09060e 72%)}
-.ship-dept-code{display:grid;place-items:center;min-width:16px;height:15px;padding:0 3px;border:1px solid var(--dept);
-  background:rgba(0,0,0,.36);color:var(--dept);font-family:var(--mono);font-size:8px;line-height:1;box-shadow:0 0 6px color-mix(in srgb,var(--dept) 32%,transparent)}
-.ship-dept-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px;letter-spacing:.08em;text-transform:uppercase;color:#f6ecff}
-.ship-dept-meta{margin-left:auto;font-family:var(--mono);font-size:5.5px;letter-spacing:.04em;color:#9b89a8;white-space:nowrap}
-.ship-dept-rooms{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:3px;padding:3px;margin:0}
+.ship-dept-code{display:grid;place-items:center;min-width:19px;height:17px;padding:0 3px;border:1px solid var(--dept);
+  background:rgba(0,0,0,.36);color:var(--dept);font-family:var(--mono);font-size:9.5px;line-height:1;box-shadow:0 0 6px color-mix(in srgb,var(--dept) 32%,transparent)}
+.ship-dept-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#f6ecff}
+.ship-dept-meta{min-width:0;margin-left:auto;overflow:hidden;text-overflow:ellipsis;font-family:var(--mono);font-size:6.5px;letter-spacing:.04em;color:#9b89a8;white-space:nowrap}
+.ship-dept-rooms{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;padding:2px;margin:0}
 
 .agent-room{position:relative;display:block;min-width:0;height:76px;padding:0;overflow:hidden;text-align:left;color:var(--muted);
   border:1px solid #2c2438;border-radius:1px;background:#06040b;box-shadow:inset 0 0 0 1px #000,0 1px 0 rgba(255,255,255,.04);cursor:pointer}
@@ -981,14 +981,14 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 .agent-room.status-laeuft{border-bottom:2px solid var(--accent2)}
 .agent-room.status-blockiert{border-bottom:2px solid var(--bad)}
 .agent-room.status-wartet{border-bottom:2px solid var(--amber)}
-.ar-sign{position:absolute;top:3px;left:50%;z-index:7;display:flex;align-items:center;gap:2px;max-width:calc(100% - 5px);
-  padding:1px 4px;transform:translateX(-50%);border:1px solid var(--dept,#ff3fa4);background:rgba(5,3,9,.94);
-  box-shadow:0 0 6px color-mix(in srgb,var(--dept,#ff3fa4) 42%,transparent);font-family:var(--mono);font-size:6px;line-height:1.3;color:#fff;white-space:nowrap}
+.ar-sign{position:absolute;top:2px;left:50%;z-index:7;display:flex;align-items:center;gap:2px;max-width:calc(100% - 4px);
+  padding:1px 5px;transform:translateX(-50%);border:1px solid var(--dept,#ff3fa4);background:rgba(5,3,9,.94);
+  box-shadow:0 0 6px color-mix(in srgb,var(--dept,#ff3fa4) 42%,transparent);font-family:var(--mono);font-size:9px;line-height:1.3;color:#fff;white-space:nowrap}
 .ar-sign b{min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:400;letter-spacing:.06em;text-transform:uppercase}
 .ar-led{width:3px;height:3px;flex:0 0 3px;border-radius:50%;background:var(--good);box-shadow:0 0 4px var(--good)}
 .status-blockiert .ar-led{background:var(--bad);box-shadow:0 0 4px var(--bad)}
 .status-wartet .ar-led{background:var(--amber);box-shadow:0 0 4px var(--amber)}
-.ar-interior{position:absolute;inset:17px 2px 11px;z-index:2;overflow:hidden;border:1px solid rgba(255,255,255,.09);
+.ar-interior{position:absolute;inset:18px 2px 12px;z-index:2;overflow:hidden;border:1px solid rgba(255,255,255,.09);
   background:
     linear-gradient(180deg,rgba(255,255,255,.13) 0 2px,transparent 2px 21%,#342a3e 21% 25%,#1b1524 25% 100%),
     repeating-linear-gradient(90deg,transparent 0 23%,rgba(255,255,255,.035) 23% 23.6%,transparent 23.6% 46%),
@@ -1018,15 +1018,15 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 .ar-person::before{content:"";position:absolute;left:12%;top:0;width:76%;height:42%;border-radius:2px;background:#e6b281;box-shadow:inset 0 2px 0 #55311f}
 .ar-person::after{content:"";position:absolute;left:0;bottom:0;width:100%;height:60%;border-radius:2px 2px 0 0;
   background:linear-gradient(180deg,var(--dept,#ff3fa4),color-mix(in srgb,var(--dept,#ff3fa4) 58%,#221225));box-shadow:0 -1px 0 #0b0710,0 0 5px color-mix(in srgb,var(--dept,#ff3fa4) 30%,transparent)}
-.ar-foot{position:absolute;left:2px;right:2px;bottom:1px;z-index:7;display:flex;align-items:center;gap:4px;height:10px;
+.ar-foot{position:absolute;left:2px;right:2px;bottom:1px;z-index:7;display:flex;align-items:center;gap:4px;height:11px;
   padding:0 2px;border-top:1px solid rgba(255,255,255,.07);background:linear-gradient(90deg,#07050c,#0e0914);font-family:var(--mono)}
-.ar-state{display:flex;align-items:center;gap:2px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:5.5px;color:#a997b7}
+.ar-state{display:flex;align-items:center;gap:2px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:7px;color:#a997b7}
 .ar-state i{width:3px;height:3px;flex:0 0 3px;border-radius:50%;background:var(--good);box-shadow:0 0 3px var(--good)}
 .status-blockiert .ar-state i{background:var(--bad);box-shadow:0 0 3px var(--bad)}
 .status-wartet .ar-state i{background:var(--amber);box-shadow:0 0 3px var(--amber)}
 .status-laeuft .ar-state i{animation:ar-blink 1.4s ease-in-out infinite}
 @keyframes ar-blink{50%{opacity:.3}}
-.ar-tasks{margin-left:auto;flex:0 0 auto;color:#ffb1d8;font-size:5.5px}
+.ar-tasks{margin-left:auto;flex:0 0 auto;color:#ffb1d8;font-size:7px}
 
 /* Raumtypen: gleiche Hülle, unterschiedliche Inneneinrichtung */
 .room-command .ar-interior{background:linear-gradient(180deg,#35253b,#1a1424 55%,#0c0a13)}
@@ -1078,7 +1078,7 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 .room-security .ar-desk{left:10%;right:24%;bottom:25%;background:linear-gradient(180deg,#6d3e45,#2a1419)}
 .room-security .ar-prop{left:8%;bottom:26%;width:18%;height:32%;border-radius:2px;background:linear-gradient(180deg,#4a2029,#16090d);box-shadow:inset 0 0 0 1px #ff3fa422}
 
-.ship-engine{position:relative;z-index:2;display:flex;align-items:center;gap:8px;margin-top:7px;min-height:32px;padding:5px 10px;
+.ship-engine{position:relative;z-index:2;display:flex;align-items:center;gap:8px;margin-top:5px;min-height:28px;padding:4px 10px;
   border:1px solid rgba(255,63,164,.35);background:linear-gradient(90deg,rgba(75,15,66,.65),rgba(8,11,18,.96) 65%);overflow:hidden}
 .ship-engine::before{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,transparent,#ff3fa4,#38e8ff,transparent);opacity:.7}
 .eng-label{font-family:var(--mono);font-size:6px;letter-spacing:.14em;color:#ffaad8;white-space:nowrap}
@@ -1135,7 +1135,7 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 .ship-more[open]>summary{border-bottom:1px solid rgba(56,232,255,.1)}
 .ship-more .panel{margin:10px}.ship-more .panel:last-child{margin-bottom:12px}
 
-@media(max-width:1100px){.ship-stage{grid-template-columns:minmax(0,1fr) 286px;height:min(72vh,760px)}.ship-world{width:1020px}.ship-side{padding:11px}}
+@media(max-width:1100px){.ship-stage{grid-template-columns:minmax(0,1fr) 286px;height:min(76vh,800px)}.ship-world{width:1080px}.ship-side{padding:11px}}
 @media(max-width:760px){
   .ship-stage{grid-template-columns:1fr;height:auto;min-height:0}
   .ship-viewport{height:560px}
