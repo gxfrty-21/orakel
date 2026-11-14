@@ -165,9 +165,11 @@ ist vorhanden, aber mit `[unternehmen] aktiv = false` standardmäßig aus.
 **Phase 2 — sichtbarer 2D-Agenten-Querschnitt (Stand 14.11.2026):** Im Dashboard gibt es
 `#v-ship` als zoombaren, verschiebbaren Querschnitt mit 103 Company-Agentenräumen,
 gruppiert nach elf Abteilungen: A–J mit je zehn Fachagenten und S (Executive
-Secretariat) mit drei Sekretären. Jede Abteilung hat eine eigene Farbe und
-Beschriftung; jeder Raum zeigt Name, Rolle, Status und offene Aufgaben. Fehlende
-Werte bleiben leer; es gibt keine Ersatzzahlen.
+Secretariat) mit drei Sekretären. Die genaue Zusammensetzung steht in der
+[Abteilungsübersicht der Agentendoku](AGENTEN.md#2-abteilungsübersicht). Jede
+Abteilung hat eine eigene Farbe und Beschriftung; jeder Raum zeigt Name, Rolle,
+Status und offene Aufgaben. Fehlende Werte bleiben leer; es gibt keine
+Ersatzzahlen.
 
 Über den Abteilungen liegen die Gemeinschaftsräume **Agentenraum** und **Konferenz**.
 Der Agentenraum führt die elf Abteilungen mit Agentenzahl; die Konferenz zeigt
