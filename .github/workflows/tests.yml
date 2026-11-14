@@ -226,10 +226,7 @@ jobs:
             exit 1
           fi
 
-      - name: Selbsttest fehlender Schiffscluster und Screenshotpfad
-        timeout-minutes: 2
-        run: |
-          set -euo pipefail
+          # Der Selbsttest braucht denselben noch laufenden Seed-Server.
           mkdir -p artifacts/text250/selbsttest
           if ! node scripts/pruefe-text250.mjs --url http://127.0.0.1:3000 \
                --selbsttest-cluster --bilder artifacts/text250/selbsttest \
@@ -244,6 +241,7 @@ jobs:
           grep -q 'Selbsttest OK: fehlender Schiffscluster S' artifacts/text250/selbsttest.log
           test -s artifacts/text250/selbsttest/360px-ship-cluster-01-abteilung-s-fehlt.png
           test -s artifacts/text250/selbsttest/360px-ship.html
+
 
       # Eigener, fokussierter Lauf: Die fünf API-Stichproben werden auf einer
       # frischen Seed-Kopie ausschliesslich per Tastatur angesteuert. Zusätzlich
