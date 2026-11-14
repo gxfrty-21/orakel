@@ -549,9 +549,6 @@ button.li:hover{background:var(--panel2)}
 .sekThema small{font-family:var(--mono);font-size:9px;color:var(--accent);letter-spacing:.06em}
 .sekThema i{display:inline-block;min-width:58px;font-style:normal;font-family:var(--mono);
   font-size:9px;color:var(--dim);text-transform:uppercase}
-.exec-meet{cursor:pointer}
-.exec-meet:hover{border-color:rgba(255,184,77,.6)}
-
 /* Meetingraum */
 .mtgThema{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid rgba(255,184,77,.28);
   border-radius:6px;background:rgba(40,24,12,.45)}

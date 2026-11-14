@@ -979,15 +979,6 @@ function renderCEO(runs){
         <span><b>Beschluss</b><small>${esc(konf.beschluss || 'KEINE DATEN')}</small></span>
       </div>
     </div>
-    <div class="exec-room exec-meet" title="Zur Agenda">
-      <span class="exec-code">MTG</span>
-      <b>Meetingraum</b>
-      <div class="exec-list">
-        <span><b>Nächste Sitzung</b><small>00:00 · Mitternacht</small></span>
-        <span><b>Agenda</b><small>${(sekDaten && sekDaten.agenda && sekDaten.agenda.themen ? sekDaten.agenda.themen.length : 0)} Themen · Leitung Mira, Jonas, Lea</small></span>
-        <span><b>Protokoll</b><small>${(R.konferenz && R.konferenz.sekretariat && R.konferenz.sekretariat.agenda) ? R.konferenz.sekretariat.agenda.length + ' Themen übernommen' : 'noch nicht übernommen'}</small></span>
-      </div>
-    </div>
     <div class="exec-room exec-obs">
       <span class="exec-code">OBS</span>
       <b>Lounge &amp; Beobachtungsdeck</b>
@@ -2261,10 +2252,3 @@ function updateTaktStand(){
 })();
 
 })();
-
-document.addEventListener('click', e => {
-  if(e.target.closest && e.target.closest('.exec-meet')){
-    const ziel = document.querySelector('#sekAgenda');
-    if(ziel) ziel.scrollIntoView({behavior:'smooth', block:'center'});
-  }
-});
