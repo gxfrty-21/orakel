@@ -6,7 +6,8 @@
  *   - Ein-Finger-Pan verschiebt das Schiff,
  *   - Zwei-Finger-Pinch zoomt danach hinein,
  *   - Tippen auf einen Raum öffnet die Ops-Details,
- *   - die Abteilungslegende startet schmal eingeklappt und lässt sich aufklappen.
+ *   - die Abteilungslegende startet schmal eingeklappt und lässt sich aufklappen,
+ *   - kein Agent erscheint gleichzeitig in mehreren Schiffsclustern.
  *
  * Der Test ist für die Seed-Datenbank gedacht und läuft ohne Test-Framework.
  *
@@ -73,6 +74,33 @@ async function ladeSchiff(page) {
   await page.waitForTimeout(300);
 }
 
+async function pruefeCluster(page) {
+  return page.evaluate(() => {
+    const clusters = [...document.querySelectorAll('#shipWorld .ship-dept')];
+    const vorkommen = new Map();
+    let raeume = 0;
+    for (const cluster of clusters) {
+      const code = cluster.querySelector('.ship-dept-code')?.textContent?.trim() || '?';
+      for (const raum of cluster.querySelectorAll('[data-agent]')) {
+        const id = raum.dataset.agent;
+        raeume++;
+        if (!vorkommen.has(id)) vorkommen.set(id, []);
+        vorkommen.get(id).push(code);
+      }
+    }
+    const mehrfach = [...vorkommen]
+      .filter(([, codes]) => codes.length > 1)
+      .map(([id, codes]) => `${id} (${codes.join(', ')})`);
+    return {
+      clusters: clusters.length,
+      raeume,
+      eindeutigeAgenten: vorkommen.size,
+      ausserhalb: document.querySelectorAll('#shipWorld [data-agent]').length - raeume,
+      mehrfach,
+    };
+  });
+}
+
 async function mitte(page) {
   const box = await page.locator('#shipViewport').boundingBox();
   pruefe(box && box.width > 200 && box.height > 200, 'Schiffsviewport ist nicht sichtbar');
@@ -97,6 +125,13 @@ async function main() {
 
   try {
     await ladeSchiff(page);
+    const cluster = await pruefeCluster(page);
+    pruefe(cluster.mehrfach.length === 0,
+      `Agenten erscheinen in mehreren Schiffsclustern: ${cluster.mehrfach.join('; ')}`);
+    pruefe(cluster.ausserhalb === 0,
+      `${cluster.ausserhalb} Agentenraum/-räume liegen ausserhalb der Schiffscluster`);
+    pruefe(cluster.raeume === 103 && cluster.eindeutigeAgenten === 103,
+      `Schiffscluster enthalten ${cluster.raeume} Räume von ${cluster.eindeutigeAgenten} Agenten`);
     const legende = page.locator('#shipLegend');
     pruefe(!(await legende.evaluate(el => el.open)),
       'Legende ist auf schmalen Bildschirmen standardmässig offen');
@@ -180,7 +215,7 @@ async function main() {
       await page.screenshot({ path: join(opts.bilder, 'touch-final.png'), fullPage: true });
     }
     erfolgreich = true;
-    console.log(`Touch OK: Pan ${Math.round(Math.abs(nachPan.x - vorPan.x))} px · Pinch ${(vorPinch.zoom * 100).toFixed(0)} % → ${(nachPinch.zoom * 100).toFixed(0)} % · Tippen öffnet ${raumName}`);
+    console.log(`Touch OK: Pan ${Math.round(Math.abs(nachPan.x - vorPan.x))} px · Pinch ${(vorPinch.zoom * 100).toFixed(0)} % → ${(nachPinch.zoom * 100).toFixed(0)} % · ${cluster.clusters} Cluster ohne Doppelung · Tippen öffnet ${raumName}`);
   } finally {
     if (!erfolgreich && opts.bilder) {
       await page.screenshot({ path: join(opts.bilder, 'touch-fehler.png'), fullPage: true }).catch(() => {});
