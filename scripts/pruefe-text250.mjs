@@ -853,11 +853,44 @@ async function pruefeZoom(page, ansicht) {
 }
 
 /**
+ * Prüft, ob alle elf sichtbaren Abteilungscluster des Raumschiffs gerendert
+ * sind. Die Cluster kommen aus der Company-API und werden asynchron geladen;
+ * ein fehlender oder doppelter Buchstabe muss auffallen.
+ */
+async function pruefeSchiffCluster(page) {
+  await page.waitForFunction(() => {
+    const tag = document.querySelector('#companyTag')?.textContent || '';
+    return document.querySelectorAll('#shipWorld .ship-dept').length > 0
+      || /API-FEHLER|keine Daten/.test(tag);
+  }, null, { timeout: 5000 }).catch(() => {});
+
+  const stand = await page.evaluate(() => {
+    const cluster = [...document.querySelectorAll('#shipWorld .ship-dept')];
+    return {
+      anzahl: cluster.length,
+      sichtbar: cluster.filter(el => el.getClientRects().length > 0).length,
+      codes: cluster.map(el => (el.querySelector('.ship-dept-code')?.textContent || '').trim()).filter(Boolean),
+    };
+  });
+
+  const erwartet = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'S'];
+  const befunde = [];
+  if (stand.anzahl !== erwartet.length) befunde.push(`Raumschiff: ${stand.anzahl} statt ${erwartet.length} Abteilungscluster`);
+  if (stand.sichtbar !== erwartet.length) befunde.push(`Raumschiff: ${stand.sichtbar} statt ${erwartet.length} sichtbare Abteilungscluster`);
+  const fehlend = erwartet.filter(code => !stand.codes.includes(code));
+  if (fehlend.length) befunde.push(`Raumschiff: Abteilung ${fehlend.join(', ')} fehlt`);
+  const unbekannt = stand.codes.filter(code => !erwartet.includes(code));
+  if (unbekannt.length) befunde.push(`Raumschiff: unbekannte Abteilung ${unbekannt.join(', ')}`);
+  return befunde;
+}
+
+/**
  * Prüft die Kerndaten der inhaltlichen Ansichten gegen /api/report.
  * Layout wird separat gemessen; hier zählt, dass die richtigen Zahlen und
  * Datensätze aus dem Bericht tatsächlich in der Ansicht ankommen.
  */
 async function pruefeInhalte(page, ansicht) {
+  if (ansicht === 'ship') return pruefeSchiffCluster(page);
   if (!['strat', 'research', 'agents', 'konf'].includes(ansicht)) return null;
 
   const daten = await page.evaluate(async (ansicht) => {
@@ -1157,6 +1190,17 @@ async function pruefeNegativtest(url) {
           const tabs = [...document.querySelectorAll('#depTabs .tab')];
           if (!tabs.length) throw new Error('Abteilungstabs nicht gefunden');
           tabs[tabs.length - 1].remove();
+        }),
+      },
+      {
+        ansicht: 'ship',
+        name: 'Raumschiff-Abteilungscluster',
+        mutieren: () => page.evaluate(() => {
+          const cluster = [...document.querySelectorAll('#shipWorld .ship-dept')];
+          if (cluster.length !== 11) throw new Error('Schiffscluster nicht vollständig gefunden');
+          const s = cluster.find(el => (el.querySelector('.ship-dept-code')?.textContent || '').trim() === 'S');
+          if (!s) throw new Error('Schiffscluster S nicht gefunden');
+          s.remove();
         }),
       },
       {
