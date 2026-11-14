@@ -169,7 +169,8 @@ Sprungmarken innerhalb derselben Datei. Der Lauf schlägt fehl, wenn ein Ziel od
 ein Anker fehlt oder ein alter Deck- oder Navigationsbegriff auftaucht.
 `--negativtest` erzeugt absichtlich einen kaputten Link, vier falsche Anker und
 mehrere alte Deck- und Navigationsangaben; alles muss erkannt werden. Der eigene
-CI-Job `doku` führt beide Läufe aus.
+CI-Job `doku` führt beide Läufe aus, sobald Markdown-Dateien oder das Prüfskript
+geändert wurden; andernfalls wird er übersprungen.
 
 ## Browser-Prüfung bei grosser Schrift
 
