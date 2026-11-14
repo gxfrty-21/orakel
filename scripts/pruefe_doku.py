@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prüft relative Markdown-Links und veraltete Raumschiff-Begriffe.
+"""Prüft relative Markdown-Links, Überschriften-Anker und veraltete Schiffsbegriffe.
 
 Der Lauf ist bewusst ohne Zusatzpakete nutzbar, damit er in der CI schnell
 bleibt. Relative Pfade werden vom jeweiligen Dokument aus aufgelöst. Bei
@@ -24,14 +24,21 @@ SKIP_DIRS = {
     ".pytest_cache", ".next", "dist", "build", "target",
 }
 
-# Begriffe, die eine frühere Decks-Zählung beschreiben. Die aktuellen
-# Planungsdokumente dürfen historische acht Decks erwähnen, solange sie klar
-# als Planung gekennzeichnet sind; diese konkreten Kurzformen sind dagegen
-# irreführend für die aktuelle 103-Raum-Ansicht.
+# Begriffe, die eine frühere Decks-Zählung oder Navigation beschreiben. Die
+# aktuellen Planungsdokumente dürfen historische acht Decks erwähnen, solange
+# sie klar als Planung gekennzeichnet sind; diese konkreten Kurzformen sind
+# dagegen irreführend für die aktuelle 103-Raum-Ansicht.
 VERALTETE_BEGRIFFE = (
     (re.compile(r"\b(?:drei|3)\s+Decks?\b", re.IGNORECASE), "drei Decks"),
     (re.compile(r"\b(?:zwei|2)\s+Decks?\b", re.IGNORECASE), "zwei Decks"),
     (re.compile(r"\bDecks?\s+[ABC]\b", re.IGNORECASE), "Deck A/B/C"),
+    (re.compile(r"\bSchiffsdecks?\b", re.IGNORECASE), "Schiffsdeck"),
+    (re.compile(r"\bDecks?karte\b", re.IGNORECASE), "Deckkarte"),
+    (re.compile(r"\bKommandozentrale\b", re.IGNORECASE), "Kommandozentrale"),
+    (re.compile(
+        r"\bNavigationspunkt\s+\**(?:Nexus|Command[- ]Center|Agentenraum|Konferenz)\b",
+        re.IGNORECASE,
+    ), "veralteter Navigationspunkt"),
 )
 
 INLINE_LINK = re.compile(
@@ -258,7 +265,7 @@ def pruefe(root: Path) -> tuple[list[Path], int, list[str]]:
         for nummer, zeile in enumerate(text.splitlines(), 1):
             for muster, name in VERALTETE_BEGRIFFE:
                 if muster.search(zeile):
-                    befunde.append(f"{rel}:{nummer}: veralteter Raumschiff-Begriff «{name}»")
+                    befunde.append(f"{rel}:{nummer}: veralteter Raumschiff- oder Navigationsbegriff «{name}»")
     return dateien, link_anzahl, befunde
 
 
@@ -288,30 +295,36 @@ def negativtest() -> int:
             "[fehlt](docs/fehlt.md)\n"
             "[falscher Dateianker](docs/ok.md#fehlt)\n"
             "[falscher Direktanker](#fehlt)\n"
-            "Das Schiff hat drei Decks.\n",
+            "Das Schiff hat drei Decks.\n"
+            "Die Deckkarte zeigt acht Stationen.\n"
+            "Das Schiffsdeck ist alt.\n"
+            "Der Navigationspunkt **Nexus** ist entfernt.\n"
+            "Der Navigationspunkt **Agentenraum** ist entfernt.\n"
+            "Der Navigationspunkt **Command Center** ist entfernt.\n"
+            "Die Kommandozentrale ist geschlossen.\n",
             encoding="utf-8",
         )
         dateien, link_anzahl, befunde = pruefe(root)
         link_fehler = any("fehlende Datei" in befund for befund in befunde)
         anker_fehler = [befund for befund in befunde if "Überschriften-Anker" in befund]
-        begriff_fehler = any("veralteter Raumschiff-Begriff" in befund for befund in befunde)
-        if not link_fehler or len(anker_fehler) != 2 or not begriff_fehler:
+        begriff_fehler = [befund for befund in befunde if "veralteter Raumschiff- oder Navigationsbegriff" in befund]
+        if not link_fehler or len(anker_fehler) != 2 or len(begriff_fehler) != 7:
             print(
                 "Dokutest FEHLGESCHLAGEN: erwartet wurden ein fehlender Link, "
-                "zwei falsche Anker und ein veralteter Begriff, gefunden: "
+                "zwei falsche Anker und sieben veraltete Begriffe, gefunden: "
                 f"{befunde or 'keine Befunde'}",
                 file=sys.stderr,
             )
             return 1
         print(
             f"Dokutest OK: {len(dateien)} Dateien, {link_anzahl} relative Links, "
-            "fehlender Link, zwei falsche Anker und veralteter Raumschiff-Begriff erkannt"
+            "fehlender Link, zwei falsche Anker und sieben veraltete Raumschiff- und Navigationsbegriffe erkannt"
         )
     return 0
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Prüft relative Doku-Links, Überschriften-Anker und veraltete Raumschiff-Begriffe.")
+    parser = argparse.ArgumentParser(description="Prüft relative Doku-Links, Überschriften-Anker und veraltete Raumschiff- und Navigationsbegriffe.")
     parser.add_argument("--root", type=Path, default=ROOT, help="Repository-Wurzel (Standard: Projektordner)")
     parser.add_argument("--negativtest", action="store_true", help="Prüft die Prüfung mit absichtlich falschen Doku-Daten")
     args = parser.parse_args()
@@ -326,7 +339,7 @@ def main() -> int:
         return 1
     print(
         f"Doku OK: {len(dateien)} Dateien, {link_anzahl} relative Links und "
-        "0 veraltete Raumschiff-Begriffe geprüft"
+        "0 veraltete Raumschiff- und Navigationsbegriffe geprüft"
     )
     return 0
 
