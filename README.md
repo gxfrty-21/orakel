@@ -206,9 +206,9 @@ Lauf zusätzlich die Kerndaten mit `/api/report` ab: Zahl und Namen der
 bestandenen Strategien, markierte Auswahl, fünf KPIs und die fünf Kernzeilen;
 die sechs Research-Stationen mit ihren Nummern und den aus dem Bericht
 berechneten Zahlen; die elf sichtbaren Schiffsabteilungscluster A–J und S samt
-Vollständigkeit; die acht Tabs der bisherigen Agentenraum-Inhaltsprüfung (nicht
-die elf Schiffsabteilungen) mit Agentenzahl, Kopfzeile und den letzten 40
-Aktivitäten; schliesslich die vier Konferenz-Panels mit Beschluss, Modus,
+Vollständigkeit und erwarteter Agentenzahl (A–J je zehn, S drei); die acht
+Tabs der bisherigen Agentenraum-Inhaltsprüfung (nicht die elf Schiffsabteilungen) mit Agentenzahl, Kopfzeile
+und den letzten 40 Aktivitäten; schliesslich die vier Konferenz-Panels mit Beschluss, Modus,
 Berichten, Diskussion und Massnahmentabelle. Bei den Massnahmen vergleicht er
 jede Zelle mit dem API-Feld, damit auch ein bewusst leerer Verantwortlicher
 korrekt als leer erkannt wird. Die Zusammenfassung meldet
@@ -218,9 +218,10 @@ Der separate Aufruf `--negativtest` lädt die betroffenen fünf Ansichten, prüf
 zuerst den sauberen Zustand und schreibt dann absichtlich falsche Kerndaten
 ins DOM: einen falschen Strategie-KPI, eine falsche Research-Kandidatenzahl,
 eine falsche Agenten-Kopfzahl, einen entfernten Abteilungstab im Agentenraum,
-einen entfernten sichtbaren Schiffsabteilungscluster und einen falschen
-Konferenz-Testplan. Jeder Fall muss einen Befund auslösen; die CI verlangt
-`Negativtest OK: 6/6`, damit die Inhaltsprüfung auch Strukturänderungen im
+einen entfernten sichtbaren Schiffsabteilungscluster, einen geleerten
+Schiffscluster und einen falschen Konferenz-Testplan. Jeder Fall muss einen
+Befund auslösen; die CI verlangt
+`Negativtest OK: 7/7`, damit die Inhaltsprüfung auch Strukturänderungen im
 Agentenraum und am Raumschiff nicht stillschweigend übersieht.
 
 Der Standardlauf umfasst alle zwölf Ansichten inklusive der weiterhin geprüften
