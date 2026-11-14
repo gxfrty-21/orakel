@@ -1144,11 +1144,23 @@ function bindeShipDeptKnoepfe(side, agenten){
   });
 }
 
+function syncShipLegend(){
+  const box = $('#shipLegend');
+  if(!box) return;
+  const schmal = window.matchMedia('(max-width:760px)').matches;
+  const zustand = String(schmal);
+  if(box.dataset.schmal !== zustand){
+    box.open = !schmal;
+    box.dataset.schmal = zustand;
+  }
+}
+
 function renderShipLegend(depts, agenten){
   const box = $('#shipLegend');
   if(!box) return;
   box.hidden = false;
-  box.innerHTML = `<div class="sl-head"><small>SEKTOREN</small><b>${depts.length} ABTEILUNGEN</b></div>${shipDeptKnoepfe(depts, true)}`;
+  box.innerHTML = `<summary class="sl-head"><small>SEKTOREN</small><b>${depts.length} ABTEILUNGEN</b><i class="sl-pfeil" aria-hidden="true"></i></summary>${shipDeptKnoepfe(depts, true)}`;
+  syncShipLegend();
   bindeShipDeptKnoepfe(box, agenten);
 }
 
@@ -1454,6 +1466,7 @@ function initShipControls(){
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       const bereich = $('#v-ship');
+      syncShipLegend();
       if(bereich && !bereich.hidden) fitShip();
     }, 160);
   });
