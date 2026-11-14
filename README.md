@@ -159,12 +159,15 @@ tests/           Risiko, Backtest, Daten, Bericht
 ## Doku-Prüfung
 
 `python scripts/pruefe_doku.py` prüft die versionierten Markdown-Dateien auf
-relative Links und veraltete Deck-Angaben. Jeder relative Pfad wird vom
-jeweiligen Dokument aus aufgelöst; externe URLs und reine Sprungmarken werden
-übersprungen. Der Lauf schlägt fehl, wenn ein Ziel fehlt oder ein alter
-Decks-Begriff auftaucht. `--negativtest` erzeugt absichtlich einen kaputten
-Link und eine alte Decks-Angabe; beides muss erkannt werden. Der
-`pytest`-Job führt beide Läufe aus.
+relative Links, vorhandene Überschriften-Anker und veraltete Deck-Angaben.
+Jeder relative Pfad wird vom jeweiligen Dokument aus aufgelöst; externe URLs
+werden übersprungen. Relative Links mit `#Sprungmarke` werden zusätzlich gegen
+die aus den Überschriften erzeugten GitHub-Anker geprüft, auch reine
+Sprungmarken innerhalb derselben Datei. Der Lauf schlägt fehl, wenn ein Ziel
+oder ein Anker fehlt oder ein alter Decks-Begriff auftaucht. `--negativtest`
+erzeugt absichtlich einen kaputten Link, zwei falsche Anker und eine alte
+Decks-Angabe; alles muss erkannt werden. Der `pytest`-Job führt beide Läufe
+aus.
 
 ## Browser-Prüfung bei grosser Schrift
 
