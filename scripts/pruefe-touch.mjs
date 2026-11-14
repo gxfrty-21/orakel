@@ -7,7 +7,9 @@
  *   - Zwei-Finger-Pinch zoomt danach hinein,
  *   - Tippen auf einen Raum öffnet die Ops-Details,
  *   - die Abteilungslegende startet schmal eingeklappt und lässt sich aufklappen,
- *   - kein Agent erscheint gleichzeitig in mehreren Schiffsclustern.
+ *   - kein Agent erscheint gleichzeitig in mehreren Schiffsclustern,
+ *   - die mobilen Raumgrössen bleiben erhalten,
+ *   - nach «Fit» liegen alle 103 Räume und elf Abteilungen im Schiffsviewport.
  *
  * Der Test ist für die Seed-Datenbank gedacht und läuft ohne Test-Framework.
  *
@@ -114,6 +116,47 @@ async function pruefeCluster(page) {
   });
 }
 
+async function pruefeFit(page, breite, minBreite, minHoehe) {
+  await page.evaluate(() => document.querySelector('[data-ship-zoom="fit"]').click());
+  await page.waitForTimeout(350);
+  const fit = await page.evaluate(() => {
+    const vp = document.querySelector('#shipViewport').getBoundingClientRect();
+    const boxes = (selektor) => [...document.querySelectorAll(selektor)]
+      .map(el => el.getBoundingClientRect());
+    const ausserhalb = (liste) => liste.filter(r =>
+      r.left < vp.left - 1 || r.top < vp.top - 1
+      || r.right > vp.right + 1 || r.bottom > vp.bottom + 1).length;
+    const raeume = boxes('#shipWorld .agent-room');
+    const abteilungen = boxes('#shipWorld .ship-dept');
+    return {
+      zoom: document.querySelector('#shipZoomWert')?.textContent?.trim() || '',
+      raeume: {
+        anzahl: raeume.length,
+        minBreite: Math.min(...raeume.map(r => r.width)),
+        minHoehe: Math.min(...raeume.map(r => r.height)),
+        ausserhalb: ausserhalb(raeume),
+      },
+      abteilungen: {
+        anzahl: abteilungen.length,
+        ausserhalb: ausserhalb(abteilungen),
+      },
+    };
+  });
+  pruefe(fit.raeume.anzahl === 103,
+    `${breite} px: Fit zeigt ${fit.raeume.anzahl} statt 103 Räume`);
+  pruefe(fit.abteilungen.anzahl === 11,
+    `${breite} px: Fit zeigt ${fit.abteilungen.anzahl} statt 11 Abteilungen`);
+  pruefe(fit.raeume.minBreite >= minBreite,
+    `${breite} px: kleinster Raum ist ${fit.raeume.minBreite.toFixed(1)} px breit, erwartet mindestens ${minBreite} px`);
+  pruefe(fit.raeume.minHoehe >= minHoehe,
+    `${breite} px: kleinster Raum ist ${fit.raeume.minHoehe.toFixed(1)} px hoch, erwartet mindestens ${minHoehe} px`);
+  pruefe(fit.raeume.ausserhalb === 0,
+    `${breite} px: ${fit.raeume.ausserhalb} Räume liegen ausserhalb des Schiffsviewports`);
+  pruefe(fit.abteilungen.ausserhalb === 0,
+    `${breite} px: ${fit.abteilungen.ausserhalb} Abteilungen liegen ausserhalb des Schiffsviewports`);
+  return fit;
+}
+
 async function mitte(page) {
   const box = await page.locator('#shipViewport').boundingBox();
   pruefe(box && box.width > 200 && box.height > 200, 'Schiffsviewport ist nicht sichtbar');
@@ -139,6 +182,8 @@ async function main() {
 
   try {
     await ladeSchiff(page);
+    // Mindestwerte knapp unter den gemessenen 33,2 × 38,9 px bei 390 px.
+    const fit390 = await pruefeFit(page, 390, 32.5, 38);
     const cluster = await pruefeCluster(page);
     pruefe(cluster.mehrfach.length === 0,
       `Agenten erscheinen in mehreren Schiffsclustern: ${cluster.mehrfach.join('; ')}`);
@@ -228,8 +273,29 @@ async function main() {
     if (opts.bilder) {
       await page.screenshot({ path: join(opts.bilder, 'touch-final.png'), fullPage: true });
     }
+
+    // Dieselben Mindestgrössen und die vollständige Fit-Sichtbarkeit zusätzlich
+    // auf dem schmalen 320-px-Viewport prüfen.
+    let fit320;
+    const schmalContext = await browser.newContext({
+      viewport: { width: 320, height: 700 },
+      screen: { width: 320, height: 700 },
+      deviceScaleFactor: 3,
+      isMobile: true,
+      hasTouch: true,
+    });
+    try {
+      const schmalPage = await schmalContext.newPage();
+      await ladeSchiff(schmalPage);
+      // Mindestwerte knapp unter den gemessenen 26,6 × 31,2 px bei 320 px.
+      fit320 = await pruefeFit(schmalPage, 320, 26, 31);
+    } finally {
+      await schmalContext.close();
+    }
+
     erfolgreich = true;
-    console.log(`Touch OK: Pan ${Math.round(Math.abs(nachPan.x - vorPan.x))} px · Pinch ${(vorPinch.zoom * 100).toFixed(0)} % → ${(nachPinch.zoom * 100).toFixed(0)} % · ${cluster.clusters} Cluster ohne Doppelung · Tippen öffnet ${raumName}`);
+    const fitText = (fit) => `${fit.zoom} · min. ${fit.raeume.minBreite.toFixed(1)}×${fit.raeume.minHoehe.toFixed(1)} px · ${fit.raeume.anzahl - fit.raeume.ausserhalb}/${fit.raeume.anzahl} sichtbar`;
+    console.log(`Touch OK: Pan ${Math.round(Math.abs(nachPan.x - vorPan.x))} px · Pinch ${(vorPinch.zoom * 100).toFixed(0)} % → ${(nachPinch.zoom * 100).toFixed(0)} % · ${cluster.clusters} Cluster ohne Doppelung · Tippen öffnet ${raumName} · Fit 390 px ${fitText(fit390)} · Fit 320 px ${fitText(fit320)}`);
   } catch (fehler) {
     fehlerText = fehler instanceof Error ? fehler.message : String(fehler);
     throw fehler;
