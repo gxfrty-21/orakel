@@ -2,7 +2,7 @@
 
 **Status:** Profile und Tages-Tasks in Phase 1 umgesetzt; 103 Profile im 2D-Agenten-Querschnitt sichtbar; Management/Konferenz offen<br>
 **Gesamtzahl:** 103 Personen (100 Fachagenten, 3 Sekretäre)  
-**Abteilungen:** 10 Fachabteilungen (A–J) × 10 plus Executive Secretariat (S) × 3; im Schiff elf Abteilungsgruppen<br>
+**Abteilungen:** 10 Fachabteilungen (A–J) × 10 plus Executive-Sekretariat (S) × 3; im Schiff elf Abteilungsgruppen<br>
 **Grundlage:** die 80 bestehenden Rollen aus `orakel/agents.py`, unverändert
 übernommen und um zwei Abteilungen ergänzt
 
@@ -19,16 +19,16 @@ CEO Gianluca (Owner)
 │   A1 Atlas · B1 Lyra · C1 Ada · D1 Luca · E1 Mira
 │   F1 Iris · G1 Edith · H1 Armin · I1 Selina · J1 Helena
 │
-├── A Command Center ............ 10
+├── A Hauptzentrale ............. 10
 ├── B Spider Intelligence ....... 10
-├── C Innovation Laboratory ..... 10
+├── C Labor ..................... 10
 ├── D Trading Floor ............. 10
-├── E Research Department ....... 10
-├── F Risk Management ........... 10
-├── G Knowledge Center .......... 10
-├── H Engineering Department .... 10
-├── I Global Intelligence ....... 10
-└── J Security Operations ....... 10
+├── E Forschungsabteilung ....... 10
+├── F Risikomanagement .......... 10
+├── G Wissenszentrum ............ 10
+├── H Entwicklungsabteilung ..... 10
+├── I Globale Intelligence ...... 10
+└── J Sicherheit ................ 10
 │
 └── Mitternachtskonferenz (Ebene 3, alle 103)
 ```
@@ -42,21 +42,20 @@ Die Konferenz entscheidet unternehmensweite Fragen innerhalb der Policy.
 
 | Code | Abteilung | Leitung | Stellvertretung | Standort | Auftrag |
 |---|---|---|---|---|---|
-| A | Command Center | A1 Atlas | A2 Mara | E6-01/02 | Gesamtüberblick, Tagesordnung, Prioritäten, Freigabeabgleich |
+| A | Hauptzentrale | A1 Atlas | A2 Mara | E6-01/02 | Gesamtüberblick, Tagesordnung, Prioritäten, Freigabeabgleich |
 | B | Spider Intelligence | B1 Lyra | B5 Ines | E4-01/02 | Quellen, Recherche, Artikel, Weiterleitung |
-| C | Innovation Laboratory | C1 Ada | C5 Elin | E5-01 | Hypothesen, Strategien, Backtests, Aussortieren |
+| C | Labor | C1 Ada | C5 Elin | E5-01 | Hypothesen, Strategien, Backtests, Aussortieren |
 | D | Trading Floor | D1 Luca | D6 Omar | E3-01/02 | Signale, Paper-Ausführung, Positionen, Journal |
-| E | Research Department | E1 Mira | E4 David | E5-02/03 | Statistik, Modelle, Regime, wissenschaftliche Prüfung |
-| F | Risk Management | F1 Iris | F2 Karim | E1-01 | Kapitalrisiko, Grenzen, Datenqualität, Veto |
-| G | Knowledge Center | G1 Edith | G9 Leni | E0-01 | Vault, Verknüpfung, Archive, Konferenzprotokolle |
-| H | Engineering Department | H1 Armin | H3 Jari | E2-01/02 | Code, Tests, Server, Schnittstellen, Regression |
-| I | Global Intelligence Observatory | I1 Selina | I7 Esra | E6-03 | Globale Lage, Cross-Asset-Kontext, Fusion |
-| J | Security Operations | J1 Helena | J7 Bo | E1-02 | Zugriff, Datenintegrität, Inhalts- und Systemsicherheit |
+| E | Forschungsabteilung | E1 Mira | E4 David | E5-02/03 | Statistik, Modelle, Regime, wissenschaftliche Prüfung |
+| F | Risikomanagement | F1 Iris | F2 Karim | E1-01 | Kapitalrisiko, Grenzen, Datenqualität, Veto |
+| G | Wissenszentrum | G1 Edith | G9 Leni | E0-01 | Vault, Verknüpfung, Archive, Konferenzprotokolle |
+| H | Entwicklungsabteilung | H1 Armin | H3 Jari | E2-01/02 | Code, Tests, Server, Schnittstellen, Regression |
+| I | Globale Intelligence | I1 Selina | I7 Esra | E6-03 | Globale Lage, Cross-Asset-Kontext, Fusion |
+| J | Sicherheit | J1 Helena | J7 Bo | E1-02 | Zugriff, Datenintegrität, Inhalts- und Systemsicherheit |
 
-**Umbenennungen gegenüber dem Ist-Zustand:** A „Hauptzentrale“ → Command Center;
-C „Labor“ → Innovation Laboratory; E „Forschungsabteilung“ → Research Department;
-G „Wissenszentrum“ → Knowledge Center; H „Entwicklungsabteilung“ → Engineering
-Department. B, D und F behalten ihre Namen. I und J sind neu.
+**Neu gegenüber den 80 bestehenden Rollen:** I «Globale Intelligence» und
+J «Sicherheit». Die übrigen Abteilungen verwenden die Bezeichnungen der
+Schiffsansicht.
 
 ## 3. Agentenprofil — Pflichtfelder
 
@@ -94,7 +93,7 @@ der Agent sein Ergebnis zieht. Bei bestehenden Rollen entspricht sie dem heutige
 Handler in `orakel/agents.py`. Bei I und J werden neue, datengebundene Handler
 vorgesehen; sie sind noch nicht implementiert.
 
-### A — Command Center (10)
+### A — Hauptzentrale (10)
 
 | ID | Rufname | Rolle | Kernaufgabe | Ergebnisbindung |
 |---|---|---|---|---|
@@ -124,7 +123,7 @@ vorgesehen; sie sind noch nicht implementiert.
 | B9 | Noor | Weiterleiter | Erkenntnisse der richtigen Abteilung zuordnen | Weiterleitungen, Task-Queue |
 | B10 | Juno | Limitwächter | Abruflimits und robots.txt-Regeln einhalten | Spider-Konfiguration, Limits |
 
-### C — Innovation Laboratory (10)
+### C — Labor (10)
 
 | ID | Rufname | Rolle | Kernaufgabe | Ergebnisbindung |
 |---|---|---|---|---|
@@ -154,7 +153,7 @@ vorgesehen; sie sind noch nicht implementiert.
 | D9 | Sara | Handelsjournal | Trades mit Begründung ins Vault schreiben | Trades, Vault |
 | D10 | Malik | Leistungsmessung | Trefferquote und Profit Factor je Strategie führen | Trades, Auswertung |
 
-### E — Research Department (10)
+### E — Forschungsabteilung (10)
 
 | ID | Rufname | Rolle | Kernaufgabe | Ergebnisbindung |
 |---|---|---|---|---|
@@ -169,7 +168,7 @@ vorgesehen; sie sind noch nicht implementiert.
 | E9 | Ema | Literatur | Fachliche Grundlagen im Vault verlinken | Vault, Artikel |
 | E10 | Leo | Reviewer | Fremde Ergebnisse fachlich hinterfragen | Validierungen, Vault |
 
-### F — Risk Management (10)
+### F — Risikomanagement (10)
 
 | ID | Rufname | Rolle | Kernaufgabe | Ergebnisbindung |
 |---|---|---|---|---|
@@ -184,7 +183,7 @@ vorgesehen; sie sind noch nicht implementiert.
 | F9 | Klara | Überoptimierungs-Wächter | Zu schöne Ergebnisse hinterfragen | Validierungen, Richter |
 | F10 | Boris | Vetorecht | Käufe ablehnen, wenn eine Grenze verletzt ist | Grenzen, Risikostatus |
 
-### G — Knowledge Center (10)
+### G — Wissenszentrum (10)
 
 | ID | Rufname | Rolle | Kernaufgabe | Ergebnisbindung |
 |---|---|---|---|---|
@@ -199,7 +198,7 @@ vorgesehen; sie sind noch nicht implementiert.
 | G9 | Leni | Entscheidungs-Archivar / Stellvertretung | Entscheide mit Begründung ablegen | Konferenz, Vault |
 | G10 | Arne | Konferenz-Archivar | Protokolle der Mitternachtskonferenz ablegen | Konferenz, Vault |
 
-### H — Engineering Department (10)
+### H — Entwicklungsabteilung (10)
 
 | ID | Rufname | Rolle | Kernaufgabe | Ergebnisbindung |
 |---|---|---|---|---|
@@ -214,7 +213,7 @@ vorgesehen; sie sind noch nicht implementiert.
 | H9 | Fine | Sicherheits-Prüfer | Keine Zugangsdaten in Dateien finden | Repo-Scan, ohne Werte |
 | H10 | Oskar | Regressions-Prüfer | Letzte Ergebnisse mit vorherigen vergleichen | Läufe, Tests |
 
-### I — Global Intelligence Observatory (10, neu)
+### I — Globale Intelligence (10, neu)
 
 | ID | Rufname | Rolle | Kernaufgabe | Ergebnisbindung |
 |---|---|---|---|---|
@@ -233,7 +232,7 @@ vorgesehen; sie sind noch nicht implementiert.
 Statistik und Wissenschaft. D handelt im Paper-Modus. I9 darf niemals selbst eine
 Order auslösen; ein fusioniertes Signal geht als Vorschlag an D und F.
 
-### J — Security Operations (10, neu)
+### J — Sicherheit (10, neu)
 
 | ID | Rufname | Rolle | Kernaufgabe | Ergebnisbindung |
 |---|---|---|---|---|
@@ -374,7 +373,7 @@ Jeder Agent hat drei Gedächtnisebenen:
    Präferenzen, Leistungsmetriken, gelernte Checklisten. Keine Roh-Secrets.
 3. **Langzeitgedächtnis:** Vault-Notizen mit Frontmatter, Tags, Quellen und
    Links. Jeder Agent darf nur in seinem Scope schreiben; gemeinsames Wissen
-   entsteht über das Knowledge Center und Nachrichten.
+   entsteht über das Wissenszentrum und Nachrichten.
 
 Die Aufgabenhistorie ist unveränderlich: jede Task erzeugt Ereignisse
 (`created`, `accepted`, `started`, `result`, `reviewed`, `closed`, `failed`).
