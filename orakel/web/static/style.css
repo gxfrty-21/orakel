@@ -1199,7 +1199,17 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 .room-v1 .ar-interior{background-position:0 0,0 0,0 0}
 .room-v1 .ar-chair{right:18%}
 .room-v2 .ar-screen{right:7%}
-@media(max-width:760px){.ship-viewport{height:500px}}
+/* Schmale Bühne: höhere Miniaturräume und kompaktere Hüllabstände, damit alle elf Abteilungen im Fit bleiben */
+@media(max-width:760px){
+  .ship-viewport{height:clamp(540px,76vh,700px)}
+  .ship-world{width:1000px;padding:6px 6px 8px}
+  .ship-hull{padding:12px 16px 10px}
+  .ship-depts{gap:2px}
+  .ship-dept-rooms{gap:1px;padding:1px}
+  .agent-room,.ship-void{height:110px}
+  .common-room{min-height:84px}
+}
+@media(max-width:520px){.ship-stage{margin-left:-8px;margin-right:-8px}}
 /* Kompakte Abteilungslegende in der Ops-Konsole */
 .sd-legend-block{margin-top:10px}
 .sd-legend{display:grid;grid-template-columns:1fr;gap:2px;margin-top:6px}
