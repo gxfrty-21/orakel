@@ -240,9 +240,10 @@ Fehlschlag, Abbruch oder Timeout hoch und bewahrt sie 7 Tage auf. Screenshots
 entstehen nur bei Befunden. Ein eigener Step `Seed-Tastaturlauf` startet eine
 frische Seed-Kopie auf Port 3100 und prüft die fünf Stichproben bei 360, 320
 und 280 px ausschliesslich über Home, Pfeil rechts und Ende. Zusätzlich prüft er
-die elf Schiffscluster samt erwarteter Agentenzahl. Er verlangt in der Ausgabe
-`Tastatur 3× geprüft` und `Inhalte 3× geprüft`, damit ein stilles Überspringen
-als Fehler auffällt.
+die elf Schiffscluster samt erwarteter Agentenzahl und die Ops-Abteilungslegende
+(elf Einträge, kompakter Kopf, eingeklappt und per Tastatur aufklappbar).
+Er verlangt in der Ausgabe `Tastatur 3× geprüft`, `Inhalte 3× geprüft` und
+`Legende 3× geprüft`, damit ein stilles Überspringen als Fehler auffällt.
 
 ```bash
 # Dashboard mit Beispieldaten starten, ohne die eigene DB anzufassen

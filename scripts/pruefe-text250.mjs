@@ -905,6 +905,78 @@ async function pruefeSchiffCluster(page) {
 }
 
 /**
+ * Prüft die Ops-Abteilungslegende im Schiff: elf Einträge, kompakter Kopf und
+ * auf schmalen Seed-Breiten eingeklappt sowie per Tastatur aufklappbar.
+ */
+async function pruefeOpsLegende(page) {
+  const stand = await page.evaluate(() => {
+    const el = document.querySelector('#shipLegend');
+    if (!el) return null;
+    const kopf = el.querySelector('summary');
+    const depts = [...el.querySelectorAll('[data-dept]')];
+    return {
+      sichtbar: !el.hidden && el.getClientRects().length > 0,
+      schmal: window.matchMedia('(max-width:760px)').matches,
+      offen: el.open,
+      kopf: (kopf?.innerText || '').replace(/\s+/g, ' ').trim(),
+      anzahl: depts.length,
+      codes: depts.map(b => (b.querySelector('b')?.textContent || '').trim().split('·')[0].trim()),
+    };
+  });
+  if (!stand) return ['Raumschiff: Ops-Abteilungslegende fehlt'];
+
+  const befunde = [];
+  if (!stand.sichtbar) {
+    befunde.push('Raumschiff: Ops-Abteilungslegende ist nicht sichtbar');
+    return befunde;
+  }
+  const erwartet = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'S'];
+  if (stand.anzahl !== erwartet.length) {
+    befunde.push(`Raumschiff: Ops-Abteilungslegende zeigt ${stand.anzahl} statt ${erwartet.length} Abteilungen`);
+  }
+  const fehlend = erwartet.filter(code => !stand.codes.includes(code));
+  const unbekannt = stand.codes.filter(code => !erwartet.includes(code));
+  if (fehlend.length) befunde.push(`Raumschiff: Ops-Abteilungslegende ohne Abteilung ${fehlend.join(', ')}`);
+  if (unbekannt.length) befunde.push(`Raumschiff: Ops-Abteilungslegende mit unbekannter Abteilung ${unbekannt.join(', ')}`);
+  if (!/SEKTOREN/.test(stand.kopf)) befunde.push('Raumschiff: Ops-Abteilungslegende ohne «SEKTOREN» im Kopf');
+  if (!/11 ABTEILUNGEN/.test(stand.kopf)) befunde.push(`Raumschiff: Ops-Abteilungslegende ohne «11 ABTEILUNGEN» im Kopf («${stand.kopf}»)`);
+
+  if (!stand.schmal) {
+    if (!stand.offen) befunde.push('Raumschiff: Ops-Abteilungslegende ist auf breiten Bildschirmen eingeklappt');
+    return befunde;
+  }
+  if (stand.offen) befunde.push('Raumschiff: Ops-Abteilungslegende startet auf schmalen Bildschirmen offen');
+
+  const kopf = page.locator('#shipLegend > summary');
+  if (!(await kopf.count())) {
+    befunde.push('Raumschiff: Ops-Abteilungslegende hat keinen aufklappbaren Kopf');
+    return befunde;
+  }
+  await kopf.focus();
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(150);
+  const auf = await page.evaluate(() => {
+    const el = document.querySelector('#shipLegend');
+    const depts = [...el.querySelectorAll('[data-dept]')];
+    return {
+      offen: el.open,
+      sichtbar: depts.filter(b => b.getClientRects().length > 0).length,
+    };
+  });
+  if (!auf.offen) befunde.push('Raumschiff: Ops-Abteilungslegende lässt sich per Tastatur nicht aufklappen');
+  if (auf.sichtbar !== erwartet.length) {
+    befunde.push(`Raumschiff: aufgeklappte Ops-Abteilungslegende zeigt ${auf.sichtbar} statt ${erwartet.length} Abteilungen`);
+  }
+  if (auf.offen) {
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(100);
+    const zu = await page.evaluate(() => document.querySelector('#shipLegend').open);
+    if (zu) befunde.push('Raumschiff: Ops-Abteilungslegende lässt sich per Tastatur nicht wieder einklappen');
+  }
+  return befunde;
+}
+
+/**
  * Prüft die Kerndaten der inhaltlichen Ansichten gegen /api/report.
  * Layout wird separat gemessen; hier zählt, dass die richtigen Zahlen und
  * Datensätze aus dem Bericht tatsächlich in der Ansicht ankommen.
@@ -1414,7 +1486,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const fehler = [];
   const hinweise = new Set();
-  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, inhaltGesamt = 0;
+  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, inhaltGesamt = 0, legendeGesamt = 0;
 
   try {
     for (const breite of opt.breiten) {
@@ -1454,6 +1526,10 @@ async function main() {
         if (inhaltsBefunde) {
           inhaltGesamt++;
           for (const text of inhaltsBefunde) fehler.push(`${breite}px/${ansicht}: ${text}`);
+        }
+        if (ansicht === 'ship') {
+          legendeGesamt++;
+          for (const text of await pruefeOpsLegende(page)) fehler.push(`${breite}px/${ansicht}: ${text}`);
         }
 
         if (ansicht === 'lab') {
@@ -1496,7 +1572,7 @@ async function main() {
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  console.log(`OK: keine Überläufe${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {
