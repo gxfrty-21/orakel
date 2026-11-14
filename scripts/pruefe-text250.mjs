@@ -17,7 +17,7 @@
  * Optionen:
  *   --url <adresse>        Standard http://127.0.0.1:3000
  *   --breiten 360,320,280  Standard 360,320,280
- *   --ansichten lab,kb     Standard alle sieben Ansichten
+ *   --ansichten lab,kb     Standard alle acht Ansichten
  *   --ohne-tabellen        Nur Seitenüberläufe prüfen, Tabellen überspringen
  *   --bilder <verzeichnis> Schreibt bei Befunden je Ansicht und Breite einen Screenshot
  */
@@ -28,8 +28,8 @@ import { chromium } from 'playwright';
 
 const LANGS = 'Donaudampfschifffahrtsgesellschaftskapitänsmützenhalterungsverordnung';
 const LANGES_LABEL = 'Bevölkerungsentwicklungsprognoseberechnungsgrundlagenverordnung';
-const STANDARD_ANSICHTEN = ['overview', 'risk', 'lab', 'betrieb', 'spider', 'globe', 'kb'];
-const WARTEZEIT = { overview: 300, risk: 350, lab: 400, betrieb: 750, spider: 650, globe: 1300, kb: 1500 };
+const STANDARD_ANSICHTEN = ['overview', 'risk', 'lab', 'betrieb', 'spider', 'globe', 'kb', 'ship'];
+const WARTEZEIT = { overview: 300, risk: 350, lab: 400, betrieb: 750, spider: 650, globe: 1300, kb: 1500, ship: 1500 };
 
 function argumente(argv) {
   const opts = {
@@ -48,7 +48,7 @@ function argumente(argv) {
     else if (arg === '--bilder') opts.bilder = argv[++i];
     else if (arg === '--hilfe' || arg === '-h') {
       console.log('Aufruf: node scripts/pruefe-text250.mjs [--url URL] [--breiten 360,320,280]\n' +
-        '       [--ansichten overview,risk,lab,betrieb,spider,globe,kb] [--ohne-tabellen]\n' +
+        '       [--ansichten overview,risk,lab,betrieb,spider,globe,kb,ship] [--ohne-tabellen]\n' +
         '       [--bilder <verzeichnis>]');
       process.exit(0);
     }
@@ -872,6 +872,14 @@ async function main() {
       for (const ansicht of opt.ansichten) {
         await page.click(`.nav[data-v="${ansicht}"]`);
         await page.waitForTimeout(WARTEZEIT[ansicht]);
+        if (ansicht === 'ship') {
+          // Die Company-API wird beim Öffnen asynchron geladen. Auf ihren
+          // Endzustand warten, damit die Messung nicht die Ladeansicht trifft.
+          await page.waitForFunction(() => {
+            const text = document.querySelector('#companyTag')?.textContent || '';
+            return /live|API-FEHLER|keine Daten/.test(text);
+          }, null, { timeout: 5000 });
+        }
         let kurveGefunden = null;
         if (ansicht === 'lab') kurveGefunden = await waehleKurvenKandidat(page);
         await skaliere(page, 2.5);

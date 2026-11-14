@@ -283,11 +283,11 @@ button.li:hover{background:var(--panel2)}
 .deck-c{border-color:rgba(255,184,77,.28);background:rgba(26,16,10,.55)}
 .deck-c .deck-label{color:var(--amber)}
 .deck-c .deck-rooms{grid-template-columns:repeat(4,minmax(0,1fr))}
-.exec-room{position:relative;display:flex;flex-direction:column;gap:6px;min-height:132px;padding:10px;
+.exec-room{position:relative;display:flex;flex-direction:column;gap:6px;min-height:132px;min-width:0;padding:10px;
   border:1px solid rgba(255,184,77,.25);border-radius:6px;overflow:hidden;
   background:linear-gradient(180deg,rgba(60,38,14,.5),rgba(18,10,22,.85))}
 .exec-code{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;color:var(--amber)}
-.exec-room b{font-size:12.5px;font-weight:500;color:var(--fg)}
+.exec-room b{font-size:12.5px;font-weight:500;color:var(--fg);min-width:0;overflow-wrap:anywhere}
 .exec-kpis{display:flex;gap:10px;flex-wrap:wrap;font-family:var(--mono);font-size:12px;color:var(--fg)}
 .exec-kpis small{display:block;font-size:8.5px;letter-spacing:.12em;color:var(--dim)}
 .exec-list{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--muted);min-width:0}
