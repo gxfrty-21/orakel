@@ -1,7 +1,7 @@
 # Masterplan — Technik, autonomes Management und Umsetzung
 
-**Status:** P0 und P1 umgesetzt; P2 begonnen (Company-Lese-API für Übersicht,
-Agentenstatus und offene Aufgaben); 3D-Hülle und P3–P7 nicht begonnen<br>
+**Status:** P0 und P1 umgesetzt; P2 teilweise umgesetzt: Company-Lese-API und
+2D-Agenten-Querschnitt (103 Räume, elf Abteilungen); 3D-Hülle und P3–P7 nicht begonnen<br>
 **Gehört zu:** [README.md](README.md), [RAUMBUCH.md](RAUMBUCH.md), [AGENTEN.md](AGENTEN.md)  
 **Grundsatz:** erst echte Unternehmenssubstanz, dann 3D; Paper-only bleibt unverhandelbar.
 
@@ -75,12 +75,12 @@ Agentenstatus und offene Aufgaben); 3D-Hülle und P3–P7 nicht begonnen<br>
 |---|---|
 | FastAPI | bleibt; neue Company-Routen werden ergänzt |
 | SQLite/WAL | bleibt; neue Tabellen, keine Ablösung |
-| bestehende 80 Agenten | bleiben als Rollen erhalten; werden in 103er-Roster überführt |
+| bestehende 80 Agenten | bleiben als Lauf-Rollen erhalten; die 103 Company-Profile sind separat im 2D-Querschnitt sichtbar |
 | bestehender Paper-Broker | bleibt; keine echte Broker-Anbindung |
 | bestehende Konferenz | bleibt als Archiv; wird um normierte Sitzung, Anträge und Beschlüsse erweitert |
 | bestehendes Dashboard | bleibt; neue Unternehmenssicht und 3D werden integriert |
 | bestehende Weltkugel | bleibt; zieht als Hologramm in die Observatory |
-| `#v-ship` | wird von 2D-Deck zu 3D-Welt; 2D bleibt Fallback |
+| `#v-ship` | aktuell 2D-Agenten-Querschnitt mit 103 Räumen; 3D-Ausbau nur nach Freigabe |
 | React Three Fiber | wird nicht eingeführt |
 | Redis/Postgres | nicht in Phase 1; erst nach Messung |
 | 100 LLMs | nicht vorgesehen |
@@ -326,7 +326,7 @@ Secrets in URLs geschrieben, keine Query-Token verwendet.
 - ≤ 150.000 sichtbare Dreiecke, ≤ 120 Draw Calls.
 - Erster Raum ≤ 4 s; mobiler Modus ≤ 7 s.
 - Kein Speicherleck nach 10 Minuten Bewegen zwischen Decks.
-- Bei WebGL-Fehler: automatische 2D-Deckansicht, keine leere Seite.
+- Bei WebGL-Fehler: automatischer 2D-Agenten-Querschnitt, keine leere Seite.
 
 ## 1.10 Scheduler und Hintergrundbetrieb
 
@@ -1089,7 +1089,7 @@ Datenbindung gehen vor Tempo.
 |---|---|---:|---|
 | P0 | Analyse, Grundriss, Architektur, dieses Dossier | erledigt | Freigabevorlage |
 | P1 | Unternehmensfundament: Profile, Queue, Policy, DB, Tests | umgesetzt | 103 Profile, echte Tasks, keine 3D |
-| P2 | Company-API + 3D-Hülle: Atrium, ein Deck, Karte, Steuerung | 2–3 Wochen | Company-Lese-API umgesetzt und in `#v-ship` angebunden; 3D-Hülle offen |
+| P2 | Company-API + 3D-Hülle: Atrium, ein Deck, Karte, Steuerung | 2–3 Wochen | Company-Lese-API und 2D-Agenten-Querschnitt mit 103 Räumen umgesetzt; 3D-Hülle offen |
 | P3 | Erste zwei Abteilungen: A + D, 20 Agenten, echte Arbeit | 3–4 Wochen | vertikaler Funktionsbeweis |
 | P4 | Executive Deck, Sekretariat, CEO-Sicht und Fragen | 2–3 Wochen | S1–S3 + CEO-Büro |
 | P5 | Alle Abteilungen, 103 Agenten, alle Räume, Kommunikation | 4–6 Wochen | vollständiges Unternehmen |

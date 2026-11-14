@@ -10,7 +10,7 @@ echten Broker-Order: Der MT5-Broker verweigert Echtgeldkonten und sendet ohne
 `order_freigabe = true` nur einen Probelauf.
 
 **Raumschiff-Doku:** [docs/raumschiff/README.md](docs/raumschiff/README.md)
-— Planung und aktueller 2D-Stand (drei Decks, acht Abteilungen, Meetingraum, Sekretariat).
+— Planung und aktueller 2D-Agenten-Querschnitt (103 Räume, elf Abteilungen, Zoom/Pan, Detailspalte).
 
 ## Schnellstart
 
@@ -98,10 +98,10 @@ Unter Windows zusätzlich `pip install MetaTrader5` (nur dort verfügbar) und in
 | Risiko | 1 % je Trade bis Stop, 10 % Not-Stop, max. 15 Positionen, Engagement, Bargeld, Korrelation |
 | Broker-Schicht | `CsvBroker` (Paper-Replay), `MockBroker`, `MT5Broker` (Windows, Paper-Sperre) |
 | Agenten | 80 bestehende Agenten in 8 Abteilungen, jeder mit echter Aufgabe und Ergebnis in der DB |
-| Company-Schicht | Phase 1: 103 Profile, SQLite-Queue mit Lease/Retry, Policy-Engine, Audit-Kette; Company-Lese-API für Übersicht, Agenten und Aufgaben; 3D noch nicht |
+| Company-Schicht | Phase 1: 103 Profile, SQLite-Queue mit Lease/Retry, Policy-Engine, Audit-Kette; Company-Lese-API für Übersicht, Agenten und Aufgaben; 2D-Agenten-Querschnitt mit 103 Räumen; 3D noch nicht |
 | Konferenz | 00:00 Europe/Zurich, Nachholen verpasster Termine, Protokoll im Vault |
 | Wissenszentrum | Obsidian-Vault mit Frontmatter, Tags, `[[Links]]` |
-| Dashboard | Orakel-Design, 12 Ansichten, Live-Polling, 2D-Raumschiff, «Lauf starten» |
+| Dashboard | Orakel-Design, 12 Ansichten, Live-Polling, 2D-Agenten-Querschnitt, «Lauf starten» |
 | Dauerbetrieb | persistenter Plan, Backoff, Ressourcenlimits, Jobprotokoll und Betriebsansicht |
 
 Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswahl einmal geöffnet; scheitert er, gibt es keinen Ersatzkandidaten. Im Lab zeigt ein Chart die aggregierte Kapitalkurve der Testfenster; beim Überfahren nennt ein Tooltip Kapitalstand, Veränderung seit dem Start in Prozent, Datum sowie den bisherigen Höchststand mit Abstand in Prozent; per Tastatur (Tab, Pfeiltasten, Home/Ende) ist dieselbe Anzeige erreichbar. dort und in der Strategien-Ansicht lässt sich zudem bei jedem Kandidaten die Liste der Walk-Forward-Fenster aufklappen: Trainings- und Testblock, gewählter Parameter, Trades, Profit Factor und Netto je Fenster.
@@ -195,9 +195,10 @@ Für Strategien, Research, Agentenraum und Konferenz gleicht der Lauf zusätzlic
 die Kerndaten mit `/api/report` ab: Zahl und Namen der bestandenen Strategien,
 markierte Auswahl, fünf KPIs und die fünf Kernzeilen; die sechs
 Research-Stationen mit ihren Nummern und den aus dem Bericht berechneten
-Zahlen; alle acht Abteilungstabs im Agentenraum mit Agentenzahl, Kopfzeile und
-den letzten 40 Aktivitäten; schliesslich die vier Konferenz-Panels mit
-Beschluss, Modus, Berichten, Diskussion und Massnahmentabelle. Bei den
+Zahlen; die acht Tabs der bisherigen Agentenraum-Inhaltsprüfung (nicht die elf
+Schiffsabteilungen) mit Agentenzahl, Kopfzeile und den letzten 40 Aktivitäten;
+schliesslich die vier Konferenz-Panels mit Beschluss, Modus, Berichten, Diskussion
+und Massnahmentabelle. Bei den
 Massnahmen vergleicht er jede Zelle mit dem API-Feld, damit auch ein bewusst
 leerer Verantwortlicher korrekt als leer erkannt wird. Die Zusammenfassung
 meldet `Inhalte 12× geprüft` (vier Ansichten × drei Breiten).
@@ -210,8 +211,8 @@ und einen falschen Konferenz-Testplan. Jeder Fall muss einen Befund auslösen;
 die CI verlangt `Negativtest OK: 5/5`, damit die Inhaltsprüfung auch
 Strukturänderungen im Agentenraum nicht stillschweigend übersieht.
 
-Der Standardlauf umfasst alle zwölf Ansichten inklusive Strategien, Research,
-Agentenraum und Konferenz. Der CI-Job
+Der Standardlauf umfasst alle zwölf Ansichten inklusive der weiterhin geprüften
+Inhaltsansichten Agentenraum und Konferenz. Der CI-Job
 `text250` setzt auf dem `ubuntu-24.04`-Image auf: Chromium wird ohne
 `--with-deps` installiert, die nötigen Systembibliotheken kommen aus dem Image.
 Auch ein leerer Playwright-Cache funktioniert; der Browser wird dann frisch
@@ -308,8 +309,10 @@ Zwei neue Ansichten im Dashboard, vollständig aus echten Daten:
 
 - **Weltkugel**: Handelsplätze je Symbol, Kurs, 24-h-Änderung, ATR, Regime und Korrelationen
   (letzte 500 Kerzen). Die Kugel ist Darstellung — die Zahlen kommen aus SQLite.
-- **Raumschiff**: 2D-Deck mit den acht Abteilungen, Belegung je Raum, Befunde farbig,
-  Klick öffnet die Agentenliste und die Rohrpost des Laufs.
+- **Raumschiff**: 2D-Agenten-Querschnitt mit 103 Company-Agentenräumen in elf
+  Abteilungen (A–J und S), Zoom/Pan und rechter Detailspalte. Ein Klick öffnet Rolle,
+  Status und Aufgabe; Agentenraum und Konferenz liegen als Gemeinschaftsräume im
+  Schiff, die bisherigen Panels bleiben eingeklappt erhalten.
 
 ### Grenzen dieser Phasen (ehrlich)
 
