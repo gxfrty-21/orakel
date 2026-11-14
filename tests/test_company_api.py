@@ -140,6 +140,137 @@ def test_aufgaben_filtert_offen_status_abteilung_und_prioritaet(cfg):
         api.aufgaben(store, mindestprioritaet=101)
 
 
+def test_agentendetail_liefert_profil_historie_und_nachrichten(cfg):
+    _, store = _store(cfg)
+    ids = _beispiel_queue(store)
+    nachricht = store.nachricht_speichern(
+        thread_id="thread:a1", from_agent="A1", to_agent="A2", kind="status",
+        subject="Lage", body="Alles belegt.", evidence=[f"task:{ids['laeuft']}"],
+        requires_ack=True,
+    )
+
+    daten = api.agent_detail(store, "a1")
+
+    assert daten is not None
+    assert daten["data_state"] == "live"
+    assert daten["profil"]["agent_id"] == "A1"
+    assert daten["profil"]["active"] is True
+    assert daten["profil"]["data_scope"]
+    assert daten["status"] == "laeuft"
+    assert daten["aktuelle_aufgabe"]["id"] == ids["laeuft"]
+    assert [t["id"] for t in daten["offene_aufgaben"]] == [ids["laeuft"]]
+    assert {t["id"] for t in daten["historie"]} == {ids["laeuft"]}
+    assert daten["nachrichten"][0]["id"] == nachricht
+    assert daten["nachrichten"][0]["requires_ack"] is True
+    assert daten["nachrichten"][0]["evidence"] == [f"task:{ids['laeuft']}"]
+    assert f"agent:A1" in daten["source_refs"]
+    assert api.agent_detail(store, "GIBT-ES-NICHT") is None
+
+
+def test_nachrichten_filtert_agent_abteilung_thread_und_zeit(cfg):
+    _, store = _store(cfg)
+    m1 = store.nachricht_speichern(
+        thread_id="thread:1", from_agent="A1", to_agent="A2", kind="status",
+        subject="Erste", body="A1 an A2",
+    )
+    m2 = store.nachricht_speichern(
+        thread_id="thread:1", from_agent="A2", to_agent="A3", kind="antwort",
+        subject="Zweite", body="A2 an A3",
+    )
+    m3 = store.nachricht_speichern(
+        thread_id="thread:2", from_agent="A1", to_agent="A3", kind="status",
+        subject="Dritte", body="A1 an A3",
+    )
+
+    alle = api.nachrichten(store)
+    assert alle["data_state"] == "live"
+    assert alle["gesamt"] == 3
+    assert [m["id"] for m in alle["nachrichten"]] == [m3, m2, m1]
+    assert {t["thread_id"] for t in alle["threads"]} == {"thread:1", "thread:2"}
+    assert next(t for t in alle["threads"] if t["thread_id"] == "thread:1")["anzahl"] == 2
+
+    von_a1 = api.nachrichten(store, agent="a1")
+    assert {m["id"] for m in von_a1["nachrichten"]} == {m1, m3}
+    assert von_a1["filter"]["agent"] == "A1"
+    assert api.nachrichten(store, dept="a")["gesamt"] == 3
+    assert api.nachrichten(store, thread_id="thread:2")["gesamt"] == 1
+    assert api.nachrichten(store, seit="2999-01-01T00:00:00Z")["data_state"] == "empty"
+    with pytest.raises(ValueError):
+        api.nachrichten(store, seit="gestern")
+
+
+def test_konferenz_liefert_letzte_sitzung_und_leeren_zustand(cfg):
+    db, store = _store(cfg)
+    leer = api.konferenz(store)
+    assert leer["data_state"] == "empty"
+    assert leer["konferenz"] is None
+    assert leer["teilnahme"] == []
+
+    with db.conn() as c:
+        session = c.execute(
+            "INSERT INTO conference_sessions(scheduled_date,scheduled_at,phase,status,protocol_json)"
+            " VALUES ('2026-11-14','2026-11-14T00:00:00+00:00','abschluss','beendet','{\"titel\":\"Test\"}')"
+        ).lastrowid
+        c.execute(
+            "INSERT INTO conference_attendance(session_id,agent_id,present,role)"
+            " VALUES (?, 'A1', 1, 'leiter')", (session,))
+        c.execute(
+            "INSERT INTO conference_statements(session_id,agent_id,kind,body,evidence_json,created_at)"
+            " VALUES (?, 'A1', 'bericht', 'Belegt.', '[\"task:1\"]', '2026-11-14T00:01:00+00:00')",
+            (session,))
+        decision = c.execute(
+            "INSERT INTO company_decisions(session_id,level,title,kind,status,evidence_json,"
+            " rationale,owner,created_at,updated_at) VALUES (?, 2, 'Beschluss', 'project',"
+            " 'offen', '[\"task:1\"]', 'Begründet', 'A1',"
+            " '2026-11-14T00:02:00+00:00', '2026-11-14T00:02:00+00:00')",
+            (session,)).lastrowid
+        c.execute(
+            "INSERT INTO conference_votes(session_id,decision_id,agent_id,vote,reason,created_at)"
+            " VALUES (?, ?, 'A1', 'ja', 'Belegt', '2026-11-14T00:03:00+00:00')",
+            (session, decision))
+        c.execute(
+            "INSERT INTO company_actions(decision_id,owner,status,created_at)"
+            " VALUES (?, 'A1', 'offen', '2026-11-14T00:04:00+00:00')", (decision,))
+
+    daten = api.konferenz(store)
+    assert daten["data_state"] == "live"
+    assert daten["konferenz"]["id"] == session
+    assert daten["konferenz"]["protocol"] == {"titel": "Test"}
+    assert daten["teilnahme"][0]["present"] is True
+    assert daten["beitraege"][0]["evidence"] == ["task:1"]
+    assert daten["abstimmungen"][0]["vote"] == "ja"
+    assert daten["abstimmungen"][0]["decision_title"] == "Beschluss"
+    assert daten["entscheidungen"][0]["evidence"] == ["task:1"]
+    assert daten["massnahmen"][0]["decision_title"] == "Beschluss"
+    assert f"conference:{session}" in daten["source_refs"]
+
+
+def test_raeume_liefert_abteilungen_und_agentenstatus(cfg):
+    db, store = _store(cfg)
+    ids = _beispiel_queue(store)
+    with db.conn() as c:
+        c.execute(
+            "INSERT INTO room_state(room_id,status,active_agents,last_event,updated_at)"
+            " VALUES ('agent:A1','belegt',1,'task', '2026-11-14T00:00:00+00:00')")
+
+    daten = api.raeume(store)
+
+    assert daten["data_state"] == "live"
+    assert daten["gesamt"] == {"abteilungen": 11, "gemeinschaftsraeume": 1, "agentenraeume": 103}
+    a = next(d for d in daten["abteilungen"] if d["code"] == "A")
+    assert a["agenten"] == 10
+    assert a["offene_aufgaben"] == 3
+    assert a["laeuft"] == 1 and a["blockiert"] == 1
+    assert a["status"] == "laeuft"
+    a1 = next(r for r in daten["agentenraeume"] if r["agent_id"] == "A1")
+    assert a1["room_id"] == "agent:A1"
+    assert a1["status"] == "laeuft"
+    assert a1["task_id"] == ids["laeuft"]
+    assert daten["gemeinschaftsraeume"][0]["room_id"] == "common:agents"
+    assert daten["dynamischer_status"][0]["room_id"] == "agent:A1"
+    assert any(q == "room_state:agent:A1" for q in daten["source_refs"])
+
+
 def test_leere_company_daten_bleiben_leer(cfg):
     db = Facts(cfg.db_pfad)
     store = CompanyStore(db)
@@ -161,3 +292,15 @@ def test_leere_company_daten_bleiben_leer(cfg):
     assert aufgaben["data_state"] == "empty"
     assert aufgaben["gesamt"] == 0
     assert aufgaben["aufgaben"] == []
+
+    assert api.agent_detail(store, "A1") is None
+    nachrichten = api.nachrichten(store)
+    assert nachrichten["data_state"] == "empty"
+    assert nachrichten["nachrichten"] == []
+    assert nachrichten["threads"] == []
+    raeume = api.raeume(store)
+    assert raeume["data_state"] == "empty"
+    assert raeume["gesamt"] == {
+        "abteilungen": 0, "gemeinschaftsraeume": 0, "agentenraeume": 0,
+    }
+    assert raeume["agentenraeume"] == []

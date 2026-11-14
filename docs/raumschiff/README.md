@@ -16,9 +16,9 @@ entfernt. Die aktuelle Umsetzung ist der 2D-Agenten-Querschnitt: 103 Company-Age
 jeder mit einem eigenen Raum, gruppiert nach elf Abteilungen (A–J mit je zehn
 Fachagenten und S mit drei Sekretären). Agentenraum und Konferenz liegen als
 Gemeinschaftsräume direkt im Schiff; Meetingraum und Sekretariat bleiben unter einem
-eingeklappten Bereich erhalten. Die Company-Lese-API für Übersicht, Agentenstatus und
-offene Aufgaben ist umgesetzt, die übrige Company-API sowie Management- und
-Konferenzlogik bleiben offen.
+eingeklappten Bereich erhalten. Die Company-Lese-API für Übersicht, Agentenstatus,
+Aufgaben, Detailprofile, Nachrichten, Raumstatus und die letzte Konferenz ist
+umgesetzt; Management- und Konferenzlogik bleiben offen.
 
 ## Kurzfassung
 
@@ -64,7 +64,7 @@ wäre die im Masterprompt verbotene Dekoration. 3D ist derzeit nicht freigegeben
 | Konferenz | 00:00 Europe/Zurich, Nachholen, Protokoll, Massnahmen, Vault | Wird zum echten autonomen Führungsgremium ausgebaut |
 | Vault | Obsidian-kompatibel, Frontmatter, Tags, `[[Links]]` | Gemeinsames Langzeitgedächtnis und Konferenzarchiv |
 | Dashboard | FastAPI, 12 Ansichten, Live-Polling, 2D-Weltkugel, 2D-Agenten-Querschnitt | Aktuelle Darstellung; 3D ist zurückgestellt |
-| Tests | 209 Tests, unter anderem Risiko, Backtest, Daten, Spider, Globe, Web-Auth und 250-%-Layout | Jede neue Phase muss diese Suite grün halten |
+| Tests | 214 Tests, unter anderem Risiko, Backtest, Daten, Spider, Globe, Web-Auth und 250-%-Layout | Jede neue Phase muss diese Suite grün halten |
 | Deployment | Railway, Docker, SQLite-Volume, Basic-Auth | 2D läuft im Browser; der Server bleibt schlank |
 
 ### Was heute noch fehlt
@@ -73,7 +73,7 @@ wäre die im Masterprompt verbotene Dekoration. 3D ist derzeit nicht freigegeben
   12. November 2026 entfernt. Die 2D-Ansicht ist bewusst die aktuelle Stufe.
 - Die Company-Schicht ist additiv und mit `[unternehmen] aktiv = false` nicht in den
   laufenden Takt eingebunden; die Company-Lese-API ist da, freie
-  Agentenkommunikation und die übrigen API-Endpunkte fehlen.
+  Agentenkommunikation und die Managementlogik fehlen.
 - Keine Agenten-Gedächtnisse pro Person; der Vault ist gemeinsames Gedächtnis.
 - Keine Abteilungsleiter-Ratssitzung als Ebene 2; die Konferenz protokolliert
   Validierungszahlen, statt autonom zu führen.
@@ -190,23 +190,23 @@ Werte bleiben leer. Agentenstatus und offene Aufgaben aktualisieren sich alle
 30 Sekunden, solange die Ansicht geöffnet ist. Die Ansicht ist eine Darstellung,
 keine neue Datenquelle und keine Automation.
 
-Geprüft wird der Querschnitt mit 209 pytest-Tests, dem 250-%-Lauf über zwölf
+Geprüft wird der Querschnitt mit 214 pytest-Tests, dem 250-%-Lauf über zwölf
 Ansichten und drei Breiten sowie dem Negativtest, der acht absichtliche Fehler —
 darunter ein fehlender Abteilungstab und ein zusätzlicher Agent in einem zweiten
 Schiffscluster — erkennen muss. Der sichtbare
 Agenten-Querschnitt und die Detailspalte werden zusätzlich im Browser auf 103
 Räume, elf Abteilungen, zwei Gemeinschaftsräume und Zoom ohne Seitenfehler geprüft.
 
-**Noch nicht umgesetzt:** die übrige Company-API (Detailprofil, Nachrichten,
-Räume, Konferenz, SSE), 3D-Welt und begehbare Decks (zurückgestellt),
+**Noch nicht umgesetzt:** 3D-Welt und begehbare Decks (zurückgestellt),
 vollständige Agentenkommunikation und -gedächtnisse, autonomes Management,
 Mitternachtskonferenz als Führungsgremium, LLM und echte Broker-Orders (bewusst kein
 Codepfad).
 
 Der Agenten-Querschnitt ist der aktuelle sichtbare Teil von Phase 2. Die
-Company-Lese-API für Übersicht, Agentenstatus und offene Aufgaben ist umgesetzt.
-Als Nächstes folgen die übrige Company-API und die inhaltliche Vertiefung der
-Agentenarbeit — weiterhin ohne echte Orders. Ein 3D-Ausbau ist nicht freigegeben.
+Company-Lese-API für Übersicht, Agentenstatus, Aufgaben, Detailprofile,
+Nachrichten, Raumstatus, die letzte Konferenz und SSE-Snapshots ist umgesetzt. Als
+Nächstes folgt die inhaltliche Vertiefung der Agentenarbeit — weiterhin ohne echte
+Orders. Ein 3D-Ausbau ist nicht freigegeben.
 
 ## Offene Entscheidungen für die nächsten Phasen
 
@@ -217,8 +217,7 @@ Die Freigabe für Phase 1 wurde erteilt; die 2D-Ansicht ist umgesetzt. Die früh
    Agentenräume in elf Abteilungen und ist keine 3D-Umsetzung.
 2. 3D (First-Person, Three.js, restliche Decks) ist nicht freigegeben.
 3. Keine LLM-Pflicht: Die Agenten arbeiten deterministisch und datengebunden.
-4. Offen bleiben die übrige Company-API, Agentenkommunikation, Management und
-   Konferenz.
+4. Offen bleiben Agentenkommunikation, Management und Konferenz.
 
 Der aktuelle Arbeitsstand liegt in `orakel/company/` und
 `orakel/migrations/001_company.sql`; der 2D-Agenten-Querschnitt liegt in
