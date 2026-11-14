@@ -19,10 +19,10 @@
  *   --breiten 360,320,280  Standard 360,320,280
  *   --ansichten lab,kb     Standard alle zwölf Ansichten
  *   --ohne-tabellen        Nur Seitenüberläufe prüfen, Tabellen überspringen
- *   --bilder <verzeichnis> Schreibt bei Befunden je Ansicht und Breite einen Screenshot
+ *   --bilder <verzeichnis> Schreibt bei Befunden je Ansicht und Breite Screenshot und HTML
  */
 
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 
@@ -1393,6 +1393,9 @@ async function main() {
 
         if (opt.bilder && fehler.length > vorher) {
           const neue = fehler.slice(vorher);
+          const htmlDatei = join(opt.bilder, `${breite}px-${ansicht}.html`);
+          writeFileSync(htmlDatei, await page.content());
+          console.log(`HTML: ${htmlDatei}`);
           const clusterFehler = ansicht === 'ship'
             ? neue.filter(text => /\/ship:\s*Raumschiff:/.test(text))
             : [];

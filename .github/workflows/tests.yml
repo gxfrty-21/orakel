@@ -275,12 +275,14 @@ jobs:
           fi
 
       # Auch bei Abbruch oder Timeout: Der Job gilt dann als abgebrochen.
-      - name: Screenshots bei Fehlschlag hochladen
+      - name: Screenshots und HTML bei Fehlschlag hochladen
         if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
-          name: text250-screenshots
-          path: artifacts/text250/*.png
+          name: text250-diagnose
+          path: |
+            artifacts/text250/*.png
+            artifacts/text250/*.html
           if-no-files-found: ignore
           retention-days: 7
 

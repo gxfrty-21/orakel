@@ -264,11 +264,12 @@ bei Pfeil rechts im CI eine echte Textänderung.
 Einschränken lässt sich der Lauf mit `--ansichten lab,kb --breiten 360,280`,
 die Adresse mit `--url http://127.0.0.1:8000`, Tabellen mit `--ohne-tabellen`.
 Mit `--bilder <verzeichnis>` schreibt der Lauf bei Befunden je Ansicht und
-Breite einen Screenshot. Schiffscluster-Befunde erhalten eigene Namen wie
+Breite einen Screenshot sowie den HTML-Zustand der betroffenen Ansicht.
+Schiffscluster-Befunde erhalten eigene Bildnamen wie
 `320px-ship-cluster-01-abteilung-b-hat-11-statt-10-agenten.png`. In GitHub
 Actions läuft derselbe Prüflauf als eigener
 Job `text250` der Workflow-Datei `.github/workflows/tests.yml`; schlägt er fehl,
-lädt er die Bilder als Artefakt `text250-screenshots` und das Serverprotokoll als
+lädt er Bilder und HTML als Artefakt `text250-diagnose` und das Serverprotokoll als
 `text250-serverlog` hoch (je 7 Tage).
 
 Nach einem fehlgeschlagenen, abgebrochenen oder abgelaufenen Lauf. Die Befehle
@@ -278,9 +279,9 @@ setzen eine angemeldete GitHub CLI voraus (`gh auth login`):
 # Letzte Läufe des Workflows anzeigen
 gh run list --workflow tests.yml --limit 5
 
-# Serverlog und Screenshots des gewünschten Laufs herunterladen
+# Serverlog und Diagnose (Screenshots + HTML) des gewünschten Laufs herunterladen
 gh run download <run-id> -n text250-serverlog -D artifacts/text250-ci
-gh run download <run-id> -n text250-screenshots -D artifacts/text250-ci
+gh run download <run-id> -n text250-diagnose -D artifacts/text250-ci
 
 # Vollständiges Job-Log anzeigen (alle Jobs, inklusive text250)
 gh run view <run-id> --log
