@@ -266,8 +266,9 @@ die Adresse mit `--url http://127.0.0.1:8000`, Tabellen mit `--ohne-tabellen`.
 Mit `--bilder <verzeichnis>` schreibt der Lauf bei Befunden je Ansicht und
 Breite einen Screenshot sowie den HTML-Zustand der betroffenen Ansicht.
 Schiffscluster-Befunde erhalten eigene Bildnamen wie
-`320px-ship-cluster-01-abteilung-b-hat-11-statt-10-agenten.png`. In GitHub
-Actions läuft derselbe Prüflauf als eigener
+`320px-ship-cluster-01-abteilung-b-hat-11-statt-10-agenten.png`. Ein
+CI-Selbsttest entfernt absichtlich Cluster S und verlangt den Befund samt
+Screenshotpfad. In GitHub Actions läuft derselbe Prüflauf als eigener
 Job `text250` der Workflow-Datei `.github/workflows/tests.yml`; schlägt er fehl,
 lädt er Bilder und HTML als Artefakt `text250-diagnose` und das Serverprotokoll als
 `text250-serverlog` hoch (je 7 Tage).
