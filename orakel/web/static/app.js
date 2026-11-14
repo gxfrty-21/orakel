@@ -1144,10 +1144,20 @@ function bindeShipDeptKnoepfe(side, agenten){
   });
 }
 
+function renderShipLegend(depts, agenten){
+  const box = $('#shipLegend');
+  if(!box) return;
+  box.hidden = false;
+  box.innerHTML = `<div class="sl-head"><small>SEKTOREN</small><b>${depts.length} ABTEILUNGEN</b></div>${shipDeptKnoepfe(depts, true)}`;
+  bindeShipDeptKnoepfe(box, agenten);
+}
+
 function renderShipWorld(){
   const box = $('#shipWorld');
   if(!box) return;
   if(!companyDaten){
+    const legend = $('#shipLegend');
+    if(legend){ legend.hidden = true; legend.innerHTML = ''; }
     box.innerHTML = `<div class="empty">${companyFehler ? 'Company-API nicht erreichbar: ' + esc(companyFehler) : 'Agentenräume werden geladen …'}</div>`;
     renderShipDetail();
     return;
@@ -1215,6 +1225,7 @@ function renderShipWorld(){
       </div>
     </div>`;
 
+  renderShipLegend(depts, agenten);
   box.querySelectorAll('[data-agent]').forEach(b => b.onclick = () => setShipSelection('agent', b.dataset.agent));
   box.querySelectorAll('[data-common]').forEach(b => b.onclick = () => setShipSelection(b.dataset.common));
   applyShipTransform();
@@ -1301,9 +1312,7 @@ function renderShipDetail(){
     <div class="sd-kpis"><div class="sd-kpi"><small>AKTIV</small><b>${Number(s.aktiv)||0}</b></div>
       <div class="sd-kpi"><small>BLOCKIERT</small><b>${Number(s.blockiert)||0}</b></div><div class="sd-kpi"><small>OFFEN</small><b>${Number(aufgaben.offen)||0}</b></div></div>
     <div class="sd-block"><small>BEDIENUNG</small><b>Raum antippen</b><p>Ziehen verschiebt das Schiff. Mit +/−, Mausrad oder zwei Fingern zoomen; «Fit» zeigt alles.</p></div>
-    <div class="sd-block"><small>COMMON ROOMS</small><p>Agentenraum und Konferenz liegen als eigene Räume oben im Querschnitt.</p></div>
-    <div class="sd-block sd-legend-block"><small>SEKTOREN · ${depts.length} ABTEILUNGEN</small>${shipDeptKnoepfe(depts, true)}</div>`;
-  bindeShipDeptKnoepfe(side, agenten);
+    <div class="sd-block"><small>COMMON ROOMS</small><p>Agentenraum und Konferenz liegen als eigene Räume oben im Querschnitt.</p></div>`;
 }
 
 function applyShipTransform(){
