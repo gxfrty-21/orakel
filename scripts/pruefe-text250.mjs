@@ -694,6 +694,14 @@ async function pruefeKurvenTastatur(page, ansicht) {
       const m = String(t).match(/([0-9'’]+(?:[.,]\d+)?)\s+Prozent unter dem bisherigen Hoch/);
       return m ? Number(m[1].replace(/['’]/g, '').replace(',', '.')) : null;
     };
+    const tooltipHoch = t => {
+      const m = String(t).match(/Hoch bis hier USD\s*([0-9'’]+)/);
+      return m ? Number(m[1].replace(/['’]/g, '')) : null;
+    };
+    const liveHoch = t => {
+      const m = String(t).match(/Hoch von USD\s*([0-9'’]+)/);
+      return m ? Number(m[1].replace(/['’]/g, '')) : null;
+    };
     const startWert = Number(apiPunkte[0][1]);
     const erwarteterProzent = p => Math.abs(startWert) > 1e-9 ? Math.round((Number(p[1]) - startWert) / startWert * 100 * 10) / 10 || 0 : 0;
     let spitze = -Infinity;
@@ -709,6 +717,10 @@ async function pruefeKurvenTastatur(page, ansicht) {
       const tProzent = tooltipProzent(text);
       if (tProzent == null) befunde.push(`${name}: Tooltip-Prozent nicht lesbar`);
       else if (tProzent !== berechnet) befunde.push(`${name}: Tooltip-Prozent ${tProzent} statt berechnet ${berechnet} % ab Start`);
+      const erwartetesHoch = Math.round(Number(hoch));
+      const tHoch = tooltipHoch(text);
+      if (tHoch == null) befunde.push(`${name}: Tooltip-Hochstand nicht lesbar`);
+      else if (tHoch !== erwartetesHoch) befunde.push(`${name}: Tooltip-Hochstand USD ${tHoch} statt fortgeschriebenem API-Hoch USD ${erwartetesHoch}`);
       const abstand = erwarteterAbstand(p, hoch);
       const tAbstand = tooltipAbstand(text);
       if (tAbstand == null) befunde.push(`${name}: Tooltip-Abstand nicht lesbar`);
@@ -719,6 +731,9 @@ async function pruefeKurvenTastatur(page, ansicht) {
         const lProzent = liveProzent(live);
         if (lProzent == null) befunde.push(`${name}: Live-Prozent nicht lesbar`);
         else if (lProzent !== berechnet) befunde.push(`${name}: Live-Prozent ${lProzent} statt berechnet ${berechnet} % ab Start`);
+        const lHoch = liveHoch(live);
+        if (lHoch == null) befunde.push(`${name}: Live-Hochstand nicht lesbar`);
+        else if (lHoch !== erwartetesHoch) befunde.push(`${name}: Live-Hochstand USD ${lHoch} statt fortgeschriebenem API-Hoch USD ${erwartetesHoch}`);
         const lAbstand = liveAbstand(live);
         if (lAbstand == null) befunde.push(`${name}: Live-Abstand nicht lesbar`);
         else if (lAbstand !== abstand) befunde.push(`${name}: Live-Abstand ${lAbstand} statt berechnet ${abstand} % zum Hoch`);
