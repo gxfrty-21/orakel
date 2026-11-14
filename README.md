@@ -156,6 +156,16 @@ tests/           Risiko, Backtest, Daten, Bericht
 - Der Richter ist fest verdrahtet; keine KI ändert seine Regeln.
 - Jede Zahl im Dashboard stammt aus SQLite — nichts wird geschätzt oder erfunden.
 
+## Doku-Prüfung
+
+`python scripts/pruefe_doku.py` prüft die versionierten Markdown-Dateien auf
+relative Links und veraltete Deck-Angaben. Jeder relative Pfad wird vom
+jeweiligen Dokument aus aufgelöst; externe URLs und reine Sprungmarken werden
+übersprungen. Der Lauf schlägt fehl, wenn ein Ziel fehlt oder ein alter
+Decks-Begriff auftaucht. `--negativtest` erzeugt absichtlich einen kaputten
+Link und eine alte Decks-Angabe; beides muss erkannt werden. Der
+`pytest`-Job führt beide Läufe aus.
+
 ## Browser-Prüfung bei grosser Schrift
 
 `scripts/pruefe-text250.mjs` skaliert die Schrift im Dashboard auf 250 %

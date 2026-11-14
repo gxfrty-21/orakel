@@ -35,6 +35,14 @@ jobs:
       - name: Tests ausführen
         run: python -m pytest -q
 
+      # Prüft die versionierten Markdown-Dateien auf relative Links und
+      # veraltete Raumschiff-Begriffe. Der Negativtest stellt sicher, dass ein
+      # kaputter Link und ein alter Decks-Begriff tatsächlich auffallen.
+      - name: Doku-Links und Raumschiff-Begriffe prüfen
+        run: |
+          python scripts/pruefe_doku.py --negativtest
+          python scripts/pruefe_doku.py
+
   # Stellt sicher, dass das Dockerfile inklusive Seed-DB weiterhin baut.
   docker:
     runs-on: ubuntu-24.04
