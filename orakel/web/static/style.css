@@ -237,7 +237,7 @@ button.li:hover{background:var(--panel2)}
 .tbl tr.krit td{background:rgba(226,97,107,.06)}
 .tbl tr.krit td:first-child{box-shadow:inset 2px 0 0 var(--bad)}
 
-/* Raumschiff: 2D-Querschnitt, zwei Decks, echte Abteilungen */
+/* Raumschiff: 2.5D-Querschnitt, elf Abteilungen */
 .ship-view{max-width:1480px}
 .ship-head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap}
 .ship-kicker{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--accent);margin-bottom:5px}
