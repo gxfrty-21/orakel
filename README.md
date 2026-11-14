@@ -191,7 +191,8 @@ aria-hidden ist und in keinem display:none- oder visibility:hidden-Vorfahren
 liegt).
 Exit-Code 1 bei einem Befund.
 
-Der Standardlauf umfasst alle acht Ansichten inklusive Raumschiff. Der CI-Job
+Der Standardlauf umfasst alle zwölf Ansichten inklusive Strategien, Research,
+Agentenraum und Konferenz. Der CI-Job
 `text250` setzt auf dem `ubuntu-24.04`-Image auf: Chromium wird ohne
 `--with-deps` installiert, die nötigen Systembibliotheken kommen aus dem Image.
 Auch ein leerer Playwright-Cache funktioniert; der Browser wird dann frisch
@@ -212,7 +213,7 @@ ORAKEL_DB_PFAD=/tmp/orakel-text250.db python -m orakel serve --port 3000
 npm ci --prefix scripts
 npm --prefix scripts exec playwright install chromium
 
-# Prüfen (alle acht Ansichten, drei Breiten)
+# Prüfen (alle zwölf Ansichten, drei Breiten)
 node scripts/pruefe-text250.mjs
 ```
 
