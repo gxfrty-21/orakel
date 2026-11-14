@@ -52,7 +52,9 @@ nur Daten aus SQLite, ohne Tasks zu erzeugen oder Handler zu starten:
   und `limit`.
 
 Jede Antwort nennt `data_state` (`live`/`empty`), `generated_at` in UTC und
-`source_refs`. Fehlende Daten bleiben leer; es gibt keine Ersatzzahlen.
+`source_refs`. Fehlende Daten bleiben leer; es gibt keine Ersatzzahlen. Die
+Raumschiff-Ansicht liest Übersicht, Agentenstatus und offene Aufgaben aus diesen
+Endpunkten und aktualisiert sie alle 30 Sekunden, solange sie geöffnet ist.
 
 ## Dauerbetrieb mit Login und HTTPS
 

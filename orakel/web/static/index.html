@@ -256,7 +256,7 @@
         <div>
           <span class="ship-kicker">ORAKEL / RAUMSCHIFF · 2D-QUERSCHNITT</span>
           <h1>Raumschiff</h1>
-          <p class="sub">Drei Decks, acht Abteilungen. Jeder Raum zeigt ausschliesslich, was im letzten Lauf in der Datenbank steht; ein Raum ohne Lauf bleibt dunkel und heisst «KEINE DATEN».</p>
+          <p class="sub">Drei Decks, acht Abteilungen. Jeder Raum zeigt ausschliesslich Daten aus SQLite. Agentenstatus und offene Aufgaben kommen live aus der Company-API; fehlt eine Grundlage, steht «KEINE DATEN».</p>
         </div>
         <div class="ship-mode" id="shipMode"><span class="ship-dot"></span><span><b>VERBUNDEN</b><small id="shipModeDetail">–</small></span></div>
       </div>
@@ -277,6 +277,12 @@
       <div class="grid2">
         <div class="panel"><div class="ph">Abteilung<span class="sp"></span><span class="tag" id="roomTag"></span></div><div class="list scroll" id="roomAgents"></div></div>
         <div class="panel"><div class="ph">Rohrpost<span class="sp"></span><span class="tag">letzte Ergebnisse</span></div><div class="list scroll" id="roomRuns"></div></div>
+      </div>
+      <div class="panel" id="companyPanel">
+        <div class="ph">Company-Lage<span class="sp"></span><span class="tag" id="companyTag">wird geladen …</span></div>
+        <div class="kpis" id="companyKpis"></div>
+        <div class="ph">Offene Aufgaben<span class="sp"></span><span class="tag" id="companyTaskTag">–</span></div>
+        <div class="list scroll" id="companyTasks"></div>
       </div>
       <div class="panel" id="mtgPanel">
         <div class="ph">Meetingraum<span class="sp"></span><span class="tag" id="mtgTag">Sitzung</span></div>

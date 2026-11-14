@@ -158,9 +158,11 @@ mit D, F, G, H; Deck C (Executive) mit CEO-Büro, Empfang/Sekretariat, privatem
 Besprechungsraum, Meetingraum und Beobachtungsdeck. Dazu gehören der Meetingraum mit
 Agenda, Protokoll und Live-Aktualisierung sowie das Sekretariat mit Mira, Jonas und
 Lea (Agenda sammeln, Chat, Vault-Suche).
-Die Anzeigen lesen `/api/report`, `/api/betrieb` und `/api/sekretariat`; fehlende
-Werte werden als `KEINE DATEN` angezeigt. Die Ansicht ist eine Darstellung, keine
-neue Datenquelle und keine Automation.
+Die Anzeigen lesen `/api/report`, `/api/betrieb`, `/api/sekretariat` sowie
+`/api/company/overview`, `/api/company/agents` und `/api/company/tasks`; fehlende
+Werte werden als `KEINE DATEN` angezeigt. Agentenstatus und offene Aufgaben
+aktualisieren sich alle 30 Sekunden, solange die Ansicht geöffnet ist. Die Ansicht
+ist eine Darstellung, keine neue Datenquelle und keine Automation.
 
 **Noch nicht umgesetzt:** die übrige Company-API (Detailprofil, Nachrichten,
 Räume, Konferenz, SSE), 3D-Welt und begehbare Decks (zurückgestellt),
