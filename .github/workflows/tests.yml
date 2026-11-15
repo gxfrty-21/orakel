@@ -407,6 +407,10 @@ jobs:
             echo "Seed-Tastaturlauf hat die Ops-Abteilungslegende nicht geprüft"
             exit 1
           fi
+          if ! grep -q 'Desktop-Legende 1× geprüft' artifacts/text250/seed-tastatur.log; then
+            echo "Seed-Tastaturlauf hat die Desktop-Abteilungslegende nicht geprüft"
+            exit 1
+          fi
           if ! grep -q 'Schreibwege 3× geprüft' artifacts/text250/seed-tastatur.log; then
             echo "Seed-Tastaturlauf hat die Company-Schreibwege nicht geprüft"
             exit 1

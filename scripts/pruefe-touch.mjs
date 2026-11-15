@@ -14,7 +14,8 @@
  *   - ein zweiter Porträt-Viewport (360 × 800) und Querformat (844 × 390)
  *     bestehen Fit, Auswahl und Legendenfilter ebenfalls.
  *   - im Querformat ist die Navigation eingeklappt, die Ops-Seitenleiste steht
- *     unter dem Viewport und die Zoomleiste bleibt im sichtbaren Bereich.
+ *     unter dem Viewport, die Zoomleiste bleibt im sichtbaren Bereich und die
+ *     kompakte Abteilungslegende ist vollständig und ohne Überlauf bedienbar.
  *
  * Der Test ist für die Seed-Datenbank gedacht und läuft ohne Test-Framework.
  *
@@ -240,6 +241,29 @@ async function pruefeMobilViewport(browser, konfiguration) {
       }).length);
     pruefe(sichtbareDepts === 11,
       `${label}: Legende zeigt ${sichtbareDepts} statt 11 Abteilungen`);
+    const legendeStand = await legende.evaluate(el => {
+      const rahmen = el.getBoundingClientRect();
+      const eintraege = [...el.querySelectorAll('[data-dept]')]
+        .map(b => b.getBoundingClientRect())
+        .filter(r => r.width > 0 && r.height > 0);
+      return {
+        offen: el.open,
+        kopf: (el.querySelector('summary')?.innerText || '').replace(/\s+/g, ' ').trim(),
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+        ausserhalb: eintraege.filter(r =>
+          r.left < rahmen.left - 1 || r.right > rahmen.right + 1).length,
+      };
+    });
+    pruefe(legendeStand.offen,
+      `${label}: Legende ist nach dem Aufklappen nicht offen`);
+    pruefe(/SEKTOREN/.test(legendeStand.kopf) && /FILTER/.test(legendeStand.kopf)
+      && /11 ABTEILUNGEN/.test(legendeStand.kopf),
+      `${label}: Legendenkopf ist nicht kompakt («${legendeStand.kopf}»)`);
+    pruefe(legendeStand.scrollWidth <= legendeStand.clientWidth + 1,
+      `${label}: Legende läuft horizontal über (${legendeStand.scrollWidth}>${legendeStand.clientWidth})`);
+    pruefe(legendeStand.ausserhalb === 0,
+      `${label}: ${legendeStand.ausserhalb} Legendeneinträge liegen ausserhalb des Legendenrahmens`);
 
     const raum = page.locator('#shipWorld .px-room[data-agent]').first();
     const raumName = (await raum.locator('.px-tag').innerText()).trim();

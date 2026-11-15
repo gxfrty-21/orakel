@@ -237,7 +237,9 @@ Ohne relevante Änderungen beendet sich der Hook sofort.
 Für die Abnahme der Schiffsansicht auf echter Safari-Hardware:
 [Checkliste für Pan, Pinch und Tippen](docs/raumschiff/IPHONE-SAFARI-CHECKLISTE.md).
 Sie ergänzt den automatisierten Touch-Test und deckt Porträt, Querformat,
-Safari-Seitenzoom und die Legendenbedienung ab.
+Safari-Seitenzoom und die Legendenbedienung ab. Die Ergebnisse des letzten
+Chromium-Emulationslaufs stehen in
+[TOUCH-EMULATION.md](docs/raumschiff/TOUCH-EMULATION.md).
 
 ## Browser-Prüfung bei grosser Schrift
 
@@ -274,6 +276,10 @@ die visuell verborgen bleibt, role=status sowie aria-live=polite trägt, nicht
 aria-hidden ist und in keinem display:none- oder visibility:hidden-Vorfahren
 liegt).
 Exit-Code 1 bei einem Befund.
+
+Der Standardlauf prüft bei 1440 px zusätzlich die kompakte
+Abteilungslegende: offen, elf Einträge, kompakter Kopf und kein horizontaler
+Überlauf. Die Zusammenfassung meldet `Desktop-Legende 1× geprüft`.
 
 Der Standardlauf prüft zusätzlich die drei Company-Schreibwege über die
 Web-API: eine direkte Nachricht senden, sie als Empfänger quittieren und einen
@@ -319,8 +325,9 @@ und 280 px ausschliesslich über Home, Pfeil rechts und Ende. Zusätzlich prüft
 die elf Schiffscluster samt erwarteter Agentenzahl, die Gesamtsumme von 103
 Agenten, eindeutige Agenten-IDs und die Ops-Abteilungslegende (elf Einträge,
 kompakter Kopf, eingeklappt und per Tastatur aufklappbar). Er verlangt in der
-Ausgabe `Tastatur 3× geprüft`, `Inhalte 3× geprüft`, `Agenten 3× geprüft` und
-`Legende 3× geprüft`, damit ein stilles Überspringen als Fehler auffällt.
+Ausgabe `Tastatur 3× geprüft`, `Inhalte 3× geprüft`, `Agenten 3× geprüft`,
+`Legende 3× geprüft` und `Desktop-Legende 1× geprüft`, damit ein stilles
+Überspringen als Fehler auffällt.
 
 ```bash
 # Dashboard mit Beispieldaten starten, ohne die eigene DB anzufassen

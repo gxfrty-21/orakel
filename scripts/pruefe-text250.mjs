@@ -25,7 +25,9 @@
  *   --selbsttest-agent      Prüft einen fehlenden Agenten samt Screenshotpfad
  *
  * Zusätzlich wird die Kopfzeile bei 1024 px auf horizontalen Überlauf und
- * einen sichtbaren «Lauf starten»-Button geprüft.
+ * einen sichtbaren «Lauf starten»-Button geprüft. Bei 1440 px wird die
+ * kompakte Abteilungslegende auf vollständige, überlauffreie Darstellung
+ * geprüft.
  */
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -1118,6 +1120,7 @@ async function pruefeOpsLegende(page) {
   if (fehlend.length) befunde.push(`Raumschiff: Ops-Abteilungslegende ohne Abteilung ${fehlend.join(', ')}`);
   if (unbekannt.length) befunde.push(`Raumschiff: Ops-Abteilungslegende mit unbekannter Abteilung ${unbekannt.join(', ')}`);
   if (!/SEKTOREN/.test(stand.kopf)) befunde.push('Raumschiff: Ops-Abteilungslegende ohne «SEKTOREN» im Kopf');
+  if (!/FILTER/.test(stand.kopf)) befunde.push('Raumschiff: Ops-Abteilungslegende ohne «FILTER» im Kopf');
   if (!/11 ABTEILUNGEN/.test(stand.kopf)) befunde.push(`Raumschiff: Ops-Abteilungslegende ohne «11 ABTEILUNGEN» im Kopf («${stand.kopf}»)`);
 
   if (!stand.schmal) {
@@ -1817,6 +1820,51 @@ async function pruefeKopfzeile(browser, url) {
   return befunde;
 }
 
+async function pruefeLegendeDesktop(browser, url) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+  const befunde = [];
+  try {
+    await page.goto(`${url}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(
+      () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
+      null, { timeout: 15000 },
+    );
+    await page.locator('.nav[data-v="ship"]').click();
+    await page.waitForFunction(
+      () => document.querySelectorAll('#shipWorld .px-dept').length === 11
+        && document.querySelector('#shipLegend')?.hidden === false,
+      null, { timeout: 10000 },
+    );
+    await page.waitForTimeout(500);
+    const stand = await page.evaluate(() => {
+      const el = document.querySelector('#shipLegend');
+      if (!el) return null;
+      const side = document.querySelector('#shipSide');
+      const rahmen = el.getBoundingClientRect();
+      const seite = side?.getBoundingClientRect();
+      return {
+        sichtbar: el.getClientRects().length > 0,
+        imPanel: !!seite && rahmen.left >= seite.left - 1 && rahmen.right <= seite.right + 1,
+        seitenScroll: document.documentElement.scrollWidth,
+        viewport: innerWidth,
+      };
+    });
+    if (!stand) {
+      befunde.push('Raumschiff: Ops-Abteilungslegende fehlt');
+      return befunde;
+    }
+    if (!stand.sichtbar) befunde.push('Raumschiff: Ops-Abteilungslegende ist nicht sichtbar');
+    if (!stand.imPanel) befunde.push('Raumschiff: Ops-Abteilungslegende steht nicht in der Ops-Konsole');
+    if (stand.seitenScroll > stand.viewport + 1) {
+      befunde.push(`Raumschiff: Seite hat horizontalen Überlauf (${stand.seitenScroll}>${stand.viewport})`);
+    }
+    befunde.push(...await pruefeOpsLegende(page));
+  } finally {
+    await page.close();
+  }
+  return befunde;
+}
+
 async function main() {
   const opt = argumente(process.argv.slice(2));
   const { validierungen } = await pruefeServer(opt.url);
@@ -1841,7 +1889,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const fehler = [];
   const hinweise = new Set();
-  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, kopfGeprueft = 0, schreibwegeGesamt = 0;
+  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, legendeDesktopGeprueft = 0, kopfGeprueft = 0, schreibwegeGesamt = 0;
 
   try {
     const kopfBefunde = await pruefeKopfzeile(browser, opt.url);
@@ -1849,6 +1897,13 @@ async function main() {
       for (const text of kopfBefunde) fehler.push(`1024px/kopf: ${text}`);
     } else {
       kopfGeprueft++;
+    }
+
+    const desktopLegendeBefunde = await pruefeLegendeDesktop(browser, opt.url);
+    if (desktopLegendeBefunde.length) {
+      for (const text of desktopLegendeBefunde) fehler.push(`1440px/legende: ${text}`);
+    } else {
+      legendeDesktopGeprueft++;
     }
 
     for (const breite of opt.breiten) {
@@ -1943,7 +1998,7 @@ async function main() {
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {
