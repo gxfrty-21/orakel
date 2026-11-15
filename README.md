@@ -275,6 +275,11 @@ aria-hidden ist und in keinem display:none- oder visibility:hidden-Vorfahren
 liegt).
 Exit-Code 1 bei einem Befund.
 
+Der Standardlauf prüft zusätzlich die drei Company-Schreibwege über die
+Web-API: eine direkte Nachricht senden, sie als Empfänger quittieren und einen
+persönlichen Gedächtniseintrag anlegen sowie aktualisieren. Die Prüfung nutzt
+eindeutige Testwerte; in der CI schreibt sie ausschliesslich in die Seed-Kopie.
+
 Für Strategien, Research, das Raumschiff, Agentenraum und Konferenz gleicht der
 Lauf zusätzlich die Kerndaten mit `/api/report` ab: Zahl und Namen der
 bestandenen Strategien, markierte Auswahl, fünf KPIs und die fünf Kernzeilen;
