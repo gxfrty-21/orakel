@@ -1,8 +1,9 @@
-# Automatisierter Chromium-Touch-Test: Ergebnis
+# Automatisierte Touch-Emulation: Chromium und WebKit
 
 **Stand:** 15. November 2026\
-**Ergebnis:** bestanden\
-**Basis:** Branch `test/legende-querformat-desktop`, Basis-Commit `61cad36`; Grossmodus und erweiterte Touch-Prüfungen liegen im Arbeitsbaum\
+**Ergebnis:** Chromium bestanden; WebKit-Emulation bestanden, **kein Safari-Hardwaretest**\
+**Basis:** Chromium-Lauf auf Branch `test/legende-querformat-desktop`, Basis-Commit `61cad36`; WebKit-Lauf auf `main` (Basis `95c6a48`)\
+**Echte iPad-Safari-Prüfung:** offen – kein physisches Gerät verfügbar\
 **Prüfling:** Schiffsansicht `#v-ship` mit 103 Agentenräumen in elf Abteilungen\
 **Daten:** frische Kopie von `seed/orakel-seed.db`
 
@@ -67,16 +68,81 @@ Die 1100-px-Viewports sind keine echten Telefone. Sie prüfen die untere Grenze
 des Grossmodus und seine Touch-Bedienung in Chromium; ein echtes Tablet oder
 iPhone bleibt der manuellen Prüfung vorbehalten.
 
+## WebKit-Emulation: ausdrücklich kein Safari-Hardwaretest
+
+**Wichtig:** Dieser Lauf verwendet **Playwright WebKit 27.2 auf Linux/GTK unter
+Xvfb**, nicht Safari auf iOS/iPadOS. Die iPad- und iPhone-User-Agents sind
+emuliert; es gab weder ein physisches Gerät noch Safari-Werkzeugleiste,
+Seitenzoom, Geräterotation oder echte Finger-Touch-Hardware.
+
+Der Lauf am 15. November 2026 verwendete eine frische Seed-Kopie und dieselbe
+Schiffsansicht. Gemessen wurde nach «Fit»:
+
+| Viewport (emuliert) | Modus | Weltbreite | Raumhöhe | Zoom | Kleinster Raum | Sichtbar |
+|---|---|---:|---:|---:|---:|---:|
+| 1100 × 800 | Gross | 2400 px | 150 px | 21 % | 31,8 × 32,2 px | 103/103 |
+| 1100 × 1400 | Gross | 2400 px | 150 px | 22 % | 33,0 × 33,4 px | 103/103 |
+| 1194 × 834 (iPad Pro 11 quer) | Gross | 2400 px | 150 px | 24 % | 35,0 × 35,4 px | 103/103 |
+| 390 × 844 (iPhone) | Kompakt | 1500 px | 108 px | 24 % | 24,4 × 25,5 px | 103/103 |
+
+Zusätzlich bestanden:
+
+- alle elf Abteilungen sichtbar; Legende ohne Eigen- oder Seitenüberlauf
+- Raumauswahl mit genau einem Treffer und geöffneten Ops-Details
+- Filter A mit einer hervorgehobenen Abteilung und zehn Räumen
+- Moduswechsel **1100 → 900 → 1100 px**: 2400/150 px → 1500/108 px →
+  2400/150 px, jeweils 103 Räume
+- keine App- oder Seitenfehler
+
+Grenzen dieses Emulationslaufs:
+
+- Der Legendenfilter wurde per DOM-Klick ausgelöst; bei 1100 × 1400 und
+  390 × 844 musste der Test für einzelne Tippziele ebenfalls auf DOM-Klick
+  zurückfallen. Pinch und Pan wurden nicht geprüft.
+- WebKit meldete für eine Umgebungsressource `TLS support is not available`;
+  das ist kein Fehler der Schiffsansicht.
+- Die Werte sind WebKit-CSS-Pixel auf Linux, keine Safari-Messung auf einem
+  iPad oder iPhone. Die manuelle [Safari-Checkliste](IPHONE-SAFARI-CHECKLISTE.md)
+  bleibt für echte Hardware und Safari-Verhalten erforderlich.
+
 ## Grenzen
 
-Dieser Lauf ist eine **Chromium-Emulation**, kein Test auf einem iPhone. Nicht
-abgedeckt sind echtes Safari-Verhalten, Safari-Seitenzoom, die Safari-Werkzeugleiste,
-das Drehen eines physischen Geräts und das Trefferhalten mit einem echten Finger.
-Diese Punkte bleiben der [manuellen iPhone-Safari-Checkliste](IPHONE-SAFARI-CHECKLISTE.md)
-vorbehalten.
+Die Chromium- und WebKit-Läufe sind **Browser-Emulationen**, keine Tests auf
+einem iPhone oder iPad. Die WebKit-Emulation ist ausdrücklich **kein
+Safari-Hardwaretest**. Nicht abgedeckt sind echtes Safari-Verhalten,
+Safari-Seitenzoom, die Safari-Werkzeugleiste, das Drehen eines physischen Geräts
+und das Trefferhalten mit einem echten Finger. Diese Punkte bleiben der
+[manuellen Safari-Checkliste](IPHONE-SAFARI-CHECKLISTE.md) vorbehalten.
 
 Der Lauf ist read-only: Es werden keine schreibenden Aktionen wie «Lauf starten»
 ausgelöst.
+
+## Echte iPad-Safari-Prüfung: offene Hardware-Unterschiede
+
+**Status: nicht ausgeführt.** In der Cloud-Umgebung ist kein physisches iPad
+und kein Safari verfügbar. Die WebKit-Emulation ersetzt diese Abnahme nicht;
+insbesondere der 2400-px-Grossmodus wurde nur auf Linux-WebKit mit emulierten
+Viewports geprüft. Die folgenden Unterschiede bleiben offen:
+
+| Unterschied | Was die Emulation nicht abdeckt |
+|---|---|
+| Safari-Rendering und GPU | Safari auf iPadOS nutzt eine andere WebKit-/GPU-/Font-Pipeline als WebKitGTK unter Xvfb. Pixelkunst, Canvas-Schärfe, Farben und Compositing können abweichen. |
+| Dynamische Safari-Leisten und Safe Areas | Adress- und Werkzeugleiste verändern die sichtbare Höhe; Notch/Dynamic Island, Home-Indikator und Safe Areas beeinflussen den Schiffsviewport. |
+| Echte Touch-Hardware | Pinch, Pan, Palm-/Mehrfingerverhalten und das Trefferhalten mit einem echten Finger wurden nicht geprüft. Der WebKit-Lauf testete keinen Pinch/Pan; der Legendenfilter und einzelne Tippziele liefen über DOM-Klicks. |
+| Rotation und Split View | Die reale Geräterotation, Stage Manager, Split View und Slide Over wurden nicht ausgeführt. Der Moduswechsel wurde nur als Viewport-Resize im WebKit-Test geprüft. |
+| Safari-Seitenzoom und Schriftgrösse | Website-Zoom, dynamische Textgrösse, Inhaltsblocker und Safari-Sonderverhalten sind nicht Teil der Emulation. |
+| Performance und Thermik | Speicher, GPU-Takt, Thermik und Bildrate eines iPads beim 2400-px-Grossmodus wurden nicht gemessen. |
+| Produktionskontext | Authentifizierung, Railway-Deploy und die tatsächlich ausgelieferte URL wurden nicht auf einem iPad geprüft. |
+
+Bereits emuliert geprüft sind die 2400-px-Bühne mit 150 px hohen Agentenräumen,
+103/103 sichtbare Räume, elf Abteilungen, die Raumauswahl, der Filter A und der
+Moduswechsel 1100 → 900 → 1100 px (siehe oben). Diese Ergebnisse sagen nichts
+über echtes Safari-Verhalten auf einem iPad aus.
+
+Für die Abnahme die [Safari-Checkliste](IPHONE-SAFARI-CHECKLISTE.md) verwenden;
+die Kästchen für das iPad-Querformat und die Rotation bleiben offen, bis ein
+passendes Gerät (mindestens 1100 CSS-px breit im Querformat, z. B. iPad Pro 11"
+oder iPad Air 11") mit der Ziel-URL und dem Ziel-Commit geprüft wurde.
 
 ## Reproduktion
 
