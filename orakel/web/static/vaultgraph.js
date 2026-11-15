@@ -23,7 +23,8 @@
   function aktivieren() {
     if (!el.initialisiert) init();
     if (!state.geladen && !state.laedt) laden();
-    else { resize(); draw(); }
+    else { resize(); wecke(0.02); }
+    starteNachladen();
   }
 
   function init() {
@@ -167,7 +168,7 @@
           .filter(Boolean).join(' ').toLowerCase(),
       }));
       state.basisKanten = (d.kanten || []).map(e => ({ ...e }));
-      state.tags = false;
+      state.tags = true;
       state.tagAnzahl = 0;
       state.tagFilter = null;
       if (el.fokus) el.fokus.hidden = true;
@@ -181,12 +182,13 @@
       if (el.search) el.search.value = '';
       if (el.folder) el.folder.value = '';
       if (el.orphans) el.orphans.checked = true;
-      if (el.tags) el.tags.checked = false;
+      if (el.tags) el.tags.checked = true;
       if (el.tagSuche) el.tagSuche.value = '';
       schliesseTagOptionen();
+      state.knoten = [];
       rebuildGraph();
       baueFilter();
-      layout();
+      layout(true);
       resize();
       fitToVisible();
       updateMeta();
@@ -339,7 +341,7 @@
       state.tags = true;
       if (el.tags) el.tags.checked = true;
       rebuildGraph();
-      layout();
+      layout(false);
       updateLegende();
       updateMeta();
       n = state.byId.get(id);
@@ -407,7 +409,7 @@
       return true;
     });
     const knoten = notizen.concat([...tagKnoten.values()]);
-    for (const n of knoten) { n.ausgehend = 0; n.eingehend = 0; n.grad = 0; }
+    for (const n of knoten) { n.ausgehend = 0; n.eingehend = 0; n.grad = 0; n.wgrad = 0; }
     const byId = new Map(knoten.map(n => [n.id, n]));
     for (const e of kanten) {
       const a = byId.get(e.von), b = byId.get(e.nach);
@@ -416,6 +418,7 @@
       b.eingehend += 1;
       a.grad += 1;
       b.grad += 1;
+      if (e.art !== 'tag') { a.wgrad += 1; b.wgrad += 1; }
     }
     for (const t of tagKnoten.values()) {
       t.auszug = `${t.anzahl} ${t.anzahl === 1 ? 'Notiz teilt' : 'Notizen teilen'} #${t.tags[0]}.`;
@@ -440,7 +443,7 @@
       schliesseTagOptionen();
     }
     rebuildGraph();
-    layout();
+    layout(false);
     fitToVisible();
     updateLegende();
     updateMeta();
@@ -541,16 +544,16 @@
     state.search = '';
     state.folder = '';
     state.orphans = true;
-    state.tags = false;
+    state.tags = true;
     state.tagFilter = null;
-    if (el.tags) el.tags.checked = false;
+    if (el.tags) el.tags.checked = true;
     if (el.tagSuche) el.tagSuche.value = '';
     schliesseTagOptionen();
     state.selected = null;
     state.hover = null;
     hideTip();
     rebuildGraph();
-    layout();
+    layout(true);
     renderDetail(null);
     fitToVisible();
     updateLegende();
@@ -566,57 +569,6 @@
       h = Math.imul(h, 16777619);
     }
     return h >>> 0;
-  }
-
-  function layout() {
-    const n = state.knoten.length;
-    if (!n) return;
-    const w = state.width || 760, h = state.height || 480;
-    state.knoten.forEach((k, i) => {
-      const a = (2 * Math.PI * i / n) + ((hash(k.id) % 1000) / 1000 - 0.5) * 0.42;
-      const r = Math.min(w, h) * (0.22 + ((hash(k.id + ':r') % 1000) / 1000) * 0.16);
-      k.x = w / 2 + Math.cos(a) * r;
-      k.y = h / 2 + Math.sin(a) * r;
-      k.vx = 0;
-      k.vy = 0;
-    });
-    for (let tick = 0; tick < 190; tick++) {
-      for (let i = 0; i < n; i++) {
-        const a = state.knoten[i];
-        for (let j = i + 1; j < n; j++) {
-          const b = state.knoten[j];
-          let dx = b.x - a.x, dy = b.y - a.y;
-          let d2 = dx * dx + dy * dy;
-          if (d2 < 0.01) { dx = (i + 1) * 0.01; dy = (j + 1) * 0.01; d2 = dx * dx + dy * dy; }
-          const d = Math.sqrt(d2);
-          if (d < 28) {
-            const f = (28 - d) * 0.09;
-            a.vx -= dx / d * f; a.vy -= dy / d * f;
-            b.vx += dx / d * f; b.vy += dy / d * f;
-          }
-          const f = 500 / Math.max(d2, 900) * 0.14;
-          a.vx -= dx / d * f; a.vy -= dy / d * f;
-          b.vx += dx / d * f; b.vy += dy / d * f;
-        }
-        a.vx += (w / 2 - a.x) * 0.0008;
-        a.vy += (h / 2 - a.y) * 0.0008;
-      }
-      for (const e of state.kanten) {
-        const a = state.byId.get(e.von), b = state.byId.get(e.nach);
-        if (!a || !b) continue;
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const d = Math.max(1, Math.hypot(dx, dy));
-        const f = (d - 78) * 0.003;
-        a.vx += dx / d * f; a.vy += dy / d * f;
-        b.vx -= dx / d * f; b.vy -= dy / d * f;
-      }
-      for (const k of state.knoten) {
-        k.vx = clamp(k.vx * 0.86, -2.2, 2.2);
-        k.vy = clamp(k.vy * 0.86, -2.2, 2.2);
-        k.x += k.vx;
-        k.y += k.vy;
-      }
-    }
   }
 
   function fitToVisible() {
@@ -647,117 +599,389 @@
     draw();
   }
 
+  /* ---------- Obsidian-Look: Hilfen ---------- */
+  const glowCache = new Map();
+  function hexA(hex, a) {
+    const v = parseInt(String(hex).slice(1, 7), 16);
+    return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${a})`;
+  }
+  function mix(a, b, f) {
+    const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+    const x = p(a), y = p(b);
+    return '#' + x.map((v, i) => Math.round(v + (y[i] - v) * f).toString(16).padStart(2, '0')).join('');
+  }
+  function glow(color) {
+    let c = glowCache.get(color);
+    if (c) return c;
+    c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, hexA(color, .6));
+    gr.addColorStop(.3, hexA(color, .22));
+    gr.addColorStop(1, hexA(color, 0));
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 64, 64);
+    glowCache.set(color, c);
+    return c;
+  }
+  const ruhig = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---------- Live-Physik ---------- */
+  const sim = { alpha: 0, raf: 0 };
+  state.zentren = new Map();
+
+  function clusterZentren() {
+    const anzahl = new Map();
+    for (const k of state.knoten) if (k.typ !== 'tag') anzahl.set(k.ordner, (anzahl.get(k.ordner) || 0) + 1);
+    const namen = [...anzahl.keys()].sort();
+    const R = namen.length > 1 ? 70 + Math.sqrt(state.knoten.length) * 24 : 0;
+    state.zentren = new Map(namen.map((o, i) => {
+      const a = 2 * Math.PI * i / namen.length - Math.PI / 2;
+      return [o, { x: Math.cos(a) * R, y: Math.sin(a) * R, n: anzahl.get(o) }];
+    }));
+  }
+
+  function nachbarn() {
+    const m = new Map();
+    for (const e of state.kanten) {
+      if (!m.has(e.von)) m.set(e.von, []);
+      if (!m.has(e.nach)) m.set(e.nach, []);
+      m.get(e.von).push(e.nach);
+      m.get(e.nach).push(e.von);
+    }
+    return m;
+  }
+
+  function platziere(k, nb) {
+    const h = hash(k.id), a = (h % 6283) / 1000, j = ((h >>> 12) % 1000) / 1000;
+    const gesetzt = (nb.get(k.id) || []).map(id => state.byId.get(id)).filter(z => z && Number.isFinite(z.x));
+    if (gesetzt.length) {
+      const mx = gesetzt.reduce((s, z) => s + z.x, 0) / gesetzt.length;
+      const my = gesetzt.reduce((s, z) => s + z.y, 0) / gesetzt.length;
+      k.x = mx + Math.cos(a) * (12 + j * 18);
+      k.y = my + Math.sin(a) * (12 + j * 18);
+    } else {
+      const z = state.zentren.get(k.ordner) || { x: 0, y: 0, n: 1 };
+      const r = (8 + Math.sqrt(z.n || 1) * 9) * Math.sqrt(j);
+      k.x = z.x + Math.cos(a) * r;
+      k.y = z.y + Math.sin(a) * r;
+    }
+    k.vx = 0; k.vy = 0;
+  }
+
+  function layout(voll) {
+    if (!state.knoten.length) return;
+    clusterZentren();
+    if (voll) state.knoten.forEach(k => { k.x = undefined; k.y = undefined; });
+    const nb = nachbarn();
+    const offen = state.knoten.filter(k => !Number.isFinite(k.x) || !Number.isFinite(k.y));
+    offen.filter(k => k.typ !== 'tag').forEach(k => platziere(k, nb));
+    offen.filter(k => k.typ === 'tag').forEach(k => platziere(k, nb));
+    if (voll || ruhig()) {
+      let a = 1;
+      for (let i = 0; i < 260; i++) { schritt(a); a *= 0.982; }
+      wecke(0.05);
+    } else {
+      wecke(offen.length ? 0.35 : 0.12);
+    }
+  }
+
+  function schritt(alpha) {
+    const ks = state.knoten, n = ks.length;
+    if (!n) return;
+    const ZELLE = 90, grid = new Map();
+    for (const k of ks) {
+      const key = Math.floor(k.x / ZELLE) + ',' + Math.floor(k.y / ZELLE);
+      let l = grid.get(key);
+      if (!l) grid.set(key, l = []);
+      l.push(k);
+    }
+    // Abstossung (nur Nachbarzellen, darum auch bei Tausenden Notizen schnell)
+    for (const k of ks) {
+      const cx = Math.floor(k.x / ZELLE), cy = Math.floor(k.y / ZELLE);
+      for (let gx = cx - 1; gx <= cx + 1; gx++) for (let gy = cy - 1; gy <= cy + 1; gy++) {
+        const l = grid.get(gx + ',' + gy);
+        if (!l) continue;
+        for (const o of l) {
+          if (o === k) continue;
+          let dx = k.x - o.x, dy = k.y - o.y;
+          let d2 = dx * dx + dy * dy;
+          if (d2 > ZELLE * ZELLE) continue;
+          if (d2 < 0.01) { dx = (hash(k.id) % 7) - 3 || 1; dy = 1; d2 = dx * dx + dy * dy; }
+          const d = Math.sqrt(d2);
+          let f = 900 / Math.max(d2, 16) * alpha;
+          const min = radius(k) + radius(o) + 3;
+          if (d < min) f += (min - d) * 0.25;
+          k.vx += dx / d * f; k.vy += dy / d * f;
+        }
+      }
+    }
+    // Links ziehen zusammen
+    for (const e of state.kanten) {
+      const a = state.byId.get(e.von), b = state.byId.get(e.nach);
+      if (!a || !b) continue;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.max(1, Math.hypot(dx, dy));
+      const L = e.art === 'tag' ? 36 : 44;
+      const ga = Math.max(1, a.grad || 1), gb = Math.max(1, b.grad || 1);
+      // Wie in Obsidian: stark verlinkte Knoten (Hubs) bewegen sich weniger,
+      // damit nicht alles zu einem einzigen Klumpen zusammengezogen wird.
+      const f = (d - L) / d * 0.09 * alpha * clamp(1 / Math.min(ga, gb), 0.2, 1);
+      const anteilA = gb / (ga + gb), anteilB = ga / (ga + gb);
+      a.vx += dx * f * anteilA * 2; a.vy += dy * f * anteilA * 2;
+      b.vx -= dx * f * anteilB * 2; b.vy -= dy * f * anteilB * 2;
+    }
+    // Gruppen: jede Notiz zieht zu ihrem Ordner, alles leicht zur Mitte
+    for (const k of ks) {
+      const z = k.typ !== 'tag' ? state.zentren.get(k.ordner) : null;
+      if (z) { k.vx += (z.x - k.x) * 0.02 * alpha; k.vy += (z.y - k.y) * 0.02 * alpha; }
+      k.vx += -k.x * 0.0025 * alpha; k.vy += -k.y * 0.0025 * alpha;
+    }
+    for (const k of ks) {
+      if (k.fx != null) { k.x = k.fx; k.y = k.fy; k.vx = 0; k.vy = 0; continue; }
+      k.vx = clamp(k.vx * 0.62, -8, 8);
+      k.vy = clamp(k.vy * 0.62, -8, 8);
+      k.x += k.vx; k.y += k.vy;
+    }
+  }
+
+  function wecke(a) {
+    sim.alpha = Math.max(sim.alpha, a);
+    if (!sim.raf) sim.raf = requestAnimationFrame(schleife);
+  }
+
+  function schleife() {
+    sim.raf = 0;
+    const kb = document.getElementById('v-kb');
+    if (!kb || kb.hidden || !state.geladen) return;
+    let weiter = false;
+    if (sim.alpha > 0.004 || state.drag) {
+      if (!ruhig() || state.drag) schritt(Math.max(sim.alpha, state.drag ? 0.12 : 0));
+      sim.alpha *= 0.985;
+      if (!ruhig()) weiter = true;
+    }
+    const jetzt = performance.now();
+    if (state.knoten.some(n => n._neu && jetzt - n._neu < 4000)) weiter = true;
+    draw();
+    if (weiter || state.drag) sim.raf = requestAnimationFrame(schleife);
+  }
+
+  /* ---------- Neue Notizen automatisch holen ---------- */
+  let nachladeTimer = null;
+  function starteNachladen() {
+    if (nachladeTimer) return;
+    nachladeTimer = setInterval(() => {
+      const kb = document.getElementById('v-kb');
+      if (document.hidden || !kb || kb.hidden || state.laedt || state.drag || !state.daten) return;
+      nachladen();
+    }, 30000);
+  }
+  function signatur(d) {
+    return (d.knoten || []).map(n => n.id + ':' + (n.tags || []).join(',')).sort().join('|') + '#' +
+      (d.kanten || []).map(e => e.von + '>' + e.nach).sort().join('|');
+  }
+  async function nachladen() {
+    try {
+      const r = await fetch('/api/vault/graph', { cache: 'no-store' });
+      const d = await r.json();
+      if (!r.ok || !d.ok) return;
+      if (state.daten && signatur(d) === signatur(state.daten)) return;
+      const alteIds = new Set(state.basisKnoten.map(n => n.id));
+      state.daten = d;
+      state.basisKnoten = (d.knoten || []).map(n => ({
+        ...n,
+        _such: [n.titel, n.ordner, n.kategorie, ...(n.tags || []), n.auszug].filter(Boolean).join(' ').toLowerCase(),
+      }));
+      state.basisKanten = (d.kanten || []).map(e => ({ ...e }));
+      rebuildGraph();
+      const jetzt = performance.now();
+      state.knoten.forEach(n => { if (n.typ !== 'tag' && !alteIds.has(n.id)) n._neu = jetzt; });
+      layout(false);
+      const ordner = state.folder;
+      baueFilter();
+      if (el.folder) el.folder.value = ordner;
+      if (el.folder && el.folder.value !== ordner) state.folder = '';
+      updateMeta();
+      if (state.selected) renderDetail(state.selected);
+      if (el.empty) el.empty.hidden = state.knoten.length > 0;
+      if (el.canvas) el.canvas.hidden = state.knoten.length === 0;
+      if (!state.userMoved) fitToVisible();
+      draw();
+    } catch (_) { /* nächster Versuch in 30 Sekunden */ }
+  }
+
+  /* ---------- Minimap ---------- */
+  function miniSprung(p) {
+    const m = state.mini;
+    if (!m) return;
+    const wx = (p.x - m.x - m.ox) / m.s + m.minX;
+    const wy = (p.y - m.y - m.oy) / m.s + m.minY;
+    state.t.x = state.width / 2 - wx * state.t.k;
+    state.t.y = state.height / 2 - wy * state.t.k;
+    state.userMoved = true;
+    draw();
+  }
+  function inMini(p) {
+    const m = state.mini;
+    return m && p.x >= m.x && p.x <= m.x + m.w && p.y >= m.y && p.y <= m.y + m.h;
+  }
+  function zeichneMini(ctx, vis) {
+    state.mini = null;
+    if (state.width < 520 || state.height < 320 || !vis.length) return;
+    const w = 150, h = 108, x = state.width - w - 14, y = state.height - h - 58;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const n of vis) { minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x); minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y); }
+    minX -= 20; minY -= 20; maxX += 20; maxY += 20;
+    const s = Math.min((w - 10) / (maxX - minX), (h - 10) / (maxY - minY));
+    const ox = (w - (maxX - minX) * s) / 2, oy = (h - (maxY - minY) * s) / 2;
+    state.mini = { x, y, w, h, s, ox, oy, minX, minY };
+    ctx.fillStyle = 'rgba(16,14,24,.88)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = 'rgba(255,255,255,.14)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+    for (const n of vis) {
+      ctx.fillStyle = n.typ === 'tag' || (n.wgrad || 0) >= 3 ? (FARBEN[n.ordner] || '#ab9cc9') : 'rgba(220,214,235,.75)';
+      ctx.fillRect(x + ox + (n.x - minX) * s - .75, y + oy + (n.y - minY) * s - .75, 1.5, 1.5);
+    }
+    const a = world({ x: 0, y: 0 }), b = world({ x: state.width, y: state.height });
+    const rx = clamp(x + ox + (a.x - minX) * s, x, x + w), ry = clamp(y + oy + (a.y - minY) * s, y, y + h);
+    const rx2 = clamp(x + ox + (b.x - minX) * s, x, x + w), ry2 = clamp(y + oy + (b.y - minY) * s, y, y + h);
+    ctx.strokeStyle = '#38e8ff';
+    ctx.strokeRect(rx + .5, ry + .5, Math.max(2, rx2 - rx - 1), Math.max(2, ry2 - ry - 1));
+  }
+
   function radius(n) {
-    if (n.typ === 'tag') return 3.8 + Math.min(4.2, Math.sqrt(n.grad || 0) * 1.8);
-    return n.unaufgeloest ? 3.6 : 4.2 + Math.min(4.5, Math.sqrt(n.grad || 0) * 2.4);
+    // Bei vielen Notizen kleinere Punkte, damit Wolken wie in Obsidian entstehen
+    const f = state.knoten.length > 300 ? .6 : state.knoten.length > 120 ? .8 : 1;
+    if (n.typ === 'tag') return f * (2.6 + Math.min(3.4, Math.sqrt(n.grad || 0) * .8));
+    return f * (n.unaufgeloest ? 2.2 : 2.6 + Math.min(5, Math.sqrt(n.wgrad || 0) * 1.6));
   }
 
   function draw() {
     if (!el.ctx) return;
-    const ctx = el.ctx;
+    const ctx = el.ctx, W = state.width, H = state.height, k = state.t.k;
     ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
-    ctx.clearRect(0, 0, state.width, state.height);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#100f17';
+    ctx.fillRect(0, 0, W, H);
+    // Raster wie in Obsidian
+    let s = 40 * k;
+    while (s < 18) s *= 2;
+    while (s > 90) s /= 2;
+    ctx.strokeStyle = 'rgba(255,255,255,.04)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = ((state.t.x % s) + s) % s; x < W; x += s) { ctx.moveTo(Math.round(x) + .5, 0); ctx.lineTo(Math.round(x) + .5, H); }
+    for (let y = ((state.t.y % s) + s) % s; y < H; y += s) { ctx.moveTo(0, Math.round(y) + .5); ctx.lineTo(W, Math.round(y) + .5); }
+    ctx.stroke();
     if (!state.geladen || !state.knoten.length) return;
 
-    const vis = new Set(state.knoten.filter(sichtbar).map(n => n.id));
-    const sel = state.selected;
+    const visListe = state.knoten.filter(sichtbar);
+    const vis = new Set(visListe.map(n => n.id));
+    const fokus = state.drag ? state.drag.n : (state.hover || state.selected);
     const nb = new Set();
-    if (sel) {
-      for (const e of state.kanten) {
-        if (e.von === sel.id) nb.add(e.nach);
-        if (e.nach === sel.id) nb.add(e.von);
-      }
+    if (fokus) for (const e of state.kanten) {
+      if (e.von === fokus.id) nb.add(e.nach);
+      if (e.nach === fokus.id) nb.add(e.von);
     }
+    const jetzt = performance.now();
     ctx.save();
     ctx.translate(state.t.x, state.t.y);
-    ctx.scale(state.t.k, state.t.k);
+    ctx.scale(k, k);
 
+    // Kanten: normal, gedimmt, hervorgehoben
+    const pfade = { normal: new Path2D(), dim: new Path2D(), hi: new Path2D() };
     for (const e of state.kanten) {
       const a = state.byId.get(e.von), b = state.byId.get(e.nach);
       if (!a || !b || !vis.has(a.id) || !vis.has(b.id)) continue;
-      let alpha = 0.58;
-      if (state.search && (!istTreffer(a) || !istTreffer(b))) alpha = 0.07;
-      if (sel) alpha = e.von === sel.id || e.nach === sel.id ? 0.85 : 0.08;
-      ctx.globalAlpha = alpha;
-      ctx.strokeStyle = sel && (e.von === sel.id || e.nach === sel.id) ? '#38e8ff' :
-        (e.art === 'tag' ? '#c9a7ff' : '#9b7fc2');
-      ctx.lineWidth = 1.35 / state.t.k;
-      if (e.art === 'tag') ctx.setLineDash([4 / state.t.k, 4 / state.t.k]);
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-      ctx.setLineDash([]);
+      let p = pfade.normal;
+      if (fokus) p = (e.von === fokus.id || e.nach === fokus.id) ? pfade.hi : pfade.dim;
+      else if (state.search && (!istTreffer(a) || !istTreffer(b))) p = pfade.dim;
+      p.moveTo(a.x, a.y);
+      p.lineTo(b.x, b.y);
     }
+    ctx.lineWidth = 1 / k;
+    ctx.strokeStyle = 'rgba(170,160,200,.05)'; ctx.stroke(pfade.dim);
+    ctx.strokeStyle = 'rgba(170,160,200,.22)'; ctx.stroke(pfade.normal);
+    ctx.lineWidth = 1.4 / k;
+    ctx.strokeStyle = 'rgba(94,242,255,.85)'; ctx.stroke(pfade.hi);
 
-    for (const n of state.knoten) {
-      if (!vis.has(n.id)) continue;
+    // Knoten
+    for (const n of visListe) {
       let alpha = 1;
-      if (state.search && !istTreffer(n)) alpha = 0.16;
-      if (sel && n.id !== sel.id && !nb.has(n.id)) alpha = Math.min(alpha, 0.22);
-      const r = radius(n) + (state.hover && state.hover.id === n.id ? 1.2 : 0);
-      const color = FARBEN[n.ordner] || '#ab9cc9';
+      if (state.search && !istTreffer(n)) alpha = 0.12;
+      if (fokus && n !== fokus && !nb.has(n.id)) alpha = Math.min(alpha, 0.16);
+      const istFokus = fokus && n.id === fokus.id;
+      const r = radius(n) * (istFokus ? 1.3 : 1);
+      const basis = FARBEN[n.ordner] || '#ab9cc9';
+      const wichtig = n.typ === 'tag' || (n.wgrad || 0) >= 3;
+      const farbe = n.unaufgeloest ? '#5d5470' : wichtig ? basis : mix(basis, '#dcd8e6', .78);
       ctx.globalAlpha = alpha;
-      if (n.typ === 'tag') {
-        ctx.save();
-        ctx.translate(n.x, n.y);
-        ctx.rotate(Math.PI / 4);
-        ctx.fillStyle = color;
-        ctx.fillRect(-r * 0.72, -r * 0.72, r * 1.44, r * 1.44);
-        ctx.strokeStyle = 'rgba(255,255,255,.45)';
-        ctx.lineWidth = 0.8 / state.t.k;
-        ctx.strokeRect(-r * 0.72, -r * 0.72, r * 1.44, r * 1.44);
-        ctx.restore();
-      } else {
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-        if (n.unaufgeloest) {
-          ctx.fillStyle = 'rgba(143,123,168,.15)';
-          ctx.fill();
-          ctx.setLineDash([3 / state.t.k, 3 / state.t.k]);
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 1.3 / state.t.k;
-          ctx.stroke();
-          ctx.setLineDash([]);
-        } else {
-          ctx.fillStyle = color;
-          ctx.fill();
-          if (n.grad > 0) {
-            ctx.strokeStyle = 'rgba(255,255,255,.38)';
-            ctx.lineWidth = 0.8 / state.t.k;
-            ctx.stroke();
-          }
-        }
+      if (istFokus || (fokus && nb.has(n.id)) || (wichtig && !n.unaufgeloest)) {
+        const R = r * (istFokus ? 8 : 4.6);
+        ctx.drawImage(glow(istFokus ? '#5ef2ff' : basis), n.x - R, n.y - R, R * 2, R * 2);
       }
-      if (sel && sel.id === n.id) {
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, r + 4 / state.t.k, 0, Math.PI * 2);
-        ctx.strokeStyle = '#38e8ff';
-        ctx.lineWidth = 1.5 / state.t.k;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = istFokus ? '#e9fbff' : farbe;
+      ctx.fill();
+      if (n.unaufgeloest) {
+        ctx.strokeStyle = '#8f7ba8';
+        ctx.lineWidth = 1 / k;
         ctx.stroke();
       }
-      ctx.globalAlpha = 1;
+      if (istFokus) {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r + 3 / k, 0, Math.PI * 2);
+        ctx.strokeStyle = '#5ef2ff';
+        ctx.lineWidth = 1.6 / k;
+        ctx.stroke();
+      }
+      if (n._neu) {
+        const p = (jetzt - n._neu) / 4000;
+        if (p < 1) {
+          ctx.globalAlpha = (1 - p) * 0.9;
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, r + 4 + p * 26, 0, Math.PI * 2);
+          ctx.strokeStyle = '#5ef2c0';
+          ctx.lineWidth = 2 / k;
+          ctx.stroke();
+          const R = r * 7 * (1 - p * .5);
+          ctx.drawImage(glow('#5ef2c0'), n.x - R, n.y - R, R * 2, R * 2);
+        } else n._neu = 0;
+      }
     }
 
-    for (const n of state.knoten) {
-      if (!vis.has(n.id)) continue;
-      if (!(sel && sel.id === n.id) && !(state.hover && state.hover.id === n.id) &&
-          state.t.k < 1.8) continue;
+    // Beschriftung unter den Punkten (wie in Obsidian)
+    const ab = 2;
+    const hubs = new Set(visListe.filter(n => (n.wgrad || 0) >= 4 || n.typ === 'tag').sort((a, b) => (b.grad || 0) - (a.grad || 0)).slice(0, 6).map(n => n.id));
+    const fs = 11 / k;
+    ctx.font = `${fs}px "Geist Mono", ui-monospace, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (const n of visListe) {
       if (state.search && !istTreffer(n)) continue;
-      const r = radius(n);
-      const fs = 10.5 / state.t.k;
-      const label = n.titel.length > 38 ? n.titel.slice(0, 36) + '…' : n.titel;
-      ctx.font = `${fs}px "Geist Mono", ui-monospace, monospace`;
-      const tx = n.x + r + 6 / state.t.k;
-      const ty = n.y + fs * 0.36;
-      const tw = ctx.measureText(label).width;
-      ctx.fillStyle = 'rgba(8,4,15,.82)';
-      ctx.fillRect(tx - 2 / state.t.k, ty - fs * 0.9, tw + 4 / state.t.k, fs * 1.25);
-      ctx.fillStyle = n.unaufgeloest ? '#b9a8cc' : '#e9defa';
-      ctx.fillText(label, tx, ty);
+      const istFokus = fokus && n.id === fokus.id;
+      let a = 0;
+      if (istFokus) a = 1;
+      else if (fokus && nb.has(n.id)) a = .9;
+      else if (fokus) a = 0;
+      else a = Math.max(clamp((k - ab) / .5, 0, 1), hubs.has(n.id) && k > .7 ? .8 : 0);
+      if (a <= 0.02) continue;
+      const label = n.titel.length > 34 ? n.titel.slice(0, 32) + '…' : n.titel;
+      ctx.globalAlpha = a;
+      ctx.fillStyle = 'rgba(10,9,16,.85)';
+      ctx.fillText(label, n.x + .8 / k, n.y + radius(n) + 5 / k + .8 / k);
+      ctx.fillStyle = istFokus ? '#ffffff' : (n.unaufgeloest ? '#a99bbd' : '#d9d3e8');
+      ctx.fillText(label, n.x, n.y + radius(n) + 5 / k);
     }
     ctx.restore();
     ctx.globalAlpha = 1;
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
+    zeichneMini(ctx, visListe);
   }
 
   function punkt(ev) {
@@ -783,10 +1007,17 @@
   function onDown(ev) {
     if (ev.button !== 0) return;
     const p = punkt(ev);
+    if (inMini(p)) {
+      state.miniDrag = true;
+      miniSprung(p);
+      try { el.canvas.setPointerCapture(ev.pointerId); } catch (_) {}
+      return;
+    }
     const n = pick(p.x, p.y);
     if (n) {
       state.selected = n;
       state.drag = { n, ox: p.x, oy: p.y, nx: n.x, ny: n.y, moved: false };
+      n.fx = n.x; n.fy = n.y;
       renderDetail(n);
       hideTip();
       draw();
@@ -799,12 +1030,21 @@
 
   function onMove(ev) {
     const p = punkt(ev);
+    if (state.miniDrag) { miniSprung(p); return; }
     if (state.drag) {
       state.userMoved = true;
       if (Math.abs(p.x - state.drag.ox) + Math.abs(p.y - state.drag.oy) > 3) state.drag.moved = true;
-      state.drag.n.x = state.drag.nx + (p.x - state.drag.ox) / state.t.k;
-      state.drag.n.y = state.drag.ny + (p.y - state.drag.oy) / state.t.k;
+      const n = state.drag.n;
+      n.fx = n.x = state.drag.nx + (p.x - state.drag.ox) / state.t.k;
+      n.fy = n.y = state.drag.ny + (p.y - state.drag.oy) / state.t.k;
+      if (state.drag.moved) wecke(0.3);
       draw();
+      return;
+    }
+    if (inMini(p)) {
+      if (state.hover) { state.hover = null; draw(); }
+      hideTip();
+      el.canvas.style.cursor = 'crosshair';
       return;
     }
     if (state.pan) {
@@ -827,6 +1067,12 @@
   }
 
   function onUp(ev) {
+    if (state.miniDrag) {
+      state.miniDrag = false;
+      try { el.canvas.releasePointerCapture(ev.pointerId); } catch (_) {}
+      return;
+    }
+    if (state.drag) { state.drag.n.fx = null; state.drag.n.fy = null; wecke(0.1); }
     if (state.drag && !state.drag.moved && state.drag.n.typ === 'tag') {
       tagFokusSetzen(state.drag.n);
     }

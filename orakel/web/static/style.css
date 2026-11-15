@@ -373,6 +373,8 @@ button.li:hover{background:var(--panel2)}
 .globe-dock{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
   min-height:34px;padding:7px 13px;border-top:1px solid #142832;background:#081117;font-family:var(--mono);font-size:8.5px;color:#526c79}
 .globe-legend{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.globe-legend>span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.globe-swatch{width:5px;height:5px;border-radius:50%;display:inline-block;flex:0 0 auto;box-shadow:0 0 6px currentColor}
 .g-legend-item{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 .g-legend-item i{width:5px;height:5px;border-radius:50%;box-shadow:0 0 6px currentColor;display:inline-block}
 .g-legend-item i.is-line{width:14px;height:1px;border-radius:0;background:#3e8295;box-shadow:none}

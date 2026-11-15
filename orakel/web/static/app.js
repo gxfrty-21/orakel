@@ -598,7 +598,7 @@ async function ensureGlobe(){
   if(!stage) return null;
   globeLoading = (async () => {
     try{
-      const mod = await import('/static/globe2d.js?v=1');
+      const mod = await import('/static/globe2d.js?v=2');
       globeView = new mod.IntelligenceGlobe(stage);
       if(current === 'globe') globeView.setActive(true);
       return globeView;
