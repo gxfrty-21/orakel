@@ -25,7 +25,9 @@
  *   --selbsttest-agent      Prüft einen fehlenden Agenten samt Screenshotpfad
  *
  * Zusätzlich wird die Kopfzeile bei 1024 px auf horizontalen Überlauf und
- * einen sichtbaren «Lauf starten»-Button geprüft.
+ * einen sichtbaren «Lauf starten»-Button geprüft. Bei 1440 px wird die
+ * kompakte Abteilungslegende auf vollständige, überlauffreie Darstellung
+ * geprüft.
  */
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -1018,6 +1020,14 @@ async function pruefeSchiffCluster(page) {
       codes: gruppen.map(g => g.code),
       agenten: Object.fromEntries(gruppen.map(g => [g.code, g.agenten])),
       ids: gruppen.flatMap(g => g.ids),
+      doppeltImCluster: gruppen.flatMap(g => {
+        const gesehen = new Set();
+        return g.ids.filter(id => {
+          if (gesehen.has(id)) return true;
+          gesehen.add(id);
+          return false;
+        }).map(id => ({ id, code: g.code }));
+      }),
     };
   });
 
@@ -1025,6 +1035,10 @@ async function pruefeSchiffCluster(page) {
   const codes = Object.keys(erwartet);
   const erwarteteAgenten = Object.values(erwartet).reduce((summe, anzahl) => summe + anzahl, 0);
   const befunde = [];
+  if (stand.doppeltImCluster.length) {
+    const beschreibung = stand.doppeltImCluster.map(e => `${e.id} (${e.code})`).join(', ');
+    befunde.push(`Raumschiff: Agent ${beschreibung} erscheint doppelt im selben Cluster`);
+  }
   if (stand.ids.length !== erwarteteAgenten) {
     befunde.push(`Raumschiff: ${stand.ids.length} statt ${erwarteteAgenten} Agenten insgesamt`);
   }
@@ -1038,7 +1052,9 @@ async function pruefeSchiffCluster(page) {
   if (fehlend.length) befunde.push(`Raumschiff: Abteilung ${fehlend.join(', ')} fehlt`);
   const unbekannt = stand.codes.filter(code => !codes.includes(code));
   if (unbekannt.length) befunde.push(`Raumschiff: unbekannte Abteilung ${unbekannt.join(', ')}`);
-  const mehrfach = [...new Set(stand.ids.filter((id, i) => stand.ids.indexOf(id) !== i))];
+  const doppelteImCluster = new Set(stand.doppeltImCluster.map(e => e.id));
+  const mehrfach = [...new Set(stand.ids.filter((id, i) => stand.ids.indexOf(id) !== i))]
+    .filter(id => !doppelteImCluster.has(id));
   if (mehrfach.length) befunde.push(`Raumschiff: Agent ${mehrfach.join(', ')} erscheint in mehreren Clustern`);
   for (const [code, soll] of Object.entries(erwartet)) {
     if (!(code in stand.agenten)) continue;
@@ -1118,6 +1134,7 @@ async function pruefeOpsLegende(page) {
   if (fehlend.length) befunde.push(`Raumschiff: Ops-Abteilungslegende ohne Abteilung ${fehlend.join(', ')}`);
   if (unbekannt.length) befunde.push(`Raumschiff: Ops-Abteilungslegende mit unbekannter Abteilung ${unbekannt.join(', ')}`);
   if (!/SEKTOREN/.test(stand.kopf)) befunde.push('Raumschiff: Ops-Abteilungslegende ohne «SEKTOREN» im Kopf');
+  if (!/FILTER/.test(stand.kopf)) befunde.push('Raumschiff: Ops-Abteilungslegende ohne «FILTER» im Kopf');
   if (!/11 ABTEILUNGEN/.test(stand.kopf)) befunde.push(`Raumschiff: Ops-Abteilungslegende ohne «11 ABTEILUNGEN» im Kopf («${stand.kopf}»)`);
 
   if (!stand.schmal) {
@@ -1533,6 +1550,22 @@ async function pruefeNegativtest(url) {
         }),
       },
       {
+        ansicht: 'ship',
+        name: 'Raumschiff-Agent doppelt im selben Cluster',
+        mutieren: () => page.evaluate(() => {
+          const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
+          const a = cluster.find(el => (el.querySelector('.px-dept-head b')?.textContent || '').trim() === 'A');
+          if (!a) throw new Error('Schiffscluster A nicht gefunden');
+          const raeume = [...a.querySelectorAll('.px-room[data-agent]')];
+          if (raeume.length < 2) throw new Error(`Schiffscluster A hat ${raeume.length} statt mindestens 2 Agentenräume`);
+          const id = raeume[0].dataset.agent;
+          if (!id || raeume[1].dataset.agent === id) throw new Error('Keine unterschiedlichen Agenten-IDs im selben Cluster gefunden');
+          raeume[1].dataset.agent = id;
+          const alle = document.querySelectorAll('#shipWorld .px-room[data-agent]');
+          if (alle.length !== 103) throw new Error(`Doppelte ID im selben Cluster hat die Agentenzahl auf ${alle.length} verändert`);
+        }),
+      },
+      {
         ansicht: 'konf',
         name: 'Konferenz-Testplan',
         mutieren: () => page.evaluate(() => {
@@ -1817,6 +1850,51 @@ async function pruefeKopfzeile(browser, url) {
   return befunde;
 }
 
+async function pruefeLegendeDesktop(browser, url) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+  const befunde = [];
+  try {
+    await page.goto(`${url}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(
+      () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
+      null, { timeout: 15000 },
+    );
+    await page.locator('.nav[data-v="ship"]').click();
+    await page.waitForFunction(
+      () => document.querySelectorAll('#shipWorld .px-dept').length === 11
+        && document.querySelector('#shipLegend')?.hidden === false,
+      null, { timeout: 10000 },
+    );
+    await page.waitForTimeout(500);
+    const stand = await page.evaluate(() => {
+      const el = document.querySelector('#shipLegend');
+      if (!el) return null;
+      const side = document.querySelector('#shipSide');
+      const rahmen = el.getBoundingClientRect();
+      const seite = side?.getBoundingClientRect();
+      return {
+        sichtbar: el.getClientRects().length > 0,
+        imPanel: !!seite && rahmen.left >= seite.left - 1 && rahmen.right <= seite.right + 1,
+        seitenScroll: document.documentElement.scrollWidth,
+        viewport: innerWidth,
+      };
+    });
+    if (!stand) {
+      befunde.push('Raumschiff: Ops-Abteilungslegende fehlt');
+      return befunde;
+    }
+    if (!stand.sichtbar) befunde.push('Raumschiff: Ops-Abteilungslegende ist nicht sichtbar');
+    if (!stand.imPanel) befunde.push('Raumschiff: Ops-Abteilungslegende steht nicht in der Ops-Konsole');
+    if (stand.seitenScroll > stand.viewport + 1) {
+      befunde.push(`Raumschiff: Seite hat horizontalen Überlauf (${stand.seitenScroll}>${stand.viewport})`);
+    }
+    befunde.push(...await pruefeOpsLegende(page));
+  } finally {
+    await page.close();
+  }
+  return befunde;
+}
+
 async function main() {
   const opt = argumente(process.argv.slice(2));
   const { validierungen } = await pruefeServer(opt.url);
@@ -1841,7 +1919,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const fehler = [];
   const hinweise = new Set();
-  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, kopfGeprueft = 0, schreibwegeGesamt = 0;
+  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, legendeDesktopGeprueft = 0, kopfGeprueft = 0, schreibwegeGesamt = 0;
 
   try {
     const kopfBefunde = await pruefeKopfzeile(browser, opt.url);
@@ -1849,6 +1927,13 @@ async function main() {
       for (const text of kopfBefunde) fehler.push(`1024px/kopf: ${text}`);
     } else {
       kopfGeprueft++;
+    }
+
+    const desktopLegendeBefunde = await pruefeLegendeDesktop(browser, opt.url);
+    if (desktopLegendeBefunde.length) {
+      for (const text of desktopLegendeBefunde) fehler.push(`1440px/legende: ${text}`);
+    } else {
+      legendeDesktopGeprueft++;
     }
 
     for (const breite of opt.breiten) {
@@ -1943,7 +2028,7 @@ async function main() {
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {

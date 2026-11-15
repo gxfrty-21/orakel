@@ -237,7 +237,10 @@ Ohne relevante Änderungen beendet sich der Hook sofort.
 Für die Abnahme der Schiffsansicht auf echter Safari-Hardware:
 [Checkliste für Pan, Pinch und Tippen](docs/raumschiff/IPHONE-SAFARI-CHECKLISTE.md).
 Sie ergänzt den automatisierten Touch-Test und deckt Porträt, Querformat,
-Safari-Seitenzoom und die Legendenbedienung ab.
+Safari-Seitenzoom und die Legendenbedienung ab. Der Touch-Test prüft zusätzlich den
+2400-px-Grossmodus bei 1100 px Breite. Die Ergebnisse des letzten
+Chromium-Emulationslaufs stehen in
+[TOUCH-EMULATION.md](docs/raumschiff/TOUCH-EMULATION.md).
 
 ## Browser-Prüfung bei grosser Schrift
 
@@ -275,6 +278,10 @@ aria-hidden ist und in keinem display:none- oder visibility:hidden-Vorfahren
 liegt).
 Exit-Code 1 bei einem Befund.
 
+Der Standardlauf prüft bei 1440 px zusätzlich die kompakte
+Abteilungslegende: offen, elf Einträge, kompakter Kopf und kein horizontaler
+Überlauf. Die Zusammenfassung meldet `Desktop-Legende 1× geprüft`.
+
 Der Standardlauf prüft zusätzlich die drei Company-Schreibwege über die
 Web-API: eine direkte Nachricht senden, sie als Empfänger quittieren und einen
 persönlichen Gedächtniseintrag anlegen sowie aktualisieren. Die Prüfung nutzt
@@ -300,8 +307,9 @@ eine falsche Agenten-Kopfzahl, einen entfernten Abteilungstab im Agentenraum,
 einen entfernten sichtbaren Schiffsabteilungscluster, einen geleerten
 Schiffscluster, einen fehlenden Agenten in einem Schiffscluster, einen
 zusätzlichen Agenten in einem zweiten Schiffscluster, eine doppelte Agenten-ID
-bei unveränderter Agentenzahl und einen falschen Konferenz-Testplan. Jeder Fall
-muss einen Befund auslösen; die CI verlangt `Negativtest OK: 10/10`, damit die
+über Cluster hinweg, eine doppelte Agenten-ID im selben Cluster bei
+unveränderter Agentenzahl und einen falschen Konferenz-Testplan. Jeder Fall
+muss einen Befund auslösen; die CI verlangt `Negativtest OK: 11/11`, damit die
 Inhaltsprüfung auch Strukturänderungen im Agentenraum und am Raumschiff nicht
 stillschweigend übersieht.
 
@@ -319,8 +327,9 @@ und 280 px ausschliesslich über Home, Pfeil rechts und Ende. Zusätzlich prüft
 die elf Schiffscluster samt erwarteter Agentenzahl, die Gesamtsumme von 103
 Agenten, eindeutige Agenten-IDs und die Ops-Abteilungslegende (elf Einträge,
 kompakter Kopf, eingeklappt und per Tastatur aufklappbar). Er verlangt in der
-Ausgabe `Tastatur 3× geprüft`, `Inhalte 3× geprüft`, `Agenten 3× geprüft` und
-`Legende 3× geprüft`, damit ein stilles Überspringen als Fehler auffällt.
+Ausgabe `Tastatur 3× geprüft`, `Inhalte 3× geprüft`, `Agenten 3× geprüft`,
+`Legende 3× geprüft` und `Desktop-Legende 1× geprüft`, damit ein stilles
+Überspringen als Fehler auffällt.
 
 ```bash
 # Dashboard mit Beispieldaten starten, ohne die eigene DB anzufassen
@@ -427,7 +436,10 @@ Zwei neue Ansichten im Dashboard, vollständig aus echten Daten:
 - **Raumschiff**: Pixel-Art-Agenten-Querschnitt mit 103 Company-Agentenräumen in elf
   Abteilungen (A–J und S), Zoom/Pan und rechter Detailspalte. Ein Klick öffnet Rolle,
   Status und Aufgabe; Agentenraum und Konferenz liegen als Gemeinschaftsräume im
-  Schiff, die bisherigen Panels bleiben eingeklappt erhalten.
+  Schiff, die bisherigen Panels bleiben eingeklappt erhalten. Unter 1100 px
+  Viewportbreite gilt die kompakte 1500-px-Bühne, ab 1100 px der 2400-px-Grossmodus
+  mit 150/180/270 px hohen Räumen, 48-px-Türen und der reicheren Anhang-Pixelkunst.
+  Beim Wechsel wird das Schiff neu gezeichnet und neu eingepasst.
 
 ### Grenzen dieser Phasen (ehrlich)
 

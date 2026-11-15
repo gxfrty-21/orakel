@@ -1320,6 +1320,7 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 @keyframes pxSterne{to{background-position:260px 0}}
 
 #shipWorld.px-world{width:1500px;padding:40px 60px 120px}
+#shipWorld.px-gross{width:2400px}
 .px-ship{position:relative;font-family:var(--mono);color:#efe6ff}
 
 /* Brücke oben (schmaler, abgeschrägt) */
@@ -1380,6 +1381,22 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 .px-room.on{outline:3px solid #ff3fa4;outline-offset:-3px;z-index:3;box-shadow:0 0 18px rgba(255,63,164,.7)}
 .px-void{cursor:default}
 .px-void:hover{outline:0;filter:none}
+.px-door{position:relative;flex:0 0 22px;align-self:stretch;pointer-events:none;
+  background:linear-gradient(90deg,#05040a 0 3px,#59619a 3px 5px,#161a2e 5px 17px,#59619a 17px 19px,#05040a 19px);
+  box-shadow:inset 0 0 8px rgba(56,232,255,.25)}
+.px-door::before,.px-door::after{content:"";position:absolute;left:4px;right:4px;height:2px;background:#59619a}
+.px-door::before{top:4px}.px-door::after{bottom:4px}
+.px-engdeck{position:relative;margin-top:10px;background:#0d0e1a;border:3px solid #3b4268;box-shadow:inset 0 0 0 1px #000}
+.px-engdeck .px-floor{padding:4px;gap:6px;border-top:0}
+.px-room.px-big{height:170px}
+.px-gross .px-floor,.px-gross .px-common{gap:0}
+.px-gross .px-room{height:150px}
+.px-gross .px-common .px-room{height:180px}
+.px-gross .px-door{flex-basis:48px}
+.px-gross .px-door{background:#05040a;box-shadow:inset 0 0 8px rgba(56,232,255,.25)}
+.px-gross .px-door::before,.px-gross .px-door::after{display:none}
+.px-gross .px-room.px-big{height:270px}
+.px-gross .px-engdeck .px-floor{gap:6px}
 .px-tag{position:absolute;left:4px;top:4px;z-index:1;display:flex;align-items:center;gap:4px;padding:1px 5px 1px 4px;max-width:calc(100% - 8px);
   font-size:8px;letter-spacing:.08em;color:#fff;background:rgba(6,4,12,.82);border:1px solid var(--dept,#38e8ff);
   box-shadow:0 0 6px color-mix(in srgb,var(--dept,#38e8ff) 50%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1420,6 +1437,12 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 .px-dept.is-filter-active{border-color:var(--dept);box-shadow:0 0 22px color-mix(in srgb,var(--dept) 60%,transparent)}
 
 @media (prefers-reduced-motion: reduce){.px-lift,.px-nozzle::after,#shipViewport::after,.px-fin::after{animation:none}}
+
+/* Türen kosten auf schmalen Viewports Platz und werden ausgeblendet. Das
+   Technikdeck bleibt im Querformat aussen vor, weil es dort den Fit-Zoom
+   unter die Touch-Mindestgrösse drücken würde. */
+@media (max-width:950px){.px-door{display:none}}
+@media (max-width:950px) and (orientation:landscape){.px-engdeck{display:none}}
 
 
 /* Smartphone im Querformat: Navigation als einklappbares Menü, Ops-Konsole

@@ -182,9 +182,16 @@ bisherigen Panels für Lage, Meetingraum und Sekretariat bleiben unter
 
 Ein Klick auf einen Raum öffnet rechts Rolle, Status, offene und laufende Aufgaben,
 Mission, letzte Aufgabe und Berichtslinie. `+`/`−`, Mausrad, Zwei-Finger-Gesten und
-`Fit` steuern den Zoom; Ziehen verschiebt das Schiff. Die Darstellung ist eine SVG/CSS-Illustration
-ohne 3D-Framework und bleibt bei 250 % Schrift in zwölf Ansichten und drei Breiten
-ohne Überläufe.
+`Fit` steuern den Zoom; Ziehen verschiebt das Schiff. Die Darstellung ist
+Pixel-Art auf Canvas ohne 3D-Framework und bleibt bei 250 % Schrift in zwölf
+Ansichten und drei Breiten ohne Überläufe.
+
+Die Schiffsbühne ist responsiv: Bis 1099 px Viewportbreite gilt die kompakte
+1500-px-Fassung. Ab 1100 px aktiviert sich der 2400-px-Grossmodus mit 150 px hohen
+Agentenräumen, 180 px hohen Gemeinschaftsräumen, 270 px hohen Hangar-/Warp-Räumen
+und 48 px breiten Türen. Die reichere Kunst aus dem 2400-px-Anhang liegt im
+eigenen Modul `ship-gross.js`; der kompakte Modus behält seine bisherige Kunst.
+Beim Überschreiten der Grenze werden DOM, Kunst und Zoom neu aufgebaut.
 
 Die Anzeigen lesen `/api/report`, `/api/betrieb`, `/api/sekretariat` sowie
 `/api/company/overview`, `/api/company/agents` und `/api/company/tasks`; fehlende

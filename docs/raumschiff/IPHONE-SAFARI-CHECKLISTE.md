@@ -4,6 +4,7 @@
 **Zweck:** Abnahme der echten Touch-Bedienung auf iPhone und Safari; ergänzt den
 automatisierten Chromium-Touch-Test\
 **Automatischer Gegenpart:** [`scripts/pruefe-touch.mjs`](../../scripts/pruefe-touch.mjs)\
+**Letzter Emulationslauf:** [Chromium-Touch-Ergebnisse](TOUCH-EMULATION.md)\
 **Stand:** 15. November 2026
 
 ## 1. Grenzen dieser Prüfung
