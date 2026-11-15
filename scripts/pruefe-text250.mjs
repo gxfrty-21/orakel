@@ -112,6 +112,16 @@ for (const [index, widerspruch] of LANGE_QUELLEN_TESTDATEN.claims.widersprueche.
     : 'a'.repeat(140) + '.example.net';
   widerspruch.quelle_b = 'noch-laengere-quellen-domain-mit-subdomain-und-hyphen.nachrichtenarchiv.example.org';
 }
+// Zusätzlicher Fall mit genau einem sehr langen Host und einer kurzen
+// Gegenseite. Er belastet die Zeile bei 280 und 320 px unabhängig vom
+// bisherigen Langhost-Paar.
+LANGE_QUELLEN_TESTDATEN.claims.widersprueche.push({
+  claim_id: 900001,
+  grund: 'Einzelner sehr langer Host gegen kurze Quelle',
+  sicherheit: 0.6,
+  quelle_a: 'ein-sehr-langer-hostname-mit-vielen-subdomains-und-hyphen.nachrichtenagentur.example.net',
+  quelle_b: 'kurz.example',
+});
 
 /** Prüft die Claim-Metadaten und horizontale Überläufe auf einer eigenen Seite. */
 async function pruefeClaimMetadaten(browser, url, breite) {
@@ -157,20 +167,24 @@ async function pruefeClaimWiderspruchsdetails(page) {
 async function pruefeLangeQuellen(page) {
   await page.evaluate(daten => window.zeichneBewertung(daten), LANGE_QUELLEN_TESTDATEN);
   await page.waitForTimeout(80);
-  return page.evaluate(() => {
+  const langhosts = LANGE_QUELLEN_TESTDATEN.claims.widersprueche.map(widerspruch => widerspruch.quelle_a);
+  return page.evaluate((erwarteteLanghosts) => {
     const befund = [];
     const liste = document.querySelector('#bewertungClaims');
     if (!liste) return ['Claim-Liste #bewertungClaims fehlt'];
     const panel = document.querySelector('#bewertungPanel');
     const panelKasten = panel?.getBoundingClientRect();
     const quellen = [...liste.querySelectorAll('.claimWiderspruchQuellen')];
-    if (quellen.length !== 2) {
-      befund.push(`Quellenzeilen mit Langhosts: ${quellen.length} statt 2`);
+    if (quellen.length !== erwarteteLanghosts.length) {
+      befund.push(`Quellenzeilen mit Langhosts: ${quellen.length} statt ${erwarteteLanghosts.length}`);
     }
     for (const [index, q] of quellen.entries()) {
       if (!q.getClientRects().length) {
         befund.push(`Quellenzeile ${index + 1}: nicht sichtbar`);
         continue;
+      }
+      if (erwarteteLanghosts[index] && !q.textContent.includes(erwarteteLanghosts[index])) {
+        befund.push(`Quellenzeile ${index + 1}: Langhost fehlt`);
       }
       if (q.scrollWidth > q.clientWidth + 1) {
         befund.push(`Quellenzeile ${index + 1}: horizontaler Überlauf (${q.scrollWidth}>${q.clientWidth})`);
@@ -193,14 +207,14 @@ async function pruefeLangeQuellen(page) {
         }
       }
     }
-        const viewport = document.documentElement.clientWidth;
+    const viewport = document.documentElement.clientWidth;
     // Bei 240 px bleiben Kopf- und Navigationsleiste separat scrollbar;
     // geprüft wird hier die Claim-Karte, nicht die gesamte Seite.
     if (innerWidth > 260 && document.documentElement.scrollWidth > viewport + 1) {
       befund.push(`Seite mit Langhosts: horizontaler Überlauf (${document.documentElement.scrollWidth}>${viewport})`);
     }
     return befund;
-  });
+  }, langhosts);
 }
 
 /** Misst die bereits geöffnete Spider-Seite mit den Claim-Testdaten. */

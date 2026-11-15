@@ -331,8 +331,10 @@ Widerspruchsdetails mit Grund, Widerspruchssicherheit, normalisierten
 Vergleichswerten in bp und den beteiligten Quellen.
 Dabei prüft er, ob die Karte,
 ihre Metadaten und Widerspruchszeilen seitlich aus dem Viewport oder ihrem
-Kasten laufen. Zusätzlich wird ein bewusst überlanges Quellenhostpaar geprüft:
-Die Quellenzeile bleibt im Panel, und der Trenner `↔` darf nicht allein stehen.
+Kasten laufen. Zusätzlich werden drei bewusst lange Quellenfälle geprüft – zwei
+überlange Hostpaare und ein einzelner sehr langer Host gegen eine kurze Quelle.
+Die Quellenzeile bleibt bei 280 und 320 px im Panel, und der Trenner `↔` darf
+nicht allein stehen.
 Die Testdaten werden nur ins DOM injiziert und nicht in SQLite geschrieben. Die
 Zusammenfassung meldet `Claims 4× geprüft` (360, 320, 280 und zusätzlich
 240 px).
