@@ -306,8 +306,9 @@ eine falsche Agenten-Kopfzahl, einen entfernten Abteilungstab im Agentenraum,
 einen entfernten sichtbaren Schiffsabteilungscluster, einen geleerten
 Schiffscluster, einen fehlenden Agenten in einem Schiffscluster, einen
 zusätzlichen Agenten in einem zweiten Schiffscluster, eine doppelte Agenten-ID
-bei unveränderter Agentenzahl und einen falschen Konferenz-Testplan. Jeder Fall
-muss einen Befund auslösen; die CI verlangt `Negativtest OK: 10/10`, damit die
+über Cluster hinweg, eine doppelte Agenten-ID im selben Cluster bei
+unveränderter Agentenzahl und einen falschen Konferenz-Testplan. Jeder Fall
+muss einen Befund auslösen; die CI verlangt `Negativtest OK: 11/11`, damit die
 Inhaltsprüfung auch Strukturänderungen im Agentenraum und am Raumschiff nicht
 stillschweigend übersieht.
 

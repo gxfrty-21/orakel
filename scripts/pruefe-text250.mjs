@@ -1020,6 +1020,14 @@ async function pruefeSchiffCluster(page) {
       codes: gruppen.map(g => g.code),
       agenten: Object.fromEntries(gruppen.map(g => [g.code, g.agenten])),
       ids: gruppen.flatMap(g => g.ids),
+      doppeltImCluster: gruppen.flatMap(g => {
+        const gesehen = new Set();
+        return g.ids.filter(id => {
+          if (gesehen.has(id)) return true;
+          gesehen.add(id);
+          return false;
+        }).map(id => ({ id, code: g.code }));
+      }),
     };
   });
 
@@ -1027,6 +1035,10 @@ async function pruefeSchiffCluster(page) {
   const codes = Object.keys(erwartet);
   const erwarteteAgenten = Object.values(erwartet).reduce((summe, anzahl) => summe + anzahl, 0);
   const befunde = [];
+  if (stand.doppeltImCluster.length) {
+    const beschreibung = stand.doppeltImCluster.map(e => `${e.id} (${e.code})`).join(', ');
+    befunde.push(`Raumschiff: Agent ${beschreibung} erscheint doppelt im selben Cluster`);
+  }
   if (stand.ids.length !== erwarteteAgenten) {
     befunde.push(`Raumschiff: ${stand.ids.length} statt ${erwarteteAgenten} Agenten insgesamt`);
   }
@@ -1040,7 +1052,9 @@ async function pruefeSchiffCluster(page) {
   if (fehlend.length) befunde.push(`Raumschiff: Abteilung ${fehlend.join(', ')} fehlt`);
   const unbekannt = stand.codes.filter(code => !codes.includes(code));
   if (unbekannt.length) befunde.push(`Raumschiff: unbekannte Abteilung ${unbekannt.join(', ')}`);
-  const mehrfach = [...new Set(stand.ids.filter((id, i) => stand.ids.indexOf(id) !== i))];
+  const doppelteImCluster = new Set(stand.doppeltImCluster.map(e => e.id));
+  const mehrfach = [...new Set(stand.ids.filter((id, i) => stand.ids.indexOf(id) !== i))]
+    .filter(id => !doppelteImCluster.has(id));
   if (mehrfach.length) befunde.push(`Raumschiff: Agent ${mehrfach.join(', ')} erscheint in mehreren Clustern`);
   for (const [code, soll] of Object.entries(erwartet)) {
     if (!(code in stand.agenten)) continue;
@@ -1533,6 +1547,22 @@ async function pruefeNegativtest(url) {
           raumB.dataset.agent = id;
           const raeume = document.querySelectorAll('#shipWorld .px-room[data-agent]');
           if (raeume.length !== 103) throw new Error(`Doppelte ID hat die Agentenzahl auf ${raeume.length} verändert`);
+        }),
+      },
+      {
+        ansicht: 'ship',
+        name: 'Raumschiff-Agent doppelt im selben Cluster',
+        mutieren: () => page.evaluate(() => {
+          const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
+          const a = cluster.find(el => (el.querySelector('.px-dept-head b')?.textContent || '').trim() === 'A');
+          if (!a) throw new Error('Schiffscluster A nicht gefunden');
+          const raeume = [...a.querySelectorAll('.px-room[data-agent]')];
+          if (raeume.length < 2) throw new Error(`Schiffscluster A hat ${raeume.length} statt mindestens 2 Agentenräume`);
+          const id = raeume[0].dataset.agent;
+          if (!id || raeume[1].dataset.agent === id) throw new Error('Keine unterschiedlichen Agenten-IDs im selben Cluster gefunden');
+          raeume[1].dataset.agent = id;
+          const alle = document.querySelectorAll('#shipWorld .px-room[data-agent]');
+          if (alle.length !== 103) throw new Error(`Doppelte ID im selben Cluster hat die Agentenzahl auf ${alle.length} verändert`);
         }),
       },
       {
