@@ -30,6 +30,20 @@ class StoreError(RuntimeError):
     """Ungültiger Queue-/Profilzustand."""
 
 
+def _erinnerung(row: Any) -> dict[str, Any]:
+    try:
+        wert = json.loads(row["value_json"])
+    except (TypeError, ValueError):
+        wert = None
+    return {
+        "agent_id": row["agent_id"],
+        "scope": row["scope"],
+        "key": row["key"],
+        "value": wert,
+        "updated_at": row["updated_at"],
+    }
+
+
 class CompanyStore:
     def __init__(self, facts: Facts) -> None:
         self.facts = facts
@@ -411,6 +425,7 @@ class CompanyStore:
 
     def nachrichten_gefiltert(self, *, agent: str | None = None, dept: str | None = None,
                               thread_id: str | None = None, seit: str | None = None,
+                              nur_offen: bool = False,
                               limit: int = 100) -> list[dict[str, Any]]:
         """Nachrichten mit Profilnamen, optional nach Agent, Abteilung oder Zeit."""
         where: list[str] = []
@@ -419,8 +434,14 @@ class CompanyStore:
             where.append("m.thread_id=?")
             parameter.append(thread_id)
         if agent:
-            where.append("(m.from_agent=? OR m.to_agent=?)")
-            parameter.extend([agent, agent])
+            if nur_offen:
+                where.append("m.to_agent=? AND m.ack_at IS NULL")
+                parameter.append(agent)
+            else:
+                where.append("(m.from_agent=? OR m.to_agent=?)")
+                parameter.extend([agent, agent])
+        elif nur_offen:
+            where.append("m.ack_at IS NULL")
         if dept:
             where.append("(pfrom.dept=? OR pto.dept=?)")
             parameter.extend([dept, dept])
@@ -443,6 +464,80 @@ class CompanyStore:
 
     def nachrichten_fuer_agent(self, agent_id: str, limit: int = 20) -> list[dict[str, Any]]:
         return self.nachrichten_gefiltert(agent=agent_id, limit=limit)
+
+    def nachricht(self, message_id: int) -> dict[str, Any] | None:
+        """Eine einzelne Nachricht mit den Namen von Sender und Empfänger."""
+        with self._conn() as c:
+            row = c.execute(
+                """
+                SELECT m.*, pfrom.rufname AS from_rufname, pfrom.dept AS from_dept,
+                       pto.rufname AS to_rufname, pto.dept AS to_dept
+                FROM agent_messages m
+                LEFT JOIN agent_profiles pfrom ON pfrom.agent_id=m.from_agent
+                LEFT JOIN agent_profiles pto ON pto.agent_id=m.to_agent
+                WHERE m.id=?
+                """,
+                (int(message_id),),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def nachricht_quittieren(self, message_id: int, agent_id: str) -> bool:
+        """Setzt die Quittung ausschliesslich für den adressierten Empfänger."""
+        with self._conn() as c:
+            cur = c.execute(
+                "UPDATE agent_messages SET ack_at=?"
+                " WHERE id=? AND to_agent=? AND ack_at IS NULL",
+                (jetzt(), int(message_id), agent_id),
+            )
+            return cur.rowcount == 1
+
+    # ---------- Persönliches Agenten-Gedächtnis ----------
+    def erinnerung_setzen(self, *, agent_id: str, scope: str, key: str,
+                          value: Any) -> dict[str, Any] | None:
+        """Legt einen Schlüssel im persönlichen Gedächtnis an oder aktualisiert ihn."""
+        with self._conn() as c:
+            c.execute(
+                "INSERT INTO agent_memories(agent_id,scope,key,value_json,updated_at)"
+                " VALUES (?,?,?,?,?)"
+                " ON CONFLICT(agent_id,scope,key) DO UPDATE SET"
+                " value_json=excluded.value_json, updated_at=excluded.updated_at",
+                (agent_id, scope, key,
+                 json.dumps(value, ensure_ascii=False, sort_keys=True), jetzt()),
+            )
+        return self.erinnerung(agent_id, scope, key)
+
+    def erinnerung(self, agent_id: str, scope: str, key: str) -> dict[str, Any] | None:
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT * FROM agent_memories WHERE agent_id=? AND scope=? AND key=?",
+                (agent_id, scope, key),
+            ).fetchone()
+        return _erinnerung(row) if row else None
+
+    def erinnerungen(self, agent_id: str, scope: str | None = None,
+                     limit: int = 200) -> list[dict[str, Any]]:
+        with self._conn() as c:
+            if scope:
+                rows = list(c.execute(
+                    "SELECT * FROM agent_memories WHERE agent_id=? AND scope=?"
+                    " ORDER BY updated_at DESC, key LIMIT ?",
+                    (agent_id, scope, max(1, min(500, int(limit)))),
+                ))
+            else:
+                rows = list(c.execute(
+                    "SELECT * FROM agent_memories WHERE agent_id=?"
+                    " ORDER BY updated_at DESC, key LIMIT ?",
+                    (agent_id, max(1, min(500, int(limit)))),
+                ))
+        return [_erinnerung(row) for row in rows]
+
+    def erinnerung_loeschen(self, agent_id: str, scope: str, key: str) -> bool:
+        with self._conn() as c:
+            cur = c.execute(
+                "DELETE FROM agent_memories WHERE agent_id=? AND scope=? AND key=?",
+                (agent_id, scope, key),
+            )
+            return cur.rowcount == 1
 
     def entscheidung_speichern(self, *, level: int, title: str, kind: str,
                                rationale: str, owner: str,

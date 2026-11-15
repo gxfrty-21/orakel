@@ -7,6 +7,8 @@ Noch keine 3D-Welt, keine LLM-Anbindung und keine echten Broker-Orders.
 from .roster import PROFILES, Profile, all_profiles, profile_by_id, validate_roster
 from .store import CompanyStore
 from .policy import CompanyPolicy, PolicyError
+from .messaging import MessageError, MessagingService
+from .memory import AgentMemory, MemoryError
 from .runtime import CompanyRuntime
 
 __all__ = [
@@ -18,5 +20,9 @@ __all__ = [
     "CompanyStore",
     "CompanyPolicy",
     "PolicyError",
+    "MessagingService",
+    "MessageError",
+    "AgentMemory",
+    "MemoryError",
     "CompanyRuntime",
 ]

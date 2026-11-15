@@ -372,6 +372,17 @@ def _nachricht(row: Any) -> dict[str, Any]:
     }
 
 
+def nachricht(store: CompanyStore, message_id: int) -> dict[str, Any] | None:
+    """Eine einzelne Nachricht im API-Format."""
+    row = store.nachricht(int(message_id))
+    if row is None:
+        return None
+    return {
+        **_meta("live", [f"message:{int(message_id)}"]),
+        "nachricht": _nachricht(row),
+    }
+
+
 def agent_detail(store: CompanyStore, agent_id: str) -> dict[str, Any] | None:
     """Profil, aktuelle Aufgabe, Historie und Nachrichten eines Agenten."""
     kennung = (agent_id or "").strip().upper()
@@ -380,6 +391,7 @@ def agent_detail(store: CompanyStore, agent_id: str) -> dict[str, Any] | None:
         return None
     aufgaben = store.tasks_fuer_agent(kennung, limit=50)
     nachrichten = store.nachrichten_fuer_agent(kennung, limit=25)
+    erinnerungen = store.erinnerungen(kennung, limit=50)
     offene = [t for t in aufgaben if t["state"] in OFFENE_STATES]
     laufend = [t for t in offene if t["state"] == "running"]
     blockiert = [t for t in offene if t["state"] == "blocked"]
@@ -392,6 +404,7 @@ def agent_detail(store: CompanyStore, agent_id: str) -> dict[str, Any] | None:
     quellen = [f"agent:{kennung}"]
     quellen.extend(f"task:{t['id']}" for t in aufgaben[:20])
     quellen.extend(f"message:{m['id']}" for m in nachrichten[:10])
+    quellen.extend(f"memory:{e['scope']}:{e['key']}" for e in erinnerungen[:10])
     return {
         **_meta("live", quellen),
         "profil": _profil(row),
@@ -401,11 +414,32 @@ def agent_detail(store: CompanyStore, agent_id: str) -> dict[str, Any] | None:
         "aktuelle_aufgabe": _aufgabe(aktuell[0]) if aktuell else None,
         "historie": [_aufgabe(t) for t in aufgaben],
         "nachrichten": [_nachricht(m) for m in nachrichten],
+        "erinnerungen": erinnerungen,
         "zaehlung": {
             "offen": len(offene),
             "laeuft": len(laufend),
             "blockiert": len(blockiert),
         },
+    }
+
+
+def erinnerungen(store: CompanyStore, agent_id: str,
+                 *, scope: str | None = None, limit: int = 200) -> dict[str, Any] | None:
+    """Persönliche Erinnerungen eines Agenten, getrennt nach Scope."""
+    kennung = (agent_id or "").strip().upper()
+    if not store.profil(kennung):
+        return None
+    bereich = (scope or "").strip() or None
+    eintraege = store.erinnerungen(kennung, scope=bereich,
+                                   limit=max(1, min(500, int(limit))))
+    return {
+        **_meta("live" if eintraege else "empty",
+                [f"memory:{e['scope']}:{e['key']}" for e in eintraege[:20]]
+                or [f"memory:{kennung}"]),
+        "agent_id": kennung,
+        "erinnerungen": eintraege,
+        "gesamt": len(eintraege),
+        "filter": {"scope": bereich, "limit": max(1, min(500, int(limit)))},
     }
 
 
@@ -416,6 +450,7 @@ def nachrichten(
     dept: str | None = None,
     thread_id: str | None = None,
     seit: str | None = None,
+    nur_offen: bool = False,
     limit: int = 100,
 ) -> dict[str, Any]:
     """Nachrichten und Threads, filterbar nach Agent, Abteilung und Zeitpunkt."""
@@ -434,7 +469,8 @@ def nachrichten(
         seit_iso = zeit.astimezone(timezone.utc).replace(microsecond=0).isoformat()
 
     rows = store.nachrichten_gefiltert(agent=kennung, dept=abteilung,
-                                       thread_id=thread, seit=seit_iso, limit=grenze)
+                                       thread_id=thread, seit=seit_iso,
+                                       nur_offen=nur_offen, limit=grenze)
     liste = [_nachricht(r) for r in rows]
     threads: dict[str, dict[str, Any]] = {}
     for nachricht in liste:
@@ -464,6 +500,7 @@ def nachrichten(
             "dept": abteilung,
             "thread_id": thread,
             "seit": seit_iso,
+            "nur_offen": nur_offen,
             "limit": grenze,
         },
     }

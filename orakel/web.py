@@ -18,10 +18,14 @@ from .betrieb import betrieb_health, betrieb_status
 from .company.api import agent_detail as company_agent_detail
 from .company.api import agenten as company_agenten
 from .company.api import aufgaben as company_aufgaben
+from .company.api import erinnerungen as company_erinnerungen
 from .company.api import konferenz as company_konferenz
+from .company.api import nachricht as company_nachricht
 from .company.api import nachrichten as company_nachrichten
 from .company.api import raeume as company_raeume
 from .company.api import uebersicht as company_uebersicht
+from .company.memory import AgentMemory
+from .company.messaging import MessagingService
 from .company.store import CompanyStore
 from .config import load_config
 from .db import Facts
@@ -181,6 +185,41 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                                  "code": "company_filter_invalid"}, status_code=400)
         return JSONResponse(daten, headers={"Cache-Control": "no-store"})
 
+    @app.get("/api/company/agents/{agent_id}/memories")
+    def company_agent_memories(
+        agent_id: str,
+        scope: str | None = None,
+        limit: int = Query(200, ge=1, le=500),
+    ) -> JSONResponse:
+        """Persönliche Gedächtniseinträge eines Agenten."""
+        cfg = load_config(cfg_pfad)
+        store = CompanyStore(Facts(cfg.db_pfad))
+        daten = company_erinnerungen(store, agent_id, scope=scope, limit=limit)
+        if daten is None:
+            return JSONResponse({"ok": False, "fehler": "Agent nicht gefunden",
+                                 "code": "company_agent_not_found"}, status_code=404)
+        return JSONResponse(daten, headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/company/agents/{agent_id}/memories")
+    async def company_agent_memory_set(agent_id: str, request: Request) -> JSONResponse:
+        """Legt einen persönlichen Eintrag an oder aktualisiert ihn."""
+        cfg = load_config(cfg_pfad)
+        try:
+            daten = await request.json()
+            if not isinstance(daten, dict):
+                raise ValueError("Ungültiger JSON-Body")
+            if "value" not in daten:
+                raise ValueError("value fehlt")
+            eintrag = AgentMemory(CompanyStore(Facts(cfg.db_pfad))).set(
+                agent_id, daten.get("scope") or "profile", daten.get("key"),
+                daten.get("value"),
+            )
+        except (ValueError, TypeError) as exc:
+            return JSONResponse({"ok": False, "fehler": str(exc),
+                                 "code": "company_memory_invalid"}, status_code=400)
+        return JSONResponse({"ok": True, "erinnerung": eintrag},
+                            headers={"Cache-Control": "no-store"})
+
     @app.get("/api/company/agents/{agent_id}")
     def company_agent(agent_id: str) -> JSONResponse:
         """Profil, Historie, aktuelle Aufgabe und Nachrichten eines Agenten."""
@@ -198,6 +237,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         dept: str | None = None,
         thread_id: str | None = None,
         seit: str | None = None,
+        nur_offen: bool = False,
         limit: int = Query(100, ge=1, le=500),
     ) -> JSONResponse:
         """Nachrichten und Threads, filterbar nach Agent, Abteilung und Zeit."""
@@ -205,11 +245,74 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         store = CompanyStore(Facts(cfg.db_pfad))
         try:
             daten = company_nachrichten(store, agent=agent, dept=dept,
-                                        thread_id=thread_id, seit=seit, limit=limit)
+                                        thread_id=thread_id, seit=seit,
+                                        nur_offen=nur_offen, limit=limit)
         except ValueError as exc:
             return JSONResponse({"ok": False, "fehler": str(exc),
                                  "code": "company_filter_invalid"}, status_code=400)
         return JSONResponse(daten, headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/company/messages/{message_id}")
+    def company_message(message_id: int) -> JSONResponse:
+        """Eine einzelne Nachricht mit Evidence und Quittungsstatus."""
+        cfg = load_config(cfg_pfad)
+        store = CompanyStore(Facts(cfg.db_pfad))
+        daten = company_nachricht(store, message_id)
+        if daten is None:
+            return JSONResponse({"ok": False, "fehler": "Nachricht nicht gefunden",
+                                 "code": "company_message_not_found"}, status_code=404)
+        return JSONResponse(daten, headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/company/messages")
+    async def company_message_send(request: Request) -> JSONResponse:
+        """Sendet eine direkte, Abteilungs- oder Broadcast-Nachricht."""
+        cfg = load_config(cfg_pfad)
+        try:
+            daten = await request.json()
+            if not isinstance(daten, dict):
+                raise ValueError("Ungültiger JSON-Body")
+            ergebnis = MessagingService(CompanyStore(Facts(cfg.db_pfad))).send(
+                sender=daten.get("from_agent"),
+                recipient=daten.get("to_agent") or daten.get("to"),
+                subject=daten.get("subject"),
+                body=daten.get("body"),
+                kind=str(daten.get("kind") or "status"),
+                evidence=daten.get("evidence") or (),
+                requires_ack=bool(daten.get("requires_ack", False)),
+                priority=str(daten.get("priority") or "normal"),
+                thread_id=daten.get("thread_id"),
+                expires_at=daten.get("expires_at"),
+            )
+        except (ValueError, TypeError) as exc:
+            return JSONResponse({"ok": False, "fehler": str(exc),
+                                 "code": "company_message_invalid"}, status_code=400)
+        ids = list(ergebnis.get("message_ids") or [])
+        ergebnis["messages"] = [
+            eintrag["nachricht"]
+            for eintrag in (company_nachricht(CompanyStore(Facts(cfg.db_pfad)), i)
+                            for i in ids)
+            if eintrag
+        ]
+        return JSONResponse({"ok": True, **ergebnis},
+                            headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/company/messages/{message_id}/ack")
+    async def company_message_ack(message_id: int, request: Request) -> JSONResponse:
+        """Bestätigt eine Nachricht als ihr Empfänger."""
+        cfg = load_config(cfg_pfad)
+        try:
+            daten = await request.json()
+            if not isinstance(daten, dict):
+                raise ValueError("Ungültiger JSON-Body")
+            MessagingService(CompanyStore(Facts(cfg.db_pfad))).ack(
+                message_id, daten.get("agent_id"),
+            )
+        except (ValueError, TypeError) as exc:
+            return JSONResponse({"ok": False, "fehler": str(exc),
+                                 "code": "company_message_ack_invalid"}, status_code=400)
+        formatiert = company_nachricht(CompanyStore(Facts(cfg.db_pfad)), message_id)
+        return JSONResponse({"ok": True, **(formatiert or {})},
+                            headers={"Cache-Control": "no-store"})
 
     @app.get("/api/company/rooms")
     def company_rooms() -> JSONResponse:
