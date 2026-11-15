@@ -1,30 +1,33 @@
-# Manuelle iPhone-Safari-Prüfung: Pan, Pinch und Tippen
+# Manuelle Safari-Prüfung: iPhone und iPad – Pan, Pinch, Tippen und Grossmodus
 
 **Gilt für:** die Schiffsansicht `#v-ship` mit 103 Agentenräumen in elf Abteilungen\
-**Zweck:** Abnahme der echten Touch-Bedienung auf iPhone und Safari; ergänzt den
-automatisierten Chromium-Touch-Test\
+**Zweck:** Abnahme der echten Touch-Bedienung auf iPhone und iPad in Safari;
+ergänzt den automatisierten Chromium-Touch-Test\
 **Automatischer Gegenpart:** [`scripts/pruefe-touch.mjs`](../../scripts/pruefe-touch.mjs)\
 **Letzter Emulationslauf:** [Chromium-Touch-Ergebnisse](TOUCH-EMULATION.md)\
 **Stand:** 15. November 2026
 
 ## 1. Grenzen dieser Prüfung
 
-Der automatisierte Lauf prüft 390 × 844, 360 × 800, 844 × 390 und 320 × 700 in
-Chromium mit emulierten Touch-Events. Diese Checkliste prüft, was dort nicht
-sichtbar wird: echte Safari-Gesten, Seitenzoom, die Safari-Werkzeugleiste,
-Drehen des Geräts und das Trefferhalten mit dem Finger. Sie ist **read-only**:
-«Lauf starten» und andere schreibende Aktionen werden nicht angetippt.
+Der automatisierte Lauf prüft 390 × 844, 360 × 800, 844 × 390 und 320 × 700
+sowie die Grossmodus-Viewports 1100 × 800 und 1100 × 1400 in Chromium mit
+emulierten Touch-Events. Diese Checkliste prüft, was dort nicht sichtbar wird:
+echte Safari-Gesten, Seitenzoom, die Safari-Werkzeugleiste, Drehen des Geräts
+und das Trefferhalten mit dem Finger. Sie ist **read-only**: «Lauf starten» und
+andere schreibende Aktionen werden nicht angetippt.
 
 ## 2. Gerät und Umgebung
 
 Diese Checkliste wird pro Gerät und Orientierung einmal ausgefüllt. Wenn nur ein
 iPhone verfügbar ist, mindestens dieses Gerät in **Porträt und Querformat**
-prüfen.
+prüfen. Für den Grossmodus zusätzlich ein **iPad mit mindestens 1100 CSS-Pixel
+Breite im Querformat** prüfen; die Rotation deckt den Wechsel zur kompakten
+Ansicht ab.
 
 | Feld | Eintrag |
 |---|---|
-| Gerät | z. B. iPhone SE (3. Gen.) oder iPhone 15 |
-| iOS-Version | |
+| Gerät | z. B. iPhone SE (3. Gen.), iPhone 15 oder iPad Pro 11" |
+| iOS-/iPadOS-Version | |
 | Safari-Version | |
 | Getestete URL | |
 | Commit/Deploy | |
@@ -35,6 +38,13 @@ Empfohlene Abdeckung:
 
 - **iPhone SE (2./3. Gen.):** 375 × 667 CSS-Pixel im Porträt, 667 × 375 im Querformat.
 - **iPhone 14/15:** 390 × 844 CSS-Pixel im Porträt, 844 × 390 im Querformat.
+- **iPad Pro 11" / iPad Air 11" (Querformat):** circa 1194 × 834 bzw. 1180 × 820
+  CSS-Pixel. Ab 1100 px ist der Grossmodus aktiv; im Porträt (834/820 px)
+  schaltet die Ansicht in den kompakten Modus.
+- **iPad (10.2", Querformat):** 1080 × 810 CSS-Pixel; bleibt unter 1100 px und
+  damit kompakt. Nur als Gegenprobe geeignet; den Grossmodus dort nicht erwarten.
+- **iPhones:** bleiben auch im Querformat unter 1100 CSS-Pixel; dort ist der
+  kompakte Modus aktiv. Der Grossmodus ist kein iPhone-Testfall.
 
 Die tatsächliche Safari-Viewport-Höhe ändert sich mit ein- und ausgeblendeter
 Werkzeugleiste. Deshalb nach dem Laden kurz warten, bis die Leiste stabil ist.
@@ -94,7 +104,28 @@ Werkzeugleiste. Deshalb nach dem Laden kurz warten, bis die Leiste stabil ist.
 | TAP-8 | Auf eine leere Fläche bzw. einen nicht interaktiven Bereich des Schiffs tippen. | Es wird kein Raum geöffnet, die Detailspalte bleibt unverändert und es erscheint kein JavaScript-Fehler. | [ ] | [ ] |
 | TAP-9 | «Fit» antippen. | Alle 103 Räume und elf Abteilungen sind wieder vollständig sichtbar; die Zoom-Anzeige ist ein Prozentwert. | [ ] | [ ] |
 
-## 7. Safari-Abschlussprüfung
+## 7. iPad-Querformat: Grossmodus und Rotation
+
+**Voraussetzung:** iPad mit mindestens 1100 CSS-Pixel Breite im Querformat,
+Website-Zoom 100 %, «Fit» einmal ausgeführt. Der Grossmodus ist die breitere
+2400-px-Bühne; auf iPhones und schmalen iPads bleibt die kompakte 1500-px-Fassung
+aktiv.
+
+| ID | Aktion | Erwartetes Ergebnis | Quer | Porträt |
+|---|---|---|---|---|
+| GROSS-1 | Das iPad ins Querformat drehen, «Raumschiff» öffnen und kurz warten. | Die breite 2400-px-Bühne ist aktiv (`#shipWorld` trägt `px-gross`); die Agentenräume sind 150 px hoch. Es ist nicht die kompakte 1500-px-Fassung. | [ ] | — |
+| GROSS-2 | «Fit» antippen. | Die Zoom-Anzeige zeigt einen Prozentwert; alle 103 Räume und elf Abteilungen sind sichtbar. Es gibt keinen horizontalen Seitenüberlauf, und der Safari-Seitenzoom bleibt 100 %. | [ ] | — |
+| GROSS-3 | Im Grossmodus einmal panen, pinchzoomen und einen Raum antippen. | Das Schiff folgt den Gesten; der Tap öffnet genau einen Raum samt Details und markiert seine Abteilung in der Legende. Die Safari-Werkzeugleiste bleibt bedienbar. | [ ] | — |
+| GROSS-4 | Die geöffnete Legende prüfen und «A · Hauptzentrale» antippen. | Elf Abteilungen sind ohne Überlauf bedienbar; der Filter hebt Abteilung A mit zehn Räumen hervor, ohne die geöffneten Agentendetails zu ersetzen. | [ ] | — |
+| GROSS-5 | Bei sichtbarem Schiff vom Querformat ins Porträt drehen und ca. 0,5 s warten. | Die Ansicht wechselt in die kompakte 1500-px-Fassung (`px-gross` fehlt), wird neu eingepasst und zeigt weiterhin alle 103 Räume und elf Abteilungen. Es gibt keinen leeren oder eingefrorenen Zustand und keinen horizontalen Überlauf. | — | [ ] |
+| GROSS-6 | Vom Porträt zurück ins Querformat drehen und ca. 0,5 s warten. | Der Grossmodus ist wieder aktiv: 2400-px-Bühne, 150 px hohe Agentenräume, alle 103 Räume und elf Abteilungen sichtbar; die Zoom-Anzeige ist aktuell. | [ ] | — |
+| GROSS-7 | Während eines geöffneten Raums oder aktiven Filters zweimal die Orientierung wechseln. | Auswahl und Filter bleiben nachvollziehbar; es wird kein falscher Raum geöffnet. Nach dem Neuaufbau sind Details, Legendenmarkierung und Zoom-Anzeige konsistent, ohne JavaScript-Fehler. | [ ] | [ ] |
+
+> Der Modus ist optional im Web Inspector an `#shipWorld.px-gross` und
+> `offsetWidth === 2400` erkennbar. Ohne Inspector helfen die deutlich breitere
+> Bühne, die 150 px hohen Agentenräume und die reichere Grossmodus-Kunst.
+
+## 8. Safari-Abschlussprüfung
 
 - [ ] Nach allen Gesten ist der Safari-Seitenzoom weiterhin 100 %.
 - [ ] Es gibt keinen horizontalen Seitenüberlauf und kein versehentliches
@@ -107,7 +138,7 @@ Werkzeugleiste. Deshalb nach dem Laden kurz warten, bis die Leiste stabil ist.
       werden separat notiert.
 - [ ] Keine schreibende Aktion («Lauf starten» oder ähnliche) wurde ausgelöst.
 
-## 8. Ergebnis und Fehlermeldung
+## 9. Ergebnis und Fehlermeldung
 
 **Gesamtergebnis:** [ ] bestanden · [ ] bestanden mit Hinweisen · [ ] nicht bestanden
 
@@ -135,7 +166,7 @@ Bei einem Befund notieren:
 Screenshot auf dem iPhone: **Seitentaste + Lauter** drücken. Keine Zugangsdaten
 oder personenbezogenen Daten im Screenshot oder im Befund speichern.
 
-## 9. Abnahme
+## 10. Abnahme
 
 | Prüfung | Ergebnis | Initialen | Datum |
 |---|---|---|---|
@@ -143,6 +174,8 @@ oder personenbezogenen Daten im Screenshot oder im Befund speichern.
 | Pan in Porträt und Querformat | | | |
 | Pinch in Porträt und Querformat | | | |
 | Tippen, Legende und Filter in Porträt und Querformat | | | |
+| iPad-Querformat: Grossmodus | | | |
+| Moduswechsel Querformat/Porträt | | | |
 | Safari-Abschlussprüfung | | | |
 
 Diese manuelle Prüfung ersetzt den automatisierten Touch-Test nicht. Der
