@@ -322,30 +322,32 @@ jobs:
       - name: Eindeutige Screenshotnamen bei mehreren Clusterfehlern prüfen
         run: |
           set -euo pipefail
-          mapfile -t bilder < <(grep '^Screenshot: ' artifacts/text250/selbsttest.log | sed 's/^Screenshot: //')
-          if [ "${#bilder[@]}" -lt 2 ]; then
-            echo "Zu wenige Cluster-Screenshots: ${#bilder[@]} (erwartet mindestens 2)"
+          scripts/pruefe-cluster-screenshotnamen.sh \
+            artifacts/text250/selbsttest.log \
+            artifacts/text250/selbsttest
+
+      # Bewusste Duplikat-Probe: Ein zusätzlicher Log-Eintrag mit demselben
+      # Screenshotpfad muss die Prüfung mit einem Duplikatbefund beenden.
+      - name: Duplikat-Probe für Cluster-Screenshotnamen
+        run: |
+          set -euo pipefail
+          probe_log=artifacts/text250/selbsttest-duplikat.log
+          probe_ausgabe=artifacts/text250/duplikat-probe.log
+          cp artifacts/text250/selbsttest.log "$probe_log"
+          erster=$(grep -m1 '^Screenshot: ' "$probe_log")
+          if [ -z "$erster" ]; then
+            echo "Duplikat-Probe: kein Screenshot-Eintrag im Selbsttestlog"
             exit 1
           fi
-          doppelt=$(printf '%s\n' "${bilder[@]}" | sort | uniq -d)
-          if [ -n "$doppelt" ]; then
-            echo "Doppelte Screenshot-Namen:"
-            printf '%s\n' "$doppelt"
+          printf '%s\n' "$erster" >> "$probe_log"
+          if scripts/pruefe-cluster-screenshotnamen.sh \
+               "$probe_log" artifacts/text250/selbsttest > "$probe_ausgabe" 2>&1; then
+            echo "Duplikat-Probe FEHLER: doppelter Screenshotname wurde nicht erkannt"
+            cat "$probe_ausgabe"
             exit 1
           fi
-          for bild in "${bilder[@]}"; do
-            if [ ! -s "$bild" ]; then
-              echo "Screenshot fehlt oder ist leer: $bild"
-              exit 1
-            fi
-          done
-          anzahl=$(find artifacts/text250/selbsttest -maxdepth 1 \
-            -name 'selbsttest-360px-ship-cluster-*.png' -size +0c | wc -l)
-          if [ "$anzahl" -ne "${#bilder[@]}" ]; then
-            echo "Screenshot-Anzahl passt nicht zum Selbsttestlog: ${anzahl} Dateien, ${#bilder[@]} Logeinträge"
-            exit 1
-          fi
-          echo "Cluster-Screenshots eindeutig: ${#bilder[@]}"
+          grep -q '^Doppelte Screenshot-Namen:' "$probe_ausgabe"
+          echo "Duplikat-Probe OK: doppelter Screenshotname erkannt"
 
 
 
