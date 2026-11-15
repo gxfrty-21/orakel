@@ -100,6 +100,130 @@ async function pruefeServer(url) {
   return { validierungen };
 }
 
+/**
+ * Prüft die neuen Company-Schreibwege über die Web-API im Browserkontext:
+ * direkte Nachricht senden, als Empfänger quittieren und einen persönlichen
+ * Gedächtniseintrag anlegen bzw. aktualisieren. Die Werte sind pro Lauf
+ * eindeutig; geschrieben wird ausschliesslich in die Datenbank des laufenden
+ * Testservers.
+ */
+async function pruefeCompanySchreibwege(page) {
+  const lauf = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const subject = `Web-Schreibtest ${lauf}`;
+  const body = `Automatischer Schreibtest ${lauf}.`;
+  const key = `web-schreibtest-${lauf}`;
+  const wert = { quelle: 'pruefe-text250', lauf };
+  const aktualisiert = { ...wert, status: 'aktualisiert' };
+
+  const ergebnis = await page.evaluate(async ({ subject, body, key, wert, aktualisiert }) => {
+    const befunde = [];
+    const anfrage = async (pfad, optionen = {}) => {
+      try {
+        const antwort = await fetch(pfad, {
+          cache: 'no-store',
+          ...optionen,
+          headers: { 'Content-Type': 'application/json', ...(optionen.headers || {}) },
+        });
+        const inhalt = await antwort.json().catch(() => ({}));
+        return { status: antwort.status, ok: antwort.ok, inhalt };
+      } catch (fehler) {
+        return { status: 0, ok: false, inhalt: {}, fehler: String(fehler) };
+      }
+    };
+
+    const memoryPost = await anfrage('/api/company/agents/A1/memories', {
+      method: 'POST',
+      body: JSON.stringify({ scope: 'profile', key, value: wert }),
+    });
+    if (!memoryPost.ok || !memoryPost.inhalt.ok) {
+      befunde.push(`Gedächtnis anlegen: HTTP ${memoryPost.status}${memoryPost.fehler ? ` (${memoryPost.fehler})` : ''}`);
+    } else {
+      const eintrag = memoryPost.inhalt.erinnerung || {};
+      if (eintrag.agent_id !== 'A1' || eintrag.scope !== 'profile' || eintrag.key !== key
+          || !eintrag.value || eintrag.value.lauf !== wert.lauf) {
+        befunde.push('Gedächtnis anlegen liefert den falschen Eintrag zurück');
+      }
+    }
+
+    const memoryUpdate = await anfrage('/api/company/agents/A1/memories', {
+      method: 'POST',
+      body: JSON.stringify({ scope: 'profile', key, value: aktualisiert }),
+    });
+    if (!memoryUpdate.ok || !memoryUpdate.inhalt.ok) {
+      befunde.push(`Gedächtnis aktualisieren: HTTP ${memoryUpdate.status}`);
+    }
+    const memoryGet = await anfrage('/api/company/agents/A1/memories?scope=profile');
+    if (!memoryGet.ok || !memoryGet.inhalt.ok) {
+      befunde.push(`Gedächtnis lesen: HTTP ${memoryGet.status}`);
+    } else {
+      const treffer = (memoryGet.inhalt.erinnerungen || []).filter(e => e.key === key);
+      if (treffer.length !== 1) {
+        befunde.push(`Gedächtnis-Upsert hinterlässt ${treffer.length} statt 1 Eintrag`);
+      } else if (!treffer[0].value || treffer[0].value.status !== 'aktualisiert') {
+        befunde.push('Gedächtnis-Upsert hat den Wert nicht aktualisiert');
+      }
+    }
+
+    const messagePost = await anfrage('/api/company/messages', {
+      method: 'POST',
+      body: JSON.stringify({
+        from_agent: 'A1', to_agent: 'A2', kind: 'status', subject, body,
+        evidence: [`web:${key}`], requires_ack: true,
+      }),
+    });
+    let messageId = null;
+    if (!messagePost.ok || !messagePost.inhalt.ok) {
+      befunde.push(`Nachricht senden: HTTP ${messagePost.status}${messagePost.fehler ? ` (${messagePost.fehler})` : ''}`);
+    } else {
+      const ids = messagePost.inhalt.message_ids || [];
+      messageId = ids.length === 1 ? Number(ids[0]) : null;
+      if (!Number.isInteger(messageId) || messageId <= 0) {
+        befunde.push(`Nachricht senden liefert ${ids.length} statt 1 gültige Nachricht`);
+        messageId = null;
+      } else {
+        const nachricht = (messagePost.inhalt.messages || [])[0] || {};
+        if (nachricht.id !== messageId || nachricht.from_agent !== 'A1'
+            || nachricht.to_agent !== 'A2' || nachricht.subject !== subject
+            || nachricht.requires_ack !== true || nachricht.ack_at !== null
+            || JSON.stringify(nachricht.evidence) !== JSON.stringify([`web:${key}`])) {
+          befunde.push('Gesendete Nachricht hat nicht die erwarteten Felder');
+        }
+      }
+    }
+
+    if (messageId === null) {
+      befunde.push('Quittung konnte ohne gültige Nachrichten-ID nicht geprüft werden');
+    } else {
+      const ack = await anfrage(`/api/company/messages/${messageId}/ack`, {
+        method: 'POST',
+        body: JSON.stringify({ agent_id: 'A2' }),
+      });
+      if (!ack.ok || !ack.inhalt.ok) {
+        befunde.push(`Nachricht quittieren: HTTP ${ack.status}${ack.fehler ? ` (${ack.fehler})` : ''}`);
+      } else if (!ack.inhalt.nachricht || !ack.inhalt.nachricht.ack_at) {
+        befunde.push('Quittung liefert keinen Quittungszeitpunkt zurück');
+      }
+
+      const offen = await anfrage('/api/company/messages?agent=A2&nur_offen=true');
+      if (!offen.ok || !offen.inhalt.ok) {
+        befunde.push(`Offene Nachrichten lesen: HTTP ${offen.status}`);
+      } else if ((offen.inhalt.nachrichten || []).some(m => Number(m.id) === messageId)) {
+        befunde.push('Quittierte Nachricht erscheint weiterhin als offen');
+      }
+
+      const detail = await anfrage(`/api/company/messages/${messageId}`);
+      if (!detail.ok || !detail.inhalt.ok) {
+        befunde.push(`Nachricht nach Quittung lesen: HTTP ${detail.status}`);
+      } else if (!detail.inhalt.nachricht || !detail.inhalt.nachricht.ack_at) {
+        befunde.push('Quittung ist nicht persistent gespeichert');
+      }
+    }
+
+    return { befunde, geprueft: befunde.length ? 0 : 3 };
+  }, { subject, body, key, wert, aktualisiert });
+  return ergebnis;
+}
+
 /** Setzt die Textskalierung zurück und wendet den Faktor auf alle Elemente an. */
 async function skaliere(page, faktor) {
   await page.evaluate((k) => {
@@ -1717,7 +1841,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const fehler = [];
   const hinweise = new Set();
-  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, kopfGeprueft = 0;
+  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, kopfGeprueft = 0, schreibwegeGesamt = 0;
 
   try {
     const kopfBefunde = await pruefeKopfzeile(browser, opt.url);
@@ -1799,6 +1923,14 @@ async function main() {
       }
       await page.close();
     }
+
+    const schreibPage = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1 });
+    schreibPage.on('pageerror', err => fehler.push(`schreibwege: ${err}`));
+    await schreibPage.goto(`${opt.url}/`, { waitUntil: 'domcontentloaded' });
+    const schreibBefunde = await pruefeCompanySchreibwege(schreibPage);
+    schreibwegeGesamt += schreibBefunde.geprueft;
+    for (const text of schreibBefunde.befunde) fehler.push(`schreibwege: ${text}`);
+    await schreibPage.close();
   } finally {
     await browser.close();
   }
@@ -1811,7 +1943,7 @@ async function main() {
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {
