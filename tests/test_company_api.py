@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
+from hypothesis import HealthCheck, example, given, settings
 
+from paper_strategies import paper_erlaubt, paper_konfiguration
 from orakel.company import api
 from orakel.company.store import CompanyStore
 from orakel.db import Facts
@@ -69,6 +71,35 @@ def test_uebersicht_liefert_kennzahlen_status_und_offene_aufgaben(cfg):
     assert daten["offene_entscheidungen"][0]["title"] == "Testentscheid"
     assert daten["letzte_konferenz"] is None
     assert daten["audit_ok"] is True
+
+
+@example(None)
+@example({})
+@example({"broker": "csv", "order_freigabe": False})
+@example({"broker": "mt5", "order_freigabe": False})
+@given(paper=paper_konfiguration())
+@settings(
+    max_examples=150,
+    derandomize=True,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+def test_api_paper_guard_generierte_kombinationen(cfg, paper):
+    if paper is None:
+        cfg._d.pop("paper", None)
+    else:
+        cfg._d["paper"] = paper
+
+    daten = api.paper_guard(cfg)
+    erlaubt = paper_erlaubt(paper)
+
+    assert daten["ok"] is True
+    assert daten["paper_only"] is erlaubt
+    assert daten["paper_order_allowed"] is erlaubt
+    if erlaubt:
+        assert "Paper-only ist aktiv" in daten["grund"]
+    else:
+        assert "Paper-Sperre" in daten["grund"]
 
 
 def test_agentenstatus_und_letzte_aufgabe(cfg):

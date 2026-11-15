@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import socket
+import sys
 
 import pandas as pd
+import pytest
 
 from orakel.db import Facts
 from orakel.paper import tick
@@ -33,6 +36,70 @@ def aufbau(cfg) -> tuple[Facts, int]:
     db.zustand_setzen("letzter_lauf_id", "L1")
     db.auswahl_setzen("TEST", "ema_cross|fast=10,slow=50", vid)
     return db, vid
+
+
+def test_takt_ohne_broker_und_netzwerk(cfg, monkeypatch):
+    """Der Paper-Takt bleibt eine reine SQLite-Simulation."""
+    db, _ = aufbau(cfg)
+
+    class KeinBroker:
+        def __getattr__(self, name):
+            raise AssertionError(f"Paper-Takt hat Broker-Attribut {name} benutzt")
+
+    def kein_netzwerk(*args, **kwargs):
+        raise AssertionError("Paper-Takt hat eine Netzwerkverbindung geöffnet")
+
+    monkeypatch.setitem(sys.modules, "orakel.brokers", KeinBroker())
+    monkeypatch.setattr(socket, "socket", kein_netzwerk)
+    monkeypatch.setattr(socket, "create_connection", kein_netzwerk)
+
+    ergebnis = tick(cfg, db)
+
+    assert ergebnis["konto"]["positionen"] == 1
+    assert len(db.positionen()) == 1
+
+
+@pytest.mark.parametrize("paper_konfiguration", [
+    None,  # [paper] fehlt vollständig
+    {"order_freigabe": False},  # broker fehlt
+    {"broker": "unbekannt", "order_freigabe": False},
+    {"broker": "", "order_freigabe": False},
+    {"broker": "mt5", "order_freigabe": False},
+])
+def test_takt_laeuft_ohne_broker_konfiguration_und_mit_unbekannten_werten(
+    cfg, paper_konfiguration,
+):
+    """Der Paper-Takt hängt nicht von Broker-Konfiguration oder Freigabe ab."""
+    if paper_konfiguration is None:
+        cfg._d.pop("paper", None)
+    else:
+        cfg._d["paper"] = dict(paper_konfiguration)
+
+    db, _ = aufbau(cfg)
+    ergebnis = tick(cfg, db)
+
+    assert ergebnis["konto"]["positionen"] == 1
+    assert len(db.positionen()) == 1
+    assert db.positionen()[0]["symbol"] == "TEST"
+
+
+@pytest.mark.parametrize("abschnitte", [
+    ("risiko",),
+    ("kosten",),
+    ("risiko", "kosten"),
+])
+def test_takt_meldet_fehlende_risiko_oder_kostenabschnitte(cfg, abschnitte):
+    db, _ = aufbau(cfg)
+    for abschnitt in abschnitte:
+        cfg._d.pop(abschnitt)
+
+    with pytest.raises(ValueError, match=r"Paper-Takt:.*fehlen") as exc:
+        tick(cfg, db)
+
+    for abschnitt in abschnitte:
+        assert f"[{abschnitt}]" in str(exc.value)
+    assert db.positionen() == []
+    assert db.zustand("paper_konto") is None
 
 
 def test_takt_eroeffnet_paper_position(cfg):

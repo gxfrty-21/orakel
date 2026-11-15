@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator, Sequence
 
 from ..db import Facts
+from .policy import ERLAUBTE_TASK_TYPES
 from .roster import Profile, all_profiles
 
 
@@ -54,6 +55,30 @@ class CompanyStore:
         with self.facts.conn() as c:
             c.execute("PRAGMA foreign_keys=ON")
             yield c
+
+    def _append_event_im_transaktion(
+        self, c: Any, agent_id: str, task_id: int | None, kind: str,
+        payload: dict[str, Any] | None = None,
+    ) -> str:
+        """Schreibt ein Audit-Event in die bereits offene Transaktion.
+
+        Der Aufrufer hält ``_event_lock`` und eine ``BEGIN IMMEDIATE``-
+        Transaktion. Dadurch werden Task-Status und Audit-Event gemeinsam
+        committet oder gemeinsam zurückgerollt.
+        """
+        last = c.execute("SELECT hash FROM agent_events ORDER BY id DESC LIMIT 1").fetchone()
+        prev = str(last["hash"]) if last else "GENESIS"
+        ts = jetzt()
+        roh = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True,
+                         separators=(",", ":"))
+        material = f"{prev}|{ts}|{agent_id}|{task_id or ''}|{kind}|{roh}"
+        digest = hashlib.sha256(material.encode("utf-8")).hexdigest()
+        c.execute(
+            "INSERT INTO agent_events(ts,agent_id,task_id,kind,payload_json,prev_hash,hash)"
+            " VALUES (?,?,?,?,?,?,?)",
+            (ts, agent_id, task_id, kind, roh, prev, digest),
+        )
+        return digest
 
     # ---------- Profile ----------
     def sync_roster(self, profile: Sequence[Profile] | None = None) -> int:
@@ -174,33 +199,47 @@ class CompanyStore:
         due_at: str | None = None,
         max_attempts: int = 3,
     ) -> int:
+        if not isinstance(task_type, str) or task_type not in ERLAUBTE_TASK_TYPES:
+            raise StoreError(f"Unbekannter Task-Typ: {task_type!r}")
         zeit = jetzt()
-        with self._conn() as c:
-            vorhanden = c.execute("SELECT id FROM agent_tasks WHERE task_key=?",
-                                  (task_key,)).fetchone()
-            if vorhanden:
-                return int(vorhanden["id"])
-            cur = c.execute(
-                """
-                INSERT INTO agent_tasks(
-                    task_key,parent_id,created_by,assigned_to,dept,title,description,
-                    task_type,priority,state,autonomy_level,max_attempts,attempts,
-                    due_at,acceptance,input_json,created_at,updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,'queued',?,?,0,?,?,?,?,?)
-                """,
-                (
-                    task_key, parent_id, created_by, assigned_to, dept, title, description,
-                    task_type, int(priority), int(autonomy_level), int(max_attempts),
-                    due_at, acceptance,
-                    json.dumps(input_data or {}, ensure_ascii=False), zeit, zeit,
-                ),
-            )
-            task_id = int(cur.lastrowid or 0)
-        self.append_event("SYSTEM", task_id, "task_created", {
-            "task_key": task_key,
-            "assigned_to": assigned_to,
-            "task_type": task_type,
-        })
+        with self._event_lock:
+            with self._conn() as c:
+                c.execute("BEGIN IMMEDIATE")
+                vorhanden = c.execute(
+                    "SELECT id, task_type FROM agent_tasks WHERE task_key=?",
+                    (task_key,),
+                ).fetchone()
+                if vorhanden:
+                    vorhandener_typ = str(vorhanden["task_type"])
+                    if vorhandener_typ != task_type:
+                        raise StoreError(
+                            f"Task-Key {task_key!r} ist bereits mit Task-Typ "
+                            f"{vorhandener_typ!r} belegt"
+                        )
+                    return int(vorhanden["id"])
+                cur = c.execute(
+                    """
+                    INSERT INTO agent_tasks(
+                        task_key,parent_id,created_by,assigned_to,dept,title,description,
+                        task_type,priority,state,autonomy_level,max_attempts,attempts,
+                        due_at,acceptance,input_json,created_at,updated_at
+                    ) VALUES (?,?,?,?,?,?,?,?,?,'queued',?,?,0,?,?,?,?,?)
+                    """,
+                    (
+                        task_key, parent_id, created_by, assigned_to, dept, title, description,
+                        task_type, int(priority), int(autonomy_level), int(max_attempts),
+                        due_at, acceptance,
+                        json.dumps(input_data or {}, ensure_ascii=False), zeit, zeit,
+                    ),
+                )
+                task_id = int(cur.lastrowid or 0)
+                self._append_event_im_transaktion(
+                    c, "SYSTEM", task_id, "task_created", {
+                        "task_key": task_key,
+                        "assigned_to": assigned_to,
+                        "task_type": task_type,
+                    },
+                )
         return task_id
 
     def task(self, task_id: int) -> dict[str, Any] | None:
@@ -239,63 +278,70 @@ class CompanyStore:
         """Gibt abgelaufene Leases frei; harte Fehlschläge bleiben sichtbar."""
         grenze = jetzt()
         betroffen = 0
-        with self._conn() as c:
-            rows = list(c.execute(
-                "SELECT id, attempts, max_attempts FROM agent_tasks"
-                " WHERE state='running' AND lease_until IS NOT NULL AND lease_until < ?",
-                (grenze,),
-            ))
-            for row in rows:
-                neu = "dead_letter" if int(row["attempts"]) >= int(row["max_attempts"]) else "queued"
-                c.execute(
-                    "UPDATE agent_tasks SET state=?, lease_until=NULL, lease_owner=NULL,"
-                    " error=?, updated_at=? WHERE id=? AND state='running'",
-                    (neu, "Lease abgelaufen", grenze, int(row["id"])),
-                )
-                betroffen += 1
-        if betroffen:
-            self.append_event("SYSTEM", None, "lease_recovered", {"tasks": betroffen})
+        with self._event_lock:
+            with self._conn() as c:
+                c.execute("BEGIN IMMEDIATE")
+                rows = list(c.execute(
+                    "SELECT id, attempts, max_attempts FROM agent_tasks"
+                    " WHERE state='running' AND lease_until IS NOT NULL AND lease_until < ?",
+                    (grenze,),
+                ))
+                for row in rows:
+                    neu = "dead_letter" if int(row["attempts"]) >= int(row["max_attempts"]) else "queued"
+                    c.execute(
+                        "UPDATE agent_tasks SET state=?, lease_until=NULL, lease_owner=NULL,"
+                        " error=?, updated_at=? WHERE id=? AND state='running'",
+                        (neu, "Lease abgelaufen", grenze, int(row["id"])),
+                    )
+                    betroffen += 1
+                if betroffen:
+                    self._append_event_im_transaktion(
+                        c, "SYSTEM", None, "lease_recovered", {"tasks": betroffen},
+                    )
         return betroffen
 
     def claim_next(self, worker: str, lease_seconds: int = 120) -> dict[str, Any] | None:
         until = spaeter(lease_seconds)
-        with self._conn() as c:
-            c.execute("BEGIN IMMEDIATE")
-            row = c.execute(
-                """
-                SELECT t.* FROM agent_tasks t
-                WHERE t.state='queued'
-                  AND EXISTS (SELECT 1 FROM agent_profiles p
-                              WHERE p.agent_id=t.assigned_to AND p.active=1)
-                  AND NOT EXISTS (SELECT 1 FROM agent_tasks r
-                                  WHERE r.assigned_to=t.assigned_to
-                                    AND r.state='running')
-                  AND NOT EXISTS (
-                      SELECT 1 FROM agent_task_deps d
-                      JOIN agent_tasks p ON p.id=d.depends_on
-                      WHERE d.task_id=t.id AND p.state <> 'done'
-                  )
-                ORDER BY t.priority DESC, t.due_at IS NULL, t.due_at, t.id
-                LIMIT 1
-                """,
-            ).fetchone()
-            if not row:
-                return None
-            cur = c.execute(
-                "UPDATE agent_tasks SET state='running', attempts=attempts+1,"
-                " lease_owner=?, lease_until=?, started_at=COALESCE(started_at,?),"
-                " updated_at=? WHERE id=? AND state='queued'",
-                (worker, until, jetzt(), jetzt(), int(row["id"])),
-            )
-            if cur.rowcount != 1:
-                return None
-            aktuell = c.execute("SELECT * FROM agent_tasks WHERE id=?",
-                                (int(row["id"]),)).fetchone()
-        task = dict(aktuell)
-        self.append_event(task["assigned_to"], task["id"], "task_claimed", {
-            "worker": worker,
-            "attempt": task["attempts"],
-        })
+        with self._event_lock:
+            with self._conn() as c:
+                c.execute("BEGIN IMMEDIATE")
+                row = c.execute(
+                    """
+                    SELECT t.* FROM agent_tasks t
+                    WHERE t.state='queued'
+                      AND EXISTS (SELECT 1 FROM agent_profiles p
+                                  WHERE p.agent_id=t.assigned_to AND p.active=1)
+                      AND NOT EXISTS (SELECT 1 FROM agent_tasks r
+                                      WHERE r.assigned_to=t.assigned_to
+                                        AND r.state='running')
+                      AND NOT EXISTS (
+                          SELECT 1 FROM agent_task_deps d
+                          JOIN agent_tasks p ON p.id=d.depends_on
+                          WHERE d.task_id=t.id AND p.state <> 'done'
+                      )
+                    ORDER BY t.priority DESC, t.due_at IS NULL, t.due_at, t.id
+                    LIMIT 1
+                    """,
+                ).fetchone()
+                if not row:
+                    return None
+                cur = c.execute(
+                    "UPDATE agent_tasks SET state='running', attempts=attempts+1,"
+                    " lease_owner=?, lease_until=?, started_at=COALESCE(started_at,?),"
+                    " updated_at=? WHERE id=? AND state='queued'",
+                    (worker, until, jetzt(), jetzt(), int(row["id"])),
+                )
+                if cur.rowcount != 1:
+                    return None
+                aktuell = c.execute("SELECT * FROM agent_tasks WHERE id=?",
+                                    (int(row["id"]),)).fetchone()
+                task = dict(aktuell)
+                self._append_event_im_transaktion(
+                    c, task["assigned_to"], task["id"], "task_claimed", {
+                        "worker": worker,
+                        "attempt": task["attempts"],
+                    },
+                )
         return task
 
     def complete(
@@ -308,56 +354,82 @@ class CompanyStore:
         reviewed_by: str = "policy",
     ) -> None:
         zeit = jetzt()
-        with self._conn() as c:
-            cur = c.execute(
-                "UPDATE agent_tasks SET state='done', result=?, evidence_json=?,"
-                " output_json=?, error='', finished_at=?, reviewed_by=?,"
-                " reviewed_at=?, lease_owner=NULL, lease_until=NULL, updated_at=?"
-                " WHERE id=? AND state='running'",
-                (result, json.dumps(list(evidence), ensure_ascii=False),
-                 json.dumps(output or {}, ensure_ascii=False), zeit, reviewed_by, zeit,
-                 zeit, task_id),
-            )
-            if cur.rowcount != 1:
-                raise StoreError(f"Task {task_id} ist nicht im Zustand running")
-            task = c.execute("SELECT assigned_to FROM agent_tasks WHERE id=?",
-                             (task_id,)).fetchone()
-        self.append_event(task["assigned_to"], task_id, "task_done", {
-            "result": result[:500],
-            "evidence": list(evidence),
-        })
+        with self._event_lock:
+            with self._conn() as c:
+                c.execute("BEGIN IMMEDIATE")
+                cur = c.execute(
+                    "UPDATE agent_tasks SET state='done', result=?, evidence_json=?,"
+                    " output_json=?, error='', finished_at=?, reviewed_by=?,"
+                    " reviewed_at=?, lease_owner=NULL, lease_until=NULL, updated_at=?"
+                    " WHERE id=? AND state='running'",
+                    (result, json.dumps(list(evidence), ensure_ascii=False),
+                     json.dumps(output or {}, ensure_ascii=False), zeit, reviewed_by, zeit,
+                     zeit, task_id),
+                )
+                if cur.rowcount != 1:
+                    raise StoreError(f"Task {task_id} ist nicht im Zustand running")
+                task = c.execute("SELECT assigned_to FROM agent_tasks WHERE id=?",
+                                 (task_id,)).fetchone()
+                self._append_event_im_transaktion(
+                    c, task["assigned_to"], task_id, "task_done", {
+                        "result": result[:500],
+                        "evidence": list(evidence),
+                    },
+                )
 
     def block(self, task_id: int, grund: str, evidence: Sequence[str] = ()) -> None:
         zeit = jetzt()
-        with self._conn() as c:
-            cur = c.execute(
-                "UPDATE agent_tasks SET state='blocked', result=?, error=?,"
-                " evidence_json=?, finished_at=?, lease_owner=NULL, lease_until=NULL,"
-                " updated_at=? WHERE id=? AND state IN ('running','queued','accepted')",
-                (grund, grund, json.dumps(list(evidence), ensure_ascii=False), zeit, zeit, task_id),
-            )
-            if cur.rowcount != 1:
-                raise StoreError(f"Task {task_id} kann nicht blockiert werden")
-            task = c.execute("SELECT assigned_to FROM agent_tasks WHERE id=?",
-                             (task_id,)).fetchone()
-        self.append_event(task["assigned_to"], task_id, "task_blocked", {"reason": grund})
+        with self._event_lock:
+            with self._conn() as c:
+                c.execute("BEGIN IMMEDIATE")
+                cur = c.execute(
+                    "UPDATE agent_tasks SET state='blocked', result=?, error=?,"
+                    " evidence_json=?, finished_at=?, lease_owner=NULL, lease_until=NULL,"
+                    " updated_at=? WHERE id=? AND state IN ('running','queued','accepted')",
+                    (grund, grund, json.dumps(list(evidence), ensure_ascii=False), zeit, zeit, task_id),
+                )
+                if cur.rowcount != 1:
+                    raise StoreError(f"Task {task_id} kann nicht blockiert werden")
+                task = c.execute("SELECT assigned_to FROM agent_tasks WHERE id=?",
+                                 (task_id,)).fetchone()
+                self._append_event_im_transaktion(
+                    c, task["assigned_to"], task_id, "task_blocked", {"reason": grund},
+                )
 
     def fail(self, task_id: int, fehler: str) -> str:
+        """Markiert eine laufende oder wartende Aufgabe als fehlgeschlagen.
+
+        Ein bereits abgeschlossener Task darf nicht wiederbelebt werden: Sonst
+        könnte ein Fehler nach dem Commit von ``complete()`` dieselbe Aufgabe
+        erneut in die Queue stellen.
+        """
         zeit = jetzt()
-        with self._conn() as c:
-            row = c.execute("SELECT assigned_to, attempts, max_attempts, state"
-                            " FROM agent_tasks WHERE id=?", (task_id,)).fetchone()
-            if not row:
-                raise StoreError(f"Unbekannte Task {task_id}")
-            neu = "dead_letter" if int(row["attempts"]) >= int(row["max_attempts"]) else "queued"
-            c.execute(
-                "UPDATE agent_tasks SET state=?, error=?, result=?,"
-                " finished_at=CASE WHEN ?='dead_letter' THEN ? ELSE finished_at END,"
-                " lease_owner=NULL, lease_until=NULL, updated_at=? WHERE id=?",
-                (neu, fehler, fehler, neu, zeit, zeit, task_id),
-            )
-            agent = row["assigned_to"]
-        self.append_event(agent, task_id, "task_failed", {"error": fehler, "state": neu})
+        with self._event_lock:
+            with self._conn() as c:
+                c.execute("BEGIN IMMEDIATE")
+                row = c.execute("SELECT assigned_to, attempts, max_attempts, state"
+                                " FROM agent_tasks WHERE id=?", (task_id,)).fetchone()
+                if not row:
+                    raise StoreError(f"Unbekannte Task {task_id}")
+                zustand = str(row["state"])
+                if zustand not in {"running", "queued", "accepted"}:
+                    raise StoreError(
+                        f"Task {task_id} ist im Zustand {zustand} und kann nicht fehlschlagen"
+                    )
+                neu = "dead_letter" if int(row["attempts"]) >= int(row["max_attempts"]) else "queued"
+                cur = c.execute(
+                    "UPDATE agent_tasks SET state=?, error=?, result=?,"
+                    " finished_at=CASE WHEN ?='dead_letter' THEN ? ELSE finished_at END,"
+                    " lease_owner=NULL, lease_until=NULL, updated_at=?"
+                    " WHERE id=? AND state IN ('running','queued','accepted')",
+                    (neu, fehler, fehler, neu, zeit, zeit, task_id),
+                )
+                if cur.rowcount != 1:
+                    raise StoreError(f"Task {task_id} konnte nicht fehlschlagen")
+                self._append_event_im_transaktion(
+                    c, row["assigned_to"], task_id, "task_failed",
+                    {"error": fehler, "state": neu},
+                )
         return neu
 
     # ---------- Events / Audit ----------
@@ -367,19 +439,7 @@ class CompanyStore:
         with self._event_lock:
             with self._conn() as c:
                 c.execute("BEGIN IMMEDIATE")
-                last = c.execute("SELECT hash FROM agent_events ORDER BY id DESC LIMIT 1").fetchone()
-                prev = str(last["hash"]) if last else "GENESIS"
-                ts = jetzt()
-                roh = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True,
-                                 separators=(",", ":"))
-                material = f"{prev}|{ts}|{agent_id}|{task_id or ''}|{kind}|{roh}"
-                digest = hashlib.sha256(material.encode("utf-8")).hexdigest()
-                c.execute(
-                    "INSERT INTO agent_events(ts,agent_id,task_id,kind,payload_json,prev_hash,hash)"
-                    " VALUES (?,?,?,?,?,?,?)",
-                    (ts, agent_id, task_id, kind, roh, prev, digest),
-                )
-        return digest
+                return self._append_event_im_transaktion(c, agent_id, task_id, kind, payload)
 
     def events(self, task_id: int | None = None, limit: int = 100) -> list[dict[str, Any]]:
         with self._conn() as c:

@@ -87,6 +87,85 @@ def test_fehler_backoff_ueberlebt_einen_neustart(cfg):
     assert _job(dritter.status_daten(uhr.jetzt), "spider")["fehlschluesse"] == 0
 
 
+def test_zweiter_fehler_verdoppelt_den_backoff(cfg):
+    cfg = _cfg_mit(cfg, backoff_basis_sekunden=60, spider_backoff_max_sekunden=3600)
+    db = Facts(cfg.db_pfad)
+    uhr = Uhr()
+    aufrufe: list[str] = []
+
+    def kaputt():
+        aufrufe.append("fehler")
+        raise RuntimeError("Netz weg")
+
+    erster = Betrieb(cfg, db, jetzt_funktion=uhr, jobs={"spider": kaputt})
+    erster.takt()
+    status = _job(erster.status_daten(uhr.jetzt), "spider")
+    assert status["fehlschluesse"] == 1
+    assert status["backoff_sekunden"] == 60
+    assert status["naechster_versuch"] == "2026-11-10T00:01:00+00:00"
+
+    uhr.plus(60)
+    zweiter = Betrieb(cfg, db, jetzt_funktion=uhr, jobs={"spider": kaputt})
+    antwort = zweiter.takt()
+    status = _job(zweiter.status_daten(uhr.jetzt), "spider")
+
+    assert "Netz weg" in antwort["spider"]["fehler"]
+    assert aufrufe == ["fehler", "fehler"]
+    assert status["fehlschluesse"] == 2
+    assert status["backoff_sekunden"] == 120
+    assert status["naechster_versuch"] == "2026-11-10T00:03:00+00:00"
+
+
+def test_dritter_fehler_verdoppelt_den_backoff_auf_240_sekunden(cfg):
+    cfg = _cfg_mit(cfg, backoff_basis_sekunden=60, spider_backoff_max_sekunden=3600)
+    db = Facts(cfg.db_pfad)
+    uhr = Uhr()
+    aufrufe: list[str] = []
+
+    def kaputt():
+        aufrufe.append("fehler")
+        raise RuntimeError("Netz weg")
+
+    erster = Betrieb(cfg, db, jetzt_funktion=uhr, jobs={"spider": kaputt})
+    erster.takt()
+    uhr.plus(60)
+    zweiter = Betrieb(cfg, db, jetzt_funktion=uhr, jobs={"spider": kaputt})
+    zweiter.takt()
+    uhr.plus(120)
+    dritter = Betrieb(cfg, db, jetzt_funktion=uhr, jobs={"spider": kaputt})
+    antwort = dritter.takt()
+    status = _job(dritter.status_daten(uhr.jetzt), "spider")
+
+    assert "Netz weg" in antwort["spider"]["fehler"]
+    assert aufrufe == ["fehler", "fehler", "fehler"]
+    assert status["fehlschluesse"] == 3
+    assert status["backoff_sekunden"] == 240
+    assert status["naechster_versuch"] == "2026-11-10T00:07:00+00:00"
+
+
+def test_backoff_bleibt_auf_dem_konfigurierten_maximum_gedeckelt(cfg):
+    cfg = _cfg_mit(cfg, backoff_basis_sekunden=60, spider_backoff_max_sekunden=200)
+    db = Facts(cfg.db_pfad)
+    uhr = Uhr()
+    aufrufe: list[str] = []
+
+    def kaputt():
+        aufrufe.append("fehler")
+        raise RuntimeError("Netz weg")
+
+    for wartezeit in (0, 60, 120, 200):
+        if wartezeit:
+            uhr.plus(wartezeit)
+        betrieb = Betrieb(cfg, db, jetzt_funktion=uhr, jobs={"spider": kaputt})
+        betrieb.takt()
+
+    status = _job(betrieb.status_daten(uhr.jetzt), "spider")
+    assert len(aufrufe) == 4
+    assert status["fehlschluesse"] == 4
+    assert status["backoff_sekunden"] == 200
+    assert status["naechster_versuch"] == "2026-11-10T00:09:40+00:00"
+
+
 def test_ressourcengrenze_ueberspringt_schreibintensiven_job(cfg):
     cfg = _cfg_mit(cfg, max_db_mb=0.0001)
     db = Facts(cfg.db_pfad)

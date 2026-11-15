@@ -343,13 +343,13 @@ def _tool_guard(ctx: dict[str, Any]) -> HandlerResult:
 
 def _paper_guard(ctx: dict[str, Any]) -> HandlerResult:
     paper = ctx["cfg"].abschnitt("paper")
-    broker = str(paper.get("broker", "csv"))
-    freigabe = bool(paper.get("order_freigabe", False))
-    ok = not freigabe
+    broker = paper.get("broker", "nicht gesetzt")
+    freigabe = paper.get("order_freigabe", "nicht gesetzt")
+    ok = ctx["policy"].paper_only()
     return HandlerResult(
         ok,
-        f"Paper-Guard: Broker {broker}, Order-Freigabe "
-        f"{'aktiv — blockiert' if freigabe else 'aus'}; keine echte Order.",
+        f"Paper-Guard: Broker {broker}, Order-Freigabe {freigabe!r}; "
+        f"Paper-only {'aktiv' if ok else 'nicht aktiv — blockiert'}; keine echte Order.",
         ("config:paper",), blocked=not ok,
     )
 

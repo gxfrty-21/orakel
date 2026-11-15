@@ -175,8 +175,10 @@ CLI betrieb  → Takt aus, 5 Jobs, Ressourcen, letzte 24 h
 
 ## 7. Nächster Schritt
 
-`ORAKEL_TAKT=1` ist auf dem Zielhost gesetzt; der 24-Stunden-Soak läuft. Der
-externe Watchdog ist als GitHub-Actions-Workflow
+Der 24-Stunden-Soak ist nicht abgeschlossen. Reproduzierbarer Ablauf und
+Abnahmekriterien stehen in [SOAK-ABNAHME.md](SOAK-ABNAHME.md). Vor dem Start
+muss `ORAKEL_TAKT=1` auf dem Zielhost gesetzt und der Takt in `/api/health`
+sichtbar sein. Der externe Watchdog ist als GitHub-Actions-Workflow
 `.github/workflows/watchdog.yml` angelegt. Der Workflow wird mit dem Push auf
 den Default-Branch aktiv und prüft alle fünf Minuten den öffentlichen
 Health-Endpunkt, öffnet bei einem Taktalter über 300 Sekunden

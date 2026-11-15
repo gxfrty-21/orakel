@@ -1,8 +1,8 @@
-# Manuelle Safari-Prüfung: iPhone und iPad – Pan, Pinch, Tippen und Grossmodus
+# Manuelle Safari-Prüfung: iPhone – Pan, Pinch und Tippen
 
 **Gilt für:** die Schiffsansicht `#v-ship` mit 103 Agentenräumen in elf Abteilungen\
-**Zweck:** Abnahme der echten Touch-Bedienung auf iPhone und iPad in Safari;
-ergänzt den automatisierten Chromium-Touch-Test\
+**Zweck:** Abnahme der echten Touch-Bedienung auf iPhone in Safari; ergänzt den
+automatisierten Chromium-Touch-Test. iPad ist derzeit kein Zielgerät.\
 **Automatischer Gegenpart:** [`scripts/pruefe-touch.mjs`](../../scripts/pruefe-touch.mjs)\
 **Letzter Emulationslauf:** [Chromium-Touch-Ergebnisse](TOUCH-EMULATION.md)\
 **Stand:** 15. November 2026
@@ -18,33 +18,34 @@ andere schreibende Aktionen werden nicht angetippt.
 
 ## 2. Gerät und Umgebung
 
-Diese Checkliste wird pro Gerät und Orientierung einmal ausgefüllt. Wenn nur ein
-iPhone verfügbar ist, mindestens dieses Gerät in **Porträt und Querformat**
-prüfen. Für den Grossmodus zusätzlich ein **iPad mit mindestens 1100 CSS-Pixel
-Breite im Querformat** prüfen; die Rotation deckt den Wechsel zur kompakten
-Ansicht ab.
+Diese Checkliste wird pro Gerät und Orientierung einmal ausgefüllt. Das iPhone
+wird in **Porträt und Querformat** geprüft. **iPad ist derzeit kein Zielgerät**;
+Abschnitt 7 ist eine optionale Vorlage, falls sich das ändert.
 
 | Feld | Eintrag |
 |---|---|
-| Gerät | z. B. iPhone SE (3. Gen.), iPhone 15 oder iPad Pro 11" |
-| iOS-/iPadOS-Version | |
+| Gerät | z. B. iPhone SE (3. Gen.) oder iPhone 15 |
+| iOS-Version | |
 | Safari-Version | |
 | Getestete URL | |
 | Commit/Deploy | |
 | Tester:in | |
 | Datum | |
 
-Empfohlene Abdeckung:
+Empfohlene iPhone-Abdeckung:
 
 - **iPhone SE (2./3. Gen.):** 375 × 667 CSS-Pixel im Porträt, 667 × 375 im Querformat.
 - **iPhone 14/15:** 390 × 844 CSS-Pixel im Porträt, 844 × 390 im Querformat.
+- **iPhones:** bleiben auch im Querformat unter 1100 CSS-Pixel; dort ist der
+  kompakte Modus aktiv. Der Grossmodus ist kein iPhone-Testfall.
+
+Nur falls iPad später Zielgerät wird:
+
 - **iPad Pro 11" / iPad Air 11" (Querformat):** circa 1194 × 834 bzw. 1180 × 820
   CSS-Pixel. Ab 1100 px ist der Grossmodus aktiv; im Porträt (834/820 px)
   schaltet die Ansicht in den kompakten Modus.
 - **iPad (10.2", Querformat):** 1080 × 810 CSS-Pixel; bleibt unter 1100 px und
   damit kompakt. Nur als Gegenprobe geeignet; den Grossmodus dort nicht erwarten.
-- **iPhones:** bleiben auch im Querformat unter 1100 CSS-Pixel; dort ist der
-  kompakte Modus aktiv. Der Grossmodus ist kein iPhone-Testfall.
 
 Die tatsächliche Safari-Viewport-Höhe ändert sich mit ein- und ausgeblendeter
 Werkzeugleiste. Deshalb nach dem Laden kurz warten, bis die Leiste stabil ist.
@@ -104,7 +105,10 @@ Werkzeugleiste. Deshalb nach dem Laden kurz warten, bis die Leiste stabil ist.
 | TAP-8 | Auf eine leere Fläche bzw. einen nicht interaktiven Bereich des Schiffs tippen. | Es wird kein Raum geöffnet, die Detailspalte bleibt unverändert und es erscheint kein JavaScript-Fehler. | [ ] | [ ] |
 | TAP-9 | «Fit» antippen. | Alle 103 Räume und elf Abteilungen sind wieder vollständig sichtbar; die Zoom-Anzeige ist ein Prozentwert. | [ ] | [ ] |
 
-## 7. iPad-Querformat: Grossmodus und Rotation
+## 7. iPad-Querformat (optional, derzeit kein Zielgerät)
+
+**Dieser Abschnitt ist nicht Teil der aktuellen Abnahme.** Er beschreibt nur,
+was bei einer späteren iPad-Unterstützung zu prüfen wäre.
 
 **Voraussetzung:** iPad mit mindestens 1100 CSS-Pixel Breite im Querformat,
 Website-Zoom 100 %, «Fit» einmal ausgeführt. Der Grossmodus ist die breitere
@@ -174,10 +178,9 @@ oder personenbezogenen Daten im Screenshot oder im Befund speichern.
 | Pan in Porträt und Querformat | | | |
 | Pinch in Porträt und Querformat | | | |
 | Tippen, Legende und Filter in Porträt und Querformat | | | |
-| iPad-Querformat: Grossmodus | | | |
-| Moduswechsel Querformat/Porträt | | | |
 | Safari-Abschlussprüfung | | | |
 
 Diese manuelle Prüfung ersetzt den automatisierten Touch-Test nicht. Der
 automatisierte Lauf bleibt die schnelle CI-Regression; diese Checkliste ist die
-Abnahme auf echter Safari-Hardware.
+Abnahme auf echter iPhone-Safari-Hardware. Die iPad-Fälle sind derzeit optional
+und nicht Teil der Abnahme.

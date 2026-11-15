@@ -34,6 +34,19 @@ SECRET_MUSTER = re.compile(
 )
 PRIVATE_KEY_MUSTER = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")
 
+PAPER_BROKER = frozenset({"csv", "mock"})
+ERLAUBTE_TASK_TYPES = frozenset({
+    "daily_check",
+    "paper_guard",
+    "test_suite",
+    "correlation",
+    "data_integrity",
+    "secret_audit",
+    "event_chain",
+    "tool_guard",
+    "briefing",
+})
+
 RESERVIERTE_AKTIONEN = {
     "change_risk": "Risikogrenzen dürfen nur vom Owner geändert werden",
     "change_auth": "Auth- und Zugriffsregeln dürfen nur vom Owner geändert werden",
@@ -50,10 +63,15 @@ class CompanyPolicy:
         self.cfg = cfg
 
     def paper_only(self) -> bool:
+        """Fail-closed: nur ein explizit erlaubter Paper-Broker ohne Freigabe."""
         paper = self.cfg.abschnitt("paper")
-        broker = str(paper.get("broker", "csv")).lower()
-        freigabe = bool(paper.get("order_freigabe", False))
-        return broker in {"csv", "mock", "mt5"} and not freigabe
+        broker = paper.get("broker")
+        freigabe = paper.get("order_freigabe")
+        return (
+            isinstance(broker, str)
+            and broker.strip().lower() in PAPER_BROKER
+            and freigabe is False
+        )
 
     def allow_test_suite(self) -> bool:
         return bool(self.cfg.abschnitt("unternehmen").get("allow_tests", False))
@@ -63,6 +81,8 @@ class CompanyPolicy:
             raise PolicyError(f"{profile.agent_id}: Aufgabe fehlt")
         if task_type in {"real_order", "broker_order", "live_order"}:
             raise PolicyError("Echte Broker-Orders sind dauerhaft ausgeschlossen")
+        if task_type not in ERLAUBTE_TASK_TYPES:
+            raise PolicyError(f"Unbekannter Task-Typ: {task_type}")
         if task_type == "test_suite" and not self.allow_test_suite():
             raise PolicyError(
                 "Test-Suite als Agenten-Subprozess ist in Phase 1 deaktiviert"

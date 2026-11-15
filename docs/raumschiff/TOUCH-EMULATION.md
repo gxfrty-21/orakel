@@ -3,7 +3,7 @@
 **Stand:** 15. November 2026\
 **Ergebnis:** Chromium bestanden; WebKit-Emulation bestanden, **kein Safari-Hardwaretest**\
 **Basis:** Chromium-Lauf auf Branch `test/legende-querformat-desktop`, Basis-Commit `61cad36`; WebKit-Lauf auf `main` (Basis `95c6a48`)\
-**Echte iPad-Safari-Prüfung:** offen – kein physisches Gerät verfügbar\
+**iPad-Safari-Prüfung:** nicht erforderlich – iPad ist kein Zielgerät\
 **Prüfling:** Schiffsansicht `#v-ship` mit 103 Agentenräumen in elf Abteilungen\
 **Daten:** frische Kopie von `seed/orakel-seed.db`
 
@@ -117,12 +117,12 @@ und das Trefferhalten mit einem echten Finger. Diese Punkte bleiben der
 Der Lauf ist read-only: Es werden keine schreibenden Aktionen wie «Lauf starten»
 ausgelöst.
 
-## Echte iPad-Safari-Prüfung: offene Hardware-Unterschiede
+## iPad-Safari: nicht erforderlich (kein Zielgerät)
 
-**Status: nicht ausgeführt.** In der Cloud-Umgebung ist kein physisches iPad
-und kein Safari verfügbar. Die WebKit-Emulation ersetzt diese Abnahme nicht;
-insbesondere der 2400-px-Grossmodus wurde nur auf Linux-WebKit mit emulierten
-Viewports geprüft. Die folgenden Unterschiede bleiben offen:
+**Status: nicht erforderlich.** iPad ist kein Zielgerät; ein physisches Gerät
+ist nicht vorgesehen. Die WebKit-Emulation ersetzt keine Safari-Hardware, ist
+für die aktuelle Abnahme aber ausreichend. Falls iPad später doch unterstützt
+werden soll, bleiben folgende Unterschiede zu prüfen:
 
 | Unterschied | Was die Emulation nicht abdeckt |
 |---|---|
@@ -139,10 +139,10 @@ Bereits emuliert geprüft sind die 2400-px-Bühne mit 150 px hohen Agentenräume
 Moduswechsel 1100 → 900 → 1100 px (siehe oben). Diese Ergebnisse sagen nichts
 über echtes Safari-Verhalten auf einem iPad aus.
 
-Für die Abnahme die [Safari-Checkliste](IPHONE-SAFARI-CHECKLISTE.md) verwenden;
-die Kästchen für das iPad-Querformat und die Rotation bleiben offen, bis ein
-passendes Gerät (mindestens 1100 CSS-px breit im Querformat, z. B. iPad Pro 11"
-oder iPad Air 11") mit der Ziel-URL und dem Ziel-Commit geprüft wurde.
+Die iPad-Fälle in der [Safari-Checkliste](IPHONE-SAFARI-CHECKLISTE.md) sind
+optional und nicht Teil der Abnahme. Wird iPad später zum Zielgerät, müssen sie
+vorher mit einem passenden Gerät (mindestens 1100 CSS-px breit im Querformat,
+z. B. iPad Pro 11" oder iPad Air 11") und dem Ziel-Commit geprüft werden.
 
 ## Reproduktion
 

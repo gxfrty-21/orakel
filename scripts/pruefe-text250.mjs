@@ -6,7 +6,10 @@
  * `main` mit 2,5 multipliziert — so wie es eine Browser-Textskalierung tut.
  * Danach wird geprüft, ob Inhalte seitlich aus ihrem Kasten oder aus dem
  * Viewport laufen. Tabellen werden zusätzlich mit langen deutschen Komposita
- * belastet und als Karten geprüft.
+ * belastet und als Karten geprüft. Im Spider-Tab rendert der Lauf
+ * deterministische Claim-Metadaten samt Widerspruchsgrund, Sicherheit,
+ * normalisierten Vergleichswerten und beteiligten Quellen und prüft deren
+ * horizontale Grenzen.
  *
  * Voraussetzung: laufendes Dashboard mit Daten, z. B.:
  *   cp seed/orakel-seed.db /tmp/orakel-text250.db
@@ -20,6 +23,7 @@
  *   --ansichten lab,kb     Standard alle zwölf Ansichten
  *   --ohne-tabellen        Nur Seitenüberläufe prüfen, Tabellen überspringen
  *   --bilder <verzeichnis> Schreibt bei Befunden je Ansicht und Breite Screenshot und HTML
+ *   Die Claim-Karte wird zusätzlich bei 240 px geprüft.
  *   --bild-praefix <name>  Gibt Screenshots und HTML einen eindeutigen Namenspräfix
  *   --selbsttest-cluster   Prüft mehrere gleichzeitige Cluster-Fehler und eindeutige Screenshotnamen
  *   --selbsttest-agent      Prüft einen fehlenden Agenten samt Screenshotpfad
@@ -41,6 +45,275 @@ const WARTEZEIT = {
   overview: 300, risk: 350, lab: 400, strat: 500, research: 500, globe: 1300,
   betrieb: 750, ship: 1500, spider: 650, kb: 1500, agents: 500, konf: 500,
 };
+
+// Deterministische Browser-Testdaten für die Claim-Karte. Der Seed enthält
+// keine Claims; die Daten werden nur im Browser gerendert und nie in SQLite
+// geschrieben. Die langen Metadaten belasten die schmalen Viewports.
+const CLAIM_TESTDATEN = {
+  claims: {
+    top: [
+      {
+        id: 900001,
+        kernaussage: 'Test-Claim: Die Inflation sinkt im Juli 2026, falls die Konjunktur nicht einbricht.',
+        thema: 'makro',
+        quellen: 2,
+        belege: 3,
+        zeitraum: '2026-07',
+        bedingung: 'falls die Konjunktur nicht einbricht und die Notenbank den Kurs bestätigt',
+        sicherheit: 0.8,
+        status: 'widersprüchlich',
+        bestaetigungsgrad: 0.42,
+      },
+      {
+        id: 900002,
+        kernaussage: 'Test-Claim ohne Bedingung mit einem langen Titel für den schmalen Viewport',
+        thema: 'markt',
+        quellen: 1,
+        belege: 1,
+        zeitraum: '',
+        bedingung: '',
+        sicherheit: 0.9,
+        status: 'teilweise',
+        bestaetigungsgrad: 0.55,
+      },
+    ],
+    widersprueche: [{
+      claim_id: 900001,
+      grund: 'Richtung steigt gegen sinkt (Bedingung gegen unbedingte Aussage)',
+      sicherheit: 0.7,
+      quelle_a: 'a.example',
+      quelle_b: 'b.example',
+    }, {
+      claim_id: 900001,
+      grund: 'Abweichender Zahlenwert bei gleicher Einheit',
+      sicherheit: 0.65,
+      quelle_a: 'c.example',
+      quelle_b: 'd.example',
+      wert_a_bp: 450,
+      wert_b_bp: 440,
+    }],
+    statistik: {
+      gesamt: 2,
+      belege: 4,
+      nach_status: { bestätigt: 0, teilweise: 1, widersprüchlich: 1 },
+      widersprueche: 2,
+    },
+  },
+  reputation: [],
+};
+
+// Zusätzliche Daten für den Umbruchtest mit bewusst überlangen Quellenhosts.
+// Sie werden ebenfalls nur im Browser gerendert; die normalen Claim-Erwartungen
+// bleiben unverändert.
+const LANGE_QUELLEN_TESTDATEN = JSON.parse(JSON.stringify(CLAIM_TESTDATEN));
+for (const [index, widerspruch] of LANGE_QUELLEN_TESTDATEN.claims.widersprueche.entries()) {
+  widerspruch.quelle_a = index === 0
+    ? 'sehr-lange-quellen-domain-mit-vielen-segmenten.nachrichtenagentur.example.com'
+    : 'a'.repeat(140) + '.example.net';
+  widerspruch.quelle_b = 'noch-laengere-quellen-domain-mit-subdomain-und-hyphen.nachrichtenarchiv.example.org';
+}
+
+/** Prüft die Claim-Metadaten und horizontale Überläufe auf einer eigenen Seite. */
+async function pruefeClaimMetadaten(browser, url, breite) {
+  const page = await browser.newPage({ viewport: { width: breite, height: 900 }, deviceScaleFactor: 1 });
+  const seitenfehler = [];
+  page.on('pageerror', err => seitenfehler.push(`Seite: ${err}`));
+  try {
+    await page.goto(`${url}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(
+      () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
+      null, { timeout: 15000 },
+    );
+    await page.locator('.nav[data-v="spider"]').click();
+    await page.waitForTimeout(WARTEZEIT.spider);
+    return [...seitenfehler, ...await pruefeClaimMetadatenAufSeite(page)];
+  } finally {
+    await page.close();
+  }
+}
+
+/** Prüft Widerspruchsgrund und -sicherheit in der gerenderten Claim-Karte. */
+async function pruefeClaimWiderspruchsdetails(page) {
+  return page.evaluate(() => {
+    const details = [...document.querySelectorAll('#bewertungClaims .claimWiderspruch')];
+    if (!details.length) return ['Widerspruchsdetails fehlen'];
+    const befunde = [];
+    details.forEach((detail, index) => {
+      const grund = detail.querySelector('.claimWiderspruchGrund');
+      if (!grund || !grund.textContent.trim()) {
+        befunde.push(`Widerspruch ${index + 1}: Widerspruchsgrund fehlt`);
+      }
+      const sicherheit = detail.querySelector('.claimWiderspruchSicherheit');
+      const text = (sicherheit?.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!/^Widerspruchssicherheit:\s*\d(?:[.,]\d+)?$/.test(text)) {
+        befunde.push(`Widerspruch ${index + 1}: Widerspruchssicherheit fehlt`);
+      }
+    });
+    return befunde;
+  });
+}
+
+/** Prüft den Umbruch der Quellenzeile mit sehr langen Hostnamen. */
+async function pruefeLangeQuellen(page) {
+  await page.evaluate(daten => window.zeichneBewertung(daten), LANGE_QUELLEN_TESTDATEN);
+  await page.waitForTimeout(80);
+  return page.evaluate(() => {
+    const befund = [];
+    const liste = document.querySelector('#bewertungClaims');
+    if (!liste) return ['Claim-Liste #bewertungClaims fehlt'];
+    const panel = document.querySelector('#bewertungPanel');
+    const panelKasten = panel?.getBoundingClientRect();
+    const quellen = [...liste.querySelectorAll('.claimWiderspruchQuellen')];
+    if (quellen.length !== 2) {
+      befund.push(`Quellenzeilen mit Langhosts: ${quellen.length} statt 2`);
+    }
+    for (const [index, q] of quellen.entries()) {
+      if (!q.getClientRects().length) {
+        befund.push(`Quellenzeile ${index + 1}: nicht sichtbar`);
+        continue;
+      }
+      if (q.scrollWidth > q.clientWidth + 1) {
+        befund.push(`Quellenzeile ${index + 1}: horizontaler Überlauf (${q.scrollWidth}>${q.clientWidth})`);
+      }
+      const pfeil = q.querySelector('.claimWiderspruchPfeil');
+      if (!pfeil) {
+        befund.push(`Quellenzeile ${index + 1}: Trenner fehlt`);
+      } else {
+        const pfeilKasten = pfeil.getBoundingClientRect();
+        const quellSpans = [...q.querySelectorAll('.claimWiderspruchQuelle')];
+        const pfeilAufQuellzeile = quellSpans.some(s => [...s.getClientRects()].some(r =>
+          r.bottom > pfeilKasten.top + 1 && r.top < pfeilKasten.bottom - 1
+        ));
+        if (!pfeilAufQuellzeile) befund.push(`Quellenzeile ${index + 1}: Trenner steht allein`);
+      }
+      if (panelKasten) {
+        const kasten = q.getBoundingClientRect();
+        if (kasten.left < panelKasten.left - 1 || kasten.right > panelKasten.right + 1) {
+          befund.push(`Quellenzeile ${index + 1}: ausserhalb des Panels`);
+        }
+      }
+    }
+        const viewport = document.documentElement.clientWidth;
+    // Bei 240 px bleiben Kopf- und Navigationsleiste separat scrollbar;
+    // geprüft wird hier die Claim-Karte, nicht die gesamte Seite.
+    if (innerWidth > 260 && document.documentElement.scrollWidth > viewport + 1) {
+      befund.push(`Seite mit Langhosts: horizontaler Überlauf (${document.documentElement.scrollWidth}>${viewport})`);
+    }
+    return befund;
+  });
+}
+
+/** Misst die bereits geöffnete Spider-Seite mit den Claim-Testdaten. */
+async function pruefeClaimMetadatenAufSeite(page) {
+  if (!await page.evaluate(() => typeof window.zeichneBewertung === 'function')) {
+    return ['Claim-Renderer zeichneBewertung fehlt'];
+  }
+  await page.evaluate(daten => window.zeichneBewertung(daten), CLAIM_TESTDATEN);
+  await page.waitForTimeout(80);
+  const befund = await page.evaluate(() => {
+    const befund = [];
+    const liste = document.querySelector('#bewertungClaims');
+    if (!liste) return ['Claim-Liste #bewertungClaims fehlt'];
+    const karten = [...liste.querySelectorAll('.li')];
+    const metas = [...liste.querySelectorAll('.claimMeta')];
+    const widersprueche = [...liste.querySelectorAll('.claimWiderspruch')];
+    if (karten.length !== 2) befund.push(`Claim-Karten: ${karten.length} statt 2`);
+    if (metas.length !== 2) befund.push(`Claim-Metadaten: ${metas.length} statt 2`);
+    for (const [index, meta] of metas.entries()) {
+      const text = meta.textContent.replace(/\s+/g, ' ').trim();
+      for (const label of ['Zeitraum:', 'Bedingung:', 'Extraktionssicherheit:']) {
+        if (!text.includes(label)) befund.push(`Claim ${index + 1}: ${label} fehlt`);
+      }
+    }
+    if (metas[0] && !metas[0].textContent.includes('2026-07')) {
+      befund.push('Claim 1: Zeitraumwert 2026-07 fehlt');
+    }
+    if (metas[0] && !metas[0].textContent.includes('0.80')) {
+      befund.push('Claim 1: Extraktionssicherheit 0.80 fehlt');
+    }
+    if (widersprueche.length !== 2) {
+      befund.push(`Widerspruchsdetails: ${widersprueche.length} statt 2`);
+    } else {
+      const erwarteteGruende = [
+        'Richtung steigt gegen sinkt (Bedingung gegen unbedingte Aussage)',
+        'Abweichender Zahlenwert bei gleicher Einheit',
+      ];
+      const erwarteteSicherheit = ['0.70', '0.65'];
+      const erwarteteQuellen = [['a.example', 'b.example'], ['c.example', 'd.example']];
+      const erwarteteVergleiche = [null, ['450.00 bp', '440.00 bp']];
+      for (const [index, detail] of widersprueche.entries()) {
+        const text = detail.textContent.replace(/\s+/g, ' ').trim();
+        if (!text.includes(erwarteteGruende[index])) {
+          befund.push(`Widerspruch ${index + 1}: Widerspruchsgrund fehlt`);
+        }
+        if (!text.includes('Widerspruchssicherheit:')) {
+          befund.push(`Widerspruch ${index + 1}: Widerspruchssicherheit fehlt`);
+        }
+        if (!text.includes(erwarteteSicherheit[index])) {
+          befund.push(`Widerspruch ${index + 1}: Widerspruchssicherheit ${erwarteteSicherheit[index]} fehlt`);
+        }
+        const [quelleA, quelleB] = erwarteteQuellen[index] || [];
+        if (!quelleA || !quelleB || !text.includes(`Quellen: ${quelleA}`) || !text.includes(quelleB)) {
+          befund.push(`Widerspruch ${index + 1}: beteiligte Quellen fehlen`);
+        }
+        const vergleich = detail.querySelector('.claimWiderspruchWerte');
+        const erwarteterVergleich = erwarteteVergleiche[index];
+        if (erwarteterVergleich) {
+          if (!vergleich) {
+            befund.push(`Widerspruch ${index + 1}: normalisierte Vergleichswerte fehlen`);
+          } else {
+            const vergleichText = vergleich.textContent.replace(/\s+/g, ' ').trim();
+            for (const wert of erwarteterVergleich) {
+              if (!vergleichText.includes(wert)) {
+                befund.push(`Widerspruch ${index + 1}: Vergleichswert ${wert} fehlt`);
+              }
+            }
+          }
+        } else if (vergleich) {
+          befund.push(`Widerspruch ${index + 1}: unerwartete Vergleichswerte`);
+        }
+      }
+    }
+
+    const viewport = document.documentElement.clientWidth;
+    // Bei 240 px bleiben Kopf- und Navigationsleiste separat scrollbar;
+    // die Karte selbst wird weiter unten gegen den Viewport geprüft.
+    if (innerWidth > 260 && document.documentElement.scrollWidth > viewport + 1) {
+      befund.push(`Seite hat horizontalen Überlauf (${document.documentElement.scrollWidth}>${viewport})`);
+    }
+    const panel = document.querySelector('#bewertungPanel');
+    if (innerWidth <= 260 && panel) {
+      for (const [name, selector] of [
+        ['KPI-Grid', '#bewertungKpis'],
+        ['Claim-Grid', '.grid2'],
+      ]) {
+        const grid = panel.querySelector(selector);
+        if (!grid) {
+          befund.push(`${name} fehlt`);
+          continue;
+        }
+        const spalten = getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/).filter(Boolean).length;
+        if (spalten !== 1) befund.push(`${name}: ${spalten} statt 1 Spalte bei 240 px`);
+      }
+    }
+    const flaechen = panel ? [panel, ...panel.querySelectorAll('*')] : [liste];
+    for (const el of flaechen) {
+      if (!el.getClientRects().length) continue;
+      const kasten = el.getBoundingClientRect();
+      const name = el.tagName.toLowerCase()
+        + (el.id ? '#' + el.id : '')
+        + (el.className ? '.' + String(el.className).trim().split(/\s+/).join('.') : '');
+      if (kasten.left < -1 || kasten.right > viewport + 1) {
+        befund.push(`${name}: außerhalb des Viewports (${Math.round(kasten.left)}–${Math.round(kasten.right)} bei ${viewport})`);
+      }
+      if (el.scrollWidth > el.clientWidth + 1 && el.clientWidth > 0) {
+        befund.push(`${name}: Inhalt ${el.scrollWidth}>${el.clientWidth}`);
+      }
+    }
+    return befund.slice(0, 20);
+  });
+  return [...befund, ...await pruefeLangeQuellen(page)];
+}
 
 function argumente(argv) {
   const opts = {
@@ -71,7 +344,8 @@ function argumente(argv) {
     else if (arg === '--hilfe' || arg === '-h') {
       console.log('Aufruf: node scripts/pruefe-text250.mjs [--url URL] [--breiten 360,320,280]\n' +
         '       [--ansichten overview,risk,lab,strat,research,globe,betrieb,ship,spider,kb,agents,konf] [--ohne-tabellen]\n' +
-        '       [--bilder <verzeichnis>] [--bild-praefix <name>] [--negativtest] [--selbsttest-cluster] [--selbsttest-agent]');
+        '       [--bilder <verzeichnis>] [--bild-praefix <name>] [--negativtest] [--selbsttest-cluster] [--selbsttest-agent]\n' +
+        '       Die Claim-Karte wird zusätzlich bei 240 px geprüft.');
       process.exit(0);
     }
     else { console.error(`Unbekannte Option: ${arg}`); process.exit(2); }
@@ -1574,6 +1848,30 @@ async function pruefeNegativtest(url) {
           el.textContent = 'FALSCH 9999';
         }),
       },
+      // Beide Claim-Fälle injizieren zuerst dieselben Testdaten. So wird
+      // jeweils genau ein fehlendes Detail geprüft, nicht ein gemeinsamer Fehler.
+      {
+        ansicht: 'spider',
+        name: 'Widerspruchsgrund fehlt',
+        vorbereiten: () => page.evaluate(daten => window.zeichneBewertung(daten), CLAIM_TESTDATEN),
+        pruefen: () => pruefeClaimWiderspruchsdetails(page),
+        mutieren: () => page.evaluate(() => {
+          const el = document.querySelector('#bewertungClaims .claimWiderspruchGrund');
+          if (!el) throw new Error('Widerspruchsgrund nicht gefunden');
+          el.remove();
+        }),
+      },
+      {
+        ansicht: 'spider',
+        name: 'Widerspruchssicherheit fehlt',
+        vorbereiten: () => page.evaluate(daten => window.zeichneBewertung(daten), CLAIM_TESTDATEN),
+        pruefen: () => pruefeClaimWiderspruchsdetails(page),
+        mutieren: () => page.evaluate(() => {
+          const el = document.querySelector('#bewertungClaims .claimWiderspruchSicherheit');
+          if (!el) throw new Error('Widerspruchssicherheit nicht gefunden');
+          el.remove();
+        }),
+      },
     ];
 
     const erkannt = [];
@@ -1593,13 +1891,15 @@ async function pruefeNegativtest(url) {
       if (await nav.count()) await nav.click();
       else await page.evaluate(v => zeige(v), fall.ansicht);
       await page.waitForTimeout(WARTEZEIT[fall.ansicht] || 500);
-      const sauber = await pruefeInhalte(page, fall.ansicht);
+      if (fall.vorbereiten) await fall.vorbereiten();
+      const pruefe = fall.pruefen || (() => pruefeInhalte(page, fall.ansicht));
+      const sauber = await pruefe();
       if (!sauber || sauber.length) {
         throw new Error(`${fallName}: sauberer Zustand meldet bereits Befunde: ${(sauber || []).join('; ')}`);
       }
 
       await fall.mutieren();
-      const befund = await pruefeInhalte(page, fall.ansicht);
+      const befund = await pruefe();
       if (!befund || !befund.length) {
         throw new Error(`${fallName}: absichtlich falscher Inhalt wurde nicht erkannt`);
       }
@@ -1897,6 +2197,7 @@ async function pruefeLegendeDesktop(browser, url) {
 
 async function main() {
   const opt = argumente(process.argv.slice(2));
+  const claimBreiten = [...new Set([...opt.breiten, 240])];
   const { validierungen } = await pruefeServer(opt.url);
   if (opt.selbsttestCluster) {
     await pruefeScreenshotSelbsttest(opt.url, opt.bilder, opt.bildPraefix);
@@ -1919,7 +2220,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const fehler = [];
   const hinweise = new Set();
-  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, legendeDesktopGeprueft = 0, kopfGeprueft = 0, schreibwegeGesamt = 0;
+  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, legendeDesktopGeprueft = 0, kopfGeprueft = 0, schreibwegeGesamt = 0, claimPruefungen = 0;
 
   try {
     const kopfBefunde = await pruefeKopfzeile(browser, opt.url);
@@ -1961,10 +2262,11 @@ async function main() {
         }
         let kurveGefunden = null;
         if (ansicht === 'lab') kurveGefunden = await waehleKurvenKandidat(page);
+
+        const vorher = fehler.length;
         await skaliere(page, 2.5);
         await page.waitForTimeout(150);
 
-        const vorher = fehler.length;
         const ansichtBefund = await messeAnsicht(page, ansicht, breite);
         if (!ansichtBefund.gerendert) ansichtBefund.befunde.push('Ansicht wurde nicht gerendert');
         for (const text of ansichtBefund.befunde) fehler.push(`${breite}px/${ansicht}: ${text}`);
@@ -2007,6 +2309,18 @@ async function main() {
         }
       }
       await page.close();
+
+    }
+
+    if (opt.ansichten.includes('spider')) {
+      for (const breite of claimBreiten) {
+        const claimBefunde = await pruefeClaimMetadaten(browser, opt.url, breite);
+        if (claimBefunde.length) {
+          for (const text of claimBefunde) fehler.push(`${breite}px/spider: ${text}`);
+        } else {
+          claimPruefungen++;
+        }
+      }
     }
 
     const schreibPage = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1 });
@@ -2028,7 +2342,7 @@ async function main() {
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {

@@ -207,7 +207,7 @@ vorgesehen; sie sind noch nicht implementiert.
 | H3 | Jari | Testläufer / Stellvertretung | Test-Suite ausführen | pytest |
 | H4 | Selma | Schema-Prüfer | Dashboard-Bericht gegen Schema 2 prüfen | Schema 2 |
 | H5 | Pius | Performance-Prüfer | Laufzeit der Engine messen | Laufzeit |
-| H6 | Anja | Schnittstellen-Prüfer | Broker-Schnittstelle auf Paper-Sperre prüfen | Paper-Sperre |
+| H6 | Anja | Schnittstellen-Prüfer | Order-Pfad und Paper-Sperre in der Konfiguration prüfen | Paper-Sperre |
 | H7 | Kuno | Fehler-Sammler | Fehler je Lauf sammeln | Logs, Agentenläufe |
 | H8 | Ravi | Versions-Prüfer | Version und Änderungen dokumentieren | Git/Version |
 | H9 | Fine | Sicherheits-Prüfer | Keine Zugangsdaten in Dateien finden | Repo-Scan, ohne Werte |
@@ -244,7 +244,7 @@ Order auslösen; ein fusioniertes Signal geht als Vorschlag an D und F.
 | J6 | Nika | Incident-Responder | Incident-Tasks anlegen; Feature-Flags kontrolliert deaktivieren | Incidents, Flags |
 | J7 | Bo | Audit-Trail-Prüfer / Stellvertretung | Reihenfolge und Hash-Kette der Ereignisse prüfen | `agent_events` |
 | J8 | Sasha | Sandbox-Wächter | Tool-Rechte prüfen; freie Shell und Fremdnetz blockieren | Policy, Tool-Audit |
-| J9 | Elif | Paper-Only-Enforcer | Jeden Broker-/Order-Pfad auf Paper-Sperre prüfen; Veto | Broker, Konfiguration |
+| J9 | Elif | Paper-Only-Enforcer | Jeden Order-Pfad auf Paper-Sperre prüfen; Veto | Order-Pfad, Konfiguration |
 | J10 | Ron | Security-Archivar | Incident-Berichte redigiert im Vault ablegen | Vault, Incident |
 
 **Abgrenzung:** H9 prüft Code-Hygiene auf versehentliche Schlüsseldateien.

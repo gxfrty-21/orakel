@@ -1,9 +1,10 @@
 """Paper-Trading im Dauerbetrieb.
 
-Der Takt arbeitet auf einem virtuellen Konto in SQLite. Es verlässt keine Order
-diesen Rechner: `CsvBroker` und der Takt rechnen nur. Ein echtes MT5-Konto kann
-nur der `MT5Broker` unter Windows ansprechen, und auch der nur mit
-`order_freigabe = true` auf einem Demo-Konto.
+Der Takt arbeitet auf einem virtuellen Konto in SQLite. Es gibt keinen
+Broker-Aufruf und keinen Codepfad zu einer echten Order: Käufe, Verkäufe und
+Stops werden direkt aus den vorhandenen Kerzen berechnet und in SQLite
+fortgeschrieben. `order_freigabe` bleibt als harte Policy-Sperre für zukünftige
+Integrationen auf `false`.
 """
 
 from __future__ import annotations
@@ -23,6 +24,20 @@ from .risk import KontoZustand, Order, Risikomanager, positionsgroesse
 from .strategies import atr, strategien
 
 
+def _pruefe_paper_konfiguration(cfg: Config) -> None:
+    """Der Takt braucht beide Abschnitte; fehlende Werte dürfen nicht als
+    stiller Standardwert durchlaufen."""
+    fehlend = [
+        name for name in ("risiko", "kosten")
+        if not cfg.abschnitt(name)
+    ]
+    if fehlend:
+        raise ValueError(
+            "Paper-Takt: erforderliche Konfigurationsabschnitte fehlen: "
+            + ", ".join(f"[{name}]" for name in fehlend)
+        )
+
+
 def _kosten(menge: float, cfg: Config) -> float:
     k = cfg["kosten"]
     return max(float(k["min_commission"]), menge * float(k["commission_per_share"]))
@@ -36,6 +51,7 @@ def _konto_zustand(cfg: Config, db: Facts, equity: float, cash: float,
 
 def tick(cfg: Config, db: Facts) -> dict[str, Any]:
     """Ein Takt: Stops prüfen, Ausstiege, Einstiege, Konto fortschreiben."""
+    _pruefe_paper_konfiguration(cfg)
     grenzen = RisikoGrenzen.aus_config(cfg)
     manager = Risikomanager(grenzen)
     heute = datetime.now().date().isoformat()

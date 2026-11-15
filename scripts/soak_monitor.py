@@ -3,7 +3,8 @@
 
 Der Monitor fragt den öffentlichen Health-Endpunkt jede Minute ab und holt
 alle zehn Minuten den vollständigen Betriebszustand über Railway-SSH. Die
-Messreihen und eine fortlaufend aktualisierte Zusammenfassung landen unter
+Tiefen-Probe prüft zusätzlich Audit-Kette, Company-Queue und Backup-Restore.
+Die Messreihen und eine fortlaufend aktualisierte Zusammenfassung landen unter
 ``artifacts/`` und werden nicht versioniert.
 """
 
@@ -24,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 HEALTH_URL = "https://orakel-production-fb18.up.railway.app/api/health"
+PROBE_PFAD = Path(__file__).with_name("soak_probe.py")
 RAILWAY_CMD = [
     "npx",
     "--yes",
@@ -37,7 +39,8 @@ RAILWAY_CMD = [
     "sh",
     "-lc",
     "cd /app && ORAKEL_DB_PFAD=/data/orakel.db "
-    "python -m orakel --config /app/config.toml betrieb --json",
+    "ORAKEL_CONFIG=/app/config.toml "
+    "ORAKEL_BACKUP_ORDNER=/data/backups python -",
 ]
 STOP = threading.Event()
 
@@ -82,8 +85,10 @@ def health_holen(timeout: float) -> dict[str, Any]:
 def deep_holen(timeout: float) -> dict[str, Any]:
     start = time.monotonic()
     try:
+        probe = PROBE_PFAD.read_text(encoding="utf-8")
         proc = subprocess.run(
             RAILWAY_CMD,
+            input=probe,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -195,6 +200,18 @@ def _markdown_zusammenfassung(
         (lauf for lauf in laeufe.values() if lauf.get("job") == "spider"),
         key=lambda x: str(x.get("zeit") or ""),
     )
+    company_samples = [d["company"] for d in dd
+                       if isinstance(d.get("company"), dict)]
+    queue_werte = [x for c in company_samples
+                   if (x := zahl(c.get("queue_alter_max_s"))) is not None]
+    queue_offen_max = max((int(c.get("queue_offen") or 0) for c in company_samples),
+                          default=0)
+    dead_letter_max = max((int(c.get("dead_letter") or 0) for c in company_samples),
+                          default=0)
+    queue_blocked_max = max((int(c.get("blocked") or 0) for c in company_samples),
+                            default=0)
+    queue_fehler = sorted({str(c.get("fehler")) for c in company_samples
+                           if c.get("fehler")})
 
     def minmax(werte: list[float]) -> str:
         if not werte:
@@ -224,6 +241,16 @@ def _markdown_zusammenfassung(
         "",
         f"- DB: `{minmax(db_werte)} MB`",
         f"- Prozess-RSS: `{minmax(rss_werte)} MB`",
+        "",
+        "## Company-Queue",
+        "",
+        f"- Tiefen-Samples mit Queue-Daten: `{len(company_samples)}`",
+        f"- Offene Tasks (max.): `{queue_offen_max}`",
+        f"- Dead-Letter (max.): `{dead_letter_max}`",
+        f"- Blockiert (max.): `{queue_blocked_max}`",
+        (f"- Max. Alter offener Tasks: `{max(queue_werte):.1f} s`"
+         if queue_werte else "- Max. Alter offener Tasks: `keine offenen Tasks`"),
+        f"- Probe-Fehler: `{', '.join(queue_fehler) or 'keine'}`",
         "",
         "## Jobs, Backoff und Spider",
         "",
@@ -268,6 +295,14 @@ def _markdown_zusammenfassung(
         auffaellig.append("Health meldete Warnungen")
     if any(s["max_backoff"] for s in job_stats.values()):
         auffaellig.append("Mindestens ein Job hatte Backoff")
+    if dead_letter_max:
+        auffaellig.append(f"{dead_letter_max} Dead-Letter-Task(s)")
+    if queue_blocked_max:
+        auffaellig.append(f"{queue_blocked_max} blockierte Task(s)")
+    if queue_werte and max(queue_werte) > 3600:
+        auffaellig.append(f"Queue-Alter {max(queue_werte):.0f} s > 3600 s")
+    if queue_fehler:
+        auffaellig.append("Company-Queue-Probe meldete Fehler")
     if not auffaellig:
         auffaellig.append("Keine Auffälligkeiten.")
     zeilen += [f"- {x}" for x in auffaellig]
@@ -307,7 +342,12 @@ def main() -> int:
     health_pfad = out / "health.jsonl"
     deep_pfad = out / "betrieb.jsonl"
 
-    def stoppe(_signum: int, _frame: Any) -> None:
+    abbruch_grund: str | None = None
+
+    def stoppe(signum: int, _frame: Any) -> None:
+        nonlocal abbruch_grund
+        if abbruch_grund is None:
+            abbruch_grund = f"Signal {signum}"
         STOP.set()
 
     signal.signal(signal.SIGINT, stoppe)
@@ -340,8 +380,12 @@ def main() -> int:
             if d["ok"]:
                 daten = d["daten"]
                 jobs = daten.get("jobs") or []
+                company = daten.get("company") or {}
                 print(f"{d['ts']} deep takt={daten.get('takt', {}).get('status')} "
                       f"spider={next((j.get('letzter_erfolg') for j in jobs if j.get('name') == 'spider'), None)} "
+                      f"queue={company.get('queue_offen')} "
+                      f"queue_age={company.get('queue_alter_max_s')} "
+                      f"dead={company.get('dead_letter')} "
                       f"warnungen={len(daten.get('warnungen') or [])}", flush=True)
             else:
                 print(f"{d['ts']} deep FEHLER {d.get('fehler')}", flush=True)
@@ -354,7 +398,28 @@ def main() -> int:
 
     ende = jetzt()
     zusammenfassung_schreiben(start, health, deep, out, ende)
+    regulaer = abbruch_grund is None and not STOP.is_set()
+    monitor_status = {
+        "start": iso(start),
+        "ende": iso(ende),
+        "regulaer": regulaer,
+        "abbruch": not regulaer,
+        "abbruch_grund": abbruch_grund or ("STOP gesetzt" if STOP.is_set() else None),
+        "dauer_sekunden": round(max(0.0, (ende - start).total_seconds()), 1),
+        "soll_dauer_sekunden": round(args.duration_hours * 3600, 1),
+        "samples": len(health),
+        "deep_samples": len(deep),
+        "summary": str(out / "summary.md"),
+    }
+    status_pfad = out / "monitor-status.json"
+    tmp = out / ".monitor-status.json.tmp"
+    tmp.write_text(
+        json.dumps(monitor_status, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    tmp.replace(status_pfad)
     print(f"SOAK_ENDE {iso(ende)} samples={len(health)} deep={len(deep)} "
+          f"ausgang={'regulaer' if regulaer else 'abgebrochen'} "
           f"summary={out / 'summary.md'}", flush=True)
     return 0
 

@@ -58,7 +58,7 @@ wäre die im Masterprompt verbotene Dekoration. 3D ist derzeit nicht freigegeben
 | Baustein | Ist-Zustand | Relevanz für das Raumschiff |
 |---|---|---|
 | Fakten-DB | SQLite mit WAL, Kerzen, Validierungen, Trades, Entscheiden, Ereignissen, Konten, Agentenläufen, Konferenzen | Bleibt die einzige Wahrheit; wird um Aufgaben, Nachrichten und Raumstatus erweitert |
-| Paper-Trading | CSV-/Mock-/MT5-Broker mit Paper-Sperre; kein Codepfad zu echten Orders | Bleibt unverändert und unverhandelbar |
+| Paper-Trading | Direkte SQLite-Simulation aus Kerzen; kein Broker-Aufruf und kein Codepfad zu echten Orders | Bleibt unverändert und unverhandelbar |
 | Richter | Training/OOS, Walk-Forward, Monte-Carlo, Nachbarparameter, Zufallstest | Kein Agent darf diese Regeln umgehen |
 | Risiko | 1 % je Trade, 10 % Not-Stop, 15 Positionen, Engagement, Korrelation | Bleibt hart; Risikomanagement erhält Vetorecht |
 | Spider | RSS-Quellen, robots.txt, Quellenprüfung, Artikel, Volltext, Weiterleitungen | Liefert die realen Daten für Intelligence und Observatory |
@@ -199,10 +199,12 @@ Werte bleiben leer. Agentenstatus und offene Aufgaben aktualisieren sich alle
 30 Sekunden, solange die Ansicht geöffnet ist. Die Ansicht ist eine Darstellung,
 keine neue Datenquelle und keine Automation.
 
-Geprüft wird der Querschnitt mit 225 pytest-Tests, dem 250-%-Lauf über zwölf
-Ansichten und drei Breiten sowie dem Negativtest, der zehn absichtliche Fehler —
-darunter ein fehlender Abteilungstab, ein fehlender und ein zusätzlicher Agent
-sowie eine doppelte Agenten-ID bei gleicher Agentenzahl — erkennen muss. Der sichtbare
+Geprüft wird der Querschnitt mit 302 pytest-Tests, dem 250-%-Lauf über zwölf
+Ansichten und drei Breiten sowie dem Negativtest, der dreizehn absichtliche
+Fehler — darunter ein fehlender Abteilungstab, ein fehlender und ein
+zusätzlicher Agent, eine doppelte Agenten-ID bei gleicher Agentenzahl sowie ein
+fehlender Widerspruchsgrund und eine fehlende Widerspruchssicherheit — erkennen
+muss. Der sichtbare
 Agenten-Querschnitt und die Detailspalte werden zusätzlich im Browser auf 103
 Räume, elf Abteilungen, zwei Gemeinschaftsräume und Zoom ohne Seitenfehler geprüft.
 

@@ -3,15 +3,19 @@
 Die Bewertung ist bewusst regelbasiert und offen begrenzt:
 
 - Eine **Kernaussage** ist ein Satz aus Titel oder Zusammenfassung, der eine
-  prüfbare Richtung, einen Wert oder eine Verneinung enthält. Ohne solches
-  Muster wird keine Aussage erfunden.
-- Der ``claim_key`` gruppiert Aussagen über Subjekt und Metrik (z. B.
-  ``ezb`` + ``leitzins``). Das ist Oberflächenähnlichkeit, keine Semantik.
+  prüfbare Richtung, einen Wert oder eine Verneinung enthält. Zusätzlich werden
+  ein expliziter Zeitraum, eine erkennbare Bedingung und eine
+  Extraktionssicherheit gespeichert. Ohne Muster wird keine Aussage erfunden.
+- Der ``claim_key`` gruppiert Aussagen über Subjekt, Metrik und expliziten
+  Zeitraum (z. B. ``ezb`` + ``leitzins`` + ``2026-07``). Das ist
+  Oberflächenähnlichkeit, keine Semantik.
 - **Kopien zählen nicht als unabhängige Bestätigung.** Sie bleiben als Belege
   sichtbar, aber nur Originale verschiedener Hosts erhöhen ``quellen``.
 - **Widersprüche** entstehen nur bei unterschiedlichen Hosts und entweder
-  entgegengesetzter Richtung oder unterschiedlicher Verneinung innerhalb des
-  Zeitfensters. Das ist eine Heuristik; sie markiert Prüfbedarf, keine Wahrheit.
+  entgegengesetzter Richtung, unterschiedlicher Verneinung, unvereinbaren
+  Zahlenwerten oder bedingter gegen unbedingte Aussage innerhalb des
+  Zeitfensters. Explizit verschiedene Zeiträume sind kein Widerspruch. Das ist
+  eine Heuristik; sie markiert Prüfbedarf, keine Wahrheit.
 - Die **Quellenreputation** beginnt beim Registergewicht und wird durch echte
   Ergebnisse aus ``intel_quellen`` sowie erkannte Widersprüche angepasst.
   Ohne Ergebnis bleibt sie ausdrücklich ``vorläufig``.
@@ -95,8 +99,31 @@ NEGATION_TOKENS = {"nicht", "kein", "keine", "keinen", "keinem", "keiner",
                    "ohne", "nie", "niemals", "dementiert", "bestreitet",
                    "verneint", "not", "never", "without", "denies", "denied",
                    "rejects", "rejected"}
-UNIT_TOKENS = {"prozent", "%", "basispunkte", "bp", "mrd", "mio", "milliarden",
-               "millionen", "eur", "usd", "chf", "gbp", "jpy", "euro", "dollar"}
+UNIT_TOKENS = {"prozent", "%", "prozentpunkte", "pp", "basispunkte", "bp", "bps", "mrd",
+               "mio", "milliarden", "millionen", "eur", "usd", "chf", "gbp", "jpy",
+               "euro", "dollar"}
+
+MONATSNAMEN = {
+    "januar": 1, "jaenner": 1, "january": 1, "jan": 1,
+    "februar": 2, "february": 2, "feb": 2,
+    "maerz": 3, "march": 3, "mar": 3,
+    "april": 4, "apr": 4,
+    "mai": 5, "may": 5,
+    "juni": 6, "june": 6, "jun": 6,
+    "juli": 7, "july": 7, "jul": 7,
+    "august": 8, "aug": 8,
+    "september": 9, "sept": 9, "sep": 9,
+    "oktober": 10, "october": 10, "okt": 10, "oct": 10,
+    "november": 11, "nov": 11,
+    "dezember": 12, "december": 12, "dez": 12, "dec": 12,
+}
+MONATS_MUSTER = "|".join(sorted(MONATSNAMEN, key=len, reverse=True))
+BEDINGUNGSWORTE = (
+    "wenn", "falls", "sofern", "unter der bedingung", "vorausgesetzt",
+    "abhaengig von", "abhängig von", "if", "unless", "provided that",
+    "subject to", "depending on",
+)
+ZAHLEN_TOLERANZ = 0.01
 
 STOPPWOERTER = {
     "die", "der", "das", "den", "dem", "des", "ein", "eine", "einen", "einem",
@@ -114,6 +141,7 @@ STOPPWOERTER = {
     "september", "october", "november", "december", "jan", "feb", "mar", "apr",
     "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
 }
+STOPPWOERTER.update(MONATSNAMEN)
 
 ALIASE: tuple[tuple[str, str], ...] = (
     (r"\beuropaeische zentralbank\b", "ezb"),
@@ -143,12 +171,19 @@ class Kernaussage:
     wert: float | None
     einheit: str
     negiert: bool
+    zeitraum: str
+    bedingung: str
+    sicherheit: float
     ist_kopie: bool
     erstellt: str
 
     @property
     def claim_key(self) -> str:
-        return f"{self.thema}|{self.subjekt or 'allgemein'}|{self.metrik or 'allgemein'}"
+        basis = f"{self.thema}|{self.subjekt or 'allgemein'}|{self.metrik or 'allgemein'}"
+        # Der Zeitraum trennt sonst fälschlich Aussagen über verschiedene
+        # Perioden. Die Bedingung bleibt bewusst außen vor, damit bedingte und
+        # unbedingte Aussagen überhaupt verglichen werden können.
+        return f"{basis}|zeitraum={self.zeitraum}" if self.zeitraum else basis
 
 
 def _normalisiere(text: str) -> str:
@@ -183,6 +218,64 @@ def _erster_satz(text: str) -> str:
     return re.split(r"(?<=[.!?])\s+", sauber)[0].strip()
 
 
+def zeitraum(text: str) -> str:
+    """Erkennt nur explizite, maschinenlesbare Zeiträume.
+
+    Relative Angaben wie „heute“ oder „nächste Woche“ werden nicht auf ein
+    Datum geraten und bleiben leer.
+    """
+    normal = _normalisiere(text)
+    # Tagesdatum zuerst, damit "17 September 2026" nicht nur zum Monat wird.
+    treffer = re.search(
+        rf"\b(\d{{1,2}})\.?\s+({MONATS_MUSTER})\s+(20\d{{2}})\b", normal,
+    )
+    if treffer:
+        monat = MONATSNAMEN[treffer.group(2)]
+        return f"{int(treffer.group(3)):04d}-{monat:02d}-{int(treffer.group(1)):02d}"
+    treffer = re.search(rf"\b({MONATS_MUSTER})\s+(20\d{{2}})\b", normal)
+    if treffer:
+        monat = MONATSNAMEN[treffer.group(1)]
+        return f"{int(treffer.group(2)):04d}-{monat:02d}"
+    treffer = re.search(r"\b(20\d{2})\s+(0?[1-9]|1[0-2])\b", normal)
+    if treffer:
+        return f"{int(treffer.group(1)):04d}-{int(treffer.group(2)):02d}"
+    treffer = re.search(r"\bq([1-4])\s+(20\d{2})\b", normal)
+    if treffer:
+        return f"{int(treffer.group(2)):04d}-Q{int(treffer.group(1))}"
+    treffer = re.search(r"\b(20\d{2})\s+q([1-4])\b", normal)
+    if treffer:
+        return f"{int(treffer.group(1)):04d}-Q{int(treffer.group(2))}"
+    return ""
+
+
+def bedingung(text: str) -> str:
+    """Schneidet eine erkennbare Bedingung aus, ohne sie semantisch zu deuten."""
+    sauber = _sauber(text).lower()
+    treffer = re.search(
+        r"\b(" + "|".join(re.escape(w) for w in BEDINGUNGSWORTE) + r")\b",
+        sauber,
+    )
+    if not treffer:
+        return ""
+    rest = re.split(r"[.;!?]", sauber[treffer.start():], maxsplit=1)[0]
+    return _normalisiere(rest)[:220]
+
+
+def sicherheit(metric: str, richtung_wert: str, zahl: float | None,
+              bedingung_wert: str) -> float:
+    """Nachvollziehbare Extraktionssicherheit, keine Quellenreputation."""
+    grad = 0.5
+    if metric:
+        grad += 0.2
+    if richtung_wert != "unklar":
+        grad += 0.2
+    if zahl is not None:
+        grad += 0.1
+    if bedingung_wert:
+        grad -= 0.1
+    return round(max(0.4, min(0.95, grad)), 2)
+
+
 def thema(text: str) -> str:
     normal = _normalisiere(text)
     for name, woerter in THEMEN:
@@ -208,8 +301,8 @@ def wert_und_einheit(text: str) -> tuple[float | None, str]:
     normal = _normalisiere(text)
     treffer = re.search(
         r"(?<![\w.])(\d{1,3}(?:[.,]\d+)?)\s*"
-        r"(%|prozent|basispunkte|bp|mrd|mio|milliarden|millionen|eur|usd|chf|"
-        r"gbp|jpy|euro|dollar)\b",
+        r"(%|(?:prozentpunkte|prozent|basispunkte|bps|bp|pp|mrd|mio|milliarden|millionen|eur|usd|chf|"
+        r"gbp|jpy|euro|dollar)\b)",
         normal,
     )
     if not treffer:
@@ -220,8 +313,8 @@ def wert_und_einheit(text: str) -> tuple[float | None, str]:
         return None, ""
     einheit = treffer.group(2)
     einheit = {
-        "prozent": "%", "basispunkte": "bp", "milliarden": "mrd",
-        "millionen": "mio", "euro": "eur", "dollar": "usd",
+        "prozent": "%", "prozentpunkte": "pp", "basispunkte": "bp", "bps": "bp",
+        "milliarden": "mrd", "millionen": "mio", "euro": "eur", "dollar": "usd",
     }.get(einheit, einheit)
     return zahl, einheit
 
@@ -268,6 +361,8 @@ def _aussage_aus_text(text: str) -> dict[str, Any] | None:
     negiert_wert = negiert(sauber)
     subj = subjekt(sauber)
     metric = metrik(sauber)
+    zeitraum_wert = zeitraum(sauber)
+    bedingung_wert = bedingung(sauber)
     # Eine Verneinung allein ist noch keine Aussage: „not for distribution“
     # ist eine Rechtsfloskel, keine Kernaussage. Es braucht eine Metrik oder
     # einen konkreten Wert; ohne Richtung muss mindestens der Wert bleiben.
@@ -286,6 +381,9 @@ def _aussage_aus_text(text: str) -> dict[str, Any] | None:
         "wert": zahl,
         "einheit": einheit,
         "negiert": negiert_wert,
+        "zeitraum": zeitraum_wert,
+        "bedingung": bedingung_wert,
+        "sicherheit": sicherheit(metric, richtung_wert, zahl, bedingung_wert),
     }
 
 
@@ -318,6 +416,9 @@ def extrahiere_aussage(meldung: Any, quellen: dict[str, Quelle] | None = None) -
         wert=basis["wert"],
         einheit=basis["einheit"],
         negiert=bool(basis["negiert"]),
+        zeitraum=str(basis["zeitraum"] or ""),
+        bedingung=str(basis["bedingung"] or ""),
+        sicherheit=float(basis["sicherheit"]),
         ist_kopie=not bool(int(meldung["ist_original"])),
         erstellt=str(meldung["abgerufen_am"] or jetzt()),
     )
@@ -340,17 +441,98 @@ def _im_fenster(a: Kernaussage, b: Kernaussage) -> bool:
     return abs(za - zb) <= timedelta(days=FENSTER_TAGE)
 
 
+def _widerspruch(a: Kernaussage, b: Kernaussage, grund: str, basis: float) -> tuple[str, float]:
+    """Die Widerspruchssicherheit kann nicht über der schwächeren Aussage liegen."""
+    return grund, round(min(basis, a.sicherheit, b.sicherheit), 2)
+
+
+def _wert_in_basispunkten(wert: float | None, einheit: str) -> float | None:
+    """Rechnet nur die ausdrücklich unterstützten Prozenteinheiten um.
+
+    Für den Zahlenvergleich gilt die kontrollierte Annahme
+    1 Prozentpunkt (pp) = 1 Prozent = 100 Basispunkte. Andere Einheiten werden
+    nicht heuristisch umgerechnet, weil ihre Bedeutung ohne Kontext nicht sicher
+    ist. Das ist keine semantische Gleichsetzung von Prozentänderung und
+    Prozentpunktdifferenz.
+    """
+    if wert is None:
+        return None
+    normal = _normalisiere(einheit)
+    if normal in {"%", "pp"}:
+        return float(wert) * 100.0
+    if normal == "bp":
+        return float(wert)
+    return None
+
+
+def _vergleichswerte(a: Kernaussage, b: Kernaussage) -> tuple[float, float] | None:
+    """Liefert normierte Basispunkte nur für vergleichbare, abweichende Werte."""
+    if a.wert is None or b.wert is None:
+        return None
+    wert_a = _wert_in_basispunkten(a.wert, a.einheit)
+    wert_b = _wert_in_basispunkten(b.wert, b.einheit)
+    if wert_a is None or wert_b is None:
+        return None
+    if abs(wert_a - wert_b) <= ZAHLEN_TOLERANZ:
+        return None
+    return round(wert_a, 4), round(wert_b, 4)
+
+
+def _zahl_label(wert: float, einheit: str) -> str:
+    normal = _normalisiere(einheit)
+    if normal in {"%", "pp"}:
+        return f"{wert:g} {normal} ({wert * 100:g} bp)"
+    return f"{wert:g} {einheit}"
+
+
+def _zahlenkonflikt(a: Kernaussage, b: Kernaussage) -> tuple[str, float] | None:
+    """Vergleicht Zahlen gleicher oder kontrolliert umrechenbarer Einheiten."""
+    if a.wert is None or b.wert is None:
+        return None
+    einheit_a = _normalisiere(a.einheit)
+    einheit_b = _normalisiere(b.einheit)
+    wert_a = _wert_in_basispunkten(a.wert, a.einheit)
+    wert_b = _wert_in_basispunkten(b.wert, b.einheit)
+    if wert_a is None or wert_b is None:
+        return None
+    if abs(wert_a - wert_b) <= ZAHLEN_TOLERANZ:
+        return None
+    if einheit_a == einheit_b:
+        grund = f"Zahlenwert {a.wert:g} {a.einheit} gegen {b.wert:g} {b.einheit}"
+    else:
+        grund = f"Zahlenwert {_zahl_label(a.wert, a.einheit)} gegen {_zahl_label(b.wert, b.einheit)}"
+    return grund, 0.9
+
+
 def widerspruchsgrund(a: Kernaussage, b: Kernaussage) -> tuple[str, float] | None:
-    """Nur unterschiedliche Hosts und klar entgegengesetzte Muster zählen."""
+    """Strukturierter Prüfbedarf; verschiedene Zeiträume sind kein Konflikt."""
     if a.host == b.host or not _im_fenster(a, b):
         return None
+    if a.zeitraum and b.zeitraum and a.zeitraum != b.zeitraum:
+        return None
+
+    bedingung_unterschied = bool(a.bedingung) != bool(b.bedingung)
     paare = {a.richtung, b.richtung}
     if paare == {"steigt", "sinkt"}:
-        return "Richtung steigt gegen sinkt", 0.8
+        grund = "Richtung steigt gegen sinkt"
+        if bedingung_unterschied:
+            grund += " (Bedingung gegen unbedingte Aussage)"
+            return _widerspruch(a, b, grund, 0.7)
+        return _widerspruch(a, b, grund, 0.8)
     if "unveraendert" in paare and paare & {"steigt", "sinkt"}:
-        return "unverändert gegen Veränderung", 0.7
-    if a.richtung == b.richtung and a.negiert != b.negiert:
-        return "Verneinung gegen Behauptung", 0.6
+        grund = "unverändert gegen Veränderung"
+        if bedingung_unterschied:
+            grund += " (Bedingung gegen unbedingte Aussage)"
+            return _widerspruch(a, b, grund, 0.65)
+        return _widerspruch(a, b, grund, 0.7)
+    if a.richtung == b.richtung:
+        if a.negiert != b.negiert:
+            return _widerspruch(a, b, "Verneinung gegen Behauptung", 0.6)
+        zahlen = _zahlenkonflikt(a, b)
+        if zahlen is not None:
+            return _widerspruch(a, b, zahlen[0], zahlen[1])
+        if bedingung_unterschied:
+            return _widerspruch(a, b, "Bedingung gegen unbedingte Aussage", 0.5)
     return None
 
 
@@ -434,7 +616,11 @@ def claims_auffrischen(db: Facts, quellen: Iterable[Quelle] | None = None) -> di
     for a in aussagen:
         gruppen[a.claim_key].append(a)
 
-    gruppen_daten: list[tuple[str, list[Kernaussage], list[tuple[Kernaussage, Kernaussage, str, float]]]] = []
+    gruppen_daten: list[
+        tuple[str, list[Kernaussage],
+              list[tuple[Kernaussage, Kernaussage, str, float,
+                         tuple[float, float] | None]]]
+    ] = []
     widersprueche_je_host: dict[str, int] = defaultdict(int)
     uebersprungen = 0
     for key, eintraege in list(gruppen.items())[:MAX_GRUPPEN]:
@@ -442,12 +628,15 @@ def claims_auffrischen(db: Facts, quellen: Iterable[Quelle] | None = None) -> di
         if len(eintraege) > MAX_BELEGE_PRO_CLAIM:
             uebersprungen += len(eintraege) - MAX_BELEGE_PRO_CLAIM
             eintraege = eintraege[:MAX_BELEGE_PRO_CLAIM]
-        paare: list[tuple[Kernaussage, Kernaussage, str, float]] = []
+        paare: list[
+            tuple[Kernaussage, Kernaussage, str, float,
+                  tuple[float, float] | None]
+        ] = []
         for a, b in combinations(eintraege, 2):
             grund = widerspruchsgrund(a, b)
             if grund is None:
                 continue
-            paare.append((a, b, grund[0], grund[1]))
+            paare.append((a, b, grund[0], grund[1], _vergleichswerte(a, b)))
             widersprueche_je_host[a.host] += 1
             widersprueche_je_host[b.host] += 1
         gruppen_daten.append((key, eintraege, paare))
@@ -507,7 +696,11 @@ def claims_auffrischen(db: Facts, quellen: Iterable[Quelle] | None = None) -> di
             "id": claim_id, "claim_key": key,
             "kernaussage": repräsentant.aussage,
             "thema": repräsentant.thema, "subjekt": repräsentant.subjekt,
-            "metrik": repräsentant.metrik, "quellen": quellen_anzahl,
+            "metrik": repräsentant.metrik,
+            "zeitraum": repräsentant.zeitraum,
+            "bedingung": repräsentant.bedingung,
+            "sicherheit": repräsentant.sicherheit,
+            "quellen": quellen_anzahl,
             "belege": len(eintraege), "widersprueche": len(paare),
             "bestaetigungsgrad": grad, "status": status,
             "erstmals": erstmals, "aktualisiert": jetzt(),
@@ -519,17 +712,22 @@ def claims_auffrischen(db: Facts, quellen: Iterable[Quelle] | None = None) -> di
                 "meldung_key": a.meldung_key, "artikel_id": a.artikel_id,
                 "quelle_id": a.quelle_id, "host": a.host, "aussage": a.aussage,
                 "richtung": a.richtung, "wert": a.wert, "einheit": a.einheit,
-                "negiert": int(a.negiert), "ist_kopie": int(a.ist_kopie),
+                "negiert": int(a.negiert), "zeitraum": a.zeitraum,
+                "bedingung": a.bedingung, "sicherheit": a.sicherheit,
+                "ist_kopie": int(a.ist_kopie),
                 "reputation": float(reps.get(a.quelle_id, {}).get("reputation", 0.5)),
                 "erstellt": a.erstellt,
             })
-        for a, b, grund, sicherheit in paare:
+        for a, b, grund, sicherheit, werte in paare:
             widerspruch_id += 1
             widersprueche.append({
                 "id": widerspruch_id, "claim_id": claim_id,
                 "meldung_a": a.meldung_key, "meldung_b": b.meldung_key,
                 "quelle_a": a.host, "quelle_b": b.host, "grund": grund,
-                "sicherheit": sicherheit, "erstellt": jetzt(),
+                "sicherheit": sicherheit,
+                "wert_a_bp": werte[0] if werte else None,
+                "wert_b_bp": werte[1] if werte else None,
+                "erstellt": jetzt(),
             })
 
     db.nexus_bewertung_ersetzen(list(reps.values()), claims, claim_quellen, widersprueche)

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import uuid
 from collections import Counter
+from dataclasses import replace
 
 import pytest
+from hypothesis import HealthCheck, example, given, settings
 
-from orakel.company.policy import CompanyPolicy, PolicyError
+from paper_strategies import paper_erlaubt, paper_konfiguration
+from orakel.company.handlers import HandlerResult, run_handler
+from orakel.company.policy import ERLAUBTE_TASK_TYPES, CompanyPolicy, PolicyError
 from orakel.company.roster import PROFILES, profile_by_id, validate_roster
-from orakel.company.runtime import CompanyRuntime
-from orakel.company.store import CompanyStore
+from orakel.company.runtime import TASK_TYPES, CompanyRuntime
+from orakel.company.store import CompanyStore, StoreError
 from orakel.db import Facts
 
 
@@ -20,6 +25,13 @@ def _store(cfg) -> tuple[Facts, CompanyStore]:
     store = CompanyStore(db)
     store.sync_roster()
     return db, store
+
+
+def _audit_kaputt(monkeypatch, store: CompanyStore) -> None:
+    def kaputt(*args, **kwargs):
+        raise RuntimeError("Audit nicht erreichbar")
+
+    monkeypatch.setattr(store, "_append_event_im_transaktion", kaputt)
 
 
 def test_roster_hat_103_eindeutige_profile():
@@ -85,6 +97,158 @@ def test_queue_ist_idempotent_und_durchlaeuft_den_lifecycle(cfg):
     assert store.audit_chain_ok()
 
 
+def test_enqueue_lehnt_anderen_task_type_bei_vorhandenem_task_key_ab(cfg):
+    db, store = _store(cfg)
+    task_id = store.enqueue(
+        task_key="test:key:typkonflikt",
+        assigned_to="A1",
+        dept="A",
+        title="Ursprünglicher Task",
+        task_type="daily_check",
+    )
+
+    with pytest.raises(StoreError, match="Task-Key.*bereits.*Task-Typ"):
+        store.enqueue(
+            task_key="test:key:typkonflikt",
+            assigned_to="A1",
+            dept="A",
+            title="Konflikt",
+            task_type="paper_guard",
+        )
+
+    task = store.task(task_id)
+    assert task is not None
+    assert task["task_type"] == "daily_check"
+    assert store.task_counts() == {"queued": 1}
+
+
+@pytest.mark.parametrize(
+    "task_type",
+    [None, 42, 3.14, ["daily_check"], {"name": "daily_check"}],
+)
+def test_enqueue_blockiert_nicht_string_task_type_vor_dem_schreiben(cfg, task_type):
+    db, store = _store(cfg)
+
+    with pytest.raises(StoreError, match="Unbekannter Task-Typ"):
+        store.enqueue(
+            task_key=f"test:enqueue:nicht-string:{type(task_type).__name__}",
+            assigned_to="A1",
+            dept="A",
+            title="Darf nicht in die Queue",
+            task_type=task_type,
+        )
+
+    assert store.task_counts() == {}
+
+
+def test_enqueue_blockiert_unbekannten_task_type_vor_dem_schreiben(cfg):
+    db, store = _store(cfg)
+
+    with pytest.raises(StoreError, match="Unbekannter Task-Typ"):
+        store.enqueue(
+            task_key="test:enqueue:unbekannt",
+            assigned_to="A1",
+            dept="A",
+            title="Darf nicht in die Queue",
+            task_type="real_order",
+        )
+
+    with db.conn() as c:
+        assert c.execute("SELECT COUNT(*) AS n FROM agent_tasks").fetchone()["n"] == 0
+    assert store.events() == []
+
+
+def test_audit_fehler_rollt_task_status_zurueck(cfg, monkeypatch):
+    _, store = _store(cfg)
+    task_id = store.enqueue(
+        task_key="test:atomic:1", assigned_to="A1", dept="A", title="Atomar",
+    )
+    assert store.claim_next("worker-atomic")["id"] == task_id
+
+    def audit_kaputt(*args, **kwargs):
+        raise RuntimeError("Audit nicht erreichbar")
+
+    monkeypatch.setattr(store, "_append_event_im_transaktion", audit_kaputt)
+    with pytest.raises(RuntimeError, match="Audit nicht erreichbar"):
+        store.complete(
+            task_id, result="darf nicht committet werden", evidence=["task:atomic"],
+        )
+
+    task = store.task(task_id)
+    assert task is not None
+    assert task["state"] == "running"
+    assert not any(e["kind"] == "task_done" for e in store.events(task_id))
+    assert store.audit_chain_ok()
+
+
+def test_fail_reaktiviert_erledigte_task_nicht(cfg):
+    _, store = _store(cfg)
+    task_id = store.enqueue(
+        task_key="test:atomic:2", assigned_to="A1", dept="A", title="Bleibt erledigt",
+    )
+    assert store.claim_next("worker-done")["id"] == task_id
+    store.complete(task_id, result="belegt", evidence=["task:done"])
+
+    with pytest.raises(StoreError, match="Zustand done"):
+        store.fail(task_id, "verspäteter Fehler")
+
+    task = store.task(task_id)
+    assert task is not None
+    assert task["state"] == "done"
+    assert not any(e["kind"] == "task_failed" for e in store.events(task_id))
+    assert store.audit_chain_ok()
+
+
+def test_audit_fehler_rollt_enqueue_zurueck(cfg, monkeypatch):
+    db, store = _store(cfg)
+    _audit_kaputt(monkeypatch, store)
+
+    with pytest.raises(RuntimeError, match="Audit nicht erreichbar"):
+        store.enqueue(
+            task_key="test:atomic:enqueue", assigned_to="A1", dept="A", title="Kein Task",
+        )
+
+    with db.conn() as c:
+        assert c.execute("SELECT COUNT(*) AS n FROM agent_tasks").fetchone()["n"] == 0
+    assert store.events() == []
+
+
+def test_audit_fehler_rollt_block_zurueck(cfg, monkeypatch):
+    _, store = _store(cfg)
+    task_id = store.enqueue(
+        task_key="test:atomic:block", assigned_to="A1", dept="A", title="Blockade",
+    )
+    assert store.claim_next("worker-block")["id"] == task_id
+    _audit_kaputt(monkeypatch, store)
+
+    with pytest.raises(RuntimeError, match="Audit nicht erreichbar"):
+        store.block(task_id, "darf nicht committet werden")
+
+    task = store.task(task_id)
+    assert task is not None
+    assert task["state"] == "running"
+    assert not any(e["kind"] == "task_blocked" for e in store.events(task_id))
+    assert store.audit_chain_ok()
+
+
+def test_audit_fehler_rollt_lease_recovery_zurueck(cfg, monkeypatch):
+    _, store = _store(cfg)
+    task_id = store.enqueue(
+        task_key="test:atomic:lease", assigned_to="A1", dept="A", title="Lease",
+    )
+    assert store.claim_next("worker-lease", lease_seconds=-1)["id"] == task_id
+    _audit_kaputt(monkeypatch, store)
+
+    with pytest.raises(RuntimeError, match="Audit nicht erreichbar"):
+        store.recover_expired()
+
+    task = store.task(task_id)
+    assert task is not None
+    assert task["state"] == "running"
+    assert not any(e["kind"] == "lease_recovered" for e in store.events())
+    assert store.audit_chain_ok()
+
+
 def test_queue_beachtet_abhaengigkeiten(cfg):
     _, store = _store(cfg)
     t1 = store.enqueue(task_key="test:dep:1", assigned_to="A1", dept="A",
@@ -95,6 +259,298 @@ def test_queue_beachtet_abhaengigkeiten(cfg):
     assert store.claim_next("w1")["id"] == t1
     store.complete(t1, result="ok", evidence=["task:dep"])
     assert store.claim_next("w2")["id"] == t2
+
+
+def test_policy_blockiert_mt5_und_unbekannten_broker(cfg):
+    policy = CompanyPolicy(cfg)
+    # MT5 ist auch ohne Order-Freigabe kein Paper-Broker.
+    cfg._d["paper"].update({"broker": "mt5", "order_freigabe": False})
+    assert not policy.paper_only()
+    assert not policy.check_action("paper_order").allowed
+
+    cfg._d["paper"].update({"broker": "mt5", "order_freigabe": True})
+    assert not policy.paper_only()
+    assert not policy.check_action("paper_order").allowed
+
+    cfg._d["paper"].update({"broker": "unbekannt", "order_freigabe": False})
+    assert not policy.paper_only()
+    assert not policy.check_action("paper_order").allowed
+
+
+def test_policy_fail_closed_bei_fehlenden_oder_ungueltigen_paper_werten(cfg):
+    policy = CompanyPolicy(cfg)
+    faelle = [
+        {},  # [paper] fehlt vollständig
+        {"broker": "csv"},  # order_freigabe fehlt
+        {"order_freigabe": False},  # broker fehlt
+        {"broker": "csv", "order_freigabe": None},
+        {"broker": "csv", "order_freigabe": "false"},
+        {"broker": "csv", "order_freigabe": 0},
+        {"broker": "", "order_freigabe": False},
+    ]
+    for paper in faelle:
+        cfg._d["paper"] = dict(paper)
+        assert not policy.paper_only(), paper
+        assert not policy.check_action("paper_order").allowed, paper
+
+    cfg._d["paper"] = {"broker": "csv", "order_freigabe": False}
+    assert policy.paper_only()
+    cfg._d["paper"] = {"broker": "mock", "order_freigabe": False}
+    assert policy.paper_only()
+
+
+def test_paper_guards_verwenden_dieselbe_fail_closed_policy(cfg):
+    from orakel.agents import _hdl_paper_sperre
+    from orakel.company.handlers import _paper_guard
+
+    policy = CompanyPolicy(cfg)
+    ctx = {"cfg": cfg, "policy": policy}
+    assert _paper_guard(ctx).ok
+    assert _hdl_paper_sperre(ctx)[0]
+
+    cfg._d["paper"].update({"broker": "mt5", "order_freigabe": False})
+    policy = CompanyPolicy(cfg)
+    ctx = {"cfg": cfg, "policy": policy}
+    assert not _paper_guard(ctx).ok
+    assert not _hdl_paper_sperre(ctx)[0]
+
+
+def test_policy_blockiert_unbekannten_task_type(cfg):
+    policy = CompanyPolicy(cfg)
+    with pytest.raises(PolicyError, match="Unbekannter Task-Typ"):
+        policy.check_task(profile_by_id("A1"), "unbekannt")
+    assert set(TASK_TYPES.values()) <= ERLAUBTE_TASK_TYPES
+
+
+def test_run_handler_blockiert_unbekannten_handler(cfg):
+    profil = replace(profile_by_id("A1"), handler="gibt_es_nicht")
+
+    ergebnis = run_handler(profil, {"cfg": cfg, "policy": CompanyPolicy(cfg)})
+
+    assert not ergebnis.ok
+    assert ergebnis.blocked
+    assert "kein Handler" in ergebnis.text
+
+
+def test_runtime_handler_ausnahme_wird_dead_letter(cfg, monkeypatch):
+    db, store = _store(cfg)
+    task_id = store.enqueue(
+        task_key="test:handler-exception",
+        assigned_to="A1",
+        dept="A",
+        title="Handler-Ausnahme",
+        task_type="daily_check",
+        max_attempts=1,
+    )
+    task = store.claim_next("worker-handler-exception")
+    assert task is not None
+    runtime = CompanyRuntime(cfg, db, store=store)
+
+    def kaputt(*args, **kwargs):
+        raise RuntimeError("Handler absichtlich kaputt")
+
+    monkeypatch.setattr("orakel.company.runtime.run_handler", kaputt)
+
+    assert runtime._execute(task, runtime.kontext()) == "dead_letter"
+
+    gespeichert = store.task(task_id)
+    assert gespeichert is not None
+    assert gespeichert["state"] == "dead_letter"
+    assert "Handler-Ausnahme" in gespeichert["error"]
+    assert not any(e["kind"] == "task_done" for e in store.events(task_id))
+
+
+def test_runtime_handler_ergebnis_ohne_evidenz_wird_blockiert(cfg, monkeypatch):
+    db, store = _store(cfg)
+    task_id = store.enqueue(
+        task_key="test:handler-ohne-evidenz",
+        assigned_to="A1",
+        dept="A",
+        title="Handler ohne Evidenz",
+        task_type="daily_check",
+        max_attempts=1,
+    )
+    task = store.claim_next("worker-handler-ohne-evidenz")
+    assert task is not None
+    runtime = CompanyRuntime(cfg, db, store=store)
+    monkeypatch.setattr(
+        "orakel.company.runtime.run_handler",
+        lambda *args, **kwargs: HandlerResult(True, "Nicht leerer Bericht", ()),
+    )
+
+    assert runtime._execute(task, runtime.kontext()) == "blocked"
+
+    gespeichert = store.task(task_id)
+    assert gespeichert is not None
+    assert gespeichert["state"] == "blocked"
+    assert "Ergebnis ohne Beleg" in gespeichert["error"]
+    assert not any(e["kind"] == "task_done" for e in store.events(task_id))
+
+
+def test_runtime_handler_ausnahme_erst_failed_dann_dead_letter(cfg, monkeypatch):
+    db, store = _store(cfg)
+    task_id = store.enqueue(
+        task_key="test:handler-retry",
+        assigned_to="A1",
+        dept="A",
+        title="Handler-Ausnahme mit Retry",
+        task_type="daily_check",
+        max_attempts=2,
+    )
+    runtime = CompanyRuntime(cfg, db, store=store)
+
+    def kaputt(*args, **kwargs):
+        raise RuntimeError("Handler absichtlich kaputt")
+
+    monkeypatch.setattr("orakel.company.runtime.run_handler", kaputt)
+
+    erster = store.claim_next("worker-handler-retry-1")
+    assert erster is not None
+    assert runtime._execute(erster, runtime.kontext()) == "failed"
+
+    zwischenstand = store.task(task_id)
+    assert zwischenstand is not None
+    assert zwischenstand["state"] == "queued"
+    assert zwischenstand["attempts"] == 1
+    assert "Handler-Ausnahme" in zwischenstand["error"]
+    assert not any(e["kind"] == "task_done" for e in store.events(task_id))
+
+    zweiter = store.claim_next("worker-handler-retry-2")
+    assert zweiter is not None
+    assert zweiter["attempts"] == 2
+    assert runtime._execute(zweiter, runtime.kontext()) == "dead_letter"
+
+    endstand = store.task(task_id)
+    assert endstand is not None
+    assert endstand["state"] == "dead_letter"
+    assert endstand["attempts"] == 2
+    assert "Handler-Ausnahme" in endstand["error"]
+    assert sum(e["kind"] == "task_failed" for e in store.events(task_id)) == 2
+    assert not any(e["kind"] == "task_done" for e in store.events(task_id))
+
+
+@pytest.mark.parametrize(
+    ("ergebnis", "erwarteter_zustand"),
+    [
+        (HandlerResult(True, "", ()), "blocked"),
+        (HandlerResult(False, "kein Ergebnis", ()), "dead_letter"),
+    ],
+)
+def test_runtime_nicht_lieferndes_handler_ergebnis_wird_nicht_done(
+    cfg, monkeypatch, ergebnis, erwarteter_zustand,
+):
+    db, store = _store(cfg)
+    task_id = store.enqueue(
+        task_key=f"test:handler-nicht-liefernd:{erwarteter_zustand}",
+        assigned_to="A1",
+        dept="A",
+        title="Nicht lieferndes Ergebnis",
+        task_type="daily_check",
+        max_attempts=1,
+    )
+    task = store.claim_next(f"worker-nicht-liefernd-{erwarteter_zustand}")
+    assert task is not None
+    runtime = CompanyRuntime(cfg, db, store=store)
+
+    monkeypatch.setattr(
+        "orakel.company.runtime.run_handler",
+        lambda *args, **kwargs: ergebnis,
+    )
+
+    assert runtime._execute(task, runtime.kontext()) == erwarteter_zustand
+
+    gespeichert = store.task(task_id)
+    assert gespeichert is not None
+    assert gespeichert["state"] == erwarteter_zustand
+    assert gespeichert["state"] != "done"
+    assert not any(e["kind"] == "task_done" for e in store.events(task_id))
+
+
+def test_runtime_blockiert_task_typ_passt_nicht_zum_profil(cfg):
+    db, store = _store(cfg)
+    task_id = store.enqueue(
+        task_key="test:dispatch:mismatch", assigned_to="A1", dept="A",
+        title="Falscher Task-Typ", task_type="paper_guard",
+    )
+    task = store.claim_next("worker-mismatch")
+    assert task is not None
+    runtime = CompanyRuntime(cfg, db, store=store)
+
+    assert runtime._execute(task, runtime.kontext()) == "blocked"
+
+    blockiert = store.task(task_id)
+    assert blockiert is not None
+    assert blockiert["state"] == "blocked"
+    assert "passt nicht" in blockiert["error"]
+
+
+@example(None)
+@example({})
+@example({"broker": "csv", "order_freigabe": False})
+@example({"broker": "mt5", "order_freigabe": False})
+@given(paper=paper_konfiguration())
+@settings(
+    max_examples=150,
+    derandomize=True,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+def test_paper_sperre_eigenschaft_alle_broker_freigabe_kombinationen(cfg, paper):
+    """Generierte Eigenschaft: nur sichere Broker mit explizitem False sind Paper."""
+    if paper is None:
+        cfg._d.pop("paper", None)
+    else:
+        cfg._d["paper"] = paper
+    policy = CompanyPolicy(cfg)
+    erlaubt = paper_erlaubt(paper)
+
+    assert policy.paper_only() is erlaubt
+    assert policy.check_action("paper_order").allowed is erlaubt
+    if erlaubt:
+        policy.check_task(profile_by_id("A1"), "paper_guard")
+    else:
+        with pytest.raises(PolicyError):
+            policy.check_task(profile_by_id("A1"), "paper_guard")
+
+
+@example(None)
+@example({})
+@example({"broker": "csv", "order_freigabe": False})
+@example({"broker": "mt5", "order_freigabe": False})
+@given(paper=paper_konfiguration())
+@settings(
+    max_examples=150,
+    derandomize=True,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+def test_runtime_paper_guard_eigenschaft_alle_broker_freigabe_kombinationen(cfg, paper):
+    """Der Runtime-Dispatch folgt derselben generierten Broker-Eigenschaft."""
+    if paper is None:
+        cfg._d.pop("paper", None)
+    else:
+        cfg._d["paper"] = paper
+    db, store = _store(cfg)
+    erlaubt = paper_erlaubt(paper)
+    task_id = store.enqueue(
+        task_key=f"test:runtime-paper:{uuid.uuid4().hex}",
+        assigned_to="A5",
+        dept="A",
+        title="Paper-Guard",
+        task_type="paper_guard",
+    )
+    task = store.claim_next(f"worker-paper-{uuid.uuid4().hex}")
+    assert task is not None and task["id"] == task_id
+    runtime = CompanyRuntime(cfg, db, store=store)
+
+    zustand = runtime._execute(task, runtime.kontext())
+
+    assert zustand == ("done" if erlaubt else "blocked")
+    gespeichert = store.task(task_id)
+    assert gespeichert is not None
+    assert gespeichert["state"] == ("done" if erlaubt else "blocked")
+    if not erlaubt:
+        assert "Paper-Sperre" in gespeichert["error"]
 
 
 def test_policy_blockiert_echte_orders_und_freie_shell(cfg):

@@ -61,7 +61,7 @@ Agentenkommunikation, persönliche Gedächtnisse und 2D-Agenten-Querschnitt
 │          │                  │                      │                │
 │  ┌───────▼───────┐  ┌───────▼────────┐  ┌──────────▼───────────┐    │
 │  │ SQLite/WAL    │  │ Obsidian Vault │  │ Paper-Broker         │    │
-│  │ Fakten +      │  │ Notizen,       │  │ CSV/Mock/MT5-Paper   │    │
+│  │ Fakten +      │  │ Notizen,       │  │ CSV/Mock-Paper       │    │
 │  │ Company       │  │ Protokolle     │  │ keine echten Orders  │    │
 │  └───────────────┘  └────────────────┘  └──────────────────────┘    │
 │                                                                     │

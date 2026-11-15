@@ -39,6 +39,11 @@ TASK_TYPES = {
     "S3": "briefing",
 }
 
+def erwarteter_task_type(profile: Profile) -> str:
+    """Kanonischer Task-Typ eines Profils; alles andere wird nicht dispatcht."""
+    return TASK_TYPES.get(profile.agent_id, "daily_check")
+
+
 PRIORITAETEN = {
     "A5": 95, "J9": 95,
     "F1": 90, "F10": 90, "J1": 88, "J2": 88, "J3": 88, "J4": 88,
@@ -118,7 +123,7 @@ class CompanyRuntime:
         for p in PROFILES:
             if len(ids) >= budget:
                 break
-            task_type = TASK_TYPES.get(p.agent_id, "daily_check")
+            task_type = erwarteter_task_type(p)
             task_id = self.store.enqueue(
                 task_key=f"daily:{tag}:{p.agent_id}",
                 assigned_to=p.agent_id,
@@ -129,7 +134,7 @@ class CompanyRuntime:
                 priority=PRIORITAETEN.get(p.agent_id, 50),
                 autonomy_level=p.autonomy,
                 acceptance="Ergebnis nicht leer; Beleg oder klarer Datenmangel; keine echte Order.",
-                input_data={"tag": tag, "phase": 1, "paper_only": True},
+                input_data={"tag": tag, "phase": 1, "paper_only": self.policy.paper_only()},
                 due_at=(datetime.now(timezone.utc) + timedelta(hours=24)).replace(
                     microsecond=0).isoformat(),
             )
@@ -163,6 +168,17 @@ class CompanyRuntime:
             )
             return "blocked"
 
+        erwartet = erwarteter_task_type(profile)
+        if str(task["task_type"]) != erwartet:
+            grund = (f"Task-Typ {task['task_type']!r} passt nicht zu "
+                     f"{profile.agent_id} ({erwartet})")
+            self.store.block(int(task["id"]), grund, ("policy:dispatch",))
+            self.db.agenten_lauf(
+                f"{profile.agent_id}:{profile.role}", profile.dept, profile.mission,
+                f"blockiert: {grund}", False,
+            )
+            return "blocked"
+
         try:
             ergebnis: HandlerResult = run_handler(profile, ctx)
         except Exception as exc:
@@ -176,7 +192,9 @@ class CompanyRuntime:
         evidence = list(ergebnis.evidence) + [f"task:{task['id']}"]
         if ergebnis.ok:
             try:
-                self.policy.validate_output(ergebnis.text, evidence)
+                # Der automatische Task-Verweis belegt nur die Herkunft, nicht
+                # den Inhalt. Ein Handler-Ergebnis ohne eigenen Beleg blockiert.
+                self.policy.validate_output(ergebnis.text, ergebnis.evidence)
             except PolicyError as exc:
                 self.store.block(int(task["id"]), exc.grund, evidence)
                 self.db.agenten_lauf(
