@@ -25,8 +25,22 @@ const DEP = { A:'Hauptzentrale', B:'Spider Intelligence', C:'Labor', D:'Trading 
   E:'Forschungsabteilung', F:'Risikomanagement', G:'Wissenszentrum', H:'Entwicklungsabteilung' };
 
 /* ---------- Navigation ---------- */
+const navToggle = $('#navToggle');
+const querformatAbfrage = window.matchMedia('(orientation: landscape) and (max-width: 950px) and (max-height: 500px)');
+function querformatAktiv(){ return querformatAbfrage.matches; }
+function setzeNavEingeklappt(eingeklappt){
+  document.body.classList.toggle('nav-eingeklappt', Boolean(eingeklappt) && querformatAktiv());
+  if(navToggle) navToggle.setAttribute('aria-expanded', String(!document.body.classList.contains('nav-eingeklappt')));
+}
+if(navToggle){
+  navToggle.onclick = () => setzeNavEingeklappt(!document.body.classList.contains('nav-eingeklappt'));
+  const syncNav = () => setzeNavEingeklappt(current === 'ship' && querformatAktiv());
+  if(querformatAbfrage.addEventListener) querformatAbfrage.addEventListener('change', syncNav);
+  else if(querformatAbfrage.addListener) querformatAbfrage.addListener(syncNav);
+}
 document.querySelectorAll('.nav').forEach(b => b.onclick = () => zeige(b.dataset.v));
 function zeige(v){ current=v;
+  if(v === 'ship') setzeNavEingeklappt(true);
   if(v !== 'globe' && globeView) globeView.setActive(false);
   if(v !== 'betrieb' && betriebTimer){ clearInterval(betriebTimer); betriebTimer = null; }
   if(v === 'betrieb' && !betriebTimer){

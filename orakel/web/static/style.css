@@ -1380,3 +1380,35 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 .px-dept.is-filter-active{border-color:var(--dept);box-shadow:0 0 22px color-mix(in srgb,var(--dept) 60%,transparent)}
 
 @media (prefers-reduced-motion: reduce){.px-lift,.px-nozzle::after,#shipViewport::after,.px-fin::after{animation:none}}
+
+
+/* Smartphone im Querformat: Navigation als einklappbares Menü, Ops-Konsole
+   unter dem Schiffsviewport und Zoomsteuerung immer im sichtbaren Bereich. */
+.nav-toggle{display:none}
+@media (orientation: landscape) and (max-width: 950px) and (max-height: 500px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .nav-toggle{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex:0 0 auto;min-height:44px;padding:5px 10px}
+  .nav-toggle::after{content:"▾";font-family:var(--mono);font-size:11px;line-height:1}
+  body.nav-eingeklappt .side{display:none}
+  .side{display:flex;flex-direction:row;align-items:center;overflow-x:auto;border-right:0;
+    border-bottom:1px solid var(--line);padding:8px 16px;scrollbar-width:none;-ms-overflow-style:none}
+  .side::-webkit-scrollbar{display:none;height:0}
+  .nav small{display:none}
+  .nav{min-height:44px;white-space:nowrap}
+
+  .ship-head{flex-wrap:nowrap;align-items:center;gap:10px}
+  .ship-head .sub{display:none}
+  .ship-kicker{font-size:8px;margin-bottom:2px}
+  .ship-mode{flex:0 0 auto;padding:5px 8px;gap:6px}
+  .ship-mode small{display:none}
+
+  .ship-stage{grid-template-columns:minmax(0,1fr);height:auto;min-height:0;gap:8px}
+  .ship-viewport{height:600px;min-height:0;contain:none}
+  .ship-side{order:2;max-height:min(46svh,260px);min-height:0;overflow:auto;padding:10px}
+  .ship-side-inhalt{overflow:auto;min-height:0}
+
+  /* Der Zoom bleibt beim Scrollen über dem Schiff erreichbar. contain:none
+     above verhindert, dass der Paint-Container die feste Leiste abschneidet. */
+  .ship-zoom{position:fixed;right:max(10px,env(safe-area-inset-right));
+    bottom:max(10px,env(safe-area-inset-bottom));z-index:30}
+}

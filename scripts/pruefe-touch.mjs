@@ -13,6 +13,8 @@
  *   - nach «Fit» liegen alle 103 Räume und elf Abteilungen im Schiffsviewport.
  *   - ein zweiter Porträt-Viewport (360 × 800) und Querformat (844 × 390)
  *     bestehen Fit, Auswahl und Legendenfilter ebenfalls.
+ *   - im Querformat ist die Navigation eingeklappt, die Ops-Seitenleiste steht
+ *     unter dem Viewport und die Zoomleiste bleibt im sichtbaren Bereich.
  *
  * Der Test ist für die Seed-Datenbank gedacht und läuft ohne Test-Framework.
  *
@@ -182,6 +184,46 @@ async function pruefeMobilViewport(browser, konfiguration) {
     const page = await context.newPage();
     await ladeSchiff(page);
     const fit = await pruefeFit(page, `${width}×${height}`, minBreite, minHoehe);
+    if (width > height) {
+      const querformat = await page.evaluate(() => {
+        const nav = document.querySelector('.side');
+        const toggle = document.querySelector('#navToggle');
+        const viewport = document.querySelector('#shipViewport').getBoundingClientRect();
+        const side = document.querySelector('#shipSide').getBoundingClientRect();
+        const zoom = document.querySelector('.ship-zoom').getBoundingClientRect();
+        return {
+          navDisplay: nav ? getComputedStyle(nav).display : 'fehlt',
+          navExpanded: toggle?.getAttribute('aria-expanded'),
+          toggleDisplay: toggle ? getComputedStyle(toggle).display : 'fehlt',
+          sideUnterViewport: side.top >= viewport.bottom - 1,
+          zoomPosition: getComputedStyle(document.querySelector('.ship-zoom')).position,
+          zoomImBild: zoom.top >= 0 && zoom.bottom <= innerHeight,
+          bodyKlasse: document.body.classList.contains('nav-eingeklappt'),
+        };
+      });
+      pruefe(querformat.navDisplay === 'none',
+        `${label}: Navigation ist im Querformat nicht eingeklappt (${querformat.navDisplay})`);
+      pruefe(querformat.navExpanded === 'false' && querformat.bodyKlasse,
+        `${label}: Navigation meldet den eingeklappten Zustand nicht`);
+      pruefe(querformat.toggleDisplay !== 'none',
+        `${label}: Navigationsschalter ist im Querformat nicht sichtbar`);
+      pruefe(querformat.sideUnterViewport,
+        `${label}: Ops-Seitenleiste steht nicht unter dem Schiffsviewport`);
+      pruefe(querformat.zoomPosition === 'fixed' && querformat.zoomImBild,
+        `${label}: Zoomleiste ist nicht fest im sichtbaren Bereich`);
+
+      const toggle = page.locator('#navToggle');
+      await toggle.tap();
+      await page.waitForTimeout(150);
+      const geoeffnet = await page.evaluate(() => ({
+        display: getComputedStyle(document.querySelector('.side')).display,
+        expanded: document.querySelector('#navToggle')?.getAttribute('aria-expanded'),
+      }));
+      pruefe(geoeffnet.display !== 'none' && geoeffnet.expanded === 'true',
+        `${label}: Navigationsschalter öffnet die Navigation nicht`);
+      await toggle.tap();
+      await page.waitForTimeout(150);
+    }
     const legende = page.locator('#shipLegend');
     const erwartetOffen = width > 760;
     const offen = await legende.evaluate(el => el.open);
