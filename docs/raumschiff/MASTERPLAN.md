@@ -1,7 +1,8 @@
 # Masterplan — Technik, autonomes Management und Umsetzung
 
-**Status:** P0 und P1 umgesetzt; P2 teilweise umgesetzt: Company-Lese-API und
-2D-Agenten-Querschnitt (103 Räume, elf Abteilungen); 3D-Hülle und P3–P7 nicht begonnen<br>
+**Status:** P0 und P1 umgesetzt; P2 teilweise umgesetzt: Company-API,
+Agentenkommunikation, persönliche Gedächtnisse und 2D-Agenten-Querschnitt
+(103 Räume, elf Abteilungen); 3D-Hülle und P3–P7 nicht begonnen<br>
 **Gehört zu:** [README.md](README.md), [RAUMBUCH.md](RAUMBUCH.md), [AGENTEN.md](AGENTEN.md)  
 **Grundsatz:** erst echte Unternehmenssubstanz, dann 3D; Paper-only bleibt unverhandelbar.
 
@@ -255,9 +256,14 @@ durch Basic Auth geschützt und liefern `Cache-Control: no-store`.
 |---|---|---|
 | GET | `/api/company/overview` | Kennzahlen, Agentenstatus, letzte Konferenz, offene Entscheidungen |
 | GET | `/api/company/agents` | 103 Profile mit Status und letzter Task |
-| GET | `/api/company/agents/{id}` | Profil, Historie, aktuelle Task, Nachrichten |
+| GET | `/api/company/agents/{id}` | Profil, Historie, aktuelle Task, Nachrichten, Erinnerungen |
+| GET | `/api/company/agents/{id}/memories` | persönliche Erinnerungen, Filter nach Scope |
+| POST | `/api/company/agents/{id}/memories` | Erinnerung anlegen/aktualisieren |
 | GET | `/api/company/tasks` | Queue, Filter nach Dept/State/Priorität |
-| GET | `/api/company/messages` | Threads, Filter nach Agent/Dept/Zeit |
+| GET | `/api/company/messages` | Threads, Filter nach Agent/Dept/Zeit, `nur_offen` |
+| GET | `/api/company/messages/{id}` | einzelne Nachricht mit Evidence und Ack |
+| POST | `/api/company/messages` | direkte, Abteilungs- oder Broadcast-Nachricht |
+| POST | `/api/company/messages/{id}/ack` | Nachricht durch den Empfänger quittieren |
 | GET | `/api/company/rooms` | Raumregister und dynamischer Status |
 | GET | `/api/company/conference/latest` | letzte Sitzung mit Beschlüssen und Actions |
 | GET | `/api/company/stream` | SSE: Status, Tasks, Nachrichten, Konferenzphasen |
@@ -1089,7 +1095,7 @@ Datenbindung gehen vor Tempo.
 |---|---|---:|---|
 | P0 | Analyse, Grundriss, Architektur, dieses Dossier | erledigt | Freigabevorlage |
 | P1 | Unternehmensfundament: Profile, Queue, Policy, DB, Tests | umgesetzt | 103 Profile, echte Tasks, keine 3D |
-| P2 | Company-API + 3D-Hülle: Atrium, ein Deck, Karte, Steuerung | 2–3 Wochen | Company-Lese-API und 2D-Agenten-Querschnitt mit 103 Räumen umgesetzt; 3D-Hülle offen |
+| P2 | Company-API + 3D-Hülle: Atrium, ein Deck, Karte, Steuerung | 2–3 Wochen | Company-API, Kommunikation/Gedächtnisse und 2D-Agenten-Querschnitt mit 103 Räumen umgesetzt; 3D-Hülle offen |
 | P3 | Erste zwei Abteilungen: A + D, 20 Agenten, echte Arbeit | 3–4 Wochen | vertikaler Funktionsbeweis |
 | P4 | Executive Deck, Sekretariat, CEO-Sicht und Fragen | 2–3 Wochen | S1–S3 + CEO-Büro |
 | P5 | Alle Abteilungen, 103 Agenten, alle Räume, Kommunikation | 4–6 Wochen | vollständiges Unternehmen |

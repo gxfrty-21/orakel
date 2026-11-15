@@ -100,6 +100,9 @@ aktiv = false
 max_worker = 4
 max_tasks_pro_tag = 250
 allow_tests = false                 # H3 darf keinen pytest-Subprozess starten
+# Der laufende Takt prüft offene Quittungen in diesem Abstand. Die fachlichen
+# Fristen und Broadcast-Limits liegen als company_policies in SQLite.
+erinnerungen_intervall_minuten = 5
 
 [spider]
 aktiv = true

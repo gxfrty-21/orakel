@@ -9,6 +9,8 @@ let graphWindow = '7d', graphDaten = null, kalibrierungDaten = null;
 let betriebDaten = null, betriebFehler = null, betriebTimer = null;
 let companyDaten = null, companyFehler = null, companyTimer = null, companyLaden = false;
 let shipAuswahl = { typ: 'overview' }, shipDeptFilter = null, shipZoom = 1, shipX = 0, shipY = 0, shipZoomInit = false;
+let shipDetail = null, shipDetailFehler = null, shipDetailLaden = false;
+let shipDetailFuer = null, shipDetailAnfrage = 0, shipNachrichtStatus = null, shipDraft = null;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = (v,d=2) => (v==null||isNaN(v)) ? '–' : Number(v).toLocaleString('de-CH',{minimumFractionDigits:d,maximumFractionDigits:d});
 const pct = (v,d=1) => v==null ? '–' : num(v,d)+' %';
@@ -25,8 +27,22 @@ const DEP = { A:'Hauptzentrale', B:'Spider Intelligence', C:'Labor', D:'Trading 
   E:'Forschungsabteilung', F:'Risikomanagement', G:'Wissenszentrum', H:'Entwicklungsabteilung' };
 
 /* ---------- Navigation ---------- */
+const navToggle = $('#navToggle');
+const querformatAbfrage = window.matchMedia('(orientation: landscape) and (max-width: 950px) and (max-height: 500px)');
+function querformatAktiv(){ return querformatAbfrage.matches; }
+function setzeNavEingeklappt(eingeklappt){
+  document.body.classList.toggle('nav-eingeklappt', Boolean(eingeklappt) && querformatAktiv());
+  if(navToggle) navToggle.setAttribute('aria-expanded', String(!document.body.classList.contains('nav-eingeklappt')));
+}
+if(navToggle){
+  navToggle.onclick = () => setzeNavEingeklappt(!document.body.classList.contains('nav-eingeklappt'));
+  const syncNav = () => setzeNavEingeklappt(current === 'ship' && querformatAktiv());
+  if(querformatAbfrage.addEventListener) querformatAbfrage.addEventListener('change', syncNav);
+  else if(querformatAbfrage.addListener) querformatAbfrage.addListener(syncNav);
+}
 document.querySelectorAll('.nav').forEach(b => b.onclick = () => zeige(b.dataset.v));
 function zeige(v){ current=v;
+  if(v === 'ship') setzeNavEingeklappt(true);
   if(v !== 'globe' && globeView) globeView.setActive(false);
   if(v !== 'betrieb' && betriebTimer){ clearInterval(betriebTimer); betriebTimer = null; }
   if(v === 'betrieb' && !betriebTimer){
@@ -598,7 +614,7 @@ async function ensureGlobe(){
   if(!stage) return null;
   globeLoading = (async () => {
     try{
-      const mod = await import('/static/globe2d.js?v=1');
+      const mod = await import('/static/globe2d.js?v=2');
       globeView = new mod.IntelligenceGlobe(stage);
       if(current === 'globe') globeView.setActive(true);
       return globeView;
@@ -1146,12 +1162,21 @@ function bindeShipDeptKnoepfe(side, agenten){
   });
 }
 
+function shipGewaehlteAbteilung(){
+  if(shipDeptFilter) return shipDeptFilter;
+  if(shipAuswahl.typ !== 'agent') return null;
+  const raum = [...document.querySelectorAll('#shipWorld [data-agent]')]
+    .find(b => b.dataset.agent === shipAuswahl.id);
+  return raum?.closest('.px-dept')?.dataset.dept || null;
+}
+
 function syncShipDeptFilter(){
   const world = $('#shipWorld');
   const legend = $('#shipLegend');
-  const depts = world ? [...world.querySelectorAll('.ship-dept')] : [];
+  const depts = world ? [...world.querySelectorAll('.px-dept')] : [];
   if(shipDeptFilter && !depts.some(el => el.dataset.dept === shipDeptFilter)) shipDeptFilter = null;
   const aktiv = shipDeptFilter;
+  const gewaehlt = shipGewaehlteAbteilung();
   if(world){
     world.classList.toggle('filter-aktiv', !!aktiv);
     depts.forEach(el => el.classList.toggle('is-filter-active', !!aktiv && el.dataset.dept === aktiv));
@@ -1160,6 +1185,7 @@ function syncShipDeptFilter(){
     legend.querySelectorAll('[data-dept]').forEach(b => {
       const on = !!aktiv && b.dataset.dept === aktiv;
       b.classList.toggle('is-active', on);
+      b.classList.toggle('is-selected', !on && !!gewaehlt && b.dataset.dept === gewaehlt);
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
       b.title = on ? 'Filter lösen' : 'Abteilung im Schiff hervorheben';
     });
@@ -1198,12 +1224,382 @@ function renderShipLegend(depts, agenten){
   syncShipDeptFilter();
 }
 
+/* ---------- Pixel-Raumschiff: Querschnitt im Pixel-Art-Stil ---------- */
+const PX = 3;                       // 1 Kunst-Pixel = 3 Bildschirm-Pixel
+let pxRaeume = [], pxTakt = 0, pxTimer = null;
+const PX_HAUT = ['#f4cfa6','#e2ad7f','#c88a58','#91603c','#5e3b25'];
+const PX_HAAR = ['#2b1b12','#5a3a1e','#d6a94e','#141414','#a0522d','#e9e2d4','#ff5fb0','#3fd0ff','#7b4bff'];
+const PX_HOSE = ['#24223a','#1d2b3c','#30263a','#262626'];
+const PX_BODEN = { command:'#2f3a52', server:'#2a2e3c', lab:'#d9d9e4', trading:'#3a2f4d', research:'#4a3a30',
+  risk:'#3d2a30', archive:'#5a4330', workshop:'#3a3a3a', observatory:'#232a44', security:'#2d2a2a', meeting:'#4b2f3d' };
+const PX_MUSTER = [[3,2,3,2,2],[2,3,2,2,3],[2,2,3,3,2],[3,3,2,2,2],[2,3,3,2,2]];
+
+function pxHash(s){ let h = 2166136261; for(const c of String(s)){ h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+function pxRng(seed){ let s = (seed >>> 0) || 7; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return (s % 100000) / 100000; }; }
+function pxN(a, b, c){ let h = (a * 374761393 + b * 668265263 + c * 1442695041) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return (h ^ (h >>> 16)) >>> 0; }
+function pxMix(a, b, f){
+  const p = h => [1,3,5].map(i => parseInt(h.slice(i, i+2), 16));
+  const x = p(a), y = p(b);
+  return '#' + x.map((v,i) => Math.round(v + (y[i]-v) * f).toString(16).padStart(2,'0')).join('');
+}
+function pxPinsel(ctx){
+  return {
+    ctx,
+    r(x, y, w, h, c){ if(w <= 0 || h <= 0) return; ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); },
+    p(x, y, c){ ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), 1, 1); },
+    a(alpha, fn){ ctx.globalAlpha = alpha; fn(); ctx.globalAlpha = 1; },
+  };
+}
+
+/* ---- Bausteine ---- */
+function pxHuelle(g, w, h, farbe, typ, rng){
+  const fy = h - 7;
+  const wand = pxMix('#2e2a4a', farbe, .2), dunkel = pxMix(wand, '#000000', .38), hell = pxMix(wand, '#ffffff', .09);
+  g.r(0, 0, w, h, wand);
+  const schritt = 9 + Math.floor(rng() * 4);
+  for(let x = 3 + Math.floor(rng() * schritt); x < w; x += schritt){ g.r(x, 4, 1, fy - 7, dunkel); g.r(x + 1, 4, 1, fy - 7, hell); }
+  g.r(0, fy - 3, w, 1, hell); g.r(0, fy - 2, w, 2, dunkel);
+  g.r(0, 0, w, 3, '#0a0812'); g.r(0, 3, w, 1, pxMix(farbe, '#000000', .5));
+  for(let x = 2; x < w; x += 7) g.p(x, 1, '#2a2638');
+  const boden = PX_BODEN[typ] || '#3b3448';
+  g.r(0, fy, w, h - fy, boden); g.r(0, fy, w, 1, pxMix(boden, '#ffffff', .28));
+  for(let x = Math.floor(rng() * 6); x < w; x += 6) g.r(x, fy + 2 + ((x / 6) & 1) * 2, 1, 2, pxMix(boden, '#000000', .28));
+  g.r(0, h - 1, w, 1, '#06050a');
+  return fy;
+}
+function pxLampe(g, x, fy, farbe){
+  g.r(x - 3, 3, 7, 1, '#fff4d6'); g.r(x - 2, 4, 5, 1, pxMix('#fff4d6', farbe, .4));
+  g.a(.11, () => { const c = g.ctx; c.fillStyle = '#fff4d6'; c.beginPath(); c.moveTo(x - 3, 5); c.lineTo(x + 4, 5); c.lineTo(x + 13, fy); c.lineTo(x - 12, fy); c.fill(); });
+}
+function pxFenster(g, x, y, w, h, rng){
+  g.r(x - 1, y - 1, w + 2, h + 2, '#59627a'); g.r(x, y, w, h, '#0b0f2c');
+  g.r(x, y + h - 2, w, 2, '#2a1550');
+  for(let i = 0; i < 4; i++) g.p(x + Math.floor(rng() * w), y + Math.floor(rng() * (h - 1)), i ? '#9fb4ff' : '#ffffff');
+  g.p(x + Math.floor(rng() * w), y + h - 2, '#ff5fc8');
+}
+function pxTisch(g, x, y, w, fy, farbe){
+  g.r(x, y, w, 1, '#a99cba'); g.r(x, y + 1, w, 2, '#4a4058'); g.r(x, y + 1, w, 1, pxMix(farbe, '#000000', .25));
+  g.r(x + 1, y + 3, 1, fy - y - 3, '#2a2433'); g.r(x + w - 2, y + 3, 1, fy - y - 3, '#2a2433');
+}
+function pxStuhl(g, x, fy){
+  g.r(x, fy - 9, 1, 6, '#3b3550'); g.r(x, fy - 4, 4, 1, '#4d4666'); g.r(x + 2, fy - 3, 1, 2, '#2a2433'); g.r(x + 1, fy - 1, 3, 1, '#1b1825');
+}
+function pxMonitor(g, x, y, w, h, farbe, t, an, art){
+  g.r(x - 1, y - 1, w + 2, h + 2, '#0c0c13');
+  g.r(x, y, w, h, an ? pxMix(farbe, '#000000', .62) : '#11141f');
+  g.r(x + Math.floor(w / 2), y + h + 1, 1, 1, '#0c0c13');
+  if(!an){ if((t >> 3) % 4 === 0) g.p(x + 1, y + 1, '#2c3348'); return; }
+  const hell = pxMix(farbe, '#ffffff', .45);
+  if(art === 'kerzen'){
+    for(let i = 0; i < w - 1; i += 2){
+      const v = pxN(i + (t >> 1), x, 3), hoch = 1 + v % (h - 1), auf = (v >> 4) & 1;
+      g.r(x + 1 + i, y + h - hoch, 1, hoch, auf ? '#3dff8f' : '#ff4d6d');
+    }
+  }else if(art === 'kurve'){
+    let yy = y + Math.floor(h / 2);
+    for(let i = 0; i < w; i++){ yy += (pxN(i + t, x, 9) % 3) - 1; yy = Math.max(y, Math.min(y + h - 1, yy)); g.p(x + i, yy, '#ff5577'); }
+  }else{
+    for(let i = 0; i < h - 1; i += 2){ const l = 1 + pxN(x, i, t >> 1) % (w - 1); g.r(x + 1, y + 1 + i, Math.min(l, w - 2), 1, i % 4 ? hell : '#ffffff'); }
+  }
+}
+function pxPflanze(g, x, fy){
+  g.r(x, fy - 3, 4, 3, '#8a5a3c'); g.r(x, fy - 3, 4, 1, '#a8704a');
+  g.r(x + 1, fy - 7, 2, 4, '#2fae5c'); g.p(x, fy - 6, '#3fd070'); g.p(x + 3, fy - 8, '#3fd070'); g.p(x + 1, fy - 9, '#56e087'); g.p(x + 3, fy - 5, '#249048');
+}
+function pxBuecher(g, x, y, w, h, rng){
+  g.r(x, y, w, h, '#3a2a1e');
+  for(let yy = y + 1; yy < y + h - 1; yy += 5){
+    g.r(x, yy + 4, w, 1, '#5a4330');
+    for(let xx = x + 1; xx < x + w - 1; xx++){
+      const c = ['#c94f4f','#4f7fc9','#d6b04a','#4fb08a','#9a5fc9','#e8e0d0'][Math.floor(rng() * 6)];
+      const hh = 2 + Math.floor(rng() * 2); if(rng() < .15) continue;
+      g.r(xx, yy + 4 - hh, 1, hh, c);
+    }
+  }
+}
+
+/* ---- Figur ---- */
+function pxFigur(g, x, fy, look, pose, t, rechts){
+  const { haut, haar, hemd, hose } = look;
+  const auge = '#140c1c';
+  if(pose === 'sitzt'){
+    const y = fy - 12, tipp = (t & 1) ? 1 : 0;
+    g.r(x + 1, y, 3, 1, haar); g.r(x + 1, y + 1, 3, 2, haut); g.p(x + 1, y + 1, haar); g.p(x + 3, y + 1, auge);
+    g.r(x, y + 3, 4, 4, hemd); g.p(x, y + 3, pxMix(hemd, '#000000', .3));
+    g.r(x + 4, y + 4 + tipp, 2, 1, hemd); g.p(x + 6, y + 4 + tipp, haut);
+    g.r(x + 1, y + 7, 5, 1, hose); g.r(x + 5, y + 8, 1, 3, hose); g.r(x + 5, y + 11, 2, 1, '#0d0b12');
+    return;
+  }
+  const y = fy - 11, schritt = pose === 'geht' ? (t & 1) : 0;
+  const bob = pose === 'wartet' && (t % 10 < 5) ? 1 : 0;
+  g.r(x + 1, y + bob, 3, 1, haar); g.r(x + 1, y + 1 + bob, 3, 2, haut);
+  g.p(rechts ? x + 1 : x + 3, y + 1 + bob, haar); g.p(rechts ? x + 3 : x + 1, y + 1 + bob, auge);
+  g.r(x, y + 3, 5, 4, hemd); g.p(x, y + 6, haut); g.p(x + 4, y + 6, haut);
+  g.r(x + 1, y + 7, 3, 1, hose);
+  if(schritt){ g.r(x, y + 8, 1, 2, hose); g.r(x + 4, y + 8, 1, 2, hose); g.p(x, y + 10, '#0d0b12'); g.p(x + 4, y + 10, '#0d0b12'); }
+  else{ g.r(x + 1, y + 8, 1, 2, hose); g.r(x + 3, y + 8, 1, 2, hose); g.p(x + 1, y + 10, '#0d0b12'); g.p(x + 3, y + 10, '#0d0b12'); }
+}
+function pxBlase(g, x, y, art, t){
+  if(art === 'alarm'){
+    if(t % 4 >= 2) return;
+    g.r(x, y, 5, 6, '#ff3355'); g.r(x + 1, y - 1, 3, 1, '#ff3355'); g.r(x + 1, y + 6, 3, 1, '#ff3355');
+    g.r(x + 2, y + 1, 1, 3, '#ffffff'); g.p(x + 2, y + 5, '#ffffff');
+  }else{
+    g.r(x - 1, y + 1, 7, 4, '#f3ecff'); g.p(x + 1, y + 5, '#f3ecff');
+    for(let i = 0; i < 3; i++) g.p(x + i * 2, y + 3, i <= (t >> 1) % 3 ? '#e8a53a' : '#c9bfd8');
+  }
+}
+
+/* ---- Raumtypen: zeichnen Deko + Arbeitsplatz, geben Stuhlposition zurück ---- */
+function pxPlatz(g, dx, tw, fy, farbe, t, an, art, monitore){
+  const ty = fy - 6, mw = Math.min(8, Math.floor((tw - 1) / monitore) - 1);
+  for(let i = 0; i < monitore; i++) pxMonitor(g, dx + 1 + i * (mw + 2), ty - 7, mw, 5, farbe, t + i * 3, an, art);
+  pxTisch(g, dx, ty, tw, fy, farbe);
+  pxStuhl(g, dx - 6, fy);
+  return dx - 5;
+}
+const PX_TYP = {
+  command(g, w, fy, f, hell, rng, t, an){
+    const bw = Math.max(10, Math.floor(w * .38));
+    g.r(3, 6, bw, fy - 12, '#06222a'); g.r(3, 6, bw, 1, hell);
+    for(let i = 0; i < 6; i++){ const x = 4 + pxN(i, w, 1) % (bw - 2), y = 8 + pxN(i, 2, w) % (fy - 16); g.p(x, y, (t + i) % 6 < 3 ? '#38e8ff' : '#0e5a66'); }
+    g.r(3 + Math.floor(bw / 2), fy - 6, 1, 3, '#2a3550');
+    const dx = bw + 10;
+    return pxPlatz(g, dx, w - dx - 2, fy, f, t, an, 'code', 2);
+  },
+  server(g, w, fy, f, hell, rng, t, an){
+    const n = w > 46 ? 3 : 2;
+    for(let i = 0; i < n; i++){
+      const x = 2 + i * 7;
+      g.r(x, 6, 6, fy - 6, '#14151e'); g.r(x, 6, 6, 1, '#3c3f56'); g.r(x + 5, 6, 1, fy - 6, '#25273a');
+      for(let y = 8; y < fy - 1; y += 2){ g.r(x + 1, y, 4, 1, '#232535'); const z = pxN(i, y, t >> 1) % 3; g.p(x + 1 + pxN(y, i, 7) % 3, y, z === 0 ? '#2bff88' : z === 1 ? hell : '#10301f'); }
+    }
+    const dx = 2 + n * 7 + 8;
+    return pxPlatz(g, dx, w - dx - 2, fy, f, t, an, 'code', 1);
+  },
+  lab(g, w, fy, f, hell, rng, t, an){
+    g.r(3, 6, 6, fy - 9, '#8fb8c8'); g.r(4, 7, 4, fy - 11, pxMix(f, '#0a1a20', .35));
+    for(let i = 0; i < 3; i++){ const by = fy - 5 - ((t * 2 + i * 7) % (fy - 12)); g.p(5 + (i % 2) * 2, by, '#e8ffff'); }
+    g.r(2, fy - 3, 8, 3, '#545a6e');
+    g.r(12, 12, Math.min(14, w - 34), 1, '#7a7f94');
+    const farben = ['#3dff8f', '#ff5fc8', '#ffd84d', '#4dc8ff'];
+    for(let i = 0; i < Math.floor(Math.min(14, w - 34) / 4); i++){ const x = 13 + i * 4; g.r(x, 9, 2, 3, farben[i % 4]); g.p(x, 8, '#c8d8e8'); }
+    const dx = Math.max(20, Math.floor(w * .5));
+    const ty = fy - 6; g.r(dx + 2, ty - 4, 2, 4, '#3dff8f'); g.p(dx + 2, ty - 5, '#c8d8e8');
+    if(an) g.p(dx + 3, ty - 6 - (t % 3), '#e8ffff');
+    pxMonitor(g, dx + 6, ty - 7, Math.min(7, w - dx - 9), 5, f, t, an, 'kurve');
+    pxTisch(g, dx, ty, w - dx - 2, fy, f); pxStuhl(g, dx - 6, fy);
+    return dx - 5;
+  },
+  trading(g, w, fy, f, hell, rng, t, an){
+    g.r(0, 5, w, 3, '#0b0710');
+    for(let x = 0; x < w; x += 2){ const v = pxN(x + t, 5, 1); g.p(x, 6, v % 3 ? '#3dff8f' : '#ff4d6d'); }
+    g.r(3, 11, Math.max(8, Math.floor(w * .3)), 9, '#0d0b18'); g.r(3, 11, Math.max(8, Math.floor(w * .3)), 1, hell);
+    pxMonitor(g, 4, 13, Math.max(6, Math.floor(w * .3) - 2), 6, '#3dff8f', t + 5, true, 'kerzen');
+    const dx = Math.max(16, Math.floor(w * .3) + 10);
+    return pxPlatz(g, dx, w - dx - 2, fy, f, t, an, 'kerzen', w - dx > 24 ? 3 : 2);
+  },
+  research(g, w, fy, f, hell, rng, t, an){
+    pxBuecher(g, 2, 7, 10, fy - 7, rng);
+    const dx = Math.max(20, Math.floor(w * .48));
+    pxPflanze(g, w - 6, fy);
+    return pxPlatz(g, dx, Math.min(14, w - dx - 8), fy, f, t, an, 'code', 1);
+  },
+  risk(g, w, fy, f, hell, rng, t, an){
+    const bw = Math.max(10, Math.floor(w * .34));
+    g.r(3, 6, bw, 11, '#1a0a10'); g.r(3, 6, bw, 1, '#ff5577');
+    pxMonitor(g, 4, 8, bw - 2, 8, '#ff5577', t, true, 'kurve');
+    for(let x = 0; x < w; x += 4){ g.r(x, fy, 2, 1, '#ffcc33'); g.r(x + 2, fy, 2, 1, '#1a1a1a'); }
+    const dx = bw + 10;
+    return pxPlatz(g, dx, w - dx - 2, fy, f, t, an, 'kurve', 2);
+  },
+  archive(g, w, fy, f, hell, rng, t, an){
+    const bw = Math.floor(w * .5);
+    pxBuecher(g, 2, 6, bw, fy - 6, rng);
+    const dx = bw + 9;
+    return pxPlatz(g, dx, w - dx - 2, fy, f, t, an, 'code', 1);
+  },
+  workshop(g, w, fy, f, hell, rng, t, an){
+    const bw = Math.max(12, Math.floor(w * .42));
+    g.r(2, 6, bw, 10, '#3a3f4a');
+    for(let x = 3; x < bw; x += 2) for(let y = 7; y < 16; y += 2) g.p(x, y, '#2a2e36');
+    g.r(4, 8, 1, 5, '#c0c4cc'); g.r(3, 8, 3, 1, '#c0c4cc'); g.r(8, 9, 4, 1, '#ff9f43'); g.r(10, 8, 1, 4, '#8a8f99');
+    g.r(2, fy - 5, bw, 2, '#6a4a2e'); g.r(3, fy - 3, 1, 3, '#3a2a1e'); g.r(bw - 1, fy - 3, 1, 3, '#3a2a1e');
+    const ax = Math.floor(bw / 2) + 2, sw = an ? (t % 8 < 4 ? 1 : -1) : 0;
+    g.r(ax, fy - 9, 2, 4, '#ffb84d'); g.r(ax + sw, fy - 12, 2, 3, '#ffb84d'); g.r(ax + sw * 2 - 1, fy - 13, 4, 1, '#d0d4dc');
+    if(an && t % 3 === 0) g.p(ax + sw * 2, fy - 6, '#ffffff');
+    const dx = bw + 10;
+    return pxPlatz(g, dx, w - dx - 2, fy, f, t, an, 'code', 1);
+  },
+  observatory(g, w, fy, f, hell, rng, t, an){
+    const cx = 9, cy = 12, r = 6;
+    for(let y = -r - 1; y <= r + 1; y++) for(let x = -r - 1; x <= r + 1; x++){
+      const d = x * x + y * y;
+      if(d <= r * r) g.p(cx + x, cy + y, '#0a0c2a');
+      else if(d <= (r + 1) * (r + 1) + 2) g.p(cx + x, cy + y, '#6a7390');
+    }
+    g.r(cx + 1, cy, 3, 3, '#7b4bff'); g.p(cx + 1, cy, '#b39bff'); g.p(cx - 3, cy - 3, '#ffffff'); g.p(cx - 1, cy + 4, '#9fb4ff');
+    if((t >> 2) % 5 === 0) g.p(cx + 4, cy - 4, '#ffffff');
+    g.r(19, fy - 10, 6, 2, '#c0c4cc'); g.p(18, fy - 11, '#38e8ff'); g.r(21, fy - 8, 1, 5, '#555b6e'); g.p(19, fy - 3, '#555b6e'); g.p(23, fy - 3, '#555b6e');
+    const dx = Math.max(31, Math.floor(w * .55));
+    return pxPlatz(g, dx, w - dx - 2, fy, f, t, an, 'code', 1);
+  },
+  security(g, w, fy, f, hell, rng, t, an){
+    const sp = w > 46 ? 3 : 2;
+    for(let i = 0; i < sp; i++) for(let j = 0; j < 2; j++){
+      const x = 3 + i * 7, y = 6 + j * 6;
+      g.r(x, y, 6, 5, '#0b0b10'); g.r(x + 1, y + 1, 4, 3, (pxN(i, j, t >> 2) % 7) ? '#2a3a3a' : '#5a7a7a');
+      g.p(x + 1 + pxN(i, j, t) % 4, y + 2, '#9fffe0');
+    }
+    g.r(3, fy - 9, 5, 9, '#3a4050'); g.r(8, fy - 9, 5, 9, '#343a48'); g.p(7, fy - 5, '#c0c4cc'); g.p(12, fy - 5, '#c0c4cc');
+    const dx = 3 + sp * 7 + 8;
+    return pxPlatz(g, dx, w - dx - 2, fy, f, t, an, 'code', 1);
+  },
+  meeting(g, w, fy, f, hell, rng, t, an){
+    g.r(4, 7, 12, 8, '#d6a94e'); g.r(5, 8, 10, 6, '#2a1a40'); g.r(6, 11, 4, 3, '#ff5fc8'); g.r(10, 9, 4, 5, '#38e8ff');
+    pxPflanze(g, 3, fy);
+    const dx = Math.max(24, Math.floor(w * .45));
+    const s = pxPlatz(g, dx, Math.min(22, w - dx - 3), fy, '#d6a94e', t, an, 'code', 2);
+    g.r(dx, fy - 6, Math.min(22, w - dx - 3), 1, '#ffd98a');
+    return s;
+  },
+};
+
+/* ---- Ein Agentenraum ---- */
+function pxAgentRaum(g, w, h, e, t){
+  const rng = pxRng(e.seed);
+  const typ = e.typ in PX_TYP ? e.typ : 'command';
+  const fy = pxHuelle(g, w, h, e.farbe, typ, rng);
+  const hell = pxMix(e.farbe, '#ffffff', .45);
+  const an = e.st === 'laeuft';
+  const lampe = 8 + Math.floor(rng() * Math.max(1, w - 16));
+  const fenster = rng() < .35 && w > 52;
+  if(fenster) pxFenster(g, w - 13, 7, 9, 6, rng);
+  const sx = PX_TYP[typ](g, fenster ? w - 12 : w, fy, e.farbe, hell, rng, t, an);
+  pxLampe(g, lampe, fy, e.farbe);
+  const look = e.look;
+  if(e.st === 'laeuft'){
+    pxFigur(g, sx, fy, look, 'sitzt', t, true);
+  }else if(e.st === 'frei'){
+    const R = Math.max(4, w - 9), p = (t + e.seed % (R * 2)) % (R * 2);
+    const x = 2 + (p < R ? p : 2 * R - p);
+    pxFigur(g, x, fy, look, 'geht', t, p < R);
+  }else{
+    const x = Math.max(2, sx - 3);
+    pxFigur(g, x, fy, look, e.st === 'wartet' ? 'wartet' : 'steht', t, true);
+    pxBlase(g, x, fy - 19, e.st === 'blockiert' ? 'alarm' : 'denkt', t);
+  }
+  if(e.st === 'blockiert') g.a(t % 8 < 4 ? .16 : .05, () => g.r(0, 0, w, h, '#ff1f4b'));
+  if(e.on) g.a(.10, () => g.r(0, 0, w, h, '#ff3fa4'));
+}
+/* ---- Gemeinschaftsräume, Hangar, Warpkern ---- */
+function pxAgentenraum(g, w, h, e, t){
+  const rng = pxRng(e.seed);
+  const fy = pxHuelle(g, w, h, '#38e8ff', 'command', rng);
+  pxFenster(g, 8, 7, 22, 8, rng); pxFenster(g, w - 30, 7, 22, 8, rng);
+  const cx = Math.floor(w / 2);
+  g.r(cx - 14, fy - 5, 28, 2, '#3a4a66'); g.r(cx - 12, fy - 3, 24, 3, '#222c40');
+  g.a(.35 + ((t % 6) / 30), () => { const c = g.ctx; c.fillStyle = '#38e8ff'; c.beginPath(); c.moveTo(cx - 10, fy - 5); c.lineTo(cx + 10, fy - 5); c.lineTo(cx + 6, 6); c.lineTo(cx - 6, 6); c.fill(); });
+  for(let i = 0; i < 7; i++){ const a = (t / 4 + i * .9); g.p(cx + Math.round(Math.cos(a) * 5), 12 + i * 2, '#e0ffff'); }
+  for(let i = 0; i < 4; i++){ const x = 36 + i * 12; if(x < cx - 18) pxMonitor(g, x, fy - 13, 8, 5, '#38e8ff', t + i, true, 'code'); }
+  for(let i = 0; i < 4; i++){ const x = w - 44 - i * 12; if(x > cx + 18) pxMonitor(g, x, fy - 13, 8, 5, '#ff3fa4', t + i * 2, true, 'kerzen'); }
+  pxLampe(g, Math.floor(w * .25), fy, '#38e8ff'); pxLampe(g, Math.floor(w * .75), fy, '#38e8ff');
+  const n = Math.min(6, Math.max(2, e.anzahl || 4));
+  for(let i = 0; i < n; i++){
+    const L = { haut:PX_HAUT[i % 5], haar:PX_HAAR[(i * 3) % PX_HAAR.length], hemd:SHIP_FARBEN[i % SHIP_FARBEN.length], hose:PX_HOSE[i % 4] };
+    const R = Math.max(10, w - 20), p = (t + i * 37) % (R * 2);
+    if(i < 2) pxFigur(g, cx - 22 + i * 39, fy, L, 'wartet', t + i * 3, i === 0);
+    else pxFigur(g, 6 + (p < R ? p : 2 * R - p), fy, L, 'geht', t, p < R);
+  }
+  if(e.on) g.a(.10, () => g.r(0, 0, w, h, '#ff3fa4'));
+}
+function pxKonferenz(g, w, h, e, t){
+  const rng = pxRng(e.seed);
+  const fy = pxHuelle(g, w, h, '#ffb84d', 'meeting', rng);
+  const cx = Math.floor(w / 2);
+  g.r(cx - 22, 6, 44, 12, '#0b0812'); g.r(cx - 22, 6, 44, 1, '#ffb84d');
+  pxMonitor(g, cx - 21, 8, 20, 9, '#3dff8f', t, true, 'kerzen'); pxMonitor(g, cx + 1, 8, 20, 9, '#ff5577', t, true, 'kurve');
+  g.r(cx - 34, fy - 6, 68, 2, '#8a5a3c'); g.r(cx - 34, fy - 6, 68, 1, '#c8905a'); g.r(cx - 30, fy - 4, 2, 4, '#4a3020'); g.r(cx + 28, fy - 4, 2, 4, '#4a3020');
+  const n = Math.min(6, Math.max(2, e.anzahl || 4));
+  for(let i = 0; i < n; i++){
+    const L = { haut:PX_HAUT[(i + 2) % 5], haar:PX_HAAR[(i * 2) % PX_HAAR.length], hemd:SHIP_FARBEN[(i + 3) % SHIP_FARBEN.length], hose:PX_HOSE[i % 4] };
+    const x = cx - 32 + i * Math.floor(64 / n);
+    const y = fy - 4;
+    g.r(x + 1, y - 11 + (i === (t >> 3) % n ? 0 : 1), 3, 1, L.haar); g.r(x + 1, y - 10 + (i === (t >> 3) % n ? 0 : 1), 3, 2, L.haut);
+    g.r(x, y - 8, 5, 3, L.hemd);
+  }
+  pxPflanze(g, 4, fy); pxPflanze(g, w - 8, fy);
+  pxLampe(g, Math.floor(w * .3), fy, '#ffb84d'); pxLampe(g, Math.floor(w * .7), fy, '#ffb84d');
+  if(e.on) g.a(.10, () => g.r(0, 0, w, h, '#ff3fa4'));
+}
+function pxHangar(g, w, h, e, t){
+  const rng = pxRng(e.seed);
+  const fy = pxHuelle(g, w, h, '#5aa9ff', 'server', rng);
+  for(let x = 0; x < w; x += 6){ g.r(x, fy, 3, 1, '#ffcc33'); }
+  const cx = Math.floor(w / 2), sy = fy - 9 - ((t >> 2) % 4 === 0 ? 1 : 0);
+  g.r(cx - 12, sy + 3, 24, 3, '#c0c8d8'); g.r(cx - 8, sy + 1, 14, 2, '#d8e0ee'); g.r(cx - 2, sy, 5, 1, '#38e8ff');
+  g.r(cx - 12, sy + 5, 24, 1, '#7a8298'); g.r(cx - 15, sy + 2, 4, 5, '#9aa2b8'); g.r(cx + 11, sy + 4, 4, 1, '#ff5fc8');
+  g.r(cx - 17, sy + 3, 2, 3, (t & 1) ? '#38e8ff' : '#1a8aa0');
+  g.r(cx - 6, fy - 2, 1, 2, '#555b6e'); g.r(cx + 5, fy - 2, 1, 2, '#555b6e');
+  pxLampe(g, 10, fy, '#5aa9ff'); pxLampe(g, w - 10, fy, '#5aa9ff');
+}
+function pxWarp(g, w, h, e, t){
+  const rng = pxRng(e.seed);
+  const fy = pxHuelle(g, w, h, '#38e8ff', 'server', rng);
+  const cx = Math.floor(w / 2);
+  g.r(cx - 7, 4, 14, 2, '#555b6e'); g.r(cx - 7, fy - 2, 14, 2, '#555b6e');
+  g.r(cx - 5, 6, 10, fy - 8, '#0a3040');
+  const puls = t % 8;
+  for(let y = 6; y < fy - 2; y++){ const hell = ((y + puls) % 8) < 2; g.r(cx - 4, y, 8, 1, hell ? '#9ffcff' : '#1fb8d0'); }
+  g.r(cx - 1, 6, 2, fy - 8, '#ffffff');
+  g.a(.12 + (puls < 4 ? .06 : 0), () => g.r(cx - 14, 4, 28, fy - 4, '#38e8ff'));
+  for(let i = 0; i < 3; i++){ g.r(4 + i * 4, 8, 2, fy - 10, '#3a3f56'); g.r(w - 6 - i * 4, 8, 2, fy - 10, '#3a3f56'); }
+}
+const PX_ART = { agent:pxAgentRaum, agents:pxAgentenraum, konf:pxKonferenz, hangar:pxHangar, warp:pxWarp };
+
+function pxZeichne(e){
+  const cv = e.cv;
+  if(!cv.width || !cv.height) return;
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  if(e.spiegel){ ctx.setTransform(-1, 0, 0, 1, cv.width, 0); }
+  PX_ART[e.art](pxPinsel(ctx), cv.width, cv.height, e, pxTakt);
+}
+function pxGroessen(){
+  pxRaeume.forEach(e => {
+    const w = Math.max(12, Math.round(e.cv.clientWidth / PX)), h = Math.max(12, Math.round(e.cv.clientHeight / PX));
+    if(e.cv.width !== w) e.cv.width = w;
+    if(e.cv.height !== h) e.cv.height = h;
+    pxZeichne(e);
+  });
+}
+function pxStarteAnimation(){
+  if(pxTimer) return;
+  const ruhig = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(ruhig) return;
+  pxTimer = setInterval(() => {
+    const bereich = $('#v-ship');
+    if(document.hidden || !bereich || bereich.hidden || !pxRaeume.length) return;
+    pxTakt++;
+    pxRaeume.forEach(pxZeichne);
+  }, 170);
+}
+window.addEventListener('resize', () => { clearTimeout(pxGroessen.t); pxGroessen.t = setTimeout(pxGroessen, 200); });
+
+function pxLook(a){
+  const h = pxHash(a.agent_id || a.rufname);
+  return { haut:PX_HAUT[h % 5], haar:PX_HAAR[(h >> 4) % PX_HAAR.length], hemd:shipDeptFarbe(a.dept), hose:PX_HOSE[(h >> 8) % 4] };
+}
+
 function renderShipWorld(){
   const box = $('#shipWorld');
   if(!box) return;
+  box.classList.add('px-world');
   if(!companyDaten){
     const legend = $('#shipLegend');
     if(legend){ legend.hidden = true; legend.innerHTML = ''; }
+    pxRaeume = [];
     box.innerHTML = `<div class="empty">${companyFehler ? 'Company-API nicht erreichbar: ' + esc(companyFehler) : 'Agentenräume werden geladen …'}</div>`;
     renderShipDetail();
     return;
@@ -1214,69 +1610,295 @@ function renderShipWorld(){
   const s = (companyDaten.overview && companyDaten.overview.agenten_status) || {};
   const aufgaben = (companyDaten.overview && companyDaten.overview.aufgaben) || {};
   const konf = R && R.konferenz;
-  const commonOn = typ => shipAuswahl.typ === typ ? ' on' : '';
+  const commonOn = typ => shipAuswahl.typ === typ;
+  const liste = [];
+  const leinwand = eintrag => { liste.push(eintrag); return `<canvas class="px-cv" data-px="${liste.length - 1}" aria-hidden="true"></canvas>`; };
+
+  const raumHtml = (a, gewicht, dIdx) => {
+    const st = shipStatusKey(a);
+    const offenA = Number(a.offene_aufgaben) || 0;
+    const on = shipAuswahl.typ === 'agent' && shipAuswahl.id === a.agent_id;
+    const titel = `${a.rufname} · ${a.role} · ${a.dept_name} · ${a.status_text || a.status}${offenA ? ` · ${offenA} offen` : ''}`;
+    const seed = pxHash(a.agent_id || a.rufname);
+    const cv = leinwand({ art:'agent', typ:SHIP_ROOM_TYPEN[a.dept] || 'command', farbe:shipDeptFarbe(a.dept), st, look:pxLook(a), seed, spiegel:(seed >> 3) % 3 === 0, on, agent:a.agent_id });
+    return `<button type="button" class="px-room status-${st}${on ? ' on' : ''}" style="flex-grow:${gewicht}" data-agent="${esc(a.agent_id)}"
+      aria-pressed="${on ? 'true' : 'false'}" title="${esc(titel)}" aria-label="${esc(titel)}">${cv}
+      <span class="px-tag"><i></i>${esc(a.rufname)}</span>${offenA ? `<span class="px-task">+${offenA}</span>` : ''}</button>`;
+  };
+  const leerHtml = (art, gewicht, titel) => `<span class="px-room px-void" style="flex-grow:${gewicht}" aria-hidden="true">${leinwand({ art, seed:pxHash(art), farbe:'#38e8ff' })}<span class="px-tag px-tag-dim">${titel}</span></span>`;
+
+  const deptHtml = (d, dIdx, pos) => {
+    const farbe = shipDeptFarbe(d.code);
+    const offen = d.liste.reduce((n,a) => n + (Number(a.offene_aufgaben) || 0), 0);
+    const reihen = [];
+    for(let i = 0; i < d.liste.length; i += 5) reihen.push(d.liste.slice(i, i + 5));
+    if(!reihen.length) reihen.push([]);
+    const floors = reihen.map((reihe, rIdx) => {
+      const muster = PX_MUSTER[(dIdx + rIdx * 2) % PX_MUSTER.length];
+      let html = reihe.map((a, i) => raumHtml(a, muster[i % 5], dIdx)).join('');
+      if(d.code === 'S' || reihe.length < 5){
+        const fehlt = Math.max(0, 5 - reihe.length);
+        for(let i = 0; i < fehlt; i++) html += leerHtml(i % 2 ? 'warp' : 'hangar', i % 2 ? 2 : 4, i % 2 ? 'WARP CORE' : 'HANGAR 07');
+      }
+      return `<div class="px-floor">${html || '<div class="empty">Keine Agenten.</div>'}</div>`;
+    }).join('');
+    return `<section class="px-dept${d.code === 'S' ? ' px-dept-wide' : ''}" data-dept="${esc(d.code)}" style="--dept:${farbe};${pos}">
+      <header class="px-dept-head"><b>${esc(d.code)}</b><span>${esc(d.name)}</span><em>${d.liste.length} CREW · ${offen} OFFEN</em></header>
+      ${floors}</section>`;
+  };
+
+  const normal = depts.filter(d => d.code !== 'S'), exec = depts.filter(d => d.code === 'S');
+  const zeilen = Math.max(1, Math.ceil(normal.length / 2));
+  const deckHtml = normal.map((d, i) => deptHtml(d, i, `grid-column:${i % 2 ? 3 : 1};grid-row:${Math.floor(i / 2) + 1}`)).join('');
 
   box.innerHTML = `
-    <div class="ship-hull">
-      <span class="ship-rail ship-rail-l" aria-hidden="true"></span>
-      <span class="ship-rail ship-rail-r" aria-hidden="true"></span>
-      <div class="ship-brand">
-        <span class="sb-kicker">ORAKEL // DECK 07</span>
-        <b>INTERSTELLAR OPERATIONS</b>
-        <small><i></i> STATUS · ${agenten.length} CREW · ${depts.length} DIVISIONEN</small>
+    <div class="px-ship">
+      <div class="px-bridge">
+        <span class="px-fin px-fin-l" aria-hidden="true"></span><span class="px-fin px-fin-r" aria-hidden="true"></span>
+        <div class="px-brand"><span>ORAKEL // DECK 07</span><b>INTERSTELLAR OPERATIONS</b><small><i></i>${agenten.length} CREW · ${depts.length} DIVISIONEN</small></div>
+        <div class="px-common">
+          <button type="button" class="px-room px-common-room${commonOn('agents') ? ' on' : ''}" data-common="agents" aria-pressed="${commonOn('agents')}">
+            ${leinwand({ art:'agents', seed:11, anzahl:Number(s.aktiv) || 4, on:commonOn('agents') })}
+            <span class="px-tag px-tag-big"><i></i>AGENTENRAUM · ${agenten.length} AGENTEN</span></button>
+          <button type="button" class="px-room px-common-room${commonOn('konf') ? ' on' : ''}" data-common="konf" aria-pressed="${commonOn('konf')}">
+            ${leinwand({ art:'konf', seed:23, anzahl:konf ? (konf.berichte || []).length : 3, on:commonOn('konf') })}
+            <span class="px-tag px-tag-big px-tag-gold"><i></i>KONFERENZ · ${konf ? `${(konf.berichte || []).length} BERICHTE · ${(konf.massnahmen || []).length} MASSNAHMEN` : 'KEINE KONFERENZ'}</span></button>
+        </div>
       </div>
-      <div class="ship-common">
-        <button class="common-room${commonOn('agents')}" data-common="agents" aria-pressed="${shipAuswahl.typ === 'agents' ? 'true' : 'false'}">
-          <span class="cr-visual" aria-hidden="true"><span class="cr-holo"></span></span>
-          <span class="cr-txt"><small>COMMAND DECK</small><b>Agentenraum</b><em>${agenten.length} AGENTEN · ${depts.length} DIVISIONEN</em></span>
-        </button>
-        <button class="common-room konf${commonOn('konf')}" data-common="konf" aria-pressed="${shipAuswahl.typ === 'konf' ? 'true' : 'false'}">
-          <span class="cr-visual" aria-hidden="true"><span class="cr-holo"></span></span>
-          <span class="cr-txt"><small>BRIEFING ROOM</small><b>Konferenz</b><em>${konf ? `${(konf.berichte || []).length} BERICHTE · ${(konf.massnahmen || []).length} MASSNAHMEN` : 'KEINE KONFERENZ'}</em></span>
-        </button>
+      <div class="px-hull">
+        <span class="px-pipe px-pipe-l" aria-hidden="true"></span><span class="px-pipe px-pipe-r" aria-hidden="true"></span>
+        <div class="px-decks">
+          ${deckHtml}
+          <div class="px-shaft" style="grid-column:2;grid-row:1 / span ${zeilen}" aria-hidden="true"><span class="px-lift"></span></div>
+        </div>
+        ${exec.map((d) => deptHtml(d, 7, '')).join('')}
       </div>
-      <div class="ship-depts">
-        ${depts.map(d => {
-          const farbe = shipDeptFarbe(d.code);
-          const offen = d.liste.reduce((n,a) => n + (Number(a.offene_aufgaben) || 0), 0);
-          const wide = d.code === 'S' ? ' wide' : '';
-          const fehlend = Math.max(0, 5 - d.liste.length);
-          return `<section class="ship-dept${wide}" data-dept="${esc(d.code)}" style="--dept:${farbe}">
-            <div class="ship-dept-head"><span class="ship-dept-code">${esc(d.code)}</span>
-              <span class="ship-dept-name">${esc(d.name)}</span>
-              <span class="ship-dept-meta">${d.liste.length} · ${offen} OFFEN</span></div>
-            <div class="ship-dept-rooms">${d.liste.length ? d.liste.map((a, rIdx) => {
-              const st = shipStatusKey(a);
-              const offenA = Number(a.offene_aufgaben) || 0;
-              const titel = `${a.rufname} · ${a.role} · ${a.dept_name} · ${a.status_text || a.status}${offenA ? ` · ${offenA} offen` : ''}`;
-              const typ = SHIP_ROOM_TYPEN[a.dept] || 'desk';
-              return `<button class="agent-room status-${st} room-${typ} room-v${rIdx % 3}${shipAuswahl.typ === 'agent' && shipAuswahl.id === a.agent_id ? ' on' : ''}"
-                data-agent="${esc(a.agent_id)}" aria-pressed="${shipAuswahl.typ === 'agent' && shipAuswahl.id === a.agent_id ? 'true' : 'false'}" title="${esc(titel)}" aria-label="${esc(titel)}">
-                <span class="ar-sign"><i class="ar-led"></i><b>${esc(a.rufname)}</b></span>
-                <span class="ar-interior">
-                  <span class="ar-screen"></span><span class="ar-desk"></span><span class="ar-chair"></span>
-                  <span class="ar-prop"></span><span class="ar-person"></span>
-                </span>
-                <span class="ar-foot"><span class="ar-state"><i></i>${esc(a.status_text || a.status)}</span><span class="ar-tasks">${offenA ? `+${offenA}` : '—'}</span></span>
-              </button>`;
-            }).join('') : '<div class="empty">Keine Agenten.</div>'}${Array.from({length:fehlend}, (_, fi) => `<span class="ship-void void-${fi}" aria-hidden="true"><b>${fi ? 'WARP CORE' : 'HANGAR 07'}</b><i></i><em>${fi ? 'ENERGIE' : 'ANDOCKBAY'}</em></span>`).join('')}</div>
-          </section>`;
-        }).join('')}
+      <div class="px-engine">
+        <span class="px-eng-state">● ${Number(s.aktiv) || 0} AKTIV · ${Number(s.blockiert) || 0} BLOCKIERT · ${Number(aufgaben.offen) || 0} OFFEN</span>
+        <span class="px-nozzle"></span><span class="px-nozzle"></span><span class="px-nozzle"></span>
       </div>
-      <div class="ship-engine">
-        <span class="eng-label">PROPULSION // COMPANY</span>
-        <span class="eng-bars">${Array.from({length:12}, () => '<i></i>').join('')}</span>
-        <span class="eng-state">● ${Number(s.aktiv)||0} AKTIV · ${Number(s.blockiert)||0} BLOCKIERT · ${Number(aufgaben.offen)||0} OFFEN</span>
-        <span class="eng-thruster" aria-hidden="true"></span><span class="eng-thruster" aria-hidden="true"></span>
-      </div>
+      <span class="px-loop" aria-hidden="true"></span>
     </div>`;
 
+  pxRaeume = liste.map((e, i) => ({ ...e, cv:box.querySelector(`canvas[data-px="${i}"]`) })).filter(e => e.cv);
   renderShipLegend(depts, agenten);
   box.querySelectorAll('[data-agent]').forEach(b => b.onclick = () => setShipSelection('agent', b.dataset.agent));
   box.querySelectorAll('[data-common]').forEach(b => b.onclick = () => setShipSelection(b.dataset.common));
   applyShipTransform();
-  if(!shipZoomInit) requestAnimationFrame(fitShip);
+  requestAnimationFrame(() => { pxGroessen(); if(!shipZoomInit) fitShip(); });
+  pxStarteAnimation();
   renderShipDetail();
+}
+
+
+function shipWertText(wert){
+  if(wert === null || wert === undefined) return '–';
+  const roh = typeof wert === 'string' ? wert : JSON.stringify(wert);
+  const text = String(roh ?? '–');
+  return text.length > 220 ? text.slice(0, 217) + '…' : text;
+}
+
+function shipStandardEmpfaenger(a){
+  const agenten = ((companyDaten && companyDaten.agents && companyDaten.agents.agenten) || [])
+    .filter(x => x.agent_id !== a.agent_id && x.active !== false);
+  const berichtet = agenten.find(x => x.agent_id === a.reports_to);
+  return (berichtet || agenten.find(x => x.dept === a.dept) || agenten[0] || {}).agent_id || '';
+}
+
+function shipEmpfaengerOptionen(a, gewaehlt){
+  const agenten = ((companyDaten && companyDaten.agents && companyDaten.agents.agenten) || [])
+    .filter(x => x.agent_id !== a.agent_id && x.active !== false);
+  const direkt = agenten.map(x => {
+    const sel = x.agent_id === gewaehlt ? ' selected' : '';
+    const deptName = SHIP_DEPT_NAMEN[x.dept] || x.dept_name || x.dept;
+    return `<option value="${esc(x.agent_id)}"${sel}>${esc(x.rufname)} · ${esc(x.dept)} ${esc(deptName)}</option>`;
+  }).join('');
+  let html = direkt ? `<optgroup label="Direkt">${direkt}</optgroup>` : '';
+  if(a.rank === 'leitung' || a.rank === 'sekretariat'){
+    const depts = shipDeptList().filter(d => a.rank === 'sekretariat' || d.code === a.dept);
+    const opt = depts.map(d => {
+      const wert = 'dept:' + d.code;
+      const sel = wert === gewaehlt ? ' selected' : '';
+      return `<option value="${esc(wert)}"${sel}>Abteilung ${esc(d.code)} · ${esc(d.name)}</option>`;
+    }).join('');
+    if(opt) html += `<optgroup label="Abteilung">${opt}</optgroup>`;
+  }
+  if(['A1','S1','S2','S3'].includes(a.agent_id)){
+    const sel = gewaehlt === 'all' ? ' selected' : '';
+    html += `<optgroup label="Broadcast"><option value="all"${sel}>Alle aktiven Agenten</option></optgroup>`;
+  }
+  return html;
+}
+
+function shipDraftNeu(a){
+  return { fuer:a.agent_id, an:shipStandardEmpfaenger(a), art:'status', betreff:'', text:'', belege:'', quittung:true };
+}
+
+function shipNachrichtHtml(m, a){
+  const eingehend = String(m.to_agent) === String(a.agent_id);
+  const partner = eingehend ? (m.from_rufname || m.from_agent) : (m.to_rufname || m.to_agent);
+  const quittung = m.ack_at
+    ? 'quittiert ' + esc(kurzZeit(m.ack_at) || '')
+    : (eingehend ? 'offen' : 'ausgehend');
+  const ack = eingehend && !m.ack_at
+    ? `<button type="button" class="sd-msg-ack" data-ship-ack="${Number(m.id)}">Quittieren</button>` : '';
+  const belege = Array.isArray(m.evidence) && m.evidence.length
+    ? `<small class="sd-msg-evidence">Belege: ${m.evidence.map(x => esc(x)).join(' · ')}</small>` : '';
+  return `<article class="sd-msg ${eingehend ? 'ist-eingang' : 'ist-ausgang'}">
+    <div class="sd-msg-kopf"><b>${esc(m.subject || '(ohne Betreff)')}</b><span>${esc(m.kind || 'status')}</span></div>
+    <small class="sd-msg-meta">${eingehend ? 'von' : 'an'} ${esc(partner || '–')} · ${esc(kurzZeit(m.created_at) || '–')} · ${quittung}</small>
+    <p class="sd-msg-body">${esc(m.body || '')}</p>${belege}${ack}</article>`;
+}
+
+function shipKommunikationHtml(a){
+  const detail = shipDetail && shipDetail.profil && shipDetail.profil.agent_id === a.agent_id ? shipDetail : null;
+  const nachrichten = detail && Array.isArray(detail.nachrichten) ? detail.nachrichten : [];
+  const erinnerungen = detail && Array.isArray(detail.erinnerungen) ? detail.erinnerungen : [];
+  if(!shipDraft || shipDraft.fuer !== a.agent_id) shipDraft = shipDraftNeu(a);
+  const draft = shipDraft;
+  const arten = [['status','Status'],['handoff','Übergabe'],['question','Frage'],['answer','Antwort'],['task_request','Auftrag'],['task_result','Ergebnis'],['review_request','Review'],['review_result','Review-Ergebnis'],['alert','Alarm'],['decision','Entscheid']];
+  const artOptionen = arten.map(([wert, text]) => `<option value="${wert}"${draft.art === wert ? ' selected' : ''}>${text}</option>`).join('');
+  const formular = detail ? `<form class="sd-form" data-ship-form>
+    <label>Empfänger<select name="an" data-ship-feld="an" required>${shipEmpfaengerOptionen(a, draft.an)}</select></label>
+    <div class="sd-form-zeile">
+      <label>Art<select name="art" data-ship-feld="art">${artOptionen}</select></label>
+      <label class="sd-check"><input type="checkbox" name="quittung" data-ship-feld="quittung"${draft.quittung ? ' checked' : ''}> Quittung anfordern</label>
+    </div>
+    <label>Betreff<input name="betreff" maxlength="200" value="${esc(draft.betreff)}" data-ship-feld="betreff" required autocomplete="off"></label>
+    <label>Nachricht<textarea name="text" rows="3" maxlength="8000" data-ship-feld="text" required>${esc(draft.text)}</textarea></label>
+    <label>Belege <span>(kommagetrennt)</span><input name="belege" maxlength="2000" value="${esc(draft.belege)}" data-ship-feld="belege" placeholder="task:12, article:4821" autocomplete="off"></label>
+    <button type="submit" class="sd-send">Nachricht senden</button>
+  </form>` : '';
+  const liste = nachrichten.length
+    ? `<div class="sd-msg-liste">${nachrichten.map(m => shipNachrichtHtml(m, a)).join('')}</div>`
+    : '<p class="sd-leer">Keine Nachrichten.</p>';
+  const memory = erinnerungen.length ? `<div class="sd-memory-liste">${erinnerungen.map(e => `
+    <div class="sd-memory"><div><b>${esc(e.scope)} · ${esc(e.key)}</b><small>${esc(kurzZeit(e.updated_at) || '–')}</small></div><code>${esc(shipWertText(e.value))}</code></div>`).join('')}</div>`
+    : '<p class="sd-leer">Noch keine persönlichen Erinnerungen.</p>';
+  const status = shipNachrichtStatus
+    ? `<p class="sd-hinweis ${shipNachrichtStatus.typ}" role="status">${esc(shipNachrichtStatus.text)}</p>` : '';
+  const fehler = shipDetailFehler
+    ? `<p class="sd-hinweis fehler" role="status">${esc(shipDetailFehler)}</p>` : '';
+  const laden = !detail
+    ? (shipDetailLaden ? '<p class="sd-leer">Nachrichten und Erinnerungen werden geladen …</p>' : '')
+    : '';
+  return `<div class="sd-kommunikation" data-ship-kommunikation>
+    <div class="sd-block">
+      <div class="sd-block-kopf"><small>NACHRICHTEN${nachrichten.length ? ` · ${nachrichten.length}` : ''}</small>
+        <button type="button" class="sd-mini" data-ship-detail-refresh${shipDetailLaden ? ' disabled' : ''}>${shipDetailLaden ? 'lädt …' : 'Aktualisieren'}</button></div>
+      ${fehler}${status}${laden}${detail ? liste + formular : ''}
+    </div>
+    <div class="sd-block"><small>ERINNERUNGEN${erinnerungen.length ? ` · ${erinnerungen.length}` : ''}</small>
+      ${detail ? memory : (shipDetailLaden ? '<p class="sd-leer">Wird geladen …</p>' : '')}</div>
+  </div>`;
+}
+
+function ladeShipDetail(agentId, erzwingen = false){
+  if(!erzwingen && shipDetailFuer === agentId && (shipDetailLaden || shipDetail)) return;
+  const token = ++shipDetailAnfrage;
+  shipDetailFuer = agentId;
+  shipDetailLaden = true;
+  shipDetailFehler = null;
+  renderShipDetail(true);
+  fetch(`/api/company/agents/${encodeURIComponent(agentId)}`, {cache:'no-store'})
+    .then(async antwort => {
+      const daten = await antwort.json().catch(() => ({}));
+      if(!antwort.ok) throw new Error(daten.fehler || ('HTTP ' + antwort.status));
+      return daten;
+    })
+    .then(daten => {
+      if(token !== shipDetailAnfrage) return;
+      shipDetail = daten;
+    })
+    .catch(e => {
+      if(token !== shipDetailAnfrage) return;
+      shipDetailFehler = String((e && e.message) || e);
+    })
+    .finally(() => {
+      if(token !== shipDetailAnfrage) return;
+      shipDetailLaden = false;
+      renderShipDetail(true);
+    });
+}
+
+function bindeShipKommunikation(side, a){
+  const form = side.querySelector('[data-ship-form]');
+  if(form){
+    form.onsubmit = ev => { ev.preventDefault(); sendeShipNachricht(a, form); };
+    form.querySelectorAll('[data-ship-feld]').forEach(el => {
+      const key = el.dataset.shipFeld;
+      const merken = () => {
+        if(shipDraft && shipDraft.fuer === a.agent_id) shipDraft[key] = el.type === 'checkbox' ? el.checked : el.value;
+      };
+      el.addEventListener('input', merken);
+      el.addEventListener('change', merken);
+    });
+  }
+  side.querySelectorAll('[data-ship-ack]').forEach(btn => {
+    btn.onclick = () => quittiereShipNachricht(a, Number(btn.dataset.shipAck), btn);
+  });
+  const refresh = side.querySelector('[data-ship-detail-refresh]');
+  if(refresh) refresh.onclick = () => ladeShipDetail(a.agent_id, true);
+}
+
+async function sendeShipNachricht(a, form){
+  const fuer = a.agent_id;
+  const knopf = form.querySelector('button[type="submit"]');
+  const wert = name => {
+    const feld = form.querySelector(`[name="${name}"]`);
+    return feld ? feld.value : '';
+  };
+  const an = wert('an');
+  const belege = wert('belege').split(',').map(x => x.trim()).filter(Boolean);
+  if(!an){
+    shipNachrichtStatus = {typ:'fehler', text:'Bitte einen Empfänger wählen.'};
+    renderShipDetail(true);
+    return;
+  }
+  if(knopf){ knopf.disabled = true; knopf.textContent = 'Sendet …'; }
+  try{
+    const antwort = await fetch('/api/company/messages', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
+      from_agent:a.agent_id, to_agent:an, subject:wert('betreff'), body:wert('text'),
+      kind:wert('art'), evidence:belege,
+      requires_ack:Boolean(form.querySelector('[name="quittung"]')?.checked),
+    })});
+    const daten = await antwort.json().catch(() => ({}));
+    if(!antwort.ok || !daten.ok) throw new Error(daten.fehler || ('HTTP ' + antwort.status));
+    if(shipAuswahl.typ !== 'agent' || shipAuswahl.id !== fuer) return;
+    const neue = Array.isArray(daten.messages) ? daten.messages : [];
+    if(shipDetail){
+      const ids = new Set(neue.map(m => Number(m.id)));
+      shipDetail.nachrichten = [...neue, ...(shipDetail.nachrichten || []).filter(m => !ids.has(Number(m.id)))].slice(0, 25);
+    }
+    shipNachrichtStatus = {typ:'ok', text:`Nachricht an ${Number((daten.to_agents || []).length) || 1} Empfänger gesendet.`};
+    shipDraft = shipDraftNeu(a);
+    renderShipDetail(true);
+  }catch(e){
+    if(shipAuswahl.typ === 'agent' && shipAuswahl.id === fuer){
+      shipNachrichtStatus = {typ:'fehler', text:String((e && e.message) || e)};
+      renderShipDetail(true);
+    }
+  }
+}
+
+async function quittiereShipNachricht(a, id, knopf){
+  const fuer = a.agent_id;
+  if(knopf){ knopf.disabled = true; knopf.textContent = 'Quittiere …'; }
+  try{
+    const antwort = await fetch(`/api/company/messages/${id}/ack`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({agent_id:a.agent_id})});
+    const daten = await antwort.json().catch(() => ({}));
+    if(!antwort.ok || !daten.ok) throw new Error(daten.fehler || ('HTTP ' + antwort.status));
+    if(shipAuswahl.typ !== 'agent' || shipAuswahl.id !== fuer) return;
+    const m = (shipDetail && shipDetail.nachrichten || []).find(x => Number(x.id) === id);
+    if(m) m.ack_at = (daten.nachricht && daten.nachricht.ack_at) || new Date().toISOString();
+    shipNachrichtStatus = {typ:'ok', text:'Nachricht quittiert.'};
+    renderShipDetail(true);
+  }catch(e){
+    if(shipAuswahl.typ === 'agent' && shipAuswahl.id === fuer){
+      shipNachrichtStatus = {typ:'fehler', text:String((e && e.message) || e)};
+      renderShipDetail(true);
+    }
+  }
 }
 
 function setShipSelection(typ, id){
@@ -1284,12 +1906,30 @@ function setShipSelection(typ, id){
     const raum = typ === 'agent'
       ? [...document.querySelectorAll('#shipWorld [data-agent]')].find(b => b.dataset.agent === id)
       : null;
-    if(!raum || raum.closest('.ship-dept')?.dataset.dept !== shipDeptFilter){
+    if(!raum || raum.closest('.px-dept')?.dataset.dept !== shipDeptFilter){
       shipDeptFilter = null;
       syncShipDeptFilter();
     }
   }
   shipAuswahl = typ === 'agent' ? { typ:'agent', id } : { typ };
+  if(typ === 'agent'){
+    const a = ((companyDaten && companyDaten.agents && companyDaten.agents.agenten) || []).find(x => x.agent_id === id);
+    if(shipDetailFuer !== id || !shipDetail){
+      shipDetail = null;
+      shipDetailFehler = null;
+      shipNachrichtStatus = null;
+      shipDraft = a ? shipDraftNeu(a) : null;
+      ladeShipDetail(id);
+    }
+  }else{
+    shipDetailAnfrage++;
+    shipDetail = null;
+    shipDetailFehler = null;
+    shipDetailLaden = false;
+    shipDetailFuer = null;
+    shipNachrichtStatus = null;
+    shipDraft = null;
+  }
   document.querySelectorAll('#shipWorld [data-agent]').forEach(b => {
     const on = typ === 'agent' && b.dataset.agent === id;
     b.classList.toggle('on', on);
@@ -1300,17 +1940,25 @@ function setShipSelection(typ, id){
     b.classList.toggle('on', on);
     b.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
+  pxRaeume.forEach(e => {
+    const on = e.agent ? (typ === 'agent' && e.agent === id) : (e.art === 'agents' ? typ === 'agents' : e.art === 'konf' ? typ === 'konf' : false);
+    if(e.on !== on){ e.on = on; pxZeichne(e); }
+  });
+  syncShipDeptFilter();
   renderShipDetail();
   const side = $('#shipSideInhalt'); if(side) side.scrollTop = 0;
 }
 
-function renderShipDetail(){
+function renderShipDetail(force = false){
   const side = $('#shipSideInhalt');
   if(!side) return;
   if(!companyDaten){
     side.innerHTML = `<span class="sd-kicker">RAUMSCHIFF</span><h2>Verbindung</h2><p>${companyFehler ? 'Company-API nicht erreichbar: ' + esc(companyFehler) : 'Agentenlage wird geladen …'}</p>`;
     return;
   }
+  if(!force && shipAuswahl.typ === 'agent' && shipDetail && shipDetail.profil
+     && shipDetail.profil.agent_id === shipAuswahl.id
+     && side.querySelector('[data-ship-kommunikation]')) return;
   const depts = shipDeptList();
   const agenten = (companyDaten.agents && companyDaten.agents.agenten) || [];
   const s = (companyDaten.overview && companyDaten.overview.agenten_status) || {};
@@ -1347,6 +1995,7 @@ function renderShipDetail(){
       const farbe = shipDeptFarbe(a.dept);
       const st = shipStatusKey(a);
       const letzte = a.letzte_task || null;
+      if(!shipDraft || shipDraft.fuer !== a.agent_id) shipDraft = shipDraftNeu(a);
       side.innerHTML = `<span class="sd-kicker">AGENTENRAUM · ${esc(a.dept)}</span>
         <div class="sd-head"><span class="sd-avatar" style="--dept:${farbe}">${esc((a.rufname || '?').slice(0,1).toUpperCase())}</span>
           <span class="sd-head-txt"><small>${esc(a.agent_id)} · ${esc(a.station || '–')}</small><b>${esc(a.rufname)}</b></span></div>
@@ -1356,7 +2005,9 @@ function renderShipDetail(){
           <div class="sd-kpi"><small>LÄUFT</small><b>${Number(a.davon_laufend)||0}</b></div><div class="sd-kpi"><small>BLOCKIERT</small><b>${Number(a.davon_blockiert)||0}</b></div></div>
         <div class="sd-block"><small>AUFTRAG</small><p>${esc(a.mission || 'Keine Mission hinterlegt.')}</p></div>
         <div class="sd-block"><small>LETZTE AUFGABE</small><b>${esc(letzte && letzte.title ? letzte.title : 'Keine Aufgabe')}</b><p>${esc(letzte && letzte.state_text ? letzte.state_text : '–')}</p></div>
-        <div class="sd-block"><small>BERICHTET AN</small><b>${esc(a.reports_to || '–')}</b><p>Autonomie ${esc(a.autonomy ?? '–')} · Abteilung ${esc(a.dept)}</p></div>`;
+        <div class="sd-block"><small>BERICHTET AN</small><b>${esc(a.reports_to || '–')}</b><p>Autonomie ${esc(a.autonomy ?? '–')} · Abteilung ${esc(a.dept)}</p></div>
+        ${shipKommunikationHtml(a)}`;
+      bindeShipKommunikation(side, a);
       return;
     }
     shipAuswahl = { typ:'overview' };
@@ -1380,9 +2031,9 @@ function applyShipTransform(){
 function fitShip(){
   const vp = $('#shipViewport'), w = $('#shipWorld');
   if(!vp || !w || !vp.clientWidth || !w.offsetWidth) return;
-  if(!w.querySelector('.agent-room')) return;
+  if(!w.querySelector('.px-room')) return;
   const faktor = Math.min((vp.clientWidth - 18) / w.offsetWidth, (vp.clientHeight - 18) / w.offsetHeight, 1);
-  shipZoom = Math.max(0.22, Math.min(2.5, faktor));
+  shipZoom = Math.max(0.16, Math.min(2.5, faktor));
   shipX = (vp.clientWidth - w.offsetWidth * shipZoom) / 2;
   shipY = (vp.clientHeight - w.offsetHeight * shipZoom) / 2;
   shipZoomInit = true;
@@ -1493,6 +2144,18 @@ function initShipControls(){
   }, { passive:false });
 
   const beenden = e => {
+    const warDrag = !!(drag && drag.bewegt);
+    // Pointer-Capture leitet den Klick auf den Viewport um. Für einen echten
+    // Mausklick ohne Ziehen wählen wir deshalb den Raum unter dem Zeiger.
+    if(e.type === 'pointerup' && e.pointerType === 'mouse' && !warDrag){
+      const ziel = document.elementFromPoint(e.clientX, e.clientY)
+        ?.closest('#shipWorld [data-agent], #shipWorld [data-common]');
+      if(ziel){
+        sperreKlick();
+        if(ziel.dataset.agent) setShipSelection('agent', ziel.dataset.agent);
+        else setShipSelection(ziel.dataset.common);
+      }
+    }
     zeiger.delete(e.pointerId);
     if(zeiger.size < 2) pinch = null;
     if(zeiger.size === 1){

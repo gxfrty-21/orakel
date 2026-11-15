@@ -134,6 +134,8 @@ def test_company_lauf_verarbeitet_alle_103_aufgaben(cfg):
     assert {r["agent"] for r in laeufe} == {
         f"{p.agent_id}:{p.role}" for p in PROFILES
     }
+    store = CompanyStore(db)
+    assert all(store.erinnerungen(p.agent_id, scope="working") for p in PROFILES)
     assert db.zustand("company_letzter_lauf")["tasks_verarbeitet"] == 103
 
 

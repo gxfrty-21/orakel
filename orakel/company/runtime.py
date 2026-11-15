@@ -18,6 +18,8 @@ from zoneinfo import ZoneInfo
 from ..config import Config, RisikoGrenzen
 from ..db import Facts
 from .handlers import HandlerResult, run_handler
+from .memory import AgentMemory
+from .messaging import MessagingService
 from .policy import CompanyPolicy, PolicyError
 from .roster import Profile, PROFILES, profile_by_id
 from .store import CompanyStore
@@ -253,8 +255,36 @@ class CompanyRuntime:
             "paper_only": self.policy.paper_only(),
             "dauer_sekunden": round(time.monotonic() - start, 3),
         }
+        # Erinnerungen sind ein Nebenprodukt des Company-Laufs, kein Task und
+        # keine neue Beschäftigung. Ein Fehler darf den Lauf nicht kippen.
+        try:
+            summary["erinnerungen"] = MessagingService(self.store).erinnere_offene_acks()
+        except Exception as exc:
+            summary["erinnerungen"] = {
+                "ok": False, "fehler": type(exc).__name__,
+            }
         self.db.zustand_setzen("company_letzter_lauf", summary)
         return summary
+
+    def _merke_task(self, task: dict[str, Any], zustand: str) -> None:
+        """Hält den Task als echten Verweis im Arbeitsgedächtnis des Agenten fest."""
+        try:
+            profil = profile_by_id(str(task["assigned_to"]))
+            if profil is None:
+                return
+            AgentMemory(self.store).set(
+                profil.agent_id, "working", f"task:{task['id']}", {
+                    "task_id": int(task["id"]),
+                    "task_type": task["task_type"],
+                    "title": task["title"],
+                    "state": zustand,
+                    "ref": f"task:{task['id']}",
+                },
+            )
+        except Exception:
+            # Ein Gedächtnisfehler darf einen bereits abgeschlossenen Task nicht
+            # nachträglich als fehlgeschlagen erscheinen lassen.
+            pass
 
     def _worker(self, worker: str, max_tasks: int | None, ctx: dict[str, Any]) -> None:
         while True:
@@ -262,7 +292,8 @@ class CompanyRuntime:
             if task is None:
                 return
             try:
-                self._execute(task, ctx)
+                zustand = self._execute(task, ctx)
+                self._merke_task(task, zustand)
             except Exception as exc:
                 # Ein einzelner kaputter Handler darf die anderen 102 nicht stoppen.
                 try:

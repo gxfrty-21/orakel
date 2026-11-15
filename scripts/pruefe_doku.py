@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prüft relative Markdown-Links, Markdown- und HTML-Anker sowie alte Schiffsbegriffe.
+"""Prüft relative Markdown-Links, Markdown- und HTML-Anker, alte Schiffsbegriffe und englische Altnamen der Agentenabteilungen.
 
 Der Lauf ist bewusst ohne Zusatzpakete nutzbar, damit er in der CI schnell
 bleibt. Relative Pfade werden vom jeweiligen Dokument aus aufgelöst. Bei
@@ -42,6 +42,28 @@ VERALTETE_BEGRIFFE = (
         re.IGNORECASE,
     ), "veralteter Navigationspunkt"),
 )
+
+# Englische Namen, die durch die deutschen Abteilungsnamen ersetzt wurden.
+# B «Spider Intelligence» und D «Trading Floor» sind weiterhin aktuell und
+# stehen deshalb nicht in dieser Liste.
+ENGLISCHE_ALTNAMEN = (
+    (re.compile(r"\bCommand Center\b", re.IGNORECASE), "Command Center"),
+    (re.compile(r"\bInnovation Laboratory\b", re.IGNORECASE), "Innovation Laboratory"),
+    (re.compile(r"\bResearch Department\b", re.IGNORECASE), "Research Department"),
+    (re.compile(r"\bRisk Management\b", re.IGNORECASE), "Risk Management"),
+    (re.compile(r"\bKnowledge Center\b", re.IGNORECASE), "Knowledge Center"),
+    (re.compile(r"\bEngineering Department\b", re.IGNORECASE), "Engineering Department"),
+    (re.compile(r"\bGlobal Intelligence Observatory\b", re.IGNORECASE), "Global Intelligence Observatory"),
+    (re.compile(r"\bSecurity Operations\b", re.IGNORECASE), "Security Operations"),
+    (re.compile(r"\bExecutive Secretariat\b", re.IGNORECASE), "Executive Secretariat"),
+)
+
+# Diese älteren Planungsdokumente beschreiben den historischen 3D-Prototyp
+# und die damaligen englischen Raumnamen. Sie sind keine aktuelle Agentendoku.
+HISTORISCHE_DOKUMENTE = {
+    Path("docs/raumschiff/MASTERPLAN.md"),
+    Path("docs/raumschiff/RAUMBUCH.md"),
+}
 
 INLINE_LINK = re.compile(
     r"!?\[[^\]]*\]\(\s*(<[^>]+>|[^)\s]+)(?:\s+[\"'][^\"']*[\"'])?\s*\)"
@@ -277,10 +299,11 @@ def _doku_dateien(root: Path) -> list[Path]:
     )
 
 
-def pruefe(root: Path) -> tuple[list[Path], int, list[str]]:
+def pruefe(root: Path) -> tuple[list[Path], int, int, list[str]]:
     dateien = _doku_dateien(root)
     befunde: list[str] = []
     link_anzahl = 0
+    anker_anzahl = 0
     anker_cache: dict[Path, set[str] | None] = {}
     for datei in dateien:
         rel = datei.relative_to(root)
@@ -295,12 +318,24 @@ def pruefe(root: Path) -> tuple[list[Path], int, list[str]]:
             befund = _pruefe_link(root, datei, ziel, anker_cache)
             if befund:
                 befunde.append(f"{rel}:{zeile}: {befund}")
+                continue
+            pfad_teil, _, anker = ziel.partition("#")
+            pfad = pfad_teil.split("?", 1)[0]
+            if anker.strip() and (
+                not pfad
+                or unquote(pfad).lower().endswith(".md")
+            ):
+                anker_anzahl += 1
 
         for nummer, zeile in enumerate(text.splitlines(), 1):
             for muster, name in VERALTETE_BEGRIFFE:
                 if muster.search(zeile):
                     befunde.append(f"{rel}:{nummer}: veralteter Raumschiff- oder Navigationsbegriff «{name}»")
-    return dateien, link_anzahl, befunde
+            if rel not in HISTORISCHE_DOKUMENTE:
+                for muster, name in ENGLISCHE_ALTNAMEN:
+                    if muster.search(zeile):
+                        befunde.append(f"{rel}:{nummer}: englischer Altname der Agentenabteilung «{name}»")
+    return dateien, link_anzahl, anker_anzahl, befunde
 
 
 def negativtest() -> int:
@@ -346,46 +381,73 @@ def negativtest() -> int:
             "Das Schiffsdeck ist alt.\n"
             "Der Navigationspunkt **Nexus** ist entfernt.\n"
             "Der Navigationspunkt **Agentenraum** ist entfernt.\n"
-            "Der Navigationspunkt **Command Center** ist entfernt.\n"
-            "Die Kommandozentrale ist geschlossen.\n",
+            "Der Navigationspunkt **Command-Center** ist entfernt.\n"
+            "Die Kommandozentrale ist geschlossen.\n"
+            "Die Abteilung Command Center wurde umbenannt.\n"
+            "Die Abteilung Innovation Laboratory wurde umbenannt.\n"
+            "Die Abteilung Research Department wurde umbenannt.\n"
+            "Die Abteilung Risk Management wurde umbenannt.\n"
+            "Die Abteilung Knowledge Center wurde umbenannt.\n"
+            "Die Abteilung Engineering Department wurde umbenannt.\n"
+            "Die Abteilung Global Intelligence Observatory wurde umbenannt.\n"
+            "Die Abteilung Security Operations wurde umbenannt.\n"
+            "Die Abteilung Executive Secretariat wurde umbenannt.\n",
             encoding="utf-8",
         )
-        dateien, link_anzahl, befunde = pruefe(root)
+        dateien, link_anzahl, anker_anzahl, befunde = pruefe(root)
         link_fehler = any("fehlende Datei" in befund for befund in befunde)
         anker_fehler = [befund for befund in befunde if "Überschriften-Anker" in befund]
         begriff_fehler = [befund for befund in befunde if "veralteter Raumschiff- oder Navigationsbegriff" in befund]
-        if not link_fehler or len(anker_fehler) != 4 or len(begriff_fehler) != 7:
+        altnamen_fehler = [befund for befund in befunde if "englischer Altname der Agentenabteilung" in befund]
+        if (
+            not link_fehler
+            or len(anker_fehler) != 4
+            or len(begriff_fehler) != 7
+            or len(altnamen_fehler) != 9
+            or anker_anzahl < 1
+        ):
             print(
                 "Dokutest FEHLGESCHLAGEN: erwartet wurden ein fehlender Link, "
-                "vier falsche Anker und sieben veraltete Begriffe, gefunden: "
-                f"{befunde or 'keine Befunde'}",
+                "vier falsche Anker, sieben veraltete Begriffe, neun englische "
+                "Altnamen und mindestens ein gültiger Ankerlink, gefunden: "
+                f"{befunde or 'keine Befunde'} (gültige Ankerlinks: {anker_anzahl})",
                 file=sys.stderr,
             )
             return 1
         print(
             f"Dokutest OK: {len(dateien)} Dateien, {link_anzahl} relative Links, "
-            "fehlender Link, vier falsche Anker und sieben veraltete Raumschiff- und Navigationsbegriffe erkannt"
+            f"{anker_anzahl} gültige Ankerlinks, fehlender Link, vier falsche Anker, "
+            "sieben veraltete Raumschiff- und Navigationsbegriffe sowie neun "
+            "englische Altnamen erkannt"
         )
     return 0
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Prüft relative Doku-Links, Markdown- und HTML-Anker sowie veraltete Raumschiff- und Navigationsbegriffe.")
+    parser = argparse.ArgumentParser(description="Prüft relative Doku-Links, Markdown- und HTML-Anker, veraltete Raumschiff- und Navigationsbegriffe sowie englische Altnamen der Agentenabteilungen.")
     parser.add_argument("--root", type=Path, default=ROOT, help="Repository-Wurzel (Standard: Projektordner)")
     parser.add_argument("--negativtest", action="store_true", help="Prüft die Prüfung mit absichtlich falschen Doku-Daten")
     args = parser.parse_args()
     if args.negativtest:
         return negativtest()
 
-    dateien, link_anzahl, befunde = pruefe(args.root.resolve())
+    dateien, link_anzahl, anker_anzahl, befunde = pruefe(args.root.resolve())
     for befund in befunde:
         print(befund, file=sys.stderr)
     if befunde:
         print(f"Doku-Prüfung fehlgeschlagen: {len(befunde)} Befund(e)", file=sys.stderr)
         return 1
+    if anker_anzahl < 1:
+        print(
+            "Doku-Prüfung fehlgeschlagen: kein gültiger Ankerlink in der Dokumentation gefunden",
+            file=sys.stderr,
+        )
+        return 1
+    anker_wort = "gültiger Ankerlink" if anker_anzahl == 1 else "gültige Ankerlinks"
     print(
-        f"Doku OK: {len(dateien)} Dateien, {link_anzahl} relative Links und "
-        "0 veraltete Raumschiff- und Navigationsbegriffe geprüft"
+        f"Doku OK: {len(dateien)} Dateien, {link_anzahl} relative Links, "
+        f"{anker_anzahl} {anker_wort}, 0 veraltete Raumschiff- und "
+        "Navigationsbegriffe sowie 0 englische Altnamen geprüft"
     )
     return 0
 

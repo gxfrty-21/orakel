@@ -120,6 +120,13 @@ class Takt(threading.Thread):
 
     def run(self) -> None:  # pragma: no cover - Zeitverhalten
         intervall = max(5, int(self.cfg["paper"].get("takt_sekunden", 60)))
+        try:
+            erinnerungs_minuten = max(1, int(self.cfg.abschnitt(
+                "unternehmen").get("erinnerungen_intervall_minuten", 5)))
+        except (TypeError, ValueError):
+            erinnerungs_minuten = 5
+        erinnerungs_intervall = erinnerungs_minuten * 60
+        letzte_erinnerung = 0.0
         erzwungen = {"spider"} if self.mit_spider else None
         while not self._stopp.is_set():
             beginn = time.monotonic()
@@ -128,6 +135,16 @@ class Takt(threading.Thread):
             except Exception as exc:
                 self.db.ereignis("fehler", "Takt", f"Betriebstakt abgebrochen: {exc}")
             erzwungen = None
+            if time.monotonic() - letzte_erinnerung >= erinnerungs_intervall:
+                letzte_erinnerung = time.monotonic()
+                try:
+                    from .company.messaging import MessagingService
+                    from .company.store import CompanyStore
+
+                    MessagingService(CompanyStore(self.db)).erinnere_offene_acks()
+                except Exception as exc:
+                    self.db.ereignis(
+                        "fehler", "Takt", f"Erinnerungen abgebrochen: {exc}")
             # Ein langer Takt verlängert den Abstand nicht zusätzlich.
             wartezeit = max(1.0, intervall - (time.monotonic() - beginn))
             self._stopp.wait(wartezeit)

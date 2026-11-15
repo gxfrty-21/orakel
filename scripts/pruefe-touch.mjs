@@ -11,6 +11,10 @@
  *   - kein Agent erscheint gleichzeitig in mehreren Schiffsclustern,
  *   - die mobilen Raumgrössen bleiben erhalten,
  *   - nach «Fit» liegen alle 103 Räume und elf Abteilungen im Schiffsviewport.
+ *   - ein zweiter Porträt-Viewport (360 × 800) und Querformat (844 × 390)
+ *     bestehen Fit, Auswahl und Legendenfilter ebenfalls.
+ *   - im Querformat ist die Navigation eingeklappt, die Ops-Seitenleiste steht
+ *     unter dem Viewport und die Zoomleiste bleibt im sichtbaren Bereich.
  *
  * Der Test ist für die Seed-Datenbank gedacht und läuft ohne Test-Framework.
  *
@@ -85,18 +89,18 @@ async function schiffTransform(page) {
 async function ladeSchiff(page) {
   await page.goto(`${opts.url}/?v=touch`, { waitUntil: 'networkidle' });
   await page.locator('.nav[data-v="ship"]').tap();
-  await page.waitForFunction(() => document.querySelectorAll('#shipWorld .agent-room').length === 103);
+  await page.waitForFunction(() => document.querySelectorAll('#shipWorld .px-room[data-agent]').length === 103);
   await page.waitForFunction(() => /\d+\s*%/.test(document.querySelector('#shipZoomWert')?.textContent || ''));
   await page.waitForTimeout(300);
 }
 
 async function pruefeCluster(page) {
   return page.evaluate(() => {
-    const clusters = [...document.querySelectorAll('#shipWorld .ship-dept')];
+    const clusters = [...document.querySelectorAll('#shipWorld .px-dept')];
     const vorkommen = new Map();
     let raeume = 0;
     for (const cluster of clusters) {
-      const code = cluster.querySelector('.ship-dept-code')?.textContent?.trim() || '?';
+      const code = cluster.querySelector('.px-dept-head b')?.textContent?.trim() || '?';
       for (const raum of cluster.querySelectorAll('[data-agent]')) {
         const id = raum.dataset.agent;
         raeume++;
@@ -127,8 +131,8 @@ async function pruefeFit(page, breite, minBreite, minHoehe) {
     const ausserhalb = (liste) => liste.filter(r =>
       r.left < vp.left - 1 || r.top < vp.top - 1
       || r.right > vp.right + 1 || r.bottom > vp.bottom + 1).length;
-    const raeume = boxes('#shipWorld .agent-room');
-    const abteilungen = boxes('#shipWorld .ship-dept');
+    const raeume = boxes('#shipWorld .px-room[data-agent]');
+    const abteilungen = boxes('#shipWorld .px-dept');
     return {
       zoom: document.querySelector('#shipZoomWert')?.textContent?.trim() || '',
       raeume: {
@@ -167,6 +171,115 @@ async function mitte(page) {
   };
 }
 
+async function pruefeMobilViewport(browser, konfiguration) {
+  const { label, width, height, minBreite, minHoehe } = konfiguration;
+  const context = await browser.newContext({
+    viewport: { width, height },
+    screen: { width, height },
+    deviceScaleFactor: 3,
+    isMobile: true,
+    hasTouch: true,
+  });
+  try {
+    const page = await context.newPage();
+    await ladeSchiff(page);
+    const fit = await pruefeFit(page, `${width}×${height}`, minBreite, minHoehe);
+    if (width > height) {
+      const querformat = await page.evaluate(() => {
+        const nav = document.querySelector('.side');
+        const toggle = document.querySelector('#navToggle');
+        const viewport = document.querySelector('#shipViewport').getBoundingClientRect();
+        const side = document.querySelector('#shipSide').getBoundingClientRect();
+        const zoom = document.querySelector('.ship-zoom').getBoundingClientRect();
+        return {
+          navDisplay: nav ? getComputedStyle(nav).display : 'fehlt',
+          navExpanded: toggle?.getAttribute('aria-expanded'),
+          toggleDisplay: toggle ? getComputedStyle(toggle).display : 'fehlt',
+          sideUnterViewport: side.top >= viewport.bottom - 1,
+          zoomPosition: getComputedStyle(document.querySelector('.ship-zoom')).position,
+          zoomImBild: zoom.top >= 0 && zoom.bottom <= innerHeight,
+          bodyKlasse: document.body.classList.contains('nav-eingeklappt'),
+        };
+      });
+      pruefe(querformat.navDisplay === 'none',
+        `${label}: Navigation ist im Querformat nicht eingeklappt (${querformat.navDisplay})`);
+      pruefe(querformat.navExpanded === 'false' && querformat.bodyKlasse,
+        `${label}: Navigation meldet den eingeklappten Zustand nicht`);
+      pruefe(querformat.toggleDisplay !== 'none',
+        `${label}: Navigationsschalter ist im Querformat nicht sichtbar`);
+      pruefe(querformat.sideUnterViewport,
+        `${label}: Ops-Seitenleiste steht nicht unter dem Schiffsviewport`);
+      pruefe(querformat.zoomPosition === 'fixed' && querformat.zoomImBild,
+        `${label}: Zoomleiste ist nicht fest im sichtbaren Bereich`);
+
+      const toggle = page.locator('#navToggle');
+      await toggle.tap();
+      await page.waitForTimeout(150);
+      const geoeffnet = await page.evaluate(() => ({
+        display: getComputedStyle(document.querySelector('.side')).display,
+        expanded: document.querySelector('#navToggle')?.getAttribute('aria-expanded'),
+      }));
+      pruefe(geoeffnet.display !== 'none' && geoeffnet.expanded === 'true',
+        `${label}: Navigationsschalter öffnet die Navigation nicht`);
+      await toggle.tap();
+      await page.waitForTimeout(150);
+    }
+    const legende = page.locator('#shipLegend');
+    const erwartetOffen = width > 760;
+    const offen = await legende.evaluate(el => el.open);
+    pruefe(offen === erwartetOffen,
+      `${label}: Legende ist ${offen ? 'offen' : 'eingeklappt'}, erwartet ${erwartetOffen ? 'offen' : 'eingeklappt'}`);
+    if (!offen) {
+      await legende.locator('summary').tap();
+      await page.waitForTimeout(200);
+    }
+    const sichtbareDepts = await legende.locator('[data-dept]').evaluateAll(nodes =>
+      nodes.filter(n => {
+        const r = n.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      }).length);
+    pruefe(sichtbareDepts === 11,
+      `${label}: Legende zeigt ${sichtbareDepts} statt 11 Abteilungen`);
+
+    const raum = page.locator('#shipWorld .px-room[data-agent]').first();
+    const raumName = (await raum.locator('.px-tag').innerText()).trim();
+    await raum.tap();
+    await page.waitForTimeout(350);
+    const auswahl = await page.evaluate(() => ({
+      on: document.querySelectorAll('#shipWorld .px-room[data-agent].on').length,
+      kicker: document.querySelector('#shipSideInhalt .sd-kicker')?.textContent?.trim() || '',
+      dept: document.querySelector('#shipWorld .px-room[data-agent].on')?.closest('.px-dept')?.dataset.dept || '',
+      legendGewaehlt: document.querySelector('#shipLegend [data-dept].is-selected')?.dataset.dept || '',
+      scrollW: document.documentElement.scrollWidth,
+      viewportW: innerWidth,
+    }));
+    pruefe(auswahl.on === 1, `${label}: Tippen hat keinen Raum ausgewählt (${auswahl.on})`);
+    pruefe(auswahl.kicker.startsWith('AGENTENRAUM'),
+      `${label}: Tippen hat die Ops-Details nicht geöffnet (${auswahl.kicker})`);
+    pruefe(auswahl.dept && auswahl.legendGewaehlt === auswahl.dept,
+      `${label}: Legende markiert «${auswahl.legendGewaehlt}» statt «${auswahl.dept}»`);
+    pruefe(auswahl.scrollW === auswahl.viewportW,
+      `${label}: Seite hat horizontalen Überlauf (${auswahl.scrollW}>${auswahl.viewportW})`);
+
+    const filterA = legende.locator('[data-dept="A"]');
+    await filterA.tap();
+    await page.waitForTimeout(200);
+    const filter = await page.evaluate(() => {
+      const world = document.querySelector('#shipWorld');
+      return {
+        aktiv: world?.classList.contains('filter-aktiv') || false,
+        hervorgehoben: world?.querySelectorAll('.px-dept.is-filter-active').length || 0,
+        raeume: world?.querySelectorAll('.px-dept.is-filter-active .px-room[data-agent]').length || 0,
+      };
+    });
+    pruefe(filter.aktiv && filter.hervorgehoben === 1 && filter.raeume === 10,
+      `${label}: Legendenfilter hebt ${filter.hervorgehoben} Abteilung mit ${filter.raeume} statt 10 Räumen hervor`);
+    return { label, fit, raumName };
+  } finally {
+    await context.close();
+  }
+}
+
 async function main() {
   const browser = await chromium.launch();
   const context = await browser.newContext({
@@ -183,8 +296,8 @@ async function main() {
 
   try {
     await ladeSchiff(page);
-    // Mindestwerte knapp unter den gemessenen 33,2 × 38,9 px bei 390 px.
-    const fit390 = await pruefeFit(page, 390, 32.5, 38);
+    // Mindestwerte knapp unter den gemessenen 24,4 × 25,5 px bei 390 px.
+    const fit390 = await pruefeFit(page, 390, 24, 25);
     const cluster = await pruefeCluster(page);
     pruefe(cluster.mehrfach.length === 0,
       `Agenten erscheinen in mehreren Schiffsclustern: ${cluster.mehrfach.join('; ')}`);
@@ -236,14 +349,20 @@ async function main() {
 
     // Frisch laden, damit der Tipp-Test wieder die volle Fit-Ansicht hat.
     await ladeSchiff(page);
-    const ersterRaum = page.locator('#shipWorld .agent-room').first();
-    const raumName = (await ersterRaum.locator('.ar-sign b').innerText()).trim();
+    const ersterRaum = page.locator('#shipWorld .px-room[data-agent]').first();
+    const raumName = (await ersterRaum.locator('.px-tag').innerText()).trim();
     await ersterRaum.tap();
     await page.waitForTimeout(450);
     const auswahl = await page.evaluate(() => ({
-      on: document.querySelectorAll('#shipWorld .agent-room.on').length,
+      on: document.querySelectorAll('#shipWorld .px-room[data-agent].on').length,
       kicker: document.querySelector('#shipSideInhalt .sd-kicker')?.textContent?.trim() || '',
       legend: document.querySelectorAll('#shipLegend [data-dept]').length,
+      dept: document.querySelector('#shipWorld .px-room[data-agent].on')?.closest('.px-dept')?.dataset.dept || '',
+      legendGewaehlt: document.querySelector('#shipLegend [data-dept].is-selected')?.dataset.dept || '',
+      legendSchatten: (() => {
+        const b = document.querySelector('#shipLegend [data-dept].is-selected');
+        return b ? getComputedStyle(b).boxShadow : '';
+      })(),
       scrollW: document.documentElement.scrollWidth,
       viewportW: innerWidth,
     }));
@@ -251,6 +370,10 @@ async function main() {
     pruefe(auswahl.kicker.startsWith('AGENTENRAUM'),
       `Tippen hat die Ops-Details nicht geöffnet (${auswahl.kicker})`);
     pruefe(auswahl.legend === 11, `Legende zeigt ${auswahl.legend} statt 11 Abteilungen`);
+    pruefe(auswahl.dept && auswahl.legendGewaehlt === auswahl.dept,
+      `Legende markiert Abteilung «${auswahl.legendGewaehlt}» statt der gewählten «${auswahl.dept}»`);
+    pruefe(auswahl.legendSchatten && auswahl.legendSchatten !== 'none',
+      'Die markierte Abteilung hat keine sichtbare Hervorhebung');
     pruefe(auswahl.scrollW === auswahl.viewportW, 'Seite hat horizontalen Überlauf');
 
     // Die kompakte Legende muss sich per Tippen aufklappen lassen und dann
@@ -281,22 +404,26 @@ async function main() {
     const filterAn = await page.evaluate(() => {
       const btn = document.querySelector('#shipLegend [data-dept="A"]');
       const world = document.querySelector('#shipWorld');
-      const aktiv = world?.querySelector('.ship-dept.is-filter-active');
-      const gedimmt = world?.querySelector('.ship-dept:not(.is-filter-active)');
+      const aktiv = world?.querySelector('.px-dept.is-filter-active');
+      const gedimmt = world?.querySelector('.px-dept:not(.is-filter-active)');
       const deckkraft = el => el ? Number(getComputedStyle(el).opacity) : null;
       return {
         gedrueckt: btn?.getAttribute('aria-pressed') === 'true',
         titel: btn?.title || '',
+        aktivKlasse: btn?.classList.contains('is-active') || false,
+        gewaehltKlasse: btn?.classList.contains('is-selected') || false,
         aktiv: world?.classList.contains('filter-aktiv') || false,
-        hervorgehoben: world?.querySelectorAll('.ship-dept.is-filter-active').length || 0,
-        raeume: world?.querySelectorAll('.ship-dept.is-filter-active .agent-room').length || 0,
-        gedimmt: world?.querySelectorAll('.ship-dept:not(.is-filter-active)').length || 0,
+        hervorgehoben: world?.querySelectorAll('.px-dept.is-filter-active').length || 0,
+        raeume: world?.querySelectorAll('.px-dept.is-filter-active .px-room[data-agent]').length || 0,
+        gedimmt: world?.querySelectorAll('.px-dept:not(.is-filter-active)').length || 0,
         aktivDeckkraft: deckkraft(aktiv),
         gedimmtDeckkraft: deckkraft(gedimmt),
         seite: document.querySelector('#shipSideInhalt .sd-kicker')?.textContent?.trim() || '',
       };
     });
     pruefe(filterAn.gedrueckt, 'Legendenfilter meldet keinen aktiven Zustand');
+    pruefe(filterAn.aktivKlasse, 'Legendenfilter wird in der Legende nicht hervorgehoben');
+    pruefe(!filterAn.gewaehltKlasse, 'Legendenfilter trägt zusätzlich die Auswahlmarkierung');
     pruefe(filterAn.titel === 'Filter lösen', `Legendenfilter hat den Titel «${filterAn.titel}»`);
     pruefe(filterAn.aktiv, 'Legendenfilter aktiviert die Hervorhebung im Schiff nicht');
     pruefe(filterAn.hervorgehoben === 1 && filterAn.raeume === 10,
@@ -316,12 +443,16 @@ async function main() {
       return {
         gedrueckt: btn?.getAttribute('aria-pressed') === 'true',
         titel: btn?.title || '',
+        aktivKlasse: btn?.classList.contains('is-active') || false,
+        gewaehltKlasse: btn?.classList.contains('is-selected') || false,
         aktiv: world?.classList.contains('filter-aktiv') || false,
-        hervorgehoben: world?.querySelectorAll('.ship-dept.is-filter-active').length || 0,
+        hervorgehoben: world?.querySelectorAll('.px-dept.is-filter-active').length || 0,
       };
     });
     pruefe(!filterAus.gedrueckt && !filterAus.aktiv && filterAus.hervorgehoben === 0,
       'Legendenfilter lässt sich durch erneutes Tippen nicht lösen');
+    pruefe(!filterAus.aktivKlasse && filterAus.gewaehltKlasse,
+      'Auswahlmarkierung kehrt nach dem Lösen des Filters nicht zur gewählten Abteilung zurück');
     pruefe(filterAus.titel === 'Abteilung im Schiff hervorheben',
       `Gelöster Legendenfilter hat den Titel «${filterAus.titel}»`);
 
@@ -331,6 +462,17 @@ async function main() {
 
     // Dieselben Mindestgrössen und die vollständige Fit-Sichtbarkeit zusätzlich
     // auf dem schmalen 320-px-Viewport prüfen.
+    const mobilZusatz = [
+      await pruefeMobilViewport(browser, {
+        label: 'Porträt 360×800', width: 360, height: 800,
+        minBreite: 22, minHoehe: 23,
+      }),
+      await pruefeMobilViewport(browser, {
+        label: 'Querformat 844×390', width: 844, height: 390,
+        minBreite: 31, minHoehe: 32,
+      }),
+    ];
+
     let fit320;
     const schmalContext = await browser.newContext({
       viewport: { width: 320, height: 700 },
@@ -342,15 +484,16 @@ async function main() {
     try {
       const schmalPage = await schmalContext.newPage();
       await ladeSchiff(schmalPage);
-      // Mindestwerte knapp unter den gemessenen 26,6 × 31,2 px bei 320 px.
-      fit320 = await pruefeFit(schmalPage, 320, 26, 31);
+      // Mindestwerte knapp unter den gemessenen 19,8 × 20,5 px bei 320 px.
+      fit320 = await pruefeFit(schmalPage, 320, 19.5, 20);
     } finally {
       await schmalContext.close();
     }
 
     erfolgreich = true;
     const fitText = (fit) => `${fit.zoom} · min. ${fit.raeume.minBreite.toFixed(1)}×${fit.raeume.minHoehe.toFixed(1)} px · ${fit.raeume.anzahl - fit.raeume.ausserhalb}/${fit.raeume.anzahl} sichtbar`;
-    console.log(`Touch OK: Pan ${Math.round(Math.abs(nachPan.x - vorPan.x))} px · Pinch ${(vorPinch.zoom * 100).toFixed(0)} % → ${(nachPinch.zoom * 100).toFixed(0)} % · ${cluster.clusters} Cluster ohne Doppelung · Tippen öffnet ${raumName} · Filter A 10 Räume / gelöst · Fit 390 px ${fitText(fit390)} · Fit 320 px ${fitText(fit320)}`);
+    const zusatzText = mobilZusatz.map(z => `${z.label} ${fitText(z.fit)}`).join(' · ');
+    console.log(`Touch OK: Pan ${Math.round(Math.abs(nachPan.x - vorPan.x))} px · Pinch ${(vorPinch.zoom * 100).toFixed(0)} % → ${(nachPinch.zoom * 100).toFixed(0)} % · ${cluster.clusters} Cluster ohne Doppelung · Tippen öffnet ${raumName} · Filter A 10 Räume / gelöst · Fit 390 px ${fitText(fit390)} · ${zusatzText} · Fit 320 px ${fitText(fit320)}`);
   } catch (fehler) {
     fehlerText = fehler instanceof Error ? fehler.message : String(fehler);
     throw fehler;

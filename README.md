@@ -38,22 +38,31 @@ Die Company-Schicht ist additiv und standardmäßig **nicht** in den laufenden
 Paper-Takt eingebunden (`[unternehmen] aktiv = false`). Sie enthält noch keine
 3D-Welt, keine LLM-Anbindung und keine echten Orders.
 
-### Company-Lese-API
+### Company-API
 
-Die ersten Phase-2-Endpunkte liegen geschützt unter `/api/company` und liefern
-nur Daten aus SQLite, ohne Tasks zu erzeugen oder Handler zu starten:
+Die Phase-2-Endpunkte liegen geschützt unter `/api/company`. Lese-Endpunkte
+liefern ausschließlich Daten aus SQLite; Schreib-Endpunkte validieren jeden
+Entwurf, protokollieren ihn in der Audit-Kette und starten keine Handler:
 
 - `GET /api/company/overview` — Kennzahlen, Agentenstatus, Abteilungen, letzte
   Konferenz, offene Entscheidungen und die zehn wichtigsten offenen Aufgaben.
 - `GET /api/company/agents` — alle 103 Profile mit Status, offenen Aufgaben und
   letzter Aufgabe.
-- `GET /api/company/agents/{id}` — Profil, Historie, aktuelle Aufgabe und
-  Nachrichten eines Agenten.
+- `GET /api/company/agents/{id}` — Profil, Historie, aktuelle Aufgabe,
+  Nachrichten und persönliche Erinnerungen eines Agenten.
 - `GET /api/company/tasks` — Aufgabenqueue; standardmäßig nur offene Aufgaben,
   filterbar mit `dept`, `state` (`offen`, `alle` oder ein Zustand), `mindestprioritaet`
   und `limit`.
 - `GET /api/company/messages` — Nachrichten und Threads, filterbar mit `agent`,
-  `dept`, `thread_id`, `seit` und `limit`.
+  `dept`, `thread_id`, `seit`, `nur_offen` und `limit`.
+- `GET /api/company/messages/{id}` — eine Nachricht mit Belegen und Quittung.
+- `POST /api/company/messages` — direkte, Abteilungs- oder Broadcast-Nachricht;
+  Empfänger werden serverseitig geprüft, jede Nachricht erhält einen Thread.
+- `POST /api/company/messages/{id}/ack` — Nachricht als ihr Empfänger quittieren.
+- `GET /api/company/agents/{id}/memories` — persönliche Erinnerungen, optional
+  nach `scope` gefiltert.
+- `POST /api/company/agents/{id}/memories` — persönlichen Eintrag anlegen oder
+  aktualisieren; Scope und Schlüssel werden validiert.
 - `GET /api/company/rooms` — 2D-Raumregister mit Abteilungen,
   Gemeinschafts- und Agentenräumen sowie dynamischem Raumstatus.
 - `GET /api/company/conference/latest` — letzte Konferenz mit Teilnahme,
@@ -64,7 +73,27 @@ nur Daten aus SQLite, ohne Tasks zu erzeugen oder Handler zu starten:
 Jede Antwort nennt `data_state` (`live`/`empty`), `generated_at` in UTC und
 `source_refs`. Fehlende Daten bleiben leer; es gibt keine Ersatzzahlen. Die
 Raumschiff-Ansicht liest Übersicht, Agentenstatus und offene Aufgaben aus diesen
-Endpunkten und aktualisiert sie alle 30 Sekunden, solange sie geöffnet ist.
+Endpunkten und aktualisiert sie alle 30 Sekunden, solange sie geöffnet ist. In der
+Agenten-Detailspalte stehen zusätzlich Nachrichten und persönliche Erinnerungen;
+Nachrichten lassen sich dort senden, eingehende Nachrichten quittieren.
+
+Nachrichten sind auf direkte Kontakte, Abteilungsziele (`dept:A`) und Broadcasts
+(`all`, nur A1/S1–S3) begrenzt. Abteilungsziele dürfen Leitung und Sekretariat
+setzen; ein Agent kann sich nicht selbst adressieren. Jede Nachricht und jede
+Gedächtnisänderung erzeugt ein Audit-Event. Persönliche Erinnerungen sind über
+`agent_id`, `scope` und `key` getrennt und werden als JSON gespeichert.
+
+Broadcasts haben einen persistenten Cooldown und ein 24-Stunden-Limit pro
+Absender (`broadcast_cooldown_sekunden`, Standard 900 s;
+`broadcast_max_pro_tag`, Standard 10 in 24 h; beide in `company_policies`).
+Eine Überschreitung liefert HTTP 429 mit `Retry-After`; direkte und
+Abteilungsnachrichten bleiben davon unberührt. Offene Quittungen werden nach
+`ack_erinnerung_nach_minuten` (Standard 30) automatisch im ursprünglichen
+Thread erinnert (`ack_erinnerung_wiederholen_minuten`, Standard 120;
+`ack_erinnerungen_max`, Standard 1). Erinnerungen sind selbst nicht
+quittungspflichtig und werden über eigene
+`message_reminder`-Audit-Events genau einmal gezählt. Sie laufen im Company-Lauf
+und im Hintergrund-Takt; ein Lauf ohne offene Quittungen schreibt nichts.
 
 ## Dauerbetrieb mit Login und HTTPS
 
@@ -78,7 +107,9 @@ Für Railway ohne eigenen Server, Caddy oder eigene Domain: siehe
 
 Der Hintergrund-Takt ist bewusst **opt-in** (`serve --takt` oder
 `ORAKEL_TAKT=1`). Er plant Paper-Takt, Konferenz, Spider (standardmäßig alle
-sechs Stunden), Intelligence, Missionen und optional die Company-Schicht.
+sechs Stunden), Intelligence, Missionen und optional die Company-Schicht. Im
+laufenden Takt werden zusätzlich offene Quittungen nach Frist erinnert
+(`[unternehmen] erinnerungen_intervall_minuten`).
 Fehler erhalten einen persistenten exponentiellen Backoff; DB-, RSS- und
 Speichergrenzen pausieren schreibintensive Jobs, statt den Prozess volllaufen
 zu lassen. Jeder Lauf wird in `betrieb_laeufe` protokolliert.
@@ -109,7 +140,7 @@ Unter Windows zusätzlich `pip install MetaTrader5` (nur dort verfügbar) und in
 | Risiko | 1 % je Trade bis Stop, 10 % Not-Stop, max. 15 Positionen, Engagement, Bargeld, Korrelation |
 | Broker-Schicht | `CsvBroker` (Paper-Replay), `MockBroker`, `MT5Broker` (Windows, Paper-Sperre) |
 | Agenten | 80 bestehende Agenten in 8 Abteilungen, jeder mit echter Aufgabe und Ergebnis in der DB |
-| Company-Schicht | Phase 1: 103 Profile, SQLite-Queue mit Lease/Retry, Policy-Engine, Audit-Kette; Company-Lese-API für Übersicht, Agenten, Aufgaben, Details, Nachrichten, Räume und Konferenz; 2D-Agenten-Querschnitt mit 103 Räumen; 3D noch nicht |
+| Company-Schicht | Phase 1: 103 Profile, SQLite-Queue mit Lease/Retry, Policy-Engine, Audit-Kette; Company-API für Übersicht, Agenten, Aufgaben, Details, Nachrichten, Räume und Konferenz; Agentenkommunikation mit Threads/Ack und persönliche Gedächtnisse; 2D-Agenten-Querschnitt mit 103 Räumen; 3D noch nicht |
 | Konferenz | 00:00 Europe/Zurich, Nachholen verpasster Termine, Protokoll im Vault |
 | Wissenszentrum | Obsidian-Vault mit Frontmatter, Tags, `[[Links]]` |
 | Dashboard | Orakel-Design, 12 Ansichten, Live-Polling, 2D-Agenten-Querschnitt, «Lauf starten» |
@@ -170,23 +201,30 @@ tests/           Risiko, Backtest, Daten, Bericht
 ## Doku-Prüfung
 
 `python scripts/pruefe_doku.py` prüft die versionierten Markdown-Dateien auf
-relative Links, vorhandene Überschriften-Anker sowie veraltete Deck- und
-Navigationsbegriffe. Jeder relative Pfad wird vom jeweiligen Dokument aus
-aufgelöst; externe URLs werden übersprungen. Relative Links mit `#Sprungmarke`
-werden zusätzlich gegen die aus Markdown-Überschriften erzeugten GitHub-Anker und
-explizite `id`-Attribute in HTML-Überschriften (`<h1>`–`<h6>`) geprüft, auch reine
-Sprungmarken innerhalb derselben Datei. Der Lauf schlägt fehl, wenn ein Ziel oder
-ein Anker fehlt oder ein alter Deck- oder Navigationsbegriff auftaucht.
-`--negativtest` erzeugt absichtlich einen kaputten Link, vier falsche Anker und
-mehrere alte Deck- und Navigationsangaben; alles muss erkannt werden. Der eigene
-CI-Job `doku` führt beide Läufe aus, sobald Markdown-Dateien oder das Prüfskript
+relative Links, vorhandene Überschriften-Anker, veraltete Deck- und
+Navigationsbegriffe sowie englische Altnamen der Agentenabteilungen. Jeder
+relative Pfad wird vom jeweiligen Dokument aus aufgelöst; externe URLs werden
+übersprungen. Relative Links mit `#Sprungmarke` werden zusätzlich gegen die aus
+Markdown-Überschriften erzeugten GitHub-Anker und explizite `id`-Attribute in
+HTML-Überschriften (`<h1>`–`<h6>`) geprüft, auch reine Sprungmarken innerhalb
+derselben Datei. Der Lauf schlägt fehl, wenn ein Ziel oder ein Anker fehlt, ein
+alter Deck- oder Navigationsbegriff auftaucht oder ein englischer Altname einer
+Agentenabteilung erscheint. Der Normallauf verlangt ausserdem mindestens einen
+gültigen Ankerlink; sonst würde eine stillschweigend entfernte
+Sprungmarkenprüfung auffallen. Die historischen Planungsdokumente `MASTERPLAN.md`
+und `RAUMBUCH.md` sind ausgenommen, weil sie den früheren 3D-Prototyp und die
+damaligen Raumnamen dokumentieren. `--negativtest` erzeugt absichtlich einen
+kaputten Link, vier falsche Anker, mehrere alte Deck- und Navigationsangaben
+sowie neun englische Altnamen; alles muss erkannt werden. Der eigene CI-Job
+`doku` führt beide Läufe aus, sobald Markdown-Dateien oder das Prüfskript
 geändert wurden; andernfalls wird er übersprungen.
 
 ### Lokaler Pre-Commit-Hook
 
 Der versionierte Hook `.githooks/pre-commit` startet die Doku-Prüfung, sobald
-Markdown-Dateien oder `scripts/pruefe_doku.py` gestaged sind. Einmalig im
-Repository aktivieren:
+Markdown-Dateien oder `scripts/pruefe_doku.py` gestaged sind. Ist das Prüfskript
+selbst gestaged, führt er zusätzlich den Negativtest `--negativtest` aus. Einmalig
+im Repository aktivieren:
 
 ```sh
 git config core.hooksPath .githooks
@@ -194,12 +232,20 @@ git config core.hooksPath .githooks
 
 Ohne relevante Änderungen beendet sich der Hook sofort.
 
+## Manuelle iPhone-Safari-Prüfung
+
+Für die Abnahme der Schiffsansicht auf echter Safari-Hardware:
+[Checkliste für Pan, Pinch und Tippen](docs/raumschiff/IPHONE-SAFARI-CHECKLISTE.md).
+Sie ergänzt den automatisierten Touch-Test und deckt Porträt, Querformat,
+Safari-Seitenzoom und die Legendenbedienung ab.
+
 ## Browser-Prüfung bei grosser Schrift
 
 `scripts/pruefe-text250.mjs` skaliert die Schrift im Dashboard auf 250 %
 (Faktor 2,5 auf berechnete Schriftgrössen und Zeilenhöhen). Bei 360, 320 und
 280 px prüft es, ob Inhalte seitlich aus ihrem Kasten oder aus dem Viewport
-laufen. Tabellen werden zusätzlich mit langen deutschen Komposita belastet und
+laufen. Die feste Pixel-Art des Raumschiffs ist von der Textskalierung
+ausgenommen; die Agentendetails in der rechten Spalte skalieren mit. Tabellen werden zusätzlich mit langen deutschen Komposita belastet und
 als Karten geprüft. Im Lab überfährt er ausserdem die Kapitalkurve und prüft
 den Tooltip (Kapitalstand, Datum, Lage im Kasten, Verschwinden von Tooltip und
 Live-Region beim Verlassen, Wiederkommen nach erneutem Überfahren mit demselben
@@ -247,11 +293,12 @@ zuerst den sauberen Zustand und schreibt dann absichtlich falsche Kerndaten
 ins DOM: einen falschen Strategie-KPI, eine falsche Research-Kandidatenzahl,
 eine falsche Agenten-Kopfzahl, einen entfernten Abteilungstab im Agentenraum,
 einen entfernten sichtbaren Schiffsabteilungscluster, einen geleerten
-Schiffscluster, einen zusätzlichen Agenten in einem zweiten Schiffscluster und
-einen falschen Konferenz-Testplan. Jeder Fall muss einen Befund auslösen; die
-CI verlangt `Negativtest OK: 8/8`, damit die Inhaltsprüfung auch
-Strukturänderungen im Agentenraum und am Raumschiff nicht stillschweigend
-übersieht.
+Schiffscluster, einen fehlenden Agenten in einem Schiffscluster, einen
+zusätzlichen Agenten in einem zweiten Schiffscluster, eine doppelte Agenten-ID
+bei unveränderter Agentenzahl und einen falschen Konferenz-Testplan. Jeder Fall
+muss einen Befund auslösen; die CI verlangt `Negativtest OK: 10/10`, damit die
+Inhaltsprüfung auch Strukturänderungen im Agentenraum und am Raumschiff nicht
+stillschweigend übersieht.
 
 Der Standardlauf umfasst alle zwölf Ansichten inklusive der weiterhin geprüften
 Inhaltsansichten Agentenraum, Konferenz und Raumschiff. Der CI-Job
@@ -290,18 +337,26 @@ bei Pfeil rechts im CI eine echte Textänderung.
 Einschränken lässt sich der Lauf mit `--ansichten lab,kb --breiten 360,280`,
 die Adresse mit `--url http://127.0.0.1:8000`, Tabellen mit `--ohne-tabellen`.
 Mit `--bilder <verzeichnis>` schreibt der Lauf bei Befunden je Ansicht und
-Breite einen Screenshot sowie den HTML-Zustand der betroffenen Ansicht. Mit
+Breite einen Screenshot, den HTML-Zustand der betroffenen Ansicht und die
+konkreten Befunde in `text250-befunde.txt`. Mit
 `--bild-praefix <name>` erhalten diese Dateien einen Namenspräfix; der
 Seed-Tastaturlauf nutzt `seed-tastatur-`, damit seine Diagnosen im gemeinsamen
 Artefakt nicht die Namen des Hauptlaufs überschreiben. Schiffscluster-Befunde
 erhalten eigene Bildnamen wie
 `320px-ship-cluster-01-abteilung-b-hat-11-statt-10-agenten.png`; mit Präfix
 entsprechend `seed-tastatur-320px-ship-cluster-01-...png`. Ein CI-Selbsttest
-entfernt absichtlich Cluster S, schreibt seine Diagnose mit dem Präfix
-`selbsttest-` und verlangt den Befund samt Screenshotpfad. In GitHub Actions
+entfernt absichtlich Cluster S und einen Agenten aus Cluster A, erzeugt damit
+mehrere gleichzeitige Cluster-Befunde, schreibt seine Diagnose mit dem Präfix
+`selbsttest-` und verlangt für jeden Befund einen eigenen, nicht leeren
+Screenshot mit eindeutigem Namen sowie die Befunde in
+`selbsttest-text250-befunde.txt`. Ein eigener CI-Schritt prüft zusätzlich, dass
+mindestens zwei Clusterbefunde im selben Lauf eigene, nicht-leere
+Screenshotdateien mit eindeutigen Namen erhalten haben. Ein zweiter Selbsttest (`--selbsttest-agent`)
+entfernt gezielt einen Agenten aus Cluster A und verlangt den Befund samt Screenshot
+`selbsttest-agent-...-abteilung-a-hat-9-statt-10-agenten.png`. In GitHub Actions
 läuft derselbe Prüflauf als eigener
 Job `text250` der Workflow-Datei `.github/workflows/tests.yml`; schlägt er fehl,
-lädt er Bilder und HTML als Artefakt `text250-diagnose` und das Serverprotokoll als
+lädt er Bilder, Befundtexte und HTML als Artefakt `text250-diagnose` und das Serverprotokoll als
 `text250-serverlog` hoch (je 7 Tage).
 
 Nach einem fehlgeschlagenen, abgebrochenen oder abgelaufenen Lauf. Die Befehle
@@ -311,7 +366,7 @@ setzen eine angemeldete GitHub CLI voraus (`gh auth login`):
 # Letzte Läufe des Workflows anzeigen
 gh run list --workflow tests.yml --limit 5
 
-# Serverlog und Diagnose (Screenshots + HTML) des gewünschten Laufs herunterladen
+# Serverlog und Diagnose (Screenshots + Befunde + HTML) des gewünschten Laufs herunterladen
 gh run download <run-id> -n text250-serverlog -D artifacts/text250-ci
 gh run download <run-id> -n text250-diagnose -D artifacts/text250-ci
 
@@ -364,7 +419,7 @@ Zwei neue Ansichten im Dashboard, vollständig aus echten Daten:
 
 - **Weltkugel**: Handelsplätze je Symbol, Kurs, 24-h-Änderung, ATR, Regime und Korrelationen
   (letzte 500 Kerzen). Die Kugel ist Darstellung — die Zahlen kommen aus SQLite.
-- **Raumschiff**: 2D-Agenten-Querschnitt mit 103 Company-Agentenräumen in elf
+- **Raumschiff**: Pixel-Art-Agenten-Querschnitt mit 103 Company-Agentenräumen in elf
   Abteilungen (A–J und S), Zoom/Pan und rechter Detailspalte. Ein Klick öffnet Rolle,
   Status und Aufgabe; Agentenraum und Konferenz liegen als Gemeinschaftsräume im
   Schiff, die bisherigen Panels bleiben eingeklappt erhalten.
