@@ -1391,6 +1391,24 @@ async function pruefeNegativtest(url) {
         }),
       },
       {
+        ansicht: 'ship',
+        name: 'Raumschiff-Agent doppelt',
+        mutieren: () => page.evaluate(() => {
+          const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
+          const a = cluster.find(el => (el.querySelector('.px-dept-head b')?.textContent || '').trim() === 'A');
+          const b = cluster.find(el => (el.querySelector('.px-dept-head b')?.textContent || '').trim() === 'B');
+          if (!a || !b) throw new Error('Schiffscluster A und B nicht gefunden');
+          const raumA = a.querySelector('.px-room[data-agent]');
+          const raumB = b.querySelector('.px-room[data-agent]');
+          if (!raumA || !raumB) throw new Error('Agentenräume in A oder B nicht gefunden');
+          const id = raumA.dataset.agent;
+          if (!id || raumB.dataset.agent === id) throw new Error('Keine unterschiedlichen Agenten-IDs gefunden');
+          raumB.dataset.agent = id;
+          const raeume = document.querySelectorAll('#shipWorld .px-room[data-agent]');
+          if (raeume.length !== 103) throw new Error(`Doppelte ID hat die Agentenzahl auf ${raeume.length} verändert`);
+        }),
+      },
+      {
         ansicht: 'konf',
         name: 'Konferenz-Testplan',
         mutieren: () => page.evaluate(() => {

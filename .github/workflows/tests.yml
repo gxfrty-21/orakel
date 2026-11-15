@@ -82,10 +82,10 @@ jobs:
         run: python -m pytest -q
 
   # Eigener sichtbarer Job: Prüft die versionierten Markdown-Dateien auf
-  # relative Links, Markdown- und HTML-Anker sowie alte Raumschiff- und
-  # Navigationsbegriffe.
-  # Der Negativtest stellt sicher, dass ein kaputter Link und alte Begriffe
-  # tatsächlich auffallen.
+  # relative Links, Markdown- und HTML-Anker, alte Raumschiff- und
+  # Navigationsbegriffe sowie englische Altnamen der Agentenabteilungen.
+  # Der Negativtest stellt sicher, dass ein kaputter Link, alte Begriffe und
+  # englische Altnamen tatsächlich auffallen.
   doku:
     name: Doku-Prüfung
     needs: changes
@@ -263,16 +263,17 @@ jobs:
           # Der Negativtest schreibt absichtlich falsche Kerndaten ins DOM und
           # muss für jede der fünf Inhaltsansichten, den fehlenden Abteilungstab,
           # den fehlenden und den geleerten Schiffsabteilungscluster, einen
-          # fehlenden Agenten sowie einen zusätzlichen Agenten in einem zweiten
-          # Cluster einen Befund erzeugen.
+          # fehlenden Agenten, einen zusätzlichen Agenten in einem zweiten
+          # Cluster sowie eine doppelte Agenten-ID bei gleicher Agentenzahl
+          # einen Befund erzeugen.
           if ! node scripts/pruefe-text250.mjs --negativtest > artifacts/text250/negativtest.log 2>&1; then
             echo "--- Negativtest fehlgeschlagen ---"
             cat artifacts/text250/negativtest.log
             exit 1
           fi
           cat artifacts/text250/negativtest.log
-          if ! grep -q 'Negativtest OK: 9/9' artifacts/text250/negativtest.log; then
-            echo "Negativtest hat nicht alle neun Fälle geprüft"
+          if ! grep -q 'Negativtest OK: 10/10' artifacts/text250/negativtest.log; then
+            echo "Negativtest hat nicht alle zehn Fälle geprüft"
             exit 1
           fi
 
@@ -314,6 +315,38 @@ jobs:
           test -s artifacts/text250/selbsttest/selbsttest-agent-360px-ship-cluster-01-abteilung-a-hat-9-statt-10-agenten.png
           test -s artifacts/text250/selbsttest/selbsttest-agent-360px-ship.html
           test -s artifacts/text250/selbsttest/selbsttest-agent-text250-befunde.txt
+
+      # Der Selbsttest erzeugt mehrere Clusterbefunde in einem Lauf. Dieser
+      # Schritt prüft unabhängig vom Testprozess, dass jeder Befund eine eigene,
+      # nicht-leere Screenshotdatei erhalten hat und keine Namen doppelt sind.
+      - name: Eindeutige Screenshotnamen bei mehreren Clusterfehlern prüfen
+        run: |
+          set -euo pipefail
+          mapfile -t bilder < <(grep '^Screenshot: ' artifacts/text250/selbsttest.log | sed 's/^Screenshot: //')
+          if [ "${#bilder[@]}" -lt 2 ]; then
+            echo "Zu wenige Cluster-Screenshots: ${#bilder[@]} (erwartet mindestens 2)"
+            exit 1
+          fi
+          doppelt=$(printf '%s\n' "${bilder[@]}" | sort | uniq -d)
+          if [ -n "$doppelt" ]; then
+            echo "Doppelte Screenshot-Namen:"
+            printf '%s\n' "$doppelt"
+            exit 1
+          fi
+          for bild in "${bilder[@]}"; do
+            if [ ! -s "$bild" ]; then
+              echo "Screenshot fehlt oder ist leer: $bild"
+              exit 1
+            fi
+          done
+          anzahl=$(find artifacts/text250/selbsttest -maxdepth 1 \
+            -name 'selbsttest-360px-ship-cluster-*.png' -size +0c | wc -l)
+          if [ "$anzahl" -ne "${#bilder[@]}" ]; then
+            echo "Screenshot-Anzahl passt nicht zum Selbsttestlog: ${anzahl} Dateien, ${#bilder[@]} Logeinträge"
+            exit 1
+          fi
+          echo "Cluster-Screenshots eindeutig: ${#bilder[@]}"
+
 
 
       # Eigener, fokussierter Lauf: Die fünf API-Stichproben werden auf einer
