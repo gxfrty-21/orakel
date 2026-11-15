@@ -9,6 +9,8 @@ let graphWindow = '7d', graphDaten = null, kalibrierungDaten = null;
 let betriebDaten = null, betriebFehler = null, betriebTimer = null;
 let companyDaten = null, companyFehler = null, companyTimer = null, companyLaden = false;
 let shipAuswahl = { typ: 'overview' }, shipDeptFilter = null, shipZoom = 1, shipX = 0, shipY = 0, shipZoomInit = false;
+let shipDetail = null, shipDetailFehler = null, shipDetailLaden = false;
+let shipDetailFuer = null, shipDetailAnfrage = 0, shipNachrichtStatus = null, shipDraft = null;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = (v,d=2) => (v==null||isNaN(v)) ? '–' : Number(v).toLocaleString('de-CH',{minimumFractionDigits:d,maximumFractionDigits:d});
 const pct = (v,d=1) => v==null ? '–' : num(v,d)+' %';
@@ -1688,6 +1690,217 @@ function renderShipWorld(){
   renderShipDetail();
 }
 
+
+function shipWertText(wert){
+  if(wert === null || wert === undefined) return '–';
+  const roh = typeof wert === 'string' ? wert : JSON.stringify(wert);
+  const text = String(roh ?? '–');
+  return text.length > 220 ? text.slice(0, 217) + '…' : text;
+}
+
+function shipStandardEmpfaenger(a){
+  const agenten = ((companyDaten && companyDaten.agents && companyDaten.agents.agenten) || [])
+    .filter(x => x.agent_id !== a.agent_id && x.active !== false);
+  const berichtet = agenten.find(x => x.agent_id === a.reports_to);
+  return (berichtet || agenten.find(x => x.dept === a.dept) || agenten[0] || {}).agent_id || '';
+}
+
+function shipEmpfaengerOptionen(a, gewaehlt){
+  const agenten = ((companyDaten && companyDaten.agents && companyDaten.agents.agenten) || [])
+    .filter(x => x.agent_id !== a.agent_id && x.active !== false);
+  const direkt = agenten.map(x => {
+    const sel = x.agent_id === gewaehlt ? ' selected' : '';
+    const deptName = SHIP_DEPT_NAMEN[x.dept] || x.dept_name || x.dept;
+    return `<option value="${esc(x.agent_id)}"${sel}>${esc(x.rufname)} · ${esc(x.dept)} ${esc(deptName)}</option>`;
+  }).join('');
+  let html = direkt ? `<optgroup label="Direkt">${direkt}</optgroup>` : '';
+  if(a.rank === 'leitung' || a.rank === 'sekretariat'){
+    const depts = shipDeptList().filter(d => a.rank === 'sekretariat' || d.code === a.dept);
+    const opt = depts.map(d => {
+      const wert = 'dept:' + d.code;
+      const sel = wert === gewaehlt ? ' selected' : '';
+      return `<option value="${esc(wert)}"${sel}>Abteilung ${esc(d.code)} · ${esc(d.name)}</option>`;
+    }).join('');
+    if(opt) html += `<optgroup label="Abteilung">${opt}</optgroup>`;
+  }
+  if(['A1','S1','S2','S3'].includes(a.agent_id)){
+    const sel = gewaehlt === 'all' ? ' selected' : '';
+    html += `<optgroup label="Broadcast"><option value="all"${sel}>Alle aktiven Agenten</option></optgroup>`;
+  }
+  return html;
+}
+
+function shipDraftNeu(a){
+  return { fuer:a.agent_id, an:shipStandardEmpfaenger(a), art:'status', betreff:'', text:'', belege:'', quittung:true };
+}
+
+function shipNachrichtHtml(m, a){
+  const eingehend = String(m.to_agent) === String(a.agent_id);
+  const partner = eingehend ? (m.from_rufname || m.from_agent) : (m.to_rufname || m.to_agent);
+  const quittung = m.ack_at
+    ? 'quittiert ' + esc(kurzZeit(m.ack_at) || '')
+    : (eingehend ? 'offen' : 'ausgehend');
+  const ack = eingehend && !m.ack_at
+    ? `<button type="button" class="sd-msg-ack" data-ship-ack="${Number(m.id)}">Quittieren</button>` : '';
+  const belege = Array.isArray(m.evidence) && m.evidence.length
+    ? `<small class="sd-msg-evidence">Belege: ${m.evidence.map(x => esc(x)).join(' · ')}</small>` : '';
+  return `<article class="sd-msg ${eingehend ? 'ist-eingang' : 'ist-ausgang'}">
+    <div class="sd-msg-kopf"><b>${esc(m.subject || '(ohne Betreff)')}</b><span>${esc(m.kind || 'status')}</span></div>
+    <small class="sd-msg-meta">${eingehend ? 'von' : 'an'} ${esc(partner || '–')} · ${esc(kurzZeit(m.created_at) || '–')} · ${quittung}</small>
+    <p class="sd-msg-body">${esc(m.body || '')}</p>${belege}${ack}</article>`;
+}
+
+function shipKommunikationHtml(a){
+  const detail = shipDetail && shipDetail.profil && shipDetail.profil.agent_id === a.agent_id ? shipDetail : null;
+  const nachrichten = detail && Array.isArray(detail.nachrichten) ? detail.nachrichten : [];
+  const erinnerungen = detail && Array.isArray(detail.erinnerungen) ? detail.erinnerungen : [];
+  if(!shipDraft || shipDraft.fuer !== a.agent_id) shipDraft = shipDraftNeu(a);
+  const draft = shipDraft;
+  const arten = [['status','Status'],['handoff','Übergabe'],['question','Frage'],['answer','Antwort'],['task_request','Auftrag'],['task_result','Ergebnis'],['review_request','Review'],['review_result','Review-Ergebnis'],['alert','Alarm'],['decision','Entscheid']];
+  const artOptionen = arten.map(([wert, text]) => `<option value="${wert}"${draft.art === wert ? ' selected' : ''}>${text}</option>`).join('');
+  const formular = detail ? `<form class="sd-form" data-ship-form>
+    <label>Empfänger<select name="an" data-ship-feld="an" required>${shipEmpfaengerOptionen(a, draft.an)}</select></label>
+    <div class="sd-form-zeile">
+      <label>Art<select name="art" data-ship-feld="art">${artOptionen}</select></label>
+      <label class="sd-check"><input type="checkbox" name="quittung" data-ship-feld="quittung"${draft.quittung ? ' checked' : ''}> Quittung anfordern</label>
+    </div>
+    <label>Betreff<input name="betreff" maxlength="200" value="${esc(draft.betreff)}" data-ship-feld="betreff" required autocomplete="off"></label>
+    <label>Nachricht<textarea name="text" rows="3" maxlength="8000" data-ship-feld="text" required>${esc(draft.text)}</textarea></label>
+    <label>Belege <span>(kommagetrennt)</span><input name="belege" maxlength="2000" value="${esc(draft.belege)}" data-ship-feld="belege" placeholder="task:12, article:4821" autocomplete="off"></label>
+    <button type="submit" class="sd-send">Nachricht senden</button>
+  </form>` : '';
+  const liste = nachrichten.length
+    ? `<div class="sd-msg-liste">${nachrichten.map(m => shipNachrichtHtml(m, a)).join('')}</div>`
+    : '<p class="sd-leer">Keine Nachrichten.</p>';
+  const memory = erinnerungen.length ? `<div class="sd-memory-liste">${erinnerungen.map(e => `
+    <div class="sd-memory"><div><b>${esc(e.scope)} · ${esc(e.key)}</b><small>${esc(kurzZeit(e.updated_at) || '–')}</small></div><code>${esc(shipWertText(e.value))}</code></div>`).join('')}</div>`
+    : '<p class="sd-leer">Noch keine persönlichen Erinnerungen.</p>';
+  const status = shipNachrichtStatus
+    ? `<p class="sd-hinweis ${shipNachrichtStatus.typ}" role="status">${esc(shipNachrichtStatus.text)}</p>` : '';
+  const fehler = shipDetailFehler
+    ? `<p class="sd-hinweis fehler" role="status">${esc(shipDetailFehler)}</p>` : '';
+  const laden = !detail
+    ? (shipDetailLaden ? '<p class="sd-leer">Nachrichten und Erinnerungen werden geladen …</p>' : '')
+    : '';
+  return `<div class="sd-kommunikation" data-ship-kommunikation>
+    <div class="sd-block">
+      <div class="sd-block-kopf"><small>NACHRICHTEN${nachrichten.length ? ` · ${nachrichten.length}` : ''}</small>
+        <button type="button" class="sd-mini" data-ship-detail-refresh${shipDetailLaden ? ' disabled' : ''}>${shipDetailLaden ? 'lädt …' : 'Aktualisieren'}</button></div>
+      ${fehler}${status}${laden}${detail ? liste + formular : ''}
+    </div>
+    <div class="sd-block"><small>ERINNERUNGEN${erinnerungen.length ? ` · ${erinnerungen.length}` : ''}</small>
+      ${detail ? memory : (shipDetailLaden ? '<p class="sd-leer">Wird geladen …</p>' : '')}</div>
+  </div>`;
+}
+
+function ladeShipDetail(agentId, erzwingen = false){
+  if(!erzwingen && shipDetailFuer === agentId && (shipDetailLaden || shipDetail)) return;
+  const token = ++shipDetailAnfrage;
+  shipDetailFuer = agentId;
+  shipDetailLaden = true;
+  shipDetailFehler = null;
+  renderShipDetail(true);
+  fetch(`/api/company/agents/${encodeURIComponent(agentId)}`, {cache:'no-store'})
+    .then(async antwort => {
+      const daten = await antwort.json().catch(() => ({}));
+      if(!antwort.ok) throw new Error(daten.fehler || ('HTTP ' + antwort.status));
+      return daten;
+    })
+    .then(daten => {
+      if(token !== shipDetailAnfrage) return;
+      shipDetail = daten;
+    })
+    .catch(e => {
+      if(token !== shipDetailAnfrage) return;
+      shipDetailFehler = String((e && e.message) || e);
+    })
+    .finally(() => {
+      if(token !== shipDetailAnfrage) return;
+      shipDetailLaden = false;
+      renderShipDetail(true);
+    });
+}
+
+function bindeShipKommunikation(side, a){
+  const form = side.querySelector('[data-ship-form]');
+  if(form){
+    form.onsubmit = ev => { ev.preventDefault(); sendeShipNachricht(a, form); };
+    form.querySelectorAll('[data-ship-feld]').forEach(el => {
+      const key = el.dataset.shipFeld;
+      const merken = () => {
+        if(shipDraft && shipDraft.fuer === a.agent_id) shipDraft[key] = el.type === 'checkbox' ? el.checked : el.value;
+      };
+      el.addEventListener('input', merken);
+      el.addEventListener('change', merken);
+    });
+  }
+  side.querySelectorAll('[data-ship-ack]').forEach(btn => {
+    btn.onclick = () => quittiereShipNachricht(a, Number(btn.dataset.shipAck), btn);
+  });
+  const refresh = side.querySelector('[data-ship-detail-refresh]');
+  if(refresh) refresh.onclick = () => ladeShipDetail(a.agent_id, true);
+}
+
+async function sendeShipNachricht(a, form){
+  const fuer = a.agent_id;
+  const knopf = form.querySelector('button[type="submit"]');
+  const wert = name => {
+    const feld = form.querySelector(`[name="${name}"]`);
+    return feld ? feld.value : '';
+  };
+  const an = wert('an');
+  const belege = wert('belege').split(',').map(x => x.trim()).filter(Boolean);
+  if(!an){
+    shipNachrichtStatus = {typ:'fehler', text:'Bitte einen Empfänger wählen.'};
+    renderShipDetail(true);
+    return;
+  }
+  if(knopf){ knopf.disabled = true; knopf.textContent = 'Sendet …'; }
+  try{
+    const antwort = await fetch('/api/company/messages', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
+      from_agent:a.agent_id, to_agent:an, subject:wert('betreff'), body:wert('text'),
+      kind:wert('art'), evidence:belege,
+      requires_ack:Boolean(form.querySelector('[name="quittung"]')?.checked),
+    })});
+    const daten = await antwort.json().catch(() => ({}));
+    if(!antwort.ok || !daten.ok) throw new Error(daten.fehler || ('HTTP ' + antwort.status));
+    if(shipAuswahl.typ !== 'agent' || shipAuswahl.id !== fuer) return;
+    const neue = Array.isArray(daten.messages) ? daten.messages : [];
+    if(shipDetail){
+      const ids = new Set(neue.map(m => Number(m.id)));
+      shipDetail.nachrichten = [...neue, ...(shipDetail.nachrichten || []).filter(m => !ids.has(Number(m.id)))].slice(0, 25);
+    }
+    shipNachrichtStatus = {typ:'ok', text:`Nachricht an ${Number((daten.to_agents || []).length) || 1} Empfänger gesendet.`};
+    shipDraft = shipDraftNeu(a);
+    renderShipDetail(true);
+  }catch(e){
+    if(shipAuswahl.typ === 'agent' && shipAuswahl.id === fuer){
+      shipNachrichtStatus = {typ:'fehler', text:String((e && e.message) || e)};
+      renderShipDetail(true);
+    }
+  }
+}
+
+async function quittiereShipNachricht(a, id, knopf){
+  const fuer = a.agent_id;
+  if(knopf){ knopf.disabled = true; knopf.textContent = 'Quittiere …'; }
+  try{
+    const antwort = await fetch(`/api/company/messages/${id}/ack`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({agent_id:a.agent_id})});
+    const daten = await antwort.json().catch(() => ({}));
+    if(!antwort.ok || !daten.ok) throw new Error(daten.fehler || ('HTTP ' + antwort.status));
+    if(shipAuswahl.typ !== 'agent' || shipAuswahl.id !== fuer) return;
+    const m = (shipDetail && shipDetail.nachrichten || []).find(x => Number(x.id) === id);
+    if(m) m.ack_at = (daten.nachricht && daten.nachricht.ack_at) || new Date().toISOString();
+    shipNachrichtStatus = {typ:'ok', text:'Nachricht quittiert.'};
+    renderShipDetail(true);
+  }catch(e){
+    if(shipAuswahl.typ === 'agent' && shipAuswahl.id === fuer){
+      shipNachrichtStatus = {typ:'fehler', text:String((e && e.message) || e)};
+      renderShipDetail(true);
+    }
+  }
+}
+
 function setShipSelection(typ, id){
   if(shipDeptFilter){
     const raum = typ === 'agent'
@@ -1699,6 +1912,24 @@ function setShipSelection(typ, id){
     }
   }
   shipAuswahl = typ === 'agent' ? { typ:'agent', id } : { typ };
+  if(typ === 'agent'){
+    const a = ((companyDaten && companyDaten.agents && companyDaten.agents.agenten) || []).find(x => x.agent_id === id);
+    if(shipDetailFuer !== id || !shipDetail){
+      shipDetail = null;
+      shipDetailFehler = null;
+      shipNachrichtStatus = null;
+      shipDraft = a ? shipDraftNeu(a) : null;
+      ladeShipDetail(id);
+    }
+  }else{
+    shipDetailAnfrage++;
+    shipDetail = null;
+    shipDetailFehler = null;
+    shipDetailLaden = false;
+    shipDetailFuer = null;
+    shipNachrichtStatus = null;
+    shipDraft = null;
+  }
   document.querySelectorAll('#shipWorld [data-agent]').forEach(b => {
     const on = typ === 'agent' && b.dataset.agent === id;
     b.classList.toggle('on', on);
@@ -1718,13 +1949,16 @@ function setShipSelection(typ, id){
   const side = $('#shipSideInhalt'); if(side) side.scrollTop = 0;
 }
 
-function renderShipDetail(){
+function renderShipDetail(force = false){
   const side = $('#shipSideInhalt');
   if(!side) return;
   if(!companyDaten){
     side.innerHTML = `<span class="sd-kicker">RAUMSCHIFF</span><h2>Verbindung</h2><p>${companyFehler ? 'Company-API nicht erreichbar: ' + esc(companyFehler) : 'Agentenlage wird geladen …'}</p>`;
     return;
   }
+  if(!force && shipAuswahl.typ === 'agent' && shipDetail && shipDetail.profil
+     && shipDetail.profil.agent_id === shipAuswahl.id
+     && side.querySelector('[data-ship-kommunikation]')) return;
   const depts = shipDeptList();
   const agenten = (companyDaten.agents && companyDaten.agents.agenten) || [];
   const s = (companyDaten.overview && companyDaten.overview.agenten_status) || {};
@@ -1761,6 +1995,7 @@ function renderShipDetail(){
       const farbe = shipDeptFarbe(a.dept);
       const st = shipStatusKey(a);
       const letzte = a.letzte_task || null;
+      if(!shipDraft || shipDraft.fuer !== a.agent_id) shipDraft = shipDraftNeu(a);
       side.innerHTML = `<span class="sd-kicker">AGENTENRAUM · ${esc(a.dept)}</span>
         <div class="sd-head"><span class="sd-avatar" style="--dept:${farbe}">${esc((a.rufname || '?').slice(0,1).toUpperCase())}</span>
           <span class="sd-head-txt"><small>${esc(a.agent_id)} · ${esc(a.station || '–')}</small><b>${esc(a.rufname)}</b></span></div>
@@ -1770,7 +2005,9 @@ function renderShipDetail(){
           <div class="sd-kpi"><small>LÄUFT</small><b>${Number(a.davon_laufend)||0}</b></div><div class="sd-kpi"><small>BLOCKIERT</small><b>${Number(a.davon_blockiert)||0}</b></div></div>
         <div class="sd-block"><small>AUFTRAG</small><p>${esc(a.mission || 'Keine Mission hinterlegt.')}</p></div>
         <div class="sd-block"><small>LETZTE AUFGABE</small><b>${esc(letzte && letzte.title ? letzte.title : 'Keine Aufgabe')}</b><p>${esc(letzte && letzte.state_text ? letzte.state_text : '–')}</p></div>
-        <div class="sd-block"><small>BERICHTET AN</small><b>${esc(a.reports_to || '–')}</b><p>Autonomie ${esc(a.autonomy ?? '–')} · Abteilung ${esc(a.dept)}</p></div>`;
+        <div class="sd-block"><small>BERICHTET AN</small><b>${esc(a.reports_to || '–')}</b><p>Autonomie ${esc(a.autonomy ?? '–')} · Abteilung ${esc(a.dept)}</p></div>
+        ${shipKommunikationHtml(a)}`;
+      bindeShipKommunikation(side, a);
       return;
     }
     shipAuswahl = { typ:'overview' };
@@ -1907,6 +2144,18 @@ function initShipControls(){
   }, { passive:false });
 
   const beenden = e => {
+    const warDrag = !!(drag && drag.bewegt);
+    // Pointer-Capture leitet den Klick auf den Viewport um. Für einen echten
+    // Mausklick ohne Ziehen wählen wir deshalb den Raum unter dem Zeiger.
+    if(e.type === 'pointerup' && e.pointerType === 'mouse' && !warDrag){
+      const ziel = document.elementFromPoint(e.clientX, e.clientY)
+        ?.closest('#shipWorld [data-agent], #shipWorld [data-common]');
+      if(ziel){
+        sperreKlick();
+        if(ziel.dataset.agent) setShipSelection('agent', ziel.dataset.agent);
+        else setShipSelection(ziel.dataset.common);
+      }
+    }
     zeiger.delete(e.pointerId);
     if(zeiger.size < 2) pinch = null;
     if(zeiger.size === 1){
