@@ -9,6 +9,9 @@ let graphWindow = '7d', graphDaten = null, kalibrierungDaten = null;
 let betriebDaten = null, betriebFehler = null, betriebTimer = null;
 let companyDaten = null, companyFehler = null, companyTimer = null, companyLaden = false;
 let shipAuswahl = { typ: 'overview' }, shipDeptFilter = null, shipZoom = 1, shipX = 0, shipY = 0, shipZoomInit = false;
+const SHIP_GROSS_MQ = window.matchMedia('(min-width: 1100px)');
+let shipGrossGerendert = null;
+function shipGrossAktiv(){ return SHIP_GROSS_MQ.matches; }
 let shipDetail = null, shipDetailFehler = null, shipDetailLaden = false;
 let shipDetailFuer = null, shipDetailAnfrage = 0, shipNachrichtStatus = null, shipDraft = null;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1555,7 +1558,33 @@ function pxWarp(g, w, h, e, t){
   g.a(.12 + (puls < 4 ? .06 : 0), () => g.r(cx - 14, 4, 28, fy - 4, '#38e8ff'));
   for(let i = 0; i < 3; i++){ g.r(4 + i * 4, 8, 2, fy - 10, '#3a3f56'); g.r(w - 6 - i * 4, 8, 2, fy - 10, '#3a3f56'); }
 }
-const PX_ART = { agent:pxAgentRaum, agents:pxAgentenraum, konf:pxKonferenz, hangar:pxHangar, warp:pxWarp };
+function pxLounge(g, w, h, e, t){
+  const rng = pxRng(e.seed);
+  const fy = pxHuelle(g, w, h, '#ff5edb', 'lounge', rng);
+  pxFenster(g, 4, 9, Math.max(6, Math.min(18, w - 12)), 8, rng);
+  const sofaW = Math.max(8, Math.min(24, w - 8));
+  g.r(4, fy - 7, sofaW, 2, '#7b4bff'); g.r(4, fy - 5, sofaW, 3, '#5a35b8');
+  g.r(4, fy - 7, 2, 7, '#a78bff'); g.r(4 + sofaW - 2, fy - 7, 2, 7, '#a78bff');
+  g.r(Math.min(30, w - 12), fy - 5, 8, 1, '#a99cba');
+  g.r(Math.min(33, w - 9), fy - 4, 2, 4, '#4a4058');
+  pxPflanze(g, w - 7, fy);
+  pxLampe(g, Math.floor(w * .3), fy, '#ff5edb'); pxLampe(g, Math.floor(w * .75), fy, '#ff5edb');
+}
+function pxLager(g, w, h, e, t){
+  const rng = pxRng(e.seed);
+  const fy = pxHuelle(g, w, h, '#ff9f43', 'lager', rng);
+  const rw = Math.max(10, Math.floor(w * .42));
+  for(let y = 9; y < fy; y += 8){
+    g.r(2, y + 6, rw, 1, '#8a6a4a');
+    for(let x = 3; x < rw - 2; x += 5) g.r(x, y + 2, 4, 4, ['#b8875a','#5a7aa0','#7a9a5a'][pxN(x, y, 3) % 3]);
+  }
+  g.r(2, 9, 1, fy - 9, '#5a5f78'); g.r(rw + 1, 9, 1, fy - 9, '#5a5f78');
+  g.r(rw + 4, fy - 6, 5, 6, '#b8875a'); g.r(rw + 5, fy - 11, 4, 5, '#5a7aa0');
+  g.r(w - 9, fy - 8, 5, 1, '#c0c4cc'); g.r(w - 9, fy - 8, 1, 8, '#c0c4cc');
+  for(let x = 0; x < w; x += 4) g.r(x, fy, 2, 1, '#ffcc33');
+  pxLampe(g, Math.floor(w * .3), fy, '#ff9f43'); pxLampe(g, Math.floor(w * .75), fy, '#ff9f43');
+}
+const PX_ART = { agent:pxAgentRaum, agents:pxAgentenraum, konf:pxKonferenz, hangar:pxHangar, warp:pxWarp, lounge:pxLounge, lager:pxLager };
 
 function pxZeichne(e){
   const cv = e.cv;
@@ -1564,7 +1593,9 @@ function pxZeichne(e){
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, cv.width, cv.height);
   if(e.spiegel){ ctx.setTransform(-1, 0, 0, 1, cv.width, 0); }
-  PX_ART[e.art](pxPinsel(ctx), cv.width, cv.height, e, pxTakt);
+  const maler = e.gross && window.PX_GROSS ? window.PX_GROSS[e.art] : PX_ART[e.art];
+  if(!maler) return;
+  maler(pxPinsel(ctx), cv.width, cv.height, e, pxTakt);
 }
 function pxGroessen(){
   pxRaeume.forEach(e => {
@@ -1612,8 +1643,12 @@ function renderShipWorld(){
   const konf = R && R.konferenz;
   const commonOn = typ => shipAuswahl.typ === typ;
   const liste = [];
-  const leinwand = eintrag => { liste.push(eintrag); return `<canvas class="px-cv" data-px="${liste.length - 1}" aria-hidden="true"></canvas>`; };
+  const gross = shipGrossAktiv();
+  box.classList.toggle('px-gross', gross);
+  shipGrossGerendert = gross;
+  const leinwand = eintrag => { liste.push({ ...eintrag, gross }); return `<canvas class="px-cv" data-px="${liste.length - 1}" aria-hidden="true"></canvas>`; };
 
+  const tuerHtml = (typ, farbe, seed) => `<span class="px-door" aria-hidden="true">${gross ? leinwand({ art:'tuer', typ, farbe, seed }) : ''}</span>`;
   const raumHtml = (a, gewicht, dIdx) => {
     const st = shipStatusKey(a);
     const offenA = Number(a.offene_aufgaben) || 0;
@@ -1625,7 +1660,7 @@ function renderShipWorld(){
       aria-pressed="${on ? 'true' : 'false'}" title="${esc(titel)}" aria-label="${esc(titel)}">${cv}
       <span class="px-tag"><i></i>${esc(a.rufname)}</span>${offenA ? `<span class="px-task">+${offenA}</span>` : ''}</button>`;
   };
-  const leerHtml = (art, gewicht, titel) => `<span class="px-room px-void" style="flex-grow:${gewicht}" aria-hidden="true">${leinwand({ art, seed:pxHash(art), farbe:'#38e8ff' })}<span class="px-tag px-tag-dim">${titel}</span></span>`;
+  const leerHtml = (art, gewicht, titel, extra = '') => `<span class="px-room px-void${extra}" style="flex-grow:${gewicht}" aria-hidden="true">${leinwand({ art, seed:pxHash(art + titel), farbe:'#38e8ff' })}<span class="px-tag px-tag-dim">${titel}</span></span>`;
 
   const deptHtml = (d, dIdx, pos) => {
     const farbe = shipDeptFarbe(d.code);
@@ -1635,11 +1670,13 @@ function renderShipWorld(){
     if(!reihen.length) reihen.push([]);
     const floors = reihen.map((reihe, rIdx) => {
       const muster = PX_MUSTER[(dIdx + rIdx * 2) % PX_MUSTER.length];
-      let html = reihe.map((a, i) => raumHtml(a, muster[i % 5], dIdx)).join('');
+      const teile = reihe.map((a, i) => raumHtml(a, muster[i % 5], dIdx));
       if(d.code === 'S' || reihe.length < 5){
         const fehlt = Math.max(0, 5 - reihe.length);
-        for(let i = 0; i < fehlt; i++) html += leerHtml(i % 2 ? 'warp' : 'hangar', i % 2 ? 2 : 4, i % 2 ? 'WARP CORE' : 'HANGAR 07');
+        for(let i = 0; i < fehlt; i++) teile.push(leerHtml(i % 2 ? 'lager' : 'lounge', 3, i % 2 ? 'LAGER' : 'CREW-LOUNGE'));
       }
+      const typ = SHIP_ROOM_TYPEN[d.code] || 'command';
+      const html = teile.map((t, i) => (i ? tuerHtml(typ, farbe, pxHash(d.code + rIdx + '-' + i)) : '') + t).join('');
       return `<div class="px-floor">${html || '<div class="empty">Keine Agenten.</div>'}</div>`;
     }).join('');
     return `<section class="px-dept${d.code === 'S' ? ' px-dept-wide' : ''}" data-dept="${esc(d.code)}" style="--dept:${farbe};${pos}">
@@ -1660,8 +1697,9 @@ function renderShipWorld(){
           <button type="button" class="px-room px-common-room${commonOn('agents') ? ' on' : ''}" data-common="agents" aria-pressed="${commonOn('agents')}">
             ${leinwand({ art:'agents', seed:11, anzahl:Number(s.aktiv) || 4, on:commonOn('agents') })}
             <span class="px-tag px-tag-big"><i></i>AGENTENRAUM · ${agenten.length} AGENTEN</span></button>
+          ${tuerHtml('meeting', '#ffb84d', 5)}
           <button type="button" class="px-room px-common-room${commonOn('konf') ? ' on' : ''}" data-common="konf" aria-pressed="${commonOn('konf')}">
-            ${leinwand({ art:'konf', seed:23, anzahl:konf ? (konf.berichte || []).length : 3, on:commonOn('konf') })}
+            ${leinwand({ art:'konf', seed:23, anzahl:konf ? Math.max(4, (konf.berichte || []).length) : 6, on:commonOn('konf') })}
             <span class="px-tag px-tag-big px-tag-gold"><i></i>KONFERENZ · ${konf ? `${(konf.berichte || []).length} BERICHTE · ${(konf.massnahmen || []).length} MASSNAHMEN` : 'KEINE KONFERENZ'}</span></button>
         </div>
       </div>
@@ -1672,6 +1710,10 @@ function renderShipWorld(){
           <div class="px-shaft" style="grid-column:2;grid-row:1 / span ${zeilen}" aria-hidden="true"><span class="px-lift"></span></div>
         </div>
         ${exec.map((d) => deptHtml(d, 7, '')).join('')}
+        <section class="px-engdeck" style="--dept:#5aa9ff">
+          <header class="px-dept-head"><b>T</b><span>Technik · Antrieb</span><em>HANGAR 07 · WARP CORE</em></header>
+          <div class="px-floor">${leerHtml('hangar', 3, 'HANGAR 07', ' px-big')}${tuerHtml('workshop', '#5aa9ff', 77)}${leerHtml('warp', 2, 'WARP CORE', ' px-big')}</div>
+        </section>
       </div>
       <div class="px-engine">
         <span class="px-eng-state">● ${Number(s.aktiv) || 0} AKTIV · ${Number(s.blockiert) || 0} BLOCKIERT · ${Number(aufgaben.offen) || 0} OFFEN</span>
@@ -2173,6 +2215,11 @@ function initShipControls(){
     resizeTimer = setTimeout(() => {
       const bereich = $('#v-ship');
       syncShipLegend();
+      if(shipGrossAktiv() !== shipGrossGerendert){
+        shipZoomInit = false;
+        renderShipWorld();
+        return;
+      }
       if(bereich && !bereich.hidden) fitShip();
     }, 160);
   });

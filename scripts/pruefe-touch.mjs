@@ -16,6 +16,8 @@
  *   - im Querformat ist die Navigation eingeklappt, die Ops-Seitenleiste steht
  *     unter dem Viewport, die Zoomleiste bleibt im sichtbaren Bereich und die
  *     kompakte Abteilungslegende ist vollständig und ohne Überlauf bedienbar.
+ *   - der 2400-px-Grossmodus aktiviert sich ab 1100 px Viewportbreite und
+ *     hält seine Räume nach «Fit» ebenfalls vollständig im Viewport.
  *
  * Der Test ist für die Seed-Datenbank gedacht und läuft ohne Test-Framework.
  *
@@ -122,6 +124,32 @@ async function pruefeCluster(page) {
   });
 }
 
+async function pruefeLegendeUeberlauf(page, label) {
+  const stand = await page.evaluate(() => {
+    const el = document.querySelector('#shipLegend');
+    if (!el || !el.open || !el.getClientRects().length) return null;
+    const rahmen = el.getBoundingClientRect();
+    const eintraege = [...el.querySelectorAll('[data-dept]')]
+      .map(b => b.getBoundingClientRect())
+      .filter(r => r.width > 0 && r.height > 0);
+    return {
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+      ausserhalb: eintraege.filter(r =>
+        r.left < rahmen.left - 1 || r.right > rahmen.right + 1).length,
+      seitenScroll: document.documentElement.scrollWidth,
+      viewport: innerWidth,
+    };
+  });
+  pruefe(stand, `${label}: geöffnete Legende ist nicht sichtbar`);
+  pruefe(stand.scrollWidth <= stand.clientWidth + 1,
+    `${label}: Legende läuft horizontal über (${stand.scrollWidth}>${stand.clientWidth})`);
+  pruefe(stand.ausserhalb === 0,
+    `${label}: ${stand.ausserhalb} Legendeneinträge liegen ausserhalb des Legendenrahmens`);
+  pruefe(stand.seitenScroll <= stand.viewport + 1,
+    `${label}: Seite läuft nach dem Öffnen der Legende horizontal über (${stand.seitenScroll}>${stand.viewport})`);
+}
+
 async function pruefeFit(page, breite, minBreite, minHoehe) {
   await page.evaluate(() => document.querySelector('[data-ship-zoom="fit"]').click());
   await page.waitForTimeout(350);
@@ -173,7 +201,7 @@ async function mitte(page) {
 }
 
 async function pruefeMobilViewport(browser, konfiguration) {
-  const { label, width, height, minBreite, minHoehe } = konfiguration;
+  const { label, width, height, minBreite, minHoehe, gross = false } = konfiguration;
   const context = await browser.newContext({
     viewport: { width, height },
     screen: { width, height },
@@ -184,8 +212,25 @@ async function pruefeMobilViewport(browser, konfiguration) {
   try {
     const page = await context.newPage();
     await ladeSchiff(page);
+    const modus = await page.evaluate(() => {
+      const world = document.querySelector('#shipWorld');
+      const raum = world?.querySelector('.px-room[data-agent]');
+      return {
+        gross: world?.classList.contains('px-gross') || false,
+        weltBreite: world?.offsetWidth || 0,
+        raumHoehe: raum?.offsetHeight || 0,
+      };
+    });
+    pruefe(modus.gross === gross,
+      `${label}: Grossmodus ist ${modus.gross ? 'aktiv' : 'inaktiv'}, erwartet ${gross ? 'aktiv' : 'inaktiv'}`);
+    if (gross) {
+      pruefe(modus.weltBreite === 2400,
+        `${label}: Grossmodus ist ${modus.weltBreite} px statt 2400 px breit`);
+      pruefe(modus.raumHoehe === 150,
+        `${label}: Grossmodus-Raum ist ${modus.raumHoehe} px statt 150 px hoch`);
+    }
     const fit = await pruefeFit(page, `${width}×${height}`, minBreite, minHoehe);
-    if (width > height) {
+    if (width > height && !gross) {
       const querformat = await page.evaluate(() => {
         const nav = document.querySelector('.side');
         const toggle = document.querySelector('#navToggle');
@@ -241,29 +286,16 @@ async function pruefeMobilViewport(browser, konfiguration) {
       }).length);
     pruefe(sichtbareDepts === 11,
       `${label}: Legende zeigt ${sichtbareDepts} statt 11 Abteilungen`);
-    const legendeStand = await legende.evaluate(el => {
-      const rahmen = el.getBoundingClientRect();
-      const eintraege = [...el.querySelectorAll('[data-dept]')]
-        .map(b => b.getBoundingClientRect())
-        .filter(r => r.width > 0 && r.height > 0);
-      return {
-        offen: el.open,
-        kopf: (el.querySelector('summary')?.innerText || '').replace(/\s+/g, ' ').trim(),
-        scrollWidth: el.scrollWidth,
-        clientWidth: el.clientWidth,
-        ausserhalb: eintraege.filter(r =>
-          r.left < rahmen.left - 1 || r.right > rahmen.right + 1).length,
-      };
-    });
+    const legendeStand = await legende.evaluate(el => ({
+      offen: el.open,
+      kopf: (el.querySelector('summary')?.innerText || '').replace(/\s+/g, ' ').trim(),
+    }));
     pruefe(legendeStand.offen,
       `${label}: Legende ist nach dem Aufklappen nicht offen`);
     pruefe(/SEKTOREN/.test(legendeStand.kopf) && /FILTER/.test(legendeStand.kopf)
       && /11 ABTEILUNGEN/.test(legendeStand.kopf),
       `${label}: Legendenkopf ist nicht kompakt («${legendeStand.kopf}»)`);
-    pruefe(legendeStand.scrollWidth <= legendeStand.clientWidth + 1,
-      `${label}: Legende läuft horizontal über (${legendeStand.scrollWidth}>${legendeStand.clientWidth})`);
-    pruefe(legendeStand.ausserhalb === 0,
-      `${label}: ${legendeStand.ausserhalb} Legendeneinträge liegen ausserhalb des Legendenrahmens`);
+    await pruefeLegendeUeberlauf(page, label);
 
     const raum = page.locator('#shipWorld .px-room[data-agent]').first();
     const raumName = (await raum.locator('.px-tag').innerText()).trim();
@@ -418,6 +450,7 @@ async function main() {
       `Legendenkopf ist nicht kompakt (${kopfText})`);
     pruefe(sichtbareDepts === 11,
       `Aufgeklappte Legende zeigt ${sichtbareDepts} statt 11 Abteilungen`);
+    await pruefeLegendeUeberlauf(page, 'Geöffnete Legende bei 390 px');
 
     // Die Legende ist ein Filter: ein Tippen hebt die Räume der Abteilung
     // hervor, ohne den bereits geöffneten Agenten in der Seitenleiste zu ersetzen.
@@ -495,6 +528,14 @@ async function main() {
         label: 'Querformat 844×390', width: 844, height: 390,
         minBreite: 31, minHoehe: 32,
       }),
+      await pruefeMobilViewport(browser, {
+        label: 'Gross 1100×800', width: 1100, height: 800,
+        minBreite: 31, minHoehe: 32, gross: true,
+      }),
+      await pruefeMobilViewport(browser, {
+        label: 'Gross 1100×1400', width: 1100, height: 1400,
+        minBreite: 31, minHoehe: 31, gross: true,
+      }),
     ];
 
     let fit320;
@@ -516,7 +557,7 @@ async function main() {
 
     erfolgreich = true;
     const fitText = (fit) => `${fit.zoom} · min. ${fit.raeume.minBreite.toFixed(1)}×${fit.raeume.minHoehe.toFixed(1)} px · ${fit.raeume.anzahl - fit.raeume.ausserhalb}/${fit.raeume.anzahl} sichtbar`;
-    const zusatzText = mobilZusatz.map(z => `${z.label} ${fitText(z.fit)}`).join(' · ');
+    const zusatzText = mobilZusatz.map(z => `${z.label}${z.fit ? ' ' + fitText(z.fit) : ''}`).join(' · ');
     console.log(`Touch OK: Pan ${Math.round(Math.abs(nachPan.x - vorPan.x))} px · Pinch ${(vorPinch.zoom * 100).toFixed(0)} % → ${(nachPinch.zoom * 100).toFixed(0)} % · ${cluster.clusters} Cluster ohne Doppelung · Tippen öffnet ${raumName} · Filter A 10 Räume / gelöst · Fit 390 px ${fitText(fit390)} · ${zusatzText} · Fit 320 px ${fitText(fit320)}`);
   } catch (fehler) {
     fehlerText = fehler instanceof Error ? fehler.message : String(fehler);

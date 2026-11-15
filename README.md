@@ -237,7 +237,8 @@ Ohne relevante Änderungen beendet sich der Hook sofort.
 Für die Abnahme der Schiffsansicht auf echter Safari-Hardware:
 [Checkliste für Pan, Pinch und Tippen](docs/raumschiff/IPHONE-SAFARI-CHECKLISTE.md).
 Sie ergänzt den automatisierten Touch-Test und deckt Porträt, Querformat,
-Safari-Seitenzoom und die Legendenbedienung ab. Die Ergebnisse des letzten
+Safari-Seitenzoom und die Legendenbedienung ab. Der Touch-Test prüft zusätzlich den
+2400-px-Grossmodus bei 1100 px Breite. Die Ergebnisse des letzten
 Chromium-Emulationslaufs stehen in
 [TOUCH-EMULATION.md](docs/raumschiff/TOUCH-EMULATION.md).
 
@@ -435,7 +436,10 @@ Zwei neue Ansichten im Dashboard, vollständig aus echten Daten:
 - **Raumschiff**: Pixel-Art-Agenten-Querschnitt mit 103 Company-Agentenräumen in elf
   Abteilungen (A–J und S), Zoom/Pan und rechter Detailspalte. Ein Klick öffnet Rolle,
   Status und Aufgabe; Agentenraum und Konferenz liegen als Gemeinschaftsräume im
-  Schiff, die bisherigen Panels bleiben eingeklappt erhalten.
+  Schiff, die bisherigen Panels bleiben eingeklappt erhalten. Unter 1100 px
+  Viewportbreite gilt die kompakte 1500-px-Bühne, ab 1100 px der 2400-px-Grossmodus
+  mit 150/180/270 px hohen Räumen, 48-px-Türen und der reicheren Anhang-Pixelkunst.
+  Beim Wechsel wird das Schiff neu gezeichnet und neu eingepasst.
 
 ### Grenzen dieser Phasen (ehrlich)
 
