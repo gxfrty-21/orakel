@@ -25,7 +25,7 @@ from .company.api import nachrichten as company_nachrichten
 from .company.api import raeume as company_raeume
 from .company.api import uebersicht as company_uebersicht
 from .company.memory import AgentMemory
-from .company.messaging import MessagingService
+from .company.messaging import MessageRateLimitError, MessagingService
 from .company.store import CompanyStore
 from .config import load_config
 from .db import Facts
@@ -282,6 +282,15 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                 priority=str(daten.get("priority") or "normal"),
                 thread_id=daten.get("thread_id"),
                 expires_at=daten.get("expires_at"),
+            )
+        except MessageRateLimitError as exc:
+            return JSONResponse(
+                {"ok": False, "fehler": str(exc),
+                 "code": "company_message_rate_limited",
+                 "retry_after": exc.retry_after, "limit": exc.limit},
+                status_code=429,
+                headers={"Retry-After": str(max(1, exc.retry_after)),
+                         "Cache-Control": "no-store"},
             )
         except (ValueError, TypeError) as exc:
             return JSONResponse({"ok": False, "fehler": str(exc),

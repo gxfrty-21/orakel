@@ -19,6 +19,7 @@ from ..config import Config, RisikoGrenzen
 from ..db import Facts
 from .handlers import HandlerResult, run_handler
 from .memory import AgentMemory
+from .messaging import MessagingService
 from .policy import CompanyPolicy, PolicyError
 from .roster import Profile, PROFILES, profile_by_id
 from .store import CompanyStore
@@ -254,6 +255,14 @@ class CompanyRuntime:
             "paper_only": self.policy.paper_only(),
             "dauer_sekunden": round(time.monotonic() - start, 3),
         }
+        # Erinnerungen sind ein Nebenprodukt des Company-Laufs, kein Task und
+        # keine neue Beschäftigung. Ein Fehler darf den Lauf nicht kippen.
+        try:
+            summary["erinnerungen"] = MessagingService(self.store).erinnere_offene_acks()
+        except Exception as exc:
+            summary["erinnerungen"] = {
+                "ok": False, "fehler": type(exc).__name__,
+            }
         self.db.zustand_setzen("company_letzter_lauf", summary)
         return summary
 

@@ -192,7 +192,7 @@ Werte bleiben leer. Agentenstatus und offene Aufgaben aktualisieren sich alle
 30 Sekunden, solange die Ansicht geöffnet ist. Die Ansicht ist eine Darstellung,
 keine neue Datenquelle und keine Automation.
 
-Geprüft wird der Querschnitt mit 214 pytest-Tests, dem 250-%-Lauf über zwölf
+Geprüft wird der Querschnitt mit 225 pytest-Tests, dem 250-%-Lauf über zwölf
 Ansichten und drei Breiten sowie dem Negativtest, der zehn absichtliche Fehler —
 darunter ein fehlender Abteilungstab, ein fehlender und ein zusätzlicher Agent
 sowie eine doppelte Agenten-ID bei gleicher Agentenzahl — erkennen muss. Der sichtbare
@@ -200,14 +200,18 @@ Agenten-Querschnitt und die Detailspalte werden zusätzlich im Browser auf 103
 Räume, elf Abteilungen, zwei Gemeinschaftsräume und Zoom ohne Seitenfehler geprüft.
 
 **Noch nicht umgesetzt:** 3D-Welt und begehbare Decks (zurückgestellt),
-vollständige Agentenkommunikation und -gedächtnisse, autonomes Management,
-Mitternachtskonferenz als Führungsgremium, LLM und echte Broker-Orders (bewusst kein
-Codepfad).
+autonomes Management, Mitternachtskonferenz als Führungsgremium, LLM und echte
+Broker-Orders (bewusst kein Codepfad). Agentenkommunikation und persönliche
+Gedächtnisse sind als Detailspalte und API umgesetzt.
 
 Der Agenten-Querschnitt ist der aktuelle sichtbare Teil von Phase 2. Die
 Company-API für Übersicht, Agentenstatus, Aufgaben, Detailprofile, Nachrichten,
 Raumstatus, die letzte Konferenz und SSE-Snapshots ist umgesetzt. Agenten-
-kommunikation mit Threads/Quittung und persönliche Gedächtnisse sind ergänzt. Als
+kommunikation mit Threads/Quittung und persönliche Gedächtnisse sind ergänzt; die
+Detailspalte im Raumschiff zeigt Nachrichten und Erinnerungen und erlaubt Senden
+sowie Quittieren. Broadcasts werden pro Absender durch einen persistenten
+Cooldown und ein 24-Stunden-Limit gebremst; offene Quittungen erzeugen nach
+Frist eine nicht quittungspflichtige Erinnerung im selben Thread. Als
 Nächstes folgt die inhaltliche Vertiefung der Agentenarbeit — weiterhin ohne echte
 Orders. Ein 3D-Ausbau ist nicht freigegeben.
 
@@ -228,7 +232,8 @@ Die Freigabe für Phase 1 wurde erteilt; die 2D-Ansicht ist umgesetzt. Die früh
    Agentenräume in elf Abteilungen und ist keine 3D-Umsetzung.
 2. 3D (First-Person, Three.js, restliche Decks) ist nicht freigegeben.
 3. Keine LLM-Pflicht: Die Agenten arbeiten deterministisch und datengebunden.
-4. Offen bleiben Agentenkommunikation, Management und Konferenz.
+4. Offen bleiben autonomes Management und die Konferenz als Führungsgremium;
+   Agentenkommunikation und persönliche Gedächtnisse sind umgesetzt.
 
 Der aktuelle Arbeitsstand liegt in `orakel/company/` und
 `orakel/migrations/001_company.sql`; der 2D-Agenten-Querschnitt liegt in

@@ -73,13 +73,27 @@ Entwurf, protokollieren ihn in der Audit-Kette und starten keine Handler:
 Jede Antwort nennt `data_state` (`live`/`empty`), `generated_at` in UTC und
 `source_refs`. Fehlende Daten bleiben leer; es gibt keine Ersatzzahlen. Die
 Raumschiff-Ansicht liest Übersicht, Agentenstatus und offene Aufgaben aus diesen
-Endpunkten und aktualisiert sie alle 30 Sekunden, solange sie geöffnet ist.
+Endpunkten und aktualisiert sie alle 30 Sekunden, solange sie geöffnet ist. In der
+Agenten-Detailspalte stehen zusätzlich Nachrichten und persönliche Erinnerungen;
+Nachrichten lassen sich dort senden, eingehende Nachrichten quittieren.
 
 Nachrichten sind auf direkte Kontakte, Abteilungsziele (`dept:A`) und Broadcasts
 (`all`, nur A1/S1–S3) begrenzt. Abteilungsziele dürfen Leitung und Sekretariat
 setzen; ein Agent kann sich nicht selbst adressieren. Jede Nachricht und jede
 Gedächtnisänderung erzeugt ein Audit-Event. Persönliche Erinnerungen sind über
 `agent_id`, `scope` und `key` getrennt und werden als JSON gespeichert.
+
+Broadcasts haben einen persistenten Cooldown und ein 24-Stunden-Limit pro
+Absender (`broadcast_cooldown_sekunden`, Standard 900 s;
+`broadcast_max_pro_tag`, Standard 10 in 24 h; beide in `company_policies`).
+Eine Überschreitung liefert HTTP 429 mit `Retry-After`; direkte und
+Abteilungsnachrichten bleiben davon unberührt. Offene Quittungen werden nach
+`ack_erinnerung_nach_minuten` (Standard 30) automatisch im ursprünglichen
+Thread erinnert (`ack_erinnerung_wiederholen_minuten`, Standard 120;
+`ack_erinnerungen_max`, Standard 1). Erinnerungen sind selbst nicht
+quittungspflichtig und werden über eigene
+`message_reminder`-Audit-Events genau einmal gezählt. Sie laufen im Company-Lauf
+und im Hintergrund-Takt; ein Lauf ohne offene Quittungen schreibt nichts.
 
 ## Dauerbetrieb mit Login und HTTPS
 
@@ -93,7 +107,9 @@ Für Railway ohne eigenen Server, Caddy oder eigene Domain: siehe
 
 Der Hintergrund-Takt ist bewusst **opt-in** (`serve --takt` oder
 `ORAKEL_TAKT=1`). Er plant Paper-Takt, Konferenz, Spider (standardmäßig alle
-sechs Stunden), Intelligence, Missionen und optional die Company-Schicht.
+sechs Stunden), Intelligence, Missionen und optional die Company-Schicht. Im
+laufenden Takt werden zusätzlich offene Quittungen nach Frist erinnert
+(`[unternehmen] erinnerungen_intervall_minuten`).
 Fehler erhalten einen persistenten exponentiellen Backoff; DB-, RSS- und
 Speichergrenzen pausieren schreibintensive Jobs, statt den Prozess volllaufen
 zu lassen. Jeder Lauf wird in `betrieb_laeufe` protokolliert.

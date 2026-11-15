@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -61,7 +62,10 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
     from .web import create_app
 
-    app = create_app(args.config, takt=args.takt)
+    takt = bool(args.takt) or os.environ.get("ORAKEL_TAKT", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+    app = create_app(args.config, takt=takt)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     return 0
 

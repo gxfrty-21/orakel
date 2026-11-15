@@ -142,6 +142,14 @@ class CompanyStore:
             "max_llm_minuten_pro_tag": 0,
             "max_worker": 4,
             "autonomie_budget_version": 1,
+            # Broadcasts sind teuer: ein kurzer Abstand schützt vor Wiederholungen,
+            # das Tageslimit vor einem versehentlichen Feuerwerk an alle 103 Agenten.
+            "broadcast_cooldown_sekunden": 900,
+            "broadcast_max_pro_tag": 10,
+            # Offene Quittungen werden nach dieser Frist einmalig erinnert.
+            "ack_erinnerung_nach_minuten": 30,
+            "ack_erinnerung_wiederholen_minuten": 120,
+            "ack_erinnerungen_max": 1,
         }
         for key, value in defaults.items():
             if self.policy(key) is None:
@@ -490,6 +498,45 @@ class CompanyStore:
                 (jetzt(), int(message_id), agent_id),
             )
             return cur.rowcount == 1
+
+    def nachrichten_events(self, *, agent_id: str, seit: str,
+                           limit: int = 5000) -> list[dict[str, Any]]:
+        """Versand-Events eines Absenders für das persistente Broadcast-Limit."""
+        with self._conn() as c:
+            return [dict(r) for r in c.execute(
+                "SELECT id, ts, payload_json FROM agent_events"
+                " WHERE agent_id=? AND kind='message_sent' AND ts>=?"
+                " ORDER BY id DESC LIMIT ?",
+                (agent_id, seit, max(1, min(5000, int(limit)))),
+            )]
+
+    def offene_ack_nachrichten(self, *, vor: str, jetzt: str,
+                               limit: int = 100) -> list[dict[str, Any]]:
+        """Offene Quittungen, die vor dem Erinnerungszeitpunkt eingegangen sind."""
+        with self._conn() as c:
+            return [dict(r) for r in c.execute(
+                """
+                SELECT m.*, pfrom.rufname AS from_rufname, pfrom.dept AS from_dept,
+                       pto.rufname AS to_rufname, pto.dept AS to_dept
+                FROM agent_messages m
+                LEFT JOIN agent_profiles pfrom ON pfrom.agent_id=m.from_agent
+                LEFT JOIN agent_profiles pto ON pto.agent_id=m.to_agent
+                WHERE m.requires_ack=1 AND m.ack_at IS NULL
+                  AND m.created_at<=?
+                  AND (m.expires_at IS NULL OR m.expires_at>?)
+                ORDER BY m.created_at, m.id LIMIT ?
+                """,
+                (vor, jetzt, max(1, min(500, int(limit)))),
+            )]
+
+    def erinnerungs_events(self, limit: int = 5000) -> list[dict[str, Any]]:
+        """Erinnerungs-Events für die Idempotenz der automatischen Erinnerungen."""
+        with self._conn() as c:
+            return [dict(r) for r in c.execute(
+                "SELECT id, ts, payload_json FROM agent_events"
+                " WHERE kind='message_reminder' ORDER BY id DESC LIMIT ?",
+                (max(1, min(5000, int(limit))),),
+            )]
 
     # ---------- Persönliches Agenten-Gedächtnis ----------
     def erinnerung_setzen(self, *, agent_id: str, scope: str, key: str,
