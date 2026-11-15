@@ -27,6 +27,11 @@ jobs:
       BASIS: https://orakel-production-fb18.up.railway.app
 
     steps:
+      - name: Repository des Deployments auschecken
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.deployment.sha || github.sha }}
+
       - name: Erwarteten Commit bestimmen
         id: soll
         run: |
@@ -36,6 +41,24 @@ jobs:
           fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Erwartet: ${sha:0:12}"
+
+      # Die Sollzahlen kommen aus dem Roster des Commits, dessen Deployment
+      # dieser Lauf prüft. Änderungen am Roster müssen nicht doppelt gepflegt
+      # werden.
+      - name: Erwartete Cluster- und Agentenzahlen aus dem Roster ableiten
+        id: roster
+        run: |
+          python3 - <<'PY'
+          import os
+
+          from orakel.company.roster import PROFILES
+
+          agenten = len(PROFILES)
+          cluster = len({profil.dept for profil in PROFILES})
+          print(f"Roster: {agenten} Agenten in {cluster} Clustern")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as datei:
+              datei.write(f"agenten={agenten}\ncluster={cluster}\n")
+          PY
 
       - name: Warten, bis dieser Commit ausgeliefert wird
         run: |
@@ -68,9 +91,16 @@ jobs:
           PY
 
       - name: Health, Schiffsdaten und Login prüfen
+        env:
+          ERWARTETE_CLUSTER: ${{ steps.roster.outputs.cluster }}
+          ERWARTETE_AGENTEN: ${{ steps.roster.outputs.agenten }}
         run: |
           python3 - <<'PY'
           import json
+          import os
+
+          erwartete_cluster = int(os.environ["ERWARTETE_CLUSTER"])
+          erwartete_agenten = int(os.environ["ERWARTETE_AGENTEN"])
 
           with open("health.json", encoding="utf-8") as datei:
               daten = json.load(datei)
@@ -85,12 +115,19 @@ jobs:
               raise SystemExit(f"Health enthält keine Schiffsdaten: {schiff!r}")
           cluster = schiff.get("cluster")
           agenten = schiff.get("agenten")
-          if cluster != 11:
-              raise SystemExit(f"Unerwartete Clusterzahl: {cluster!r}")
-          if agenten != 103:
-              raise SystemExit(f"Unerwartete Agentenzahl: {agenten!r}")
+          if cluster != erwartete_cluster:
+              raise SystemExit(
+                  f"Unerwartete Clusterzahl: {cluster!r} "
+                  f"(Roster erwartet {erwartete_cluster})"
+              )
+          if agenten != erwartete_agenten:
+              raise SystemExit(
+                  f"Unerwartete Agentenzahl: {agenten!r} "
+                  f"(Roster erwartet {erwartete_agenten})"
+              )
           print(f"health ok=true, artikel={artikel}, commit={daten.get('commit')}, "
-                f"cluster={cluster}, agenten={agenten}")
+                f"cluster={cluster}, agenten={agenten} "
+                f"(Roster: {erwartete_cluster}/{erwartete_agenten})")
           PY
           status=$(curl --silent --max-time 15 --output /dev/null \
             --write-out '%{http_code}' "$BASIS/")
