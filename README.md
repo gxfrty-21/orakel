@@ -194,12 +194,20 @@ git config core.hooksPath .githooks
 
 Ohne relevante Änderungen beendet sich der Hook sofort.
 
+## Manuelle iPhone-Safari-Prüfung
+
+Für die Abnahme der Schiffsansicht auf echter Safari-Hardware:
+[Checkliste für Pan, Pinch und Tippen](docs/raumschiff/IPHONE-SAFARI-CHECKLISTE.md).
+Sie ergänzt den automatisierten Touch-Test und deckt Porträt, Querformat,
+Safari-Seitenzoom und die Legendenbedienung ab.
+
 ## Browser-Prüfung bei grosser Schrift
 
 `scripts/pruefe-text250.mjs` skaliert die Schrift im Dashboard auf 250 %
 (Faktor 2,5 auf berechnete Schriftgrössen und Zeilenhöhen). Bei 360, 320 und
 280 px prüft es, ob Inhalte seitlich aus ihrem Kasten oder aus dem Viewport
-laufen. Tabellen werden zusätzlich mit langen deutschen Komposita belastet und
+laufen. Die feste Pixel-Art des Raumschiffs ist von der Textskalierung
+ausgenommen; die Agentendetails in der rechten Spalte skalieren mit. Tabellen werden zusätzlich mit langen deutschen Komposita belastet und
 als Karten geprüft. Im Lab überfährt er ausserdem die Kapitalkurve und prüft
 den Tooltip (Kapitalstand, Datum, Lage im Kasten, Verschwinden von Tooltip und
 Live-Region beim Verlassen, Wiederkommen nach erneutem Überfahren mit demselben
@@ -247,11 +255,11 @@ zuerst den sauberen Zustand und schreibt dann absichtlich falsche Kerndaten
 ins DOM: einen falschen Strategie-KPI, eine falsche Research-Kandidatenzahl,
 eine falsche Agenten-Kopfzahl, einen entfernten Abteilungstab im Agentenraum,
 einen entfernten sichtbaren Schiffsabteilungscluster, einen geleerten
-Schiffscluster, einen zusätzlichen Agenten in einem zweiten Schiffscluster und
-einen falschen Konferenz-Testplan. Jeder Fall muss einen Befund auslösen; die
-CI verlangt `Negativtest OK: 8/8`, damit die Inhaltsprüfung auch
-Strukturänderungen im Agentenraum und am Raumschiff nicht stillschweigend
-übersieht.
+Schiffscluster, einen fehlenden Agenten in einem Schiffscluster, einen
+zusätzlichen Agenten in einem zweiten Schiffscluster und einen falschen
+Konferenz-Testplan. Jeder Fall muss einen Befund auslösen; die CI verlangt
+`Negativtest OK: 9/9`, damit die Inhaltsprüfung auch Strukturänderungen im
+Agentenraum und am Raumschiff nicht stillschweigend übersieht.
 
 Der Standardlauf umfasst alle zwölf Ansichten inklusive der weiterhin geprüften
 Inhaltsansichten Agentenraum, Konferenz und Raumschiff. Der CI-Job
@@ -290,18 +298,24 @@ bei Pfeil rechts im CI eine echte Textänderung.
 Einschränken lässt sich der Lauf mit `--ansichten lab,kb --breiten 360,280`,
 die Adresse mit `--url http://127.0.0.1:8000`, Tabellen mit `--ohne-tabellen`.
 Mit `--bilder <verzeichnis>` schreibt der Lauf bei Befunden je Ansicht und
-Breite einen Screenshot sowie den HTML-Zustand der betroffenen Ansicht. Mit
+Breite einen Screenshot, den HTML-Zustand der betroffenen Ansicht und die
+konkreten Befunde in `text250-befunde.txt`. Mit
 `--bild-praefix <name>` erhalten diese Dateien einen Namenspräfix; der
 Seed-Tastaturlauf nutzt `seed-tastatur-`, damit seine Diagnosen im gemeinsamen
 Artefakt nicht die Namen des Hauptlaufs überschreiben. Schiffscluster-Befunde
 erhalten eigene Bildnamen wie
 `320px-ship-cluster-01-abteilung-b-hat-11-statt-10-agenten.png`; mit Präfix
 entsprechend `seed-tastatur-320px-ship-cluster-01-...png`. Ein CI-Selbsttest
-entfernt absichtlich Cluster S, schreibt seine Diagnose mit dem Präfix
-`selbsttest-` und verlangt den Befund samt Screenshotpfad. In GitHub Actions
+entfernt absichtlich Cluster S und einen Agenten aus Cluster A, erzeugt damit
+mehrere gleichzeitige Cluster-Befunde, schreibt seine Diagnose mit dem Präfix
+`selbsttest-` und verlangt für jeden Befund einen eigenen, nicht leeren
+Screenshot mit eindeutigem Namen sowie die Befunde in
+`selbsttest-text250-befunde.txt`. Ein zweiter Selbsttest (`--selbsttest-agent`)
+entfernt gezielt einen Agenten aus Cluster A und verlangt den Befund samt Screenshot
+`selbsttest-agent-...-abteilung-a-hat-9-statt-10-agenten.png`. In GitHub Actions
 läuft derselbe Prüflauf als eigener
 Job `text250` der Workflow-Datei `.github/workflows/tests.yml`; schlägt er fehl,
-lädt er Bilder und HTML als Artefakt `text250-diagnose` und das Serverprotokoll als
+lädt er Bilder, Befundtexte und HTML als Artefakt `text250-diagnose` und das Serverprotokoll als
 `text250-serverlog` hoch (je 7 Tage).
 
 Nach einem fehlgeschlagenen, abgebrochenen oder abgelaufenen Lauf. Die Befehle
@@ -311,7 +325,7 @@ setzen eine angemeldete GitHub CLI voraus (`gh auth login`):
 # Letzte Läufe des Workflows anzeigen
 gh run list --workflow tests.yml --limit 5
 
-# Serverlog und Diagnose (Screenshots + HTML) des gewünschten Laufs herunterladen
+# Serverlog und Diagnose (Screenshots + Befunde + HTML) des gewünschten Laufs herunterladen
 gh run download <run-id> -n text250-serverlog -D artifacts/text250-ci
 gh run download <run-id> -n text250-diagnose -D artifacts/text250-ci
 
@@ -364,7 +378,7 @@ Zwei neue Ansichten im Dashboard, vollständig aus echten Daten:
 
 - **Weltkugel**: Handelsplätze je Symbol, Kurs, 24-h-Änderung, ATR, Regime und Korrelationen
   (letzte 500 Kerzen). Die Kugel ist Darstellung — die Zahlen kommen aus SQLite.
-- **Raumschiff**: 2D-Agenten-Querschnitt mit 103 Company-Agentenräumen in elf
+- **Raumschiff**: Pixel-Art-Agenten-Querschnitt mit 103 Company-Agentenräumen in elf
   Abteilungen (A–J und S), Zoom/Pan und rechter Detailspalte. Ein Klick öffnet Rolle,
   Status und Aufgabe; Agentenraum und Konferenz liegen als Gemeinschaftsräume im
   Schiff, die bisherigen Panels bleiben eingeklappt erhalten.

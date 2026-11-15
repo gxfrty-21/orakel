@@ -21,10 +21,14 @@
  *   --ohne-tabellen        Nur Seitenüberläufe prüfen, Tabellen überspringen
  *   --bilder <verzeichnis> Schreibt bei Befunden je Ansicht und Breite Screenshot und HTML
  *   --bild-praefix <name>  Gibt Screenshots und HTML einen eindeutigen Namenspräfix
- *   --selbsttest-cluster   Prüft einen fehlenden Schiffscluster und den Screenshotpfad
+ *   --selbsttest-cluster   Prüft mehrere gleichzeitige Cluster-Fehler und eindeutige Screenshotnamen
+ *   --selbsttest-agent      Prüft einen fehlenden Agenten samt Screenshotpfad
+ *
+ * Zusätzlich wird die Kopfzeile bei 1024 px auf horizontalen Überlauf und
+ * einen sichtbaren «Lauf starten»-Button geprüft.
  */
 
-import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 
@@ -46,6 +50,7 @@ function argumente(argv) {
     bildPraefix: '',
     negativtest: false,
     selbsttestCluster: false,
+    selbsttestAgent: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -60,10 +65,11 @@ function argumente(argv) {
     }
     else if (arg === '--negativtest') opts.negativtest = true;
     else if (arg === '--selbsttest-cluster') opts.selbsttestCluster = true;
+    else if (arg === '--selbsttest-agent') opts.selbsttestAgent = true;
     else if (arg === '--hilfe' || arg === '-h') {
       console.log('Aufruf: node scripts/pruefe-text250.mjs [--url URL] [--breiten 360,320,280]\n' +
         '       [--ansichten overview,risk,lab,strat,research,globe,betrieb,ship,spider,kb,agents,konf] [--ohne-tabellen]\n' +
-        '       [--bilder <verzeichnis>] [--bild-praefix <name>] [--negativtest] [--selbsttest-cluster]');
+        '       [--bilder <verzeichnis>] [--bild-praefix <name>] [--negativtest] [--selbsttest-cluster] [--selbsttest-agent]');
       process.exit(0);
     }
     else { console.error(`Unbekannte Option: ${arg}`); process.exit(2); }
@@ -126,6 +132,7 @@ async function messeAnsicht(page, ansicht, breite) {
       if (!el.getClientRects().length) continue;
       if (el.closest('table.tbl')) continue;            // Tabellen werden separat belastet.
       if (el.closest('.vault-zoom')) continue;          // Unsichtbares 44-px-Trefferziel.
+      if (el.closest('.px-ship')) continue;             // Pixel-Art ist eine feste Zeichnung; Agentendetails skalieren rechts.
       const cs = getComputedStyle(el);
       if (['auto', 'scroll'].includes(cs.overflowX)) continue;
       if (cs.textOverflow === 'ellipsis') continue;     // Absichtlich gekürzt.
@@ -870,16 +877,16 @@ async function pruefeZoom(page, ansicht) {
 async function pruefeSchiffCluster(page) {
   await page.waitForFunction(() => {
     const tag = document.querySelector('#companyTag')?.textContent || '';
-    return document.querySelectorAll('#shipWorld .ship-dept').length > 0
+    return document.querySelectorAll('#shipWorld .px-dept').length > 0
       || /API-FEHLER|keine Daten/.test(tag);
   }, null, { timeout: 5000 }).catch(() => {});
 
   const stand = await page.evaluate(() => {
-    const cluster = [...document.querySelectorAll('#shipWorld .ship-dept')];
+    const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
     const gruppen = cluster.map(el => ({
-      code: (el.querySelector('.ship-dept-code')?.textContent || '').trim(),
-      agenten: el.querySelectorAll('.agent-room').length,
-      ids: [...el.querySelectorAll('.agent-room')].map(raum => raum.dataset.agent).filter(Boolean),
+      code: (el.querySelector('.px-dept-head b')?.textContent || '').trim(),
+      agenten: el.querySelectorAll('.px-room[data-agent]').length,
+      ids: [...el.querySelectorAll('.px-room[data-agent]')].map(raum => raum.dataset.agent).filter(Boolean),
     })).filter(g => g.code);
     return {
       anzahl: cluster.length,
@@ -919,8 +926,42 @@ async function pruefeSchiffCluster(page) {
 }
 
 /**
- * Prüft die Ops-Abteilungslegende im Schiff: elf Einträge, kompakter Kopf und
- * auf schmalen Seed-Breiten eingeklappt sowie per Tastatur aufklappbar.
+ * Misst die geöffnete Ops-Abteilungslegende auf horizontale Überläufe.
+ * Geprüft werden der Legendenkasten selbst und die Positionen der
+ * Abteilungseinträge relativ zu seinem Rahmen.
+ */
+async function pruefeLegendeUeberlauf(page) {
+  const stand = await page.evaluate(() => {
+    const el = document.querySelector('#shipLegend');
+    if (!el || !el.open || !el.getClientRects().length) return null;
+    const rahmen = el.getBoundingClientRect();
+    const eintraege = [...el.querySelectorAll('[data-dept]')].map(b => {
+      const r = b.getBoundingClientRect();
+      return { code: (b.dataset.dept || '').trim(), links: r.left, rechts: r.right, breite: r.width };
+    });
+    return {
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+      ausserhalb: eintraege.filter(e => e.breite > 0 && (e.links < rahmen.left - 1 || e.rechts > rahmen.right + 1)),
+      rahmen: { links: rahmen.left, rechts: rahmen.right },
+    };
+  });
+  if (!stand) return [];
+  const befunde = [];
+  if (stand.scrollWidth > stand.clientWidth + 1) {
+    befunde.push(`Raumschiff: geöffnete Ops-Abteilungslegende läuft horizontal über (${stand.scrollWidth}>${stand.clientWidth})`);
+  }
+  if (stand.ausserhalb.length) {
+    const codes = stand.ausserhalb.map(e => e.code || '?').join(', ');
+    befunde.push(`Raumschiff: geöffnete Ops-Abteilungslegende hat Einträge ausserhalb des Rahmens (${codes})`);
+  }
+  return befunde;
+}
+
+/**
+ * Prüft die Ops-Abteilungslegende im Schiff: elf Einträge, kompakter Kopf,
+ * auf schmalen Seed-Breiten eingeklappt sowie per Tastatur aufklappbar und
+ * ohne horizontale Überläufe.
  */
 async function pruefeOpsLegende(page) {
   const stand = await page.evaluate(() => {
@@ -957,6 +998,7 @@ async function pruefeOpsLegende(page) {
 
   if (!stand.schmal) {
     if (!stand.offen) befunde.push('Raumschiff: Ops-Abteilungslegende ist auf breiten Bildschirmen eingeklappt');
+    if (stand.offen) befunde.push(...await pruefeLegendeUeberlauf(page));
     return befunde;
   }
   if (stand.offen) befunde.push('Raumschiff: Ops-Abteilungslegende startet auf schmalen Bildschirmen offen');
@@ -982,6 +1024,7 @@ async function pruefeOpsLegende(page) {
     befunde.push(`Raumschiff: aufgeklappte Ops-Abteilungslegende zeigt ${auf.sichtbar} statt ${erwartet.length} Abteilungen`);
   }
   if (auf.offen) {
+    befunde.push(...await pruefeLegendeUeberlauf(page));
     await page.keyboard.press('Enter');
     await page.waitForTimeout(100);
     const zu = await page.evaluate(() => document.querySelector('#shipLegend').open);
@@ -1302,9 +1345,9 @@ async function pruefeNegativtest(url) {
         ansicht: 'ship',
         name: 'Raumschiff-Abteilungscluster',
         mutieren: () => page.evaluate(() => {
-          const cluster = [...document.querySelectorAll('#shipWorld .ship-dept')];
+          const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
           if (cluster.length !== 11) throw new Error('Schiffscluster nicht vollständig gefunden');
-          const s = cluster.find(el => (el.querySelector('.ship-dept-code')?.textContent || '').trim() === 'S');
+          const s = cluster.find(el => (el.querySelector('.px-dept-head b')?.textContent || '').trim() === 'S');
           if (!s) throw new Error('Schiffscluster S nicht gefunden');
           s.remove();
         }),
@@ -1313,24 +1356,36 @@ async function pruefeNegativtest(url) {
         ansicht: 'ship',
         name: 'Raumschiff-Abteilung leer',
         mutieren: () => page.evaluate(() => {
-          const cluster = [...document.querySelectorAll('#shipWorld .ship-dept')];
-          const a = cluster.find(el => (el.querySelector('.ship-dept-code')?.textContent || '').trim() === 'A');
+          const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
+          const a = cluster.find(el => (el.querySelector('.px-dept-head b')?.textContent || '').trim() === 'A');
           if (!a) throw new Error('Schiffscluster A nicht gefunden');
-          const raeume = [...a.querySelectorAll('.agent-room')];
+          const raeume = [...a.querySelectorAll('.px-room[data-agent]')];
           if (!raeume.length) throw new Error('Agentenräume in Cluster A nicht gefunden');
           raeume.forEach(el => el.remove());
         }),
       },
       {
         ansicht: 'ship',
+        name: 'Raumschiff-Agent fehlt',
+        mutieren: () => page.evaluate(() => {
+          const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
+          const a = cluster.find(el => (el.querySelector('.px-dept-head b')?.textContent || '').trim() === 'A');
+          if (!a) throw new Error('Schiffscluster A nicht gefunden');
+          const raeume = [...a.querySelectorAll('.px-room[data-agent]')];
+          if (raeume.length !== 10) throw new Error(`Schiffscluster A hat ${raeume.length} statt 10 Agentenräume`);
+          raeume[0].remove();
+        }),
+      },
+      {
+        ansicht: 'ship',
         name: 'Raumschiff-Agent zusätzlich',
         mutieren: () => page.evaluate(() => {
-          const cluster = [...document.querySelectorAll('#shipWorld .ship-dept')];
-          const a = cluster.find(el => (el.querySelector('.ship-dept-code')?.textContent || '').trim() === 'A');
-          const b = cluster.find(el => (el.querySelector('.ship-dept-code')?.textContent || '').trim() === 'B');
+          const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
+          const a = cluster.find(el => (el.querySelector('.px-dept-head b')?.textContent || '').trim() === 'A');
+          const b = cluster.find(el => (el.querySelector('.px-dept-head b')?.textContent || '').trim() === 'B');
           if (!a || !b) throw new Error('Schiffscluster A und B nicht gefunden');
-          const raum = a.querySelector('.agent-room');
-          const ziel = b.querySelector('.ship-dept-rooms');
+          const raum = a.querySelector('.px-room[data-agent]');
+          const ziel = b.querySelector('.px-floor');
           if (!raum || !ziel) throw new Error('Agentenraum oder Zielcluster nicht gefunden');
           ziel.appendChild(raum.cloneNode(true));
         }),
@@ -1405,6 +1460,11 @@ function schiffsclusterBildName(breite, nummer, meldung, praefix = '') {
 }
 
 
+function befundTextPfad(opt) {
+  const praefix = opt.bildPraefix ? `${opt.bildPraefix}-` : '';
+  return join(opt.bilder, `${praefix}text250-befunde.txt`);
+}
+
 async function schreibeDiagnose(page, opt, breite, ansicht, neue) {
   if (!opt.bilder || !neue.length) return { bilder: [], html: null };
   const praefix = opt.bildPraefix ? `${opt.bildPraefix}-` : '';
@@ -1419,6 +1479,7 @@ async function schreibeDiagnose(page, opt, breite, ansicht, neue) {
   if (clusterFehler.length) {
     for (const [index, meldung] of clusterFehler.entries()) {
       const datei = join(opt.bilder, schiffsclusterBildName(breite, index + 1, meldung, praefix));
+      if (bilder.includes(datei)) throw new Error(`Doppelter Screenshot-Name: ${datei}`);
       await page.screenshot({ path: datei, fullPage: true });
       bilder.push(datei);
       console.log(`Screenshot: ${datei}`);
@@ -1437,12 +1498,29 @@ async function schreibeDiagnose(page, opt, breite, ansicht, neue) {
     bilder.push(datei);
     console.log(`Screenshot: ${datei}`);
   }
+  const befundDatei = befundTextPfad(opt);
+  const kopf = existsSync(befundDatei) && statSync(befundDatei).size > 0
+    ? ''
+    : `# Text250-Befunde\n\nURL: ${page.url()}\n\n`;
+  const eintrag = [
+    `## ${breite}px / ${ansicht}`,
+    `Zeit: ${new Date().toISOString()}`,
+    `Befunde: ${neue.length}`,
+    ...neue.map((text, index) => `${index + 1}. ${text}`),
+    `HTML: ${html}`,
+    `Screenshots: ${bilder.length ? bilder.join(', ') : 'keine'}`,
+    '',
+    '',
+  ].join('\n');
+  appendFileSync(befundDatei, kopf + eintrag);
+  console.log(`Befunde: ${befundDatei}`);
   return { bilder, html };
 }
 
 async function pruefeScreenshotSelbsttest(url, bilderPfad, bildPraefix = '') {
   if (!bilderPfad) throw new Error('--selbsttest-cluster benötigt --bilder <verzeichnis>');
   mkdirSync(bilderPfad, { recursive: true });
+  writeFileSync(befundTextPfad({ bilder: bilderPfad, bildPraefix }), '');
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 360, height: 900 }, deviceScaleFactor: 1 });
@@ -1452,24 +1530,94 @@ async function pruefeScreenshotSelbsttest(url, bilderPfad, bildPraefix = '') {
       () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
       null, { timeout: 10000 },
     );
-    await page.waitForFunction(() => document.querySelectorAll('#shipWorld .ship-dept').length === 11,
+    await page.waitForFunction(() => document.querySelectorAll('#shipWorld .px-dept').length === 11,
       null, { timeout: 10000 });
     // Der erste Datenrender darf den absichtlich entfernten Cluster nicht
     // gleich wieder einsetzen; danach bleibt das DOM bis zum 8-s-Refresh stabil.
     await page.waitForTimeout(1000);
     await page.evaluate(() => {
-      const cluster = [...document.querySelectorAll('#shipWorld .ship-dept')];
-      const s = cluster.find(el => (el.querySelector('.ship-dept-code')?.textContent || '').trim() === 'S');
-      if (!s) throw new Error('Schiffscluster S nicht gefunden');
+      const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
+      const s = cluster.find(el => (el.querySelector('.px-dept-head b')?.textContent || '').trim() === 'S');
+      const a = cluster.find(el => (el.querySelector('.px-dept-head b')?.textContent || '').trim() === 'A');
+      if (!s || !a) throw new Error('Schiffscluster S oder A nicht gefunden');
       s.remove();
+      const raeume = [...a.querySelectorAll('.px-room[data-agent]')];
+      if (raeume.length !== 10) throw new Error(`Schiffscluster A hat ${raeume.length} statt 10 Agentenräume`);
+      raeume[0].remove();
     });
     const befunde = await pruefeSchiffCluster(page);
     const fehlend = befunde.find(text => text.includes('Abteilung S fehlt'));
     if (!fehlend) throw new Error(`Fehlender Cluster S wurde nicht gemeldet: ${befunde.join('; ')}`);
+    if (befunde.length < 2) {
+      throw new Error(`Mehrfachbefund wurde nicht erzeugt: ${befunde.join('; ')}`);
+    }
+    const neue = befunde.map(text => `360px/ship: ${text}`);
+    const { bilder, html } = await schreibeDiagnose(page, { bilder: bilderPfad, bildPraefix }, 360, 'ship', neue);
+    if (bilder.length !== neue.length) {
+      throw new Error(`Nicht für jeden Befund ein Screenshot: ${neue.length} Befunde, ${bilder.length} Bilder`);
+    }
+    if (new Set(bilder).size !== bilder.length) {
+      throw new Error(`Doppelte Screenshot-Namen: ${bilder.join(', ')}`);
+    }
+    const sBild = bilder.find(datei => datei.includes('abteilung-s-fehlt'));
+    if (!sBild) {
+      throw new Error(`Screenshot für fehlenden Cluster S fehlt: ${bilder.join(', ')}`);
+    }
+    for (const datei of bilder) {
+      if (!existsSync(datei) || statSync(datei).size === 0) {
+        throw new Error(`Screenshot ist leer oder fehlt: ${datei}`);
+      }
+    }
+    if (!html || !existsSync(html) || statSync(html).size === 0) {
+      throw new Error(`HTML-Diagnose ist leer oder fehlt: ${html}`);
+    }
+    const befundDatei = befundTextPfad({ bilder: bilderPfad, bildPraefix });
+    if (!existsSync(befundDatei) || statSync(befundDatei).size === 0) {
+      throw new Error(`Befunddatei ist leer oder fehlt: ${befundDatei}`);
+    }
+    const befundText = readFileSync(befundDatei, 'utf8');
+    for (const erwartet of ['Abteilung S fehlt', '99 statt 103', 'Screenshots:']) {
+      if (!befundText.includes(erwartet)) {
+        throw new Error(`Befunddatei enthält ${erwartet} nicht: ${befundDatei}`);
+      }
+    }
+    console.log(`Selbsttest OK: fehlender Schiffscluster S · ${bilder.length} gleichzeitige Cluster-Befunde · eindeutige Screenshotnamen · ${sBild} · ${befundDatei}`);
+  } finally {
+    await browser.close();
+  }
+}
+
+async function pruefeAgentScreenshotSelbsttest(url, bilderPfad, bildPraefix = '') {
+  if (!bilderPfad) throw new Error('--selbsttest-agent benötigt --bilder <verzeichnis>');
+  mkdirSync(bilderPfad, { recursive: true });
+  writeFileSync(befundTextPfad({ bilder: bilderPfad, bildPraefix }), '');
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 360, height: 900 }, deviceScaleFactor: 1 });
+    await page.goto(`${url}/?v=selbsttest-agent`, { waitUntil: 'domcontentloaded' });
+    await page.locator('.nav[data-v="ship"]').click();
+    await page.waitForFunction(
+      () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
+      null, { timeout: 10000 },
+    );
+    await page.waitForFunction(() => document.querySelectorAll('#shipWorld .px-dept').length === 11,
+      null, { timeout: 10000 });
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => {
+      const a = [...document.querySelectorAll('#shipWorld .px-dept')]
+        .find(el => (el.querySelector('.px-dept-head b')?.textContent || '').trim() === 'A');
+      if (!a) throw new Error('Schiffscluster A nicht gefunden');
+      const raeume = [...a.querySelectorAll('.px-room[data-agent]')];
+      if (raeume.length !== 10) throw new Error(`Schiffscluster A hat ${raeume.length} statt 10 Agentenräume`);
+      raeume[0].remove();
+    });
+    const befunde = await pruefeSchiffCluster(page);
+    const fehlend = befunde.find(text => text.includes('Abteilung A hat 9 statt 10 Agenten'));
+    if (!fehlend) throw new Error(`Fehlender Agent in Cluster A wurde nicht gemeldet: ${befunde.join('; ')}`);
     const neue = [`360px/ship: ${fehlend}`];
     const { bilder, html } = await schreibeDiagnose(page, { bilder: bilderPfad, bildPraefix }, 360, 'ship', neue);
     const praefix = bildPraefix ? `${bildPraefix}-` : '';
-    const erwartet = join(bilderPfad, `${praefix}360px-ship-cluster-01-abteilung-s-fehlt.png`);
+    const erwartet = join(bilderPfad, `${praefix}360px-ship-cluster-01-abteilung-a-hat-9-statt-10-agenten.png`);
     if (!bilder.includes(erwartet)) {
       throw new Error(`Screenshotpfad fehlt: erwartet ${erwartet}, erhalten ${bilder.join(', ')}`);
     }
@@ -1479,10 +1627,52 @@ async function pruefeScreenshotSelbsttest(url, bilderPfad, bildPraefix = '') {
     if (!html || !existsSync(html) || statSync(html).size === 0) {
       throw new Error(`HTML-Diagnose ist leer oder fehlt: ${html}`);
     }
-    console.log(`Selbsttest OK: fehlender Schiffscluster S · ${erwartet}`);
+    const befundDatei = befundTextPfad({ bilder: bilderPfad, bildPraefix });
+    if (!existsSync(befundDatei) || !readFileSync(befundDatei, 'utf8').includes('Abteilung A hat 9 statt 10 Agenten')) {
+      throw new Error(`Befunddatei enthält den fehlenden Agenten nicht: ${befundDatei}`);
+    }
+    console.log(`Selbsttest OK: fehlender Agent in Cluster A · ${erwartet} · ${befundDatei}`);
   } finally {
     await browser.close();
   }
+}
+
+async function pruefeKopfzeile(browser, url) {
+  const page = await browser.newPage({ viewport: { width: 1024, height: 900 }, deviceScaleFactor: 1 });
+  const befunde = [];
+  try {
+    await page.goto(`${url}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(
+      () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
+      null, { timeout: 15000 },
+    );
+    await page.waitForTimeout(250);
+    const stand = await page.evaluate(() => {
+      const top = document.querySelector('.top');
+      const button = document.querySelector('#runBtn');
+      const r = button.getBoundingClientRect();
+      return {
+        topScroll: top.scrollWidth,
+        topClient: top.clientWidth,
+        documentScroll: document.documentElement.scrollWidth,
+        viewport: innerWidth,
+        button: { links: r.left, rechts: r.right, oben: r.top, unten: r.bottom },
+      };
+    });
+    if (stand.topScroll > stand.topClient + 1) {
+      befunde.push(`Kopfzeile läuft horizontal über (${stand.topScroll}>${stand.topClient})`);
+    }
+    if (stand.documentScroll > stand.viewport + 1) {
+      befunde.push(`Seite hat horizontalen Überlauf (${stand.documentScroll}>${stand.viewport})`);
+    }
+    const b = stand.button;
+    if (b.links < 0 || b.rechts > stand.viewport || b.oben < 0 || b.unten > 900) {
+      befunde.push(`«Lauf starten» ist nicht sichtbar (${Math.round(b.links)}–${Math.round(b.rechts)})`);
+    }
+  } finally {
+    await page.close();
+  }
+  return befunde;
 }
 
 async function main() {
@@ -1492,19 +1682,33 @@ async function main() {
     await pruefeScreenshotSelbsttest(opt.url, opt.bilder, opt.bildPraefix);
     return;
   }
+  if (opt.selbsttestAgent) {
+    await pruefeAgentScreenshotSelbsttest(opt.url, opt.bilder, opt.bildPraefix);
+    return;
+  }
   if (opt.negativtest) {
     await pruefeNegativtest(opt.url);
     return;
   }
   console.log(`250-%-Prüflauf: ${opt.ansichten.length} Ansichten × ${opt.breiten.length} Breiten · ${validierungen} Validierungen im Bericht`);
-  if (opt.bilder) mkdirSync(opt.bilder, { recursive: true });
+  if (opt.bilder) {
+    mkdirSync(opt.bilder, { recursive: true });
+    writeFileSync(befundTextPfad(opt), '');
+  }
 
   const browser = await chromium.launch({ headless: true });
   const fehler = [];
   const hinweise = new Set();
-  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0;
+  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, kopfGeprueft = 0;
 
   try {
+    const kopfBefunde = await pruefeKopfzeile(browser, opt.url);
+    if (kopfBefunde.length) {
+      for (const text of kopfBefunde) fehler.push(`1024px/kopf: ${text}`);
+    } else {
+      kopfGeprueft++;
+    }
+
     for (const breite of opt.breiten) {
       const page = await browser.newPage({ viewport: { width: breite, height: 900 }, deviceScaleFactor: 1 });
       page.on('pageerror', err => fehler.push(`${breite}px: ${err}`));
@@ -1589,7 +1793,7 @@ async function main() {
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {
