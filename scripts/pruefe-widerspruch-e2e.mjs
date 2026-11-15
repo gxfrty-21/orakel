@@ -10,6 +10,10 @@
  *
  * Aufruf:
  *   node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300
+ *   node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300 --negativtest
+ *
+ * ``--negativtest`` prüft zusätzlich, dass der Kartenprüfer eine im DOM
+ * verfälschte und eine entfernte Widerspruchszeile als Fehler erkennt.
  */
 
 import { chromium } from 'playwright';
@@ -24,12 +28,16 @@ const ERWARTET = {
 };
 
 function argumente(argv) {
-  const opts = { url: process.env.ORAKEL_URL || 'http://127.0.0.1:3200' };
+  const opts = {
+    url: process.env.ORAKEL_URL || 'http://127.0.0.1:3200',
+    negativtest: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--url') opts.url = argv[++i];
+    else if (arg === '--negativtest') opts.negativtest = true;
     else if (arg === '--hilfe' || arg === '-h') {
-      console.log('Aufruf: node scripts/pruefe-widerspruch-e2e.mjs [--url URL]');
+      console.log('Aufruf: node scripts/pruefe-widerspruch-e2e.mjs [--url URL] [--negativtest]');
       process.exit(0);
     } else {
       console.error(`Unbekannte Option: ${arg}`);
@@ -74,6 +82,101 @@ function apiBefund(status) {
   return { widerspruch: passend, claim };
 }
 
+async function leseWiderspruchKarte(page, claim) {
+  return page.evaluate(({ kernaussage }) => {
+    const karten = [...document.querySelectorAll('#bewertungClaims .li')];
+    const card = karten.find(k =>
+      (k.textContent || '').replace(/\s+/g, ' ').includes(kernaussage)
+    );
+    const detail = card?.querySelector('.claimWiderspruch');
+    if (!detail) return { gefunden: false };
+    return {
+      gefunden: true,
+      sichtbar: Boolean(card?.getClientRects().length) &&
+        Boolean(detail.getClientRects().length),
+      cardText: (card?.textContent || '').replace(/\s+/g, ' ').trim(),
+      grund: (detail.querySelector('.claimWiderspruchGrund')?.textContent || '').trim(),
+      sicherheit: (detail.querySelector('.claimWiderspruchSicherheit')?.textContent || '')
+        .replace(/\s+/g, ' ').trim(),
+      quellen: (detail.querySelector('.claimWiderspruchQuellen')?.textContent || '')
+        .replace(/\s+/g, ' ').trim(),
+      vergleich: (detail.querySelector('.claimWiderspruchWerte')?.textContent || '')
+        .replace(/\s+/g, ' ').trim(),
+    };
+  }, { kernaussage: claim.kernaussage });
+}
+
+function pruefeWiderspruchKarte(karte, widerspruch, claim) {
+  if (!karte.gefunden) throw new Error('Widerspruchsdetail fehlt in #bewertungClaims');
+  if (!karte.sichtbar) throw new Error('Widerspruchskarte oder -detail ist nicht sichtbar');
+  if (!karte.cardText.includes(claim.kernaussage)) {
+    throw new Error(`Claim-Text fehlt in der Karte: «${claim.kernaussage}»`);
+  }
+  if (karte.grund !== widerspruch.grund) {
+    throw new Error(`Karten-Grund «${karte.grund}» statt «${widerspruch.grund}»`);
+  }
+  const sicherheit = Number((karte.sicherheit.match(/[\d.,]+/) || [''])[0].replace(',', '.'));
+  if (sicherheit !== Number(widerspruch.sicherheit)) {
+    throw new Error(
+      `Karten-Sicherheit ${karte.sicherheit} statt API ${widerspruch.sicherheit}`
+    );
+  }
+  if (!karte.quellen.includes(widerspruch.quelle_a) ||
+      !karte.quellen.includes(widerspruch.quelle_b)) {
+    throw new Error(`Karten-Quellen fehlen: ${karte.quellen}`);
+  }
+  const vergleichszahlen = (karte.vergleich.match(/\d+(?:[.,]\d+)?/g) || [])
+    .map(zahl => Number(zahl.replace(',', '.')));
+  if (!vergleichszahlen.includes(ERWARTET.wertA) ||
+      !vergleichszahlen.includes(ERWARTET.wertB)) {
+    throw new Error(`Karten-Vergleichswerte fehlen: ${karte.vergleich}`);
+  }
+}
+
+function erwarteFehler(funktion, teil) {
+  try {
+    funktion();
+  } catch (fehler) {
+    const text = fehler instanceof Error ? fehler.message : String(fehler);
+    if (text.includes(teil)) return;
+    throw new Error(`Negativtest: falscher Fehler «${text}», erwartet «${teil}»`);
+  }
+  throw new Error(`Negativtest: erwarteter Fehler «${teil}» blieb aus`);
+}
+
+async function pruefeNegativfaelle(page, widerspruch, claim) {
+  const falscheZeile = await page.evaluate(({ kernaussage }) => {
+    const karten = [...document.querySelectorAll('#bewertungClaims .li')];
+    const card = karten.find(k =>
+      (k.textContent || '').replace(/\s+/g, ' ').includes(kernaussage)
+    );
+    const detail = card?.querySelector('.claimWiderspruch');
+    const grund = detail?.querySelector('.claimWiderspruchGrund');
+    if (!grund) return false;
+    grund.textContent = 'Falscher Widerspruchsgrund';
+    return true;
+  }, { kernaussage: claim.kernaussage });
+  if (!falscheZeile) throw new Error('Negativtest-Vorbereitung: Widerspruchszeile fehlt');
+  const karteFalsch = await leseWiderspruchKarte(page, claim);
+  erwarteFehler(() => pruefeWiderspruchKarte(karteFalsch, widerspruch, claim), 'Karten-Grund');
+
+  const entfernteZeile = await page.evaluate(({ kernaussage }) => {
+    const karten = [...document.querySelectorAll('#bewertungClaims .li')];
+    const card = karten.find(k =>
+      (k.textContent || '').replace(/\s+/g, ' ').includes(kernaussage)
+    );
+    const detail = card?.querySelector('.claimWiderspruch');
+    if (!detail) return false;
+    detail.remove();
+    return true;
+  }, { kernaussage: claim.kernaussage });
+  if (!entfernteZeile) throw new Error('Negativtest-Vorbereitung: Widerspruchszeile fehlt');
+  const karteFehlt = await leseWiderspruchKarte(page, claim);
+  erwarteFehler(() => pruefeWiderspruchKarte(karteFehlt, widerspruch, claim),
+    'Widerspruchsdetail fehlt');
+  console.log('Widerspruch-E2E-Negativtest OK: 2/2 (falsche und fehlende Widerspruchszeile erkannt)');
+}
+
 async function main() {
   const opt = argumente(process.argv.slice(2));
   const browser = await chromium.launch({ headless: true });
@@ -112,52 +215,8 @@ async function main() {
       { timeout: 10000 },
     );
 
-    const karte = await page.evaluate(({ grund }) => {
-      const details = [...document.querySelectorAll('#bewertungClaims .li .claimWiderspruch')];
-      const detail = details.find(d =>
-        (d.querySelector('.claimWiderspruchGrund')?.textContent || '').trim() === grund
-      );
-      if (!detail) return { gefunden: false };
-      const card = detail.closest('.li');
-      return {
-        gefunden: true,
-        sichtbar: Boolean(card?.getClientRects().length) &&
-          Boolean(detail.getClientRects().length),
-        cardText: (card?.textContent || '').replace(/\s+/g, ' ').trim(),
-        grund: (detail.querySelector('.claimWiderspruchGrund')?.textContent || '').trim(),
-        sicherheit: (detail.querySelector('.claimWiderspruchSicherheit')?.textContent || '')
-          .replace(/\s+/g, ' ').trim(),
-        quellen: (detail.querySelector('.claimWiderspruchQuellen')?.textContent || '')
-          .replace(/\s+/g, ' ').trim(),
-        vergleich: (detail.querySelector('.claimWiderspruchWerte')?.textContent || '')
-          .replace(/\s+/g, ' ').trim(),
-      };
-    }, { grund: widerspruch.grund });
-
-    if (!karte.gefunden) throw new Error('Widerspruchsdetail fehlt in #bewertungClaims');
-    if (!karte.sichtbar) throw new Error('Widerspruchskarte oder -detail ist nicht sichtbar');
-    if (!karte.cardText.includes(claim.kernaussage)) {
-      throw new Error(`Claim-Text fehlt in der Karte: «${claim.kernaussage}»`);
-    }
-    if (karte.grund !== widerspruch.grund) {
-      throw new Error(`Karten-Grund «${karte.grund}» statt «${widerspruch.grund}»`);
-    }
-    const sicherheit = Number((karte.sicherheit.match(/[\d.,]+/) || [''])[0].replace(',', '.'));
-    if (sicherheit !== Number(widerspruch.sicherheit)) {
-      throw new Error(
-        `Karten-Sicherheit ${karte.sicherheit} statt API ${widerspruch.sicherheit}`
-      );
-    }
-    if (!karte.quellen.includes(widerspruch.quelle_a) ||
-        !karte.quellen.includes(widerspruch.quelle_b)) {
-      throw new Error(`Karten-Quellen fehlen: ${karte.quellen}`);
-    }
-    const vergleichszahlen = (karte.vergleich.match(/\d+(?:[.,]\d+)?/g) || [])
-      .map(zahl => Number(zahl.replace(',', '.')));
-    if (!vergleichszahlen.includes(ERWARTET.wertA) ||
-        !vergleichszahlen.includes(ERWARTET.wertB)) {
-      throw new Error(`Karten-Vergleichswerte fehlen: ${karte.vergleich}`);
-    }
+    const karte = await leseWiderspruchKarte(page, claim);
+    pruefeWiderspruchKarte(karte, widerspruch, claim);
     if (seitenfehler.length) {
       throw new Error(`Seitenfehler: ${seitenfehler.join('; ')}`);
     }
@@ -166,6 +225,7 @@ async function main() {
       `${widerspruch.quelle_a} ↔ ${widerspruch.quelle_b}, ` +
       `${ERWARTET.wertA} bp ↔ ${ERWARTET.wertB} bp`
     );
+    if (opt.negativtest) await pruefeNegativfaelle(page, widerspruch, claim);
   } finally {
     await browser.close();
   }

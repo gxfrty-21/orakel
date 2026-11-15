@@ -463,6 +463,18 @@ jobs:
           fi
           grep -q 'Widerspruch-E2E OK' artifacts/widerspruch-e2e/lauf.log
 
+          # Der Negativlauf verändert nur das DOM der Testseite: einmal wird
+          # der Widerspruchsgrund verfälscht, einmal die Detailzeile entfernt.
+          # Beide Fälle müssen vom selben Kartenprüfer erkannt werden.
+          if ! node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300 \
+               --negativtest | tee artifacts/widerspruch-e2e/negativtest.log; then
+            echo "--- Widerspruch-E2E-Negativtest fehlgeschlagen ---"
+            tail -50 artifacts/widerspruch-e2e/server.log
+            exit 1
+          fi
+          grep -q 'Widerspruch-E2E-Negativtest OK: 2/2' \
+            artifacts/widerspruch-e2e/negativtest.log
+
       # Auch bei Abbruch oder Timeout: Der Job gilt dann als abgebrochen.
       - name: Screenshots, Befunde und HTML bei Fehlschlag hochladen
         if: failure() || cancelled()
@@ -490,6 +502,7 @@ jobs:
             artifacts/text250/seed-tastatur.log
             artifacts/widerspruch-e2e/server.log
             artifacts/widerspruch-e2e/lauf.log
+            artifacts/widerspruch-e2e/negativtest.log
           if-no-files-found: ignore
           retention-days: 7
 
