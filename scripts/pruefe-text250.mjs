@@ -23,7 +23,8 @@
  *   --ansichten lab,kb     Standard alle zwölf Ansichten
  *   --ohne-tabellen        Nur Seitenüberläufe prüfen, Tabellen überspringen
  *   --bilder <verzeichnis> Schreibt bei Befunden je Ansicht und Breite Screenshot und HTML
- *   Die Claim-Karte wird zusätzlich bei 240 px geprüft.
+ *   Die Seite samt Kopf und Navigation wird zusätzlich bei 240 px auf Umbruch
+ *   und horizontalen Überlauf geprüft.
  *   --bild-praefix <name>  Gibt Screenshots und HTML einen eindeutigen Namenspräfix
  *   --selbsttest-cluster   Prüft mehrere gleichzeitige Cluster-Fehler und eindeutige Screenshotnamen
  *   --selbsttest-agent      Prüft einen fehlenden Agenten samt Screenshotpfad
@@ -142,6 +143,82 @@ async function pruefeClaimMetadaten(browser, url, breite) {
   }
 }
 
+/** Prüft bei 240 px alle gewählten Ansichten in normaler Schrift. */
+async function pruefe240Ansichten(browser, url, ansichten) {
+  const page = await browser.newPage({ viewport: { width: 240, height: 900 }, deviceScaleFactor: 1 });
+  const befund = [];
+  const ergebnisse = [];
+  const seitenfehler = [];
+  page.on('pageerror', err => seitenfehler.push(String(err)));
+  try {
+    await page.goto(`${url}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(
+      () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
+      null, { timeout: 15000 },
+    );
+    await page.waitForTimeout(250);
+    for (const ansicht of ansichten) {
+      const nav = page.locator(`.nav[data-v="${ansicht}"]`);
+      if (await nav.count()) await nav.click();
+      else await page.evaluate(v => zeige(v), ansicht);
+      await page.waitForTimeout(WARTEZEIT[ansicht]);
+      if (ansicht === 'ship') {
+        await page.waitForFunction(() => {
+          const text = document.querySelector('#companyTag')?.textContent || '';
+          return /live|API-FEHLER|keine Daten/.test(text);
+        }, null, { timeout: 5000 });
+      }
+      const stand = await page.evaluate(() => {
+        const top = document.querySelector('.top');
+        const side = document.querySelector('.side');
+        const sideKasten = side?.getBoundingClientRect();
+        const navs = side ? [...side.querySelectorAll('.nav')] : [];
+        return {
+          viewport: innerWidth,
+          doc: document.documentElement.scrollWidth,
+          top: top?.scrollWidth || 0,
+          topClient: top?.clientWidth || 0,
+          side: side?.scrollWidth || 0,
+          sideClient: side?.clientWidth || 0,
+          navAnzahl: navs.length,
+          navAussen: sideKasten ? navs.filter(n => {
+            const kasten = n.getBoundingClientRect();
+            return kasten.left < sideKasten.left - 1 || kasten.right > sideKasten.right + 1;
+          }).length : 0,
+        };
+      });
+      const ansichtBefund = [];
+      if (stand.doc > stand.viewport + 1) {
+        ansichtBefund.push(`Seite ${stand.doc}>${stand.viewport}`);
+      }
+      if (stand.top > stand.topClient + 1) {
+        ansichtBefund.push(`Kopf ${stand.top}>${stand.topClient}`);
+      }
+      if (stand.side > stand.sideClient + 1) {
+        ansichtBefund.push(`Navigation ${stand.side}>${stand.sideClient}`);
+      }
+      if (stand.navAnzahl !== 10) {
+        ansichtBefund.push(`Navigationspunkte ${stand.navAnzahl} statt 10`);
+      }
+      if (stand.navAussen) {
+        ansichtBefund.push(`Navigationspunkte ausserhalb ${stand.navAussen}`);
+      }
+      ergebnisse.push({ ansicht, ...stand, ok: ansichtBefund.length === 0 });
+      if (ansichtBefund.length) {
+        befund.push(`240px/${ansicht}: ${ansichtBefund.join(', ')}`);
+      } else {
+        console.log(`240px/${ansicht}: OK · Seite ${stand.doc}px · Kopf ${stand.top}/${stand.topClient} · Navigation ${stand.side}/${stand.sideClient}`);
+      }
+    }
+    if (seitenfehler.length) befund.push(`240px/Seitenfehler: ${seitenfehler.join('; ')}`);
+    const ok = ergebnisse.filter(e => e.ok).length;
+    console.log(`240px: ${ok}/${ergebnisse.length} Ansichten ohne horizontalen Überlauf`);
+    return { befund, ergebnisse };
+  } finally {
+    await page.close();
+  }
+}
+
 /** Prüft Widerspruchsgrund und -sicherheit in der gerenderten Claim-Karte. */
 async function pruefeClaimWiderspruchsdetails(page) {
   return page.evaluate(() => {
@@ -208,9 +285,7 @@ async function pruefeLangeQuellen(page) {
       }
     }
     const viewport = document.documentElement.clientWidth;
-    // Bei 240 px bleiben Kopf- und Navigationsleiste separat scrollbar;
-    // geprüft wird hier die Claim-Karte, nicht die gesamte Seite.
-    if (innerWidth > 260 && document.documentElement.scrollWidth > viewport + 1) {
+    if (document.documentElement.scrollWidth > viewport + 1) {
       befund.push(`Seite mit Langhosts: horizontaler Überlauf (${document.documentElement.scrollWidth}>${viewport})`);
     }
     return befund;
@@ -290,10 +365,34 @@ async function pruefeClaimMetadatenAufSeite(page) {
     }
 
     const viewport = document.documentElement.clientWidth;
-    // Bei 240 px bleiben Kopf- und Navigationsleiste separat scrollbar;
-    // die Karte selbst wird weiter unten gegen den Viewport geprüft.
-    if (innerWidth > 260 && document.documentElement.scrollWidth > viewport + 1) {
+    if (document.documentElement.scrollWidth > viewport + 1) {
       befund.push(`Seite hat horizontalen Überlauf (${document.documentElement.scrollWidth}>${viewport})`);
+    }
+    if (innerWidth <= 260) {
+      const top = document.querySelector('.top');
+      const side = document.querySelector('.side');
+      if (!top) {
+        befund.push('Kopfzeile fehlt');
+      } else if (top.scrollWidth > top.clientWidth + 1) {
+        befund.push(`Kopfzeile läuft horizontal über (${top.scrollWidth}>${top.clientWidth})`);
+      }
+      if (!side) {
+        befund.push('Navigationsleiste fehlt');
+      } else {
+        if (side.scrollWidth > side.clientWidth + 1) {
+          befund.push(`Navigationsleiste läuft horizontal über (${side.scrollWidth}>${side.clientWidth})`);
+        }
+        const rahmen = side.getBoundingClientRect();
+        const navs = [...side.querySelectorAll('.nav')];
+        if (navs.length !== 10) befund.push(`Navigationspunkte: ${navs.length} statt 10`);
+        const ausserhalb = navs.filter(nav => {
+          const kasten = nav.getBoundingClientRect();
+          return kasten.left < rahmen.left - 1 || kasten.right > rahmen.right + 1;
+        });
+        if (ausserhalb.length) {
+          befund.push(`Navigationspunkte ausserhalb der Leiste: ${ausserhalb.length}`);
+        }
+      }
     }
     const panel = document.querySelector('#bewertungPanel');
     if (innerWidth <= 260 && panel) {
@@ -359,7 +458,7 @@ function argumente(argv) {
       console.log('Aufruf: node scripts/pruefe-text250.mjs [--url URL] [--breiten 360,320,280]\n' +
         '       [--ansichten overview,risk,lab,strat,research,globe,betrieb,ship,spider,kb,agents,konf] [--ohne-tabellen]\n' +
         '       [--bilder <verzeichnis>] [--bild-praefix <name>] [--negativtest] [--selbsttest-cluster] [--selbsttest-agent]\n' +
-        '       Die Claim-Karte wird zusätzlich bei 240 px geprüft.');
+        '       Die Seite samt Kopf und Navigation wird zusätzlich bei 240 px geprüft.');
       process.exit(0);
     }
     else { console.error(`Unbekannte Option: ${arg}`); process.exit(2); }
@@ -2234,7 +2333,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const fehler = [];
   const hinweise = new Set();
-  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, legendeDesktopGeprueft = 0, kopfGeprueft = 0, schreibwegeGesamt = 0, claimPruefungen = 0;
+  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, legendeDesktopGeprueft = 0, kopfGeprueft = 0, schmaleAnsichten = 0, schreibwegeGesamt = 0, claimPruefungen = 0;
 
   try {
     const kopfBefunde = await pruefeKopfzeile(browser, opt.url);
@@ -2243,6 +2342,10 @@ async function main() {
     } else {
       kopfGeprueft++;
     }
+
+    const schmaleErgebnis = await pruefe240Ansichten(browser, opt.url, opt.ansichten);
+    schmaleAnsichten = schmaleErgebnis.ergebnisse.length;
+    for (const text of schmaleErgebnis.befund) fehler.push(text);
 
     const desktopLegendeBefunde = await pruefeLegendeDesktop(browser, opt.url);
     if (desktopLegendeBefunde.length) {
@@ -2356,7 +2459,7 @@ async function main() {
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {

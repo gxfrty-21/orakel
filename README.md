@@ -269,9 +269,16 @@ ORAKEL_DB_PFAD=/tmp/orakel-widerspruch.db python -m orakel serve --host 127.0.0.
 
 # Im ersten Terminal:
 node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300
+
+# Negativtest: verfälscht im DOM den Widerspruchsgrund und entfernt danach
+# die Widerspruchszeile; beide Fälle müssen als Fehler erkannt werden.
+node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300 --negativtest
 ```
 
-Der CI-Job `text250` führt den Test auf einer frischen Seed-Kopie aus. Das
+Der Negativtest verändert keine Datenbank und keine API-Antwort. Er prüft, dass
+derselbe Kartenprüfer eine falsche Widerspruchszeile und eine fehlende
+Widerspruchszeile zuverlässig ablehnt. Der CI-Job `text250` führt den positiven
+Test und den Negativtest auf einer frischen Seed-Kopie aus. Das
 Seed-Skript verweigert eine fehlende Zieldatenbank, damit es nicht versehentlich
 eine neue Produktionsdatenbank anlegt.
 
@@ -280,11 +287,37 @@ eine neue Produktionsdatenbank anlegt.
 `scripts/pruefe-text250.mjs` skaliert die Schrift im Dashboard auf 250 %
 (Faktor 2,5 auf berechnete Schriftgrössen und Zeilenhöhen). Bei 360, 320 und
 280 px prüft es, ob Inhalte seitlich aus ihrem Kasten oder aus dem Viewport
-laufen. Die Kernaussagen-Karte wird zusätzlich bei 240 px geprüft. Dort
-wechseln ihre vier KPI-Kacheln und das Claim-Grid auf eine Spalte; die
-Karte bleibt im sichtbaren Bereich. Kopf- und Navigationsleiste bleiben auf
-dieser Breite separat scrollbar. **240 px ist für die Kernaussagen-Karte
-unterstützt, aber keine allgemeine Mindestbreite aller Ansichten.**
+laufen. Die Kernaussagen-Karte und die Kopf- und Navigationsleiste werden
+zusätzlich bei 240 px in normaler Darstellung geprüft. Die vier KPI-Kacheln
+und das Claim-Grid wechseln auf eine Spalte, die Quellenzeile bleibt im
+Panel. Kopf und Navigation brechen kompakt um; die Seite scrollt dort nicht
+horizontal. **240 px ist für die geprüfte Spider-Seite in normaler
+Darstellung unterstützt, aber keine allgemeine Mindestbreite aller Ansichten
+und nicht für den vollen 250-%-Lauf zugesagt.** Der separate 250-%-Lauf bei
+240 px scheitert an Panel-Kopf und KPI-Beschriftung; 260/270 px haben
+ebenfalls Befunde. Die kleinste geprüfte Breite mit vollständigem 250-%-Lauf ist 280 px.
+
+Die 240-px-Prüfung misst alle zwölf Ansichten in normaler Schrift bei
+240 × 900 px. Jede Zeile prüft Seiten-, Kopf- und Navigationsbreite:
+
+| Ansicht | Scrollbreite | Ergebnis |
+| --- | ---: | --- |
+| Übersicht | 240 px | OK |
+| Risiko & Daten | 240 px | OK |
+| Lab | 240 px | OK |
+| Strategien | 240 px | OK |
+| Research | 240 px | OK |
+| Weltkugel | 240 px | OK |
+| Betrieb | 240 px | OK |
+| Raumschiff | 240 px | OK |
+| Spider | 240 px | OK |
+| Wissensbank | 240 px | OK |
+| Agentenraum | 240 px | OK |
+| Konferenz | 240 px | OK |
+
+Der CI-Schritt verlangt dafür die Zusammenfassung
+`240px: 12/12 Ansichten ohne horizontalen Überlauf`.
+
 Die feste Pixel-Art des Raumschiffs ist von der Textskalierung
 ausgenommen; die Agentendetails in der rechten Spalte skalieren mit. Tabellen werden zusätzlich mit langen deutschen Komposita belastet und
 als Karten geprüft. Im Lab überfährt er ausserdem die Kapitalkurve und prüft
@@ -333,8 +366,8 @@ Dabei prüft er, ob die Karte,
 ihre Metadaten und Widerspruchszeilen seitlich aus dem Viewport oder ihrem
 Kasten laufen. Zusätzlich werden drei bewusst lange Quellenfälle geprüft – zwei
 überlange Hostpaare und ein einzelner sehr langer Host gegen eine kurze Quelle.
-Die Quellenzeile bleibt bei 280 und 320 px im Panel, und der Trenner `↔` darf
-nicht allein stehen.
+Die Quellenzeile bleibt bei 280 und 320 px im Panel, in normaler Darstellung
+auch bei 240 px; der Trenner `↔` darf nicht allein stehen.
 Die Testdaten werden nur ins DOM injiziert und nicht in SQLite geschrieben. Die
 Zusammenfassung meldet `Claims 4× geprüft` (360, 320, 280 und zusätzlich
 240 px).

@@ -227,7 +227,8 @@ jobs:
 
       # Ein hängender Browser soll nicht das Job-Limit von 15 Minuten
       # ausschöpfen. Der Step-Timeout gilt als Fehlschlag, sodass Log und
-      # Screenshots danach hochgeladen werden.
+      # Screenshots danach hochgeladen werden. Der Lauf prüft zusätzlich alle
+      # zwölf Ansichten in normaler Schrift bei 240 px.
       - name: Dashboard starten und 250-%-Prüflauf ausführen
         timeout-minutes: 5
         run: |
@@ -261,6 +262,11 @@ jobs:
           fi
           if ! grep -q 'Claims 4× geprüft' artifacts/text250/lauf.log; then
             echo "Claim-Prüfung wurde nicht für alle vier Breiten ausgeführt"
+            exit 1
+          fi
+          if ! grep -q '240px: 12/12 Ansichten ohne horizontalen Überlauf' \
+               artifacts/text250/lauf.log; then
+            echo "240-px-Prüfung wurde nicht für alle zwölf Ansichten ausgeführt"
             exit 1
           fi
 
