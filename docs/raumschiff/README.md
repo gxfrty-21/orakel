@@ -1,7 +1,7 @@
 # Orakel Raumschiff — Planung und 2D-Umsetzung
 
 **Status:** Phase 1 umgesetzt (Company-Schicht); aktuelle Raumschiff-Ansicht ist der 2D-Agenten-Querschnitt `#v-ship` mit 103 Räumen in elf Abteilungen<br>
-**Stand:** 14. November 2026
+**Stand:** 15. November 2026
 **Grundlage:** bestehendes Orakel-Projekt in diesem Repository  
 **Entscheidung des Owners:** Phase 1 freigegeben; 2D ist die aktuelle Darstellung
 
@@ -11,14 +11,17 @@ Agentenstruktur, das Management, die Sekretäre, die Kommunikation, die
 Mitternachtskonferenz, den Ressourcenplan und einen realistischen Entwicklungsplan
 vorlegen. Phase 1 ist inzwischen als additive Company-Schicht umgesetzt: 103 Profile,
 SQLite-Queue, Policy-Engine, Audit-Kette und CLI. Ein begehbarer 3D-Prototyp des
-Main Command Centers existierte kurzzeitig und wurde am 12. November 2026 wieder
+Hauptzentrale existierte kurzzeitig und wurde am 12. November 2026 wieder
 entfernt. Die aktuelle Umsetzung ist der 2D-Agenten-Querschnitt: 103 Company-Agenten,
 jeder mit einem eigenen Raum, gruppiert nach elf Abteilungen (A–J mit je zehn
 Fachagenten und S mit drei Sekretären). Agentenraum und Konferenz liegen als
 Gemeinschaftsräume direkt im Schiff; Meetingraum und Sekretariat bleiben unter einem
-eingeklappten Bereich erhalten. Die Company-Lese-API für Übersicht, Agentenstatus,
-Aufgaben, Detailprofile, Nachrichten, Raumstatus und die letzte Konferenz ist
-umgesetzt; Management- und Konferenzlogik bleiben offen.
+eingeklappten Bereich erhalten. Die Company-API für Übersicht, Agentenstatus, Aufgaben, Detailprofile,
+Nachrichten, Raumstatus und die letzte Konferenz ist umgesetzt. Agenten können
+strukturierte Nachrichten mit Threads, Evidence und Quittung austauschen; jeder
+Agent besitzt persönliche, nach Scope und Schlüssel getrennte Erinnerungen.
+Management- und Konferenzlogik bleiben offen. Die unveränderlichen Grenzen sind
+unter [Betriebsgrenzen](#betriebsgrenzen) zusammengefasst.
 
 ## Kurzfassung
 
@@ -57,14 +60,14 @@ wäre die im Masterprompt verbotene Dekoration. 3D ist derzeit nicht freigegeben
 | Fakten-DB | SQLite mit WAL, Kerzen, Validierungen, Trades, Entscheiden, Ereignissen, Konten, Agentenläufen, Konferenzen | Bleibt die einzige Wahrheit; wird um Aufgaben, Nachrichten und Raumstatus erweitert |
 | Paper-Trading | CSV-/Mock-/MT5-Broker mit Paper-Sperre; kein Codepfad zu echten Orders | Bleibt unverändert und unverhandelbar |
 | Richter | Training/OOS, Walk-Forward, Monte-Carlo, Nachbarparameter, Zufallstest | Kein Agent darf diese Regeln umgehen |
-| Risiko | 1 % je Trade, 10 % Not-Stop, 15 Positionen, Engagement, Korrelation | Bleibt hart; Risk Management erhält Vetorecht |
+| Risiko | 1 % je Trade, 10 % Not-Stop, 15 Positionen, Engagement, Korrelation | Bleibt hart; Risikomanagement erhält Vetorecht |
 | Spider | RSS-Quellen, robots.txt, Quellenprüfung, Artikel, Volltext, Weiterleitungen | Liefert die realen Daten für Intelligence und Observatory |
 | Agenten | 80 deterministische Lauf-Rollen in acht Abteilungen, je zehn Agenten, echte Ergebnisse je Lauf | Datenbasis für Aktivitäten; nicht die sichtbare Schiffsbelegung |
-| Company-Profile | 103 Agenten in elf Abteilungen (A–J mit je zehn, S mit drei Sekretären); im 2D-Querschnitt als Räume sichtbar | Sichtbare Agentenbasis des Schiffs; freie Kommunikation und Management bleiben offen |
+| Company-Profile | 103 Agenten in elf Abteilungen (A–J mit je zehn, S mit drei Sekretären); im 2D-Querschnitt als Räume sichtbar | Sichtbare Agentenbasis des Schiffs; Kommunikation und persönliche Gedächtnisse sind umgesetzt, Management bleibt offen |
 | Konferenz | 00:00 Europe/Zurich, Nachholen, Protokoll, Massnahmen, Vault | Wird zum echten autonomen Führungsgremium ausgebaut |
 | Vault | Obsidian-kompatibel, Frontmatter, Tags, `[[Links]]` | Gemeinsames Langzeitgedächtnis und Konferenzarchiv |
 | Dashboard | FastAPI, 12 Ansichten, Live-Polling, 2D-Weltkugel, 2D-Agenten-Querschnitt | Aktuelle Darstellung; 3D ist zurückgestellt |
-| Tests | 214 Tests, unter anderem Risiko, Backtest, Daten, Spider, Globe, Web-Auth und 250-%-Layout | Jede neue Phase muss diese Suite grün halten |
+| Tests | 220 Tests, unter anderem Risiko, Backtest, Daten, Spider, Globe, Web-Auth, Agentenkommunikation, Gedächtnisse und 250-%-Layout | Jede neue Phase muss diese Suite grün halten |
 | Deployment | Railway, Docker, SQLite-Volume, Basic-Auth | 2D läuft im Browser; der Server bleibt schlank |
 
 ### Was heute noch fehlt
@@ -72,13 +75,12 @@ wäre die im Masterprompt verbotene Dekoration. 3D ist derzeit nicht freigegeben
 - 3D-Welt und begehbare Decks sind nicht umgesetzt; der Prototyp wurde am
   12. November 2026 entfernt. Die 2D-Ansicht ist bewusst die aktuelle Stufe.
 - Die Company-Schicht ist additiv und mit `[unternehmen] aktiv = false` nicht in den
-  laufenden Takt eingebunden; die Company-Lese-API ist da, freie
-  Agentenkommunikation und die Managementlogik fehlen.
-- Keine Agenten-Gedächtnisse pro Person; der Vault ist gemeinsames Gedächtnis.
-- Keine Abteilungsleiter-Ratssitzung als Ebene 2; die Konferenz protokolliert
+  laufenden Takt eingebunden; die Company-API und die strukturierte
+  Agentenkommunikation sind da, die Managementlogik fehlt.
+- Die Abteilungsleiter-Ratssitzung als Ebene 2 fehlt; die Konferenz protokolliert
   Validierungszahlen, statt autonom zu führen.
-- Die 103 Company-Profile sind im 2D-Querschnitt sichtbar, aber ihre freie
-  Kommunikation und durchgängige Task-Ausführung fehlen weiterhin; die 80
+- Die 103 Company-Profile sind im 2D-Querschnitt sichtbar; ihre durchgängige
+  autonome Aufgabenführung und die Managementebene fehlen weiterhin. Die 80
   historischen Lauf-Rollen bleiben getrennt.
 - Keine unternehmensweite Echtzeitübertragung; das Dashboard pollt.
 - Kein LLM und keine echten Broker-Orders. Paper-only ist eine harte Grenze, keine
@@ -127,9 +129,9 @@ Paper-only, SQLite und die Company-Phase 1; die 3D-Punkte sind zurückgestellt.
    Zentraler Liftschacht und Atrium verbinden alle Ebenen. Der Grundriss steht in
    `RAUMBUCH.md`; der umgesetzte 2D-Querschnitt nutzt stattdessen 103 Agentenräume.
 2. **Zehn Fachabteilungen mit je zehn Agenten, plus drei Sekretäre.** Insgesamt 103
-   Agenten in elf Abteilungsgruppen (A–J und S). Die neuen Abteilungen sind Global
-   Intelligence Observatory (I) und Security Operations (J); S ist das Executive
-   Secretariat. Die bestehenden A–H werden in die neue Struktur überführt.
+   Agenten in elf Abteilungsgruppen (A–J und S). Die neuen Abteilungen sind Globale
+   Intelligence (I) und Sicherheit (J); S ist das Executive-Sekretariat. Die
+   bestehenden A–H werden in die neue Struktur überführt.
 3. **Kein React-Umbau.** Das Dashboard bleibt ohne Bundler gebaut. Die aktuelle
    2D-Darstellung kommt ohne 3D-Framework aus; Three.js ist für eine spätere
    3D-Stufe optional, aber nicht im Einsatz.
@@ -191,9 +193,9 @@ Werte bleiben leer. Agentenstatus und offene Aufgaben aktualisieren sich alle
 keine neue Datenquelle und keine Automation.
 
 Geprüft wird der Querschnitt mit 214 pytest-Tests, dem 250-%-Lauf über zwölf
-Ansichten und drei Breiten sowie dem Negativtest, der neun absichtliche Fehler —
-darunter ein fehlender Abteilungstab, ein fehlender und ein zusätzlicher Agent in
-einem zweiten Schiffscluster — erkennen muss. Der sichtbare
+Ansichten und drei Breiten sowie dem Negativtest, der zehn absichtliche Fehler —
+darunter ein fehlender Abteilungstab, ein fehlender und ein zusätzlicher Agent
+sowie eine doppelte Agenten-ID bei gleicher Agentenzahl — erkennen muss. Der sichtbare
 Agenten-Querschnitt und die Detailspalte werden zusätzlich im Browser auf 103
 Räume, elf Abteilungen, zwei Gemeinschaftsräume und Zoom ohne Seitenfehler geprüft.
 
@@ -203,10 +205,19 @@ Mitternachtskonferenz als Führungsgremium, LLM und echte Broker-Orders (bewusst
 Codepfad).
 
 Der Agenten-Querschnitt ist der aktuelle sichtbare Teil von Phase 2. Die
-Company-Lese-API für Übersicht, Agentenstatus, Aufgaben, Detailprofile,
-Nachrichten, Raumstatus, die letzte Konferenz und SSE-Snapshots ist umgesetzt. Als
+Company-API für Übersicht, Agentenstatus, Aufgaben, Detailprofile, Nachrichten,
+Raumstatus, die letzte Konferenz und SSE-Snapshots ist umgesetzt. Agenten-
+kommunikation mit Threads/Quittung und persönliche Gedächtnisse sind ergänzt. Als
 Nächstes folgt die inhaltliche Vertiefung der Agentenarbeit — weiterhin ohne echte
 Orders. Ein 3D-Ausbau ist nicht freigegeben.
+
+<h2 id="betriebsgrenzen">Betriebsgrenzen</h2>
+
+Paper-only bleibt eine harte Grenze: Es gibt keinen Codepfad zu echten
+Broker-Orders, keine freie Shell für Agenten und keine automatische Änderung von
+Risikogrenzen, Auth oder Secrets. Die 2D-Darstellung ist eine Ansicht auf SQLite
+und den Vault; sie erzeugt weder Daten noch Beschäftigung. 3D und begehbare Decks
+sind nicht freigegeben.
 
 ## Offene Entscheidungen für die nächsten Phasen
 

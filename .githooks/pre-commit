@@ -16,4 +16,10 @@ else
 fi
 
 printf '%s\n' "Doku-Prüfung: Markdown- oder Prüfskript-Änderung erkannt."
-exec "$python" "$root/scripts/pruefe_doku.py"
+status=0
+if printf '%s\n' "$staged" | grep -Eq '^scripts/pruefe_doku\.py$'; then
+    printf '%s\n' "Doku-Prüfung: Prüfskript geändert, Negativtest wird zusätzlich ausgeführt."
+    "$python" "$root/scripts/pruefe_doku.py" --negativtest || status=$?
+fi
+"$python" "$root/scripts/pruefe_doku.py" || status=$?
+exit "$status"
