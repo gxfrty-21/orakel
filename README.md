@@ -154,7 +154,7 @@ der erzeugte Rohbericht liegt nach dem Lauf unter
 | Dashboard | Orakel-Design, 12 Ansichten, Live-Polling, 2D-Agenten-Querschnitt, «Lauf starten» |
 | Dauerbetrieb | persistenter Plan, Backoff, Ressourcenlimits, Jobprotokoll und Betriebsansicht |
 
-Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswahl einmal geöffnet; scheitert er, gibt es keinen Ersatzkandidaten. Im Lab zeigt ein Chart die aggregierte Kapitalkurve der Testfenster; beim Überfahren nennt ein Tooltip Kapitalstand, Veränderung seit dem Start in Prozent, Datum sowie den bisherigen Höchststand mit Abstand in Prozent; per Tastatur (Tab, Pfeiltasten, Home/Ende) ist dieselbe Anzeige erreichbar. dort und in der Strategien-Ansicht lässt sich zudem bei jedem Kandidaten die Liste der Walk-Forward-Fenster aufklappen: Trainings- und Testblock, gewählter Parameter, Trades, Profit Factor und Netto je Fenster.
+Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswahl einmal geöffnet; scheitert er, gibt es keinen Ersatzkandidaten. Im Lab zeigt ein Chart die aggregierte Kapitalkurve der Testfenster; beim Überfahren nennt ein Tooltip Kapitalstand, Veränderung seit dem Start in Prozent, Datum sowie den bisherigen Höchststand mit Abstand in Prozent; per Tastatur (Tab, Pfeiltasten, Home/Ende) ist dieselbe Anzeige erreichbar. Solange der Tastaturfokus im Lab-Bereich liegt, pausiert der Auto-Refresh, damit die Anzeige beim Ablesen nicht neu aufgebaut wird. Dort und in der Strategien-Ansicht lässt sich zudem bei jedem Kandidaten die Liste der Walk-Forward-Fenster aufklappen: Trainings- und Testblock, gewählter Parameter, Trades, Profit Factor und Netto je Fenster.
 
 ## Risikogrenzen (deine Vorgaben)
 
@@ -287,15 +287,13 @@ eine neue Produktionsdatenbank anlegt.
 `scripts/pruefe-text250.mjs` skaliert die Schrift im Dashboard auf 250 %
 (Faktor 2,5 auf berechnete Schriftgrössen und Zeilenhöhen). Bei 360, 320 und
 280 px prüft es, ob Inhalte seitlich aus ihrem Kasten oder aus dem Viewport
-laufen. Die Kernaussagen-Karte und die Kopf- und Navigationsleiste werden
-zusätzlich bei 240 px in normaler Darstellung geprüft. Die vier KPI-Kacheln
+laufen. Zusätzlich prüft es alle zwölf Ansichten bei 240 px sowie die
+Kernaussagen-Karte und die Kopf- und Navigationsleiste. Die vier KPI-Kacheln
 und das Claim-Grid wechseln auf eine Spalte, die Quellenzeile bleibt im
 Panel. Kopf und Navigation brechen kompakt um; die Seite scrollt dort nicht
-horizontal. **240 px ist für die geprüfte Spider-Seite in normaler
-Darstellung unterstützt, aber keine allgemeine Mindestbreite aller Ansichten
-und nicht für den vollen 250-%-Lauf zugesagt.** Der separate 250-%-Lauf bei
-240 px scheitert an Panel-Kopf und KPI-Beschriftung; 260/270 px haben
-ebenfalls Befunde. Die kleinste geprüfte Breite mit vollständigem 250-%-Lauf ist 280 px.
+horizontal. **Der vollständige 250-%-Lauf ist bei 240 px nach den
+CSS-Korrekturen grün (12/12 Ansichten); 240 px ist die untere geprüfte
+Breite, darunter gibt es keine Layoutzusage.**
 
 Die 240-px-Prüfung misst alle zwölf Ansichten in normaler Schrift bei
 240 × 900 px. Jede Zeile prüft Seiten-, Kopf- und Navigationsbreite:
@@ -315,8 +313,44 @@ Die 240-px-Prüfung misst alle zwölf Ansichten in normaler Schrift bei
 | Agentenraum | 240 px | OK |
 | Konferenz | 240 px | OK |
 
-Der CI-Schritt verlangt dafür die Zusammenfassung
+Der erfolgreiche [text250-CI-Lauf](https://github.com/gxfrty-21/orakel/actions/runs/43811966526/job/133115401944)
+bestätigt diese 12/12-Prüfung. Der CI-Schritt verlangt dafür die Zusammenfassung
 `240px: 12/12 Ansichten ohne horizontalen Überlauf`.
+
+Der spätere erfolgreiche [CI-Lauf 43939906217](https://github.com/gxfrty-21/orakel/actions/runs/43939906217)
+auf PR-Head `5f21361` bestätigt diese Prüfung ebenfalls; alle sechs Jobs waren
+erfolgreich.
+
+### Belastbarkeitsgrenze bei 240 px
+
+Die Kernaussagen-Karte ist bei 240 px in normaler Darstellung tragfähig:
+
+- `#bewertungPanel` ist 208 px breit (206 px Innenbreite) und bleibt zwischen
+  16 und 224 px im Viewport.
+- Die Quellenzeile ist 178 px breit, bricht zweizeilig um und bleibt mit
+  `scrollWidth === clientWidth === 178` im Panel.
+- KPI-Kacheln und Claim-Grid wechseln auf eine Spalte; die Claim-Liste bleibt
+  intern scrollbar.
+- Die Seite bleibt mit `scrollWidth === clientWidth === 240` ohne horizontalen
+  Überlauf. Kopf und Navigation umbrechen kompakt und bleiben jeweils innerhalb
+  ihrer 240-px-Container.
+
+Der vollständige 250-%-Lauf über alle zwölf Ansichten ist bei 240 px grün
+(`240px: 12/12`). Der gezielte Spider-Lauf prüft die Karte zusätzlich bei
+240 px, auch wenn 240 px nicht in `--breiten` steht:
+
+```bash
+node scripts/pruefe-text250.mjs --ansichten spider --breiten 240 \
+  --url http://127.0.0.1:3400
+```
+
+Erwartet werden Exit-Code 0, `240px/spider: OK · Seite 240px · Kopf 240/240 ·
+Navigation 240/240`, `240px: 1/1 Ansichten ohne horizontalen Überlauf` und
+`Claims 1× geprüft`. Der Standardlauf mit `--breiten 360,320,280` prüft die
+Karte zusätzlich bei 240 px und meldet `Claims 4× geprüft`.
+
+**240 px ist die untere geprüfte Breite.** Darunter gibt es keine Layoutzusage,
+weder für die Karte noch für die übrigen Ansichten.
 
 Die feste Pixel-Art des Raumschiffs ist von der Textskalierung
 ausgenommen; die Agentendetails in der rechten Spalte skalieren mit. Tabellen werden zusätzlich mit langen deutschen Komposita belastet und
@@ -348,6 +382,8 @@ die visuell verborgen bleibt, role=status sowie aria-live=polite trägt, nicht
 aria-hidden ist und in keinem display:none- oder visibility:hidden-Vorfahren
 liegt).
 Exit-Code 1 bei einem Befund.
+
+Die früheren 24 Lab-Befunde im 250-%-Lauf, ihre Zuordnung zu 360 px und die Ursache im Auto-Refresh sind in [PHASE-3](docs/spider/PHASE-3.md) dokumentiert.
 
 Der Standardlauf prüft bei 1440 px zusätzlich die kompakte
 Abteilungslegende: offen, elf Einträge, kompakter Kopf und kein horizontaler
@@ -392,6 +428,7 @@ node scripts/pruefe-text250.mjs --ansichten spider --breiten 360,320,280
 Der Aufruf prüft die vier Langhost-Fälle bei 360, 320 und 280 px sowie die
 zusätzliche 240-px-Claim-Prüfung. Erwartet werden Exit-Code 0, `Claims 4× geprüft`
 und die Zeile `240px/spider: OK · Seite 240px · Kopf 240/240 · Navigation 240/240`.
+Die Belastbarkeitsgrenze und der separate 240-px-Aufruf sind oben dokumentiert.
 
 Für Strategien, Research, das Raumschiff, Agentenraum und Konferenz gleicht der
 Lauf zusätzlich die Kerndaten mit `/api/report` ab: Zahl und Namen der
