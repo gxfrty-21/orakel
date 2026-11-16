@@ -270,15 +270,17 @@ ORAKEL_DB_PFAD=/tmp/orakel-widerspruch.db python -m orakel serve --host 127.0.0.
 # Im ersten Terminal:
 node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300
 
-# Negativtest: verfälscht im DOM den Widerspruchsgrund und entfernt danach
-# die Widerspruchszeile; beide Fälle müssen als Fehler erkannt werden.
+# Negativtest: verfälscht im DOM den Widerspruchsgrund, entfernt danach
+# die Widerspruchszeile und entfernt sie zusätzlich aus einer Kopie der
+# API-Antwort; alle drei Fälle müssen als Fehler erkannt werden.
 node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300 --negativtest
 ```
 
-Der Negativtest verändert keine Datenbank und keine API-Antwort. Er prüft, dass
-derselbe Kartenprüfer eine falsche Widerspruchszeile und eine fehlende
-Widerspruchszeile zuverlässig ablehnt. Der CI-Job `text250` führt den positiven
-Test und den Negativtest auf einer frischen Seed-Kopie aus. Das
+Der Negativtest verändert keine Datenbank und keine echte API-Antwort. Er prüft,
+dass derselbe Kartenprüfer eine falsche Widerspruchszeile und eine fehlende
+Widerspruchszeile zuverlässig ablehnt und dass der API-Prüfer eine aus der
+API-Antwort entfernte Widerspruchszeile erkennt. Der CI-Job `text250` führt den
+positiven Test und den Negativtest auf einer frischen Seed-Kopie aus. Das
 Seed-Skript verweigert eine fehlende Zieldatenbank, damit es nicht versehentlich
 eine neue Produktionsdatenbank anlegt.
 
@@ -495,8 +497,10 @@ Screenshotdateien mit eindeutigen Namen erhalten haben. Ein zweiter Selbsttest (
 entfernt gezielt einen Agenten aus Cluster A und verlangt den Befund samt Screenshot
 `selbsttest-agent-...-abteilung-a-hat-9-statt-10-agenten.png`. In GitHub Actions
 läuft derselbe Prüflauf als eigener
-Job `text250` der Workflow-Datei `.github/workflows/tests.yml`; schlägt er fehl,
-lädt er Bilder, Befundtexte und HTML als Artefakt `text250-diagnose` und das Serverprotokoll als
+Job `text250` der Workflow-Datei `.github/workflows/tests.yml`; bei Erfolg lädt
+er `lauf.log` und `negativtest.log` kompakt als Artefakt
+`text250-laufprotokoll` hoch. Schlägt er fehl, lädt er Bilder, Befundtexte und
+HTML als Artefakt `text250-diagnose` und das Serverprotokoll als
 `text250-serverlog` hoch (je 7 Tage).
 
 Nach einem fehlgeschlagenen, abgebrochenen oder abgelaufenen Lauf. Die Befehle
@@ -507,8 +511,8 @@ setzen eine angemeldete GitHub CLI voraus (`gh auth login`):
 gh run list --workflow tests.yml --limit 5
 
 # Serverlog und Diagnose (Screenshots + Befunde + HTML) des gewünschten Laufs herunterladen
-gh run download <run-id> -n text250-serverlog -D artifacts/text250-ci
-gh run download <run-id> -n text250-diagnose -D artifacts/text250-ci
+gh run download <run-id> -n text250-serverlog -D "artifacts/text250-ci-<run-id>"
+gh run download <run-id> -n text250-diagnose -D "artifacts/text250-ci-<run-id>"
 
 # Vollständiges Job-Log anzeigen (alle Jobs, inklusive text250)
 gh run view <run-id> --log
@@ -521,8 +525,10 @@ gh run view <run-id> --job <job-id> --log
 gh run view <run-id> --job <job-id> --log-failed
 ```
 
-Die Dateien landen in `artifacts/text250-ci`; Screenshots gibt es nur bei
-Befunden.
+Die Dateien landen im laufspezifischen Verzeichnis
+`artifacts/text250-ci-<run-id>`; Screenshots gibt es nur bei Befunden.
+Vorhandene ältere Downloads unter `artifacts/text250-ci/` sind mit
+`VERALTET.md` markiert und kein aktueller Beleg.
 
 ## Phase 5–11: was jetzt zusätzlich läuft
 
