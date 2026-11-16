@@ -431,6 +431,24 @@ npm --prefix scripts exec playwright install chromium
 node scripts/pruefe-text250.mjs
 ```
 
+### Lokales Playwright-Setup ohne Systemrechte
+
+In einer frischen Ubuntu-24.04-Umgebung (amd64) fehlen Chromium oft die
+nötigen Laufzeitbibliotheken und Fonts. Das Setup-Skript lädt die Pakete als
+`.deb` herunter, entpackt sie in das ignorierte Verzeichnis `.playwright-local/`
+und richtet `LD_LIBRARY_PATH` sowie Fontconfig ein. Es installiert nichts
+systemweit, benötigt kein `sudo` und prüft am Ende den Chromium-Start:
+
+```bash
+bash scripts/setup-playwright-local.sh
+source .playwright-local/env.sh
+```
+
+Die Aktivierung mit `source` erfolgt aus dem Projektverzeichnis. Das Skript
+erwartet `apt-get`, `dpkg-deb`, `npm` und Node.js >= 20. Die heruntergeladenen
+Pakete liegen nur in `.playwright-local/`; dieses Verzeichnis wird nicht
+versioniert.
+
 Die Seed-Kurve der neuesten US500-Validierungen beginnt bewusst mit zwei
 unterschiedlichen Punkten (USD 100'000 und 100'100). Damit prüft der Status-Test
 bei Pfeil rechts im CI eine echte Textänderung.
