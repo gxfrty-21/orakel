@@ -421,6 +421,40 @@ Widerspruchssicherheit. Jeder Fall muss einen Befund auslösen; die CI verlangt
 Agentenraum, am Raumschiff und an den Widerspruchsdetails nicht
 stillschweigend übersieht.
 
+### Reproduktion des 13/13-Negativtests
+
+Der Lauf braucht eine frische Seed-Kopie, ein laufendes Dashboard und
+Playwright-Chromium. Er verändert nur das DOM; die Seed-Kopie und die
+API-Antworten werden nicht verändert. Im ersten Terminal:
+
+```bash
+cp seed/orakel-seed.db /tmp/orakel-negativtest.db
+ORAKEL_DB_PFAD=/tmp/orakel-negativtest.db \
+  python -m orakel serve --host 127.0.0.1 --port 3400
+```
+
+Im zweiten Terminal aus dem Repository-Wurzelverzeichnis:
+
+```bash
+npm ci --prefix scripts
+npm --prefix scripts exec playwright install chromium
+
+node scripts/pruefe-text250.mjs --negativtest \
+  --url http://127.0.0.1:3400
+```
+
+Der Lauf muss mit Exit-Code 0 enden und folgende Zeile ausgeben:
+
+```text
+Negativtest OK: 13/13 falsche Inhalte erkannt
+```
+
+Fehlen lokal die Chromium-Systembibliotheken, kann zuerst das
+[lokale Playwright-Setup](#lokales-playwright-setup-ohne-systemrechte)
+ausgeführt und die Umgebung mit `source .playwright-local/env.sh` aktiviert
+werden. Der Negativtest benötigt keine zusätzliche Testdatenbank und schreibt
+keine Daten in die Seed-Kopie.
+
 Der Standardlauf umfasst alle zwölf Ansichten inklusive der weiterhin geprüften
 Inhaltsansichten Agentenraum, Konferenz und Raumschiff. Der CI-Job
 `text250` setzt auf dem `ubuntu-24.04`-Image auf: Chromium wird ohne
