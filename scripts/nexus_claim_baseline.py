@@ -2,8 +2,9 @@
 """Reproduzierbare Baseline für die Nexus-Claim-Extraktion.
 
 Der Korpus liegt als versionierte JSON-Datei vor und enthält reale RSS-Meldungen
-aus dem Seed-Snapshot. Die Baseline nutzt bewusst die aktuelle, produktive
-Extraktion; sie ist keine neue Heuristik und keine LLM-Auswertung.
+aus dem Seed-Snapshot sowie ergänzende pp-Meldungen aus echten RSS-Suchen. Die
+Baseline nutzt bewusst die aktuelle, produktive Extraktion; sie ist keine neue
+Heuristik und keine LLM-Auswertung.
 """
 
 from __future__ import annotations
@@ -280,9 +281,14 @@ def _bericht(ergebnis: dict[str, Any], korpus: dict[str, Any]) -> str:
         "",
         "## Grenzen",
         "",
-        "- Der Korpus ist ein Snapshot aus `seed/orakel-seed.db`; er ist keine",
-        "  laufende Produktionsstichprobe.",
-        "- Die Goldfelder wurden manuell aus Titel und Zusammenfassung gesetzt.",
+        "- Der Korpus ist ein Snapshot aus `seed/orakel-seed.db` plus einer kleinen,",
+        "  gezielten pp-Stichprobe aus echten RSS-Suchen; er ist keine laufende",
+        "  Produktions- oder Zufallsstichprobe.",
+        "- Die fünf pp-Meldungen wurden über Google-News-RSS-Suchen gefunden und an",
+        "  den verlinkten Originalseiten geprüft; die pp-Kennzahlen sind wegen n=5",
+        "  keine repräsentative Schätzung.",
+        "- Die Goldfelder wurden manuell aus Titel, Zusammenfassung und Originalseite",
+        "  gesetzt.",
         "- Ein fehlender Claim kann auch bedeuten, dass die Meldung bewusst als",
         "  Verwaltungs- oder Verfahrensmeldung eingeordnet wurde.",
         "- Die Baseline prüft keine Volltexte, Embeddings oder Widerspruchsketten.",
