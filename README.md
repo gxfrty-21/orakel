@@ -2,12 +2,13 @@
 
 [![CI: Tests](https://github.com/gxfrty-21/orakel/actions/workflows/tests.yml/badge.svg)](https://github.com/gxfrty-21/orakel/actions/workflows/tests.yml)
 
-Daytrading-System mit MetaTrader-5-Anbindung, Richter, Paper-Trading und Web-Dashboard.
+Paper-Trading-System mit Richter, Research, Paper-Takt und Web-Dashboard.
 Grundlage ist dein Meister-Prompt (Abschnitte 1–12) und dein Orakel-Design.
 
-**Dieses Projekt handelt ausschliesslich Paper.** Es existiert kein Codepfad zu einer
-echten Broker-Order: Der MT5-Broker verweigert Echtgeldkonten und sendet ohne
-`order_freigabe = true` nur einen Probelauf.
+**Dieses Projekt handelt ausschliesslich Paper.** Der Paper-Takt rechnet direkt
+in SQLite; es gibt keinen Broker-Aufruf und keinen Codepfad zu einer echten
+Broker-Order. `[paper] order_freigabe` bleibt als harte Policy-Sperre auf
+`false`.
 
 **Raumschiff-Doku:** [docs/raumschiff/README.md](docs/raumschiff/README.md)
 — Planung und aktueller 2D-Agenten-Querschnitt (103 Räume, elf Abteilungen, Zoom/Pan, Detailspalte).
@@ -53,6 +54,8 @@ Entwurf, protokollieren ihn in der Audit-Kette und starten keine Handler:
 - `GET /api/company/tasks` — Aufgabenqueue; standardmäßig nur offene Aufgaben,
   filterbar mit `dept`, `state` (`offen`, `alle` oder ein Zustand), `mindestprioritaet`
   und `limit`.
+- `GET /api/company/paper-guard` — aktueller Paper-only-Status mit Broker,
+  Order-Freigabe und Policy-Entscheidung; rein lesend.
 - `GET /api/company/messages` — Nachrichten und Threads, filterbar mit `agent`,
   `dept`, `thread_id`, `seit`, `nur_offen` und `limit`.
 - `GET /api/company/messages/{id}` — eine Nachricht mit Belegen und Quittung.
@@ -125,9 +128,14 @@ Betriebszeile sowie die Schiffs-Kennzahlen (11 Cluster, 103 Agenten). Details
 und ehrliche Grenzen:
 [docs/spider/PHASE-8.md](docs/spider/PHASE-8.md).
 
-Unter Windows zusätzlich `pip install MetaTrader5` (nur dort verfügbar) und in
-`config.toml` `[paper] broker = "mt5"` setzen. MT5 muss laufen und mit dem
-**Demo-Konto** eingeloggt sein.
+### Backoff-Fehlerfall
+
+Der separate deterministische Fehlerfall prüft zwei aufeinanderfolgende
+Spider-Fehler: 60 s Backoff, 120 s nach dem zweiten Fehler, kein Lauf bei
++180 s und ein erfolgreicher Retry bei +182 s. Ablauf und Kriterien stehen im
+[Backoff-Bericht der Soak-Abnahme](docs/spider/SOAK-ABNAHME.md#23-separater-backoff-fehlerfall);
+der erzeugte Rohbericht liegt nach dem Lauf unter
+`artifacts/backoff-fehlerfall/report.md`.
 
 ## Was hier schon echt funktioniert
 
@@ -138,7 +146,7 @@ Unter Windows zusätzlich `pip install MetaTrader5` (nur dort verfügbar) und in
 | Backtest | Kerze für Kerze, Ausführung zur Folge-Eröffnung, ATR-Stop, Gaps, Kommission, Slippage |
 | Richter | Rollierende Walk-Forward-Fenster, versiegelter Holdout, Monte-Carlo, Nachbar-Parameter, Zufallsvergleich |
 | Risiko | 1 % je Trade bis Stop, 10 % Not-Stop, max. 15 Positionen, Engagement, Bargeld, Korrelation |
-| Broker-Schicht | `CsvBroker` (Paper-Replay), `MockBroker`, `MT5Broker` (Windows, Paper-Sperre) |
+| Paper-Takt | direkte SQLite-Simulation aus Kerzen; kein Broker-Aufruf, keine echten Orders |
 | Agenten | 80 bestehende Agenten in 8 Abteilungen, jeder mit echter Aufgabe und Ergebnis in der DB |
 | Company-Schicht | Phase 1: 103 Profile, SQLite-Queue mit Lease/Retry, Policy-Engine, Audit-Kette; Company-API für Übersicht, Agenten, Aufgaben, Details, Nachrichten, Räume und Konferenz; Agentenkommunikation mit Threads/Ack und persönliche Gedächtnisse; 2D-Agenten-Querschnitt mit 103 Räumen; 3D noch nicht |
 | Konferenz | 00:00 Europe/Zurich, Nachholen verpasster Termine, Protokoll im Vault |
@@ -171,7 +179,6 @@ orakel/
   metrics.py     Kennzahlen
   judge.py       Richter (keine KI)
   risk.py        Risikomanager + Positionsgrösse
-  brokers.py     Broker-Schnittstelle (CSV / Mock / MT5)
   agents.py      Roster, Aufgaben, Mitternachtskonferenz
   knowledge.py   Obsidian-Vault
   report.py      Bericht im Schema 2 (dein Dashboard-Format)
@@ -186,9 +193,11 @@ tests/           Risiko, Backtest, Daten, Bericht
 2. **Spider Intelligence**: Netz-Recherche mit Quellenprüfung, robots.txt und Limits.
 3. **3D-Ausbau**: begehbare Decks und First-Person-Navigation sind zurückgestellt;
    die aktuelle 2D-Welt ist umgesetzt und an echte Daten gekoppelt.
-4. **Dauerbetrieb aktivieren**: `ORAKEL_TAKT=1` ist gesetzt; der 24-Stunden-Soak
-   läuft. Der externe Watchdog ist in `.github/workflows/watchdog.yml` angelegt
-   und prüft nach dem Push auf `main` den Takt alle fünf Minuten.
+4. **Dauerbetrieb aktivieren**: Der 24-Stunden-Soak ist noch nicht abgeschlossen.
+   Ablauf und Abnahmekriterien stehen in
+   [SOAK-ABNAHME.md](docs/spider/SOAK-ABNAHME.md). Der externe Watchdog ist in
+   `.github/workflows/watchdog.yml` angelegt und prüft nach dem Push auf `main`
+   den Takt alle fünf Minuten.
 5. **Selbstlernen**: Auswertung abgeschlossener Trades inkl. Fehleranalyse.
 
 ## Grundsätze im Code
@@ -242,12 +251,74 @@ Safari-Seitenzoom und die Legendenbedienung ab. Der Touch-Test prüft zusätzlic
 Chromium-Emulationslaufs stehen in
 [TOUCH-EMULATION.md](docs/raumschiff/TOUCH-EMULATION.md).
 
+## Widerspruch von der API bis in die Karte
+
+`scripts/pruefe-widerspruch-e2e.mjs` prüft einen Widerspruch nicht an
+injizierten DOM-Daten, sondern am echten Weg: Der Seed legt zwei gegenläufige
+Meldungen über den Nexus-Pfad in einer Kopie der Seed-Datenbank an. Die
+Spider-Ansicht lädt anschließend den echten `/api/nexus/status`-Response; der
+Browser vergleicht Grund, Widerspruchssicherheit, Quellen und normalisierte
+bp-Werte mit der gerenderten Widerspruchskarte.
+
+```bash
+cp seed/orakel-seed.db /tmp/orakel-widerspruch.db
+python scripts/seed_widerspruch.py /tmp/orakel-widerspruch.db
+
+# Dashboard in einem zweiten Terminal starten:
+ORAKEL_DB_PFAD=/tmp/orakel-widerspruch.db python -m orakel serve --host 127.0.0.1 --port 3300
+
+# Im ersten Terminal:
+node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300
+
+# Negativtest: verfälscht im DOM den Widerspruchsgrund und entfernt danach
+# die Widerspruchszeile; beide Fälle müssen als Fehler erkannt werden.
+node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300 --negativtest
+```
+
+Der Negativtest verändert keine Datenbank und keine API-Antwort. Er prüft, dass
+derselbe Kartenprüfer eine falsche Widerspruchszeile und eine fehlende
+Widerspruchszeile zuverlässig ablehnt. Der CI-Job `text250` führt den positiven
+Test und den Negativtest auf einer frischen Seed-Kopie aus. Das
+Seed-Skript verweigert eine fehlende Zieldatenbank, damit es nicht versehentlich
+eine neue Produktionsdatenbank anlegt.
+
 ## Browser-Prüfung bei grosser Schrift
 
 `scripts/pruefe-text250.mjs` skaliert die Schrift im Dashboard auf 250 %
 (Faktor 2,5 auf berechnete Schriftgrössen und Zeilenhöhen). Bei 360, 320 und
 280 px prüft es, ob Inhalte seitlich aus ihrem Kasten oder aus dem Viewport
-laufen. Die feste Pixel-Art des Raumschiffs ist von der Textskalierung
+laufen. Die Kernaussagen-Karte und die Kopf- und Navigationsleiste werden
+zusätzlich bei 240 px in normaler Darstellung geprüft. Die vier KPI-Kacheln
+und das Claim-Grid wechseln auf eine Spalte, die Quellenzeile bleibt im
+Panel. Kopf und Navigation brechen kompakt um; die Seite scrollt dort nicht
+horizontal. **240 px ist für die geprüfte Spider-Seite in normaler
+Darstellung unterstützt, aber keine allgemeine Mindestbreite aller Ansichten
+und nicht für den vollen 250-%-Lauf zugesagt.** Der separate 250-%-Lauf bei
+240 px scheitert an Panel-Kopf und KPI-Beschriftung; 260/270 px haben
+ebenfalls Befunde. Die kleinste geprüfte Breite mit vollständigem 250-%-Lauf ist 280 px.
+
+Die 240-px-Prüfung misst alle zwölf Ansichten in normaler Schrift bei
+240 × 900 px. Jede Zeile prüft Seiten-, Kopf- und Navigationsbreite:
+
+| Ansicht | Scrollbreite | Ergebnis |
+| --- | ---: | --- |
+| Übersicht | 240 px | OK |
+| Risiko & Daten | 240 px | OK |
+| Lab | 240 px | OK |
+| Strategien | 240 px | OK |
+| Research | 240 px | OK |
+| Weltkugel | 240 px | OK |
+| Betrieb | 240 px | OK |
+| Raumschiff | 240 px | OK |
+| Spider | 240 px | OK |
+| Wissensbank | 240 px | OK |
+| Agentenraum | 240 px | OK |
+| Konferenz | 240 px | OK |
+
+Der CI-Schritt verlangt dafür die Zusammenfassung
+`240px: 12/12 Ansichten ohne horizontalen Überlauf`.
+
+Die feste Pixel-Art des Raumschiffs ist von der Textskalierung
 ausgenommen; die Agentendetails in der rechten Spalte skalieren mit. Tabellen werden zusätzlich mit langen deutschen Komposita belastet und
 als Karten geprüft. Im Lab überfährt er ausserdem die Kapitalkurve und prüft
 den Tooltip (Kapitalstand, Datum, Lage im Kasten, Verschwinden von Tooltip und
@@ -287,6 +358,41 @@ Web-API: eine direkte Nachricht senden, sie als Empfänger quittieren und einen
 persönlichen Gedächtniseintrag anlegen sowie aktualisieren. Die Prüfung nutzt
 eindeutige Testwerte; in der CI schreibt sie ausschliesslich in die Seed-Kopie.
 
+Im Spider-Tab rendert der Standardlauf ausserdem deterministische
+Claim-Metadaten im Browser: Zeitraum, Bedingung und Extraktionssicherheit sowie
+Widerspruchsdetails mit Grund, Widerspruchssicherheit, normalisierten
+Vergleichswerten in bp und den beteiligten Quellen.
+Dabei prüft er, ob die Karte,
+ihre Metadaten und Widerspruchszeilen seitlich aus dem Viewport oder ihrem
+Kasten laufen. Zusätzlich werden vier bewusst lange Quellenfälle geprüft – zwei
+überlange Hostpaare, ein einzelner sehr langer Host mit Punkten und Bindestrichen
+sowie ein langer Host ganz ohne Punkt oder Bindestrich. Beim Extremfall ohne
+Punkt oder Bindestrich bleiben die Quellenzeilen in normaler Darstellung ohne
+Überlauf; die konkreten Breiten sind:
+
+| Viewport | Quellenzeile | Host-Spanne | Zeilen des 114-Zeichen-Hosts |
+| ---: | ---: | ---: | ---: |
+| 360 px | 298 px | 294 px | 3 |
+| 320 px | 258 px | 252 px | 4 |
+| 280 px | 218 px | 217 px | 4 |
+| 240 px | 178 px | 175 px | 5 |
+
+`scrollWidth` und `clientWidth` der Quellenzeile stimmen in allen vier Breiten
+überein; der Trenner `↔` bleibt jeweils in der Quellenzeile.
+Die Testdaten werden nur ins DOM injiziert und nicht in SQLite geschrieben. Die
+Zusammenfassung meldet `Claims 4× geprüft` (360, 320, 280 und zusätzlich
+240 px).
+
+Gezielt nur die Spider-Quellenzeile prüfen:
+
+```bash
+node scripts/pruefe-text250.mjs --ansichten spider --breiten 360,320,280
+```
+
+Der Aufruf prüft die vier Langhost-Fälle bei 360, 320 und 280 px sowie die
+zusätzliche 240-px-Claim-Prüfung. Erwartet werden Exit-Code 0, `Claims 4× geprüft`
+und die Zeile `240px/spider: OK · Seite 240px · Kopf 240/240 · Navigation 240/240`.
+
 Für Strategien, Research, das Raumschiff, Agentenraum und Konferenz gleicht der
 Lauf zusätzlich die Kerndaten mit `/api/report` ab: Zahl und Namen der
 bestandenen Strategien, markierte Auswahl, fünf KPIs und die fünf Kernzeilen;
@@ -300,7 +406,7 @@ jede Zelle mit dem API-Feld, damit auch ein bewusst leerer Verantwortlicher
 korrekt als leer erkannt wird. Die Zusammenfassung meldet
 `Inhalte 15× geprüft` (fünf Ansichten × drei Breiten).
 
-Der separate Aufruf `--negativtest` lädt die betroffenen fünf Ansichten, prüft
+Der separate Aufruf `--negativtest` lädt die betroffenen sechs Ansichten, prüft
 zuerst den sauberen Zustand und schreibt dann absichtlich falsche Kerndaten
 ins DOM: einen falschen Strategie-KPI, eine falsche Research-Kandidatenzahl,
 eine falsche Agenten-Kopfzahl, einen entfernten Abteilungstab im Agentenraum,
@@ -308,9 +414,11 @@ einen entfernten sichtbaren Schiffsabteilungscluster, einen geleerten
 Schiffscluster, einen fehlenden Agenten in einem Schiffscluster, einen
 zusätzlichen Agenten in einem zweiten Schiffscluster, eine doppelte Agenten-ID
 über Cluster hinweg, eine doppelte Agenten-ID im selben Cluster bei
-unveränderter Agentenzahl und einen falschen Konferenz-Testplan. Jeder Fall
-muss einen Befund auslösen; die CI verlangt `Negativtest OK: 11/11`, damit die
-Inhaltsprüfung auch Strukturänderungen im Agentenraum und am Raumschiff nicht
+unveränderter Agentenzahl, einen falschen Konferenz-Testplan sowie in der
+Claim-Karte einen entfernten Widerspruchsgrund und eine entfernte
+Widerspruchssicherheit. Jeder Fall muss einen Befund auslösen; die CI verlangt
+`Negativtest OK: 13/13`, damit die Inhaltsprüfung auch Strukturänderungen im
+Agentenraum, am Raumschiff und an den Widerspruchsdetails nicht
 stillschweigend übersieht.
 
 Der Standardlauf umfasst alle zwölf Ansichten inklusive der weiterhin geprüften
@@ -343,6 +451,24 @@ npm --prefix scripts exec playwright install chromium
 # Prüfen (alle zwölf Ansichten, drei Breiten)
 node scripts/pruefe-text250.mjs
 ```
+
+### Lokales Playwright-Setup ohne Systemrechte
+
+In einer frischen Ubuntu-24.04-Umgebung (amd64) fehlen Chromium oft die
+nötigen Laufzeitbibliotheken und Fonts. Das Setup-Skript lädt die Pakete als
+`.deb` herunter, entpackt sie in das ignorierte Verzeichnis `.playwright-local/`
+und richtet `LD_LIBRARY_PATH` sowie Fontconfig ein. Es installiert nichts
+systemweit, benötigt kein `sudo` und prüft am Ende den Chromium-Start:
+
+```bash
+bash scripts/setup-playwright-local.sh
+source .playwright-local/env.sh
+```
+
+Die Aktivierung mit `source` erfolgt aus dem Projektverzeichnis. Das Skript
+erwartet `apt-get`, `dpkg-deb`, `npm` und Node.js >= 20. Die heruntergeladenen
+Pakete liegen nur in `.playwright-local/`; dieses Verzeichnis wird nicht
+versioniert.
 
 Die Seed-Kurve der neuesten US500-Validierungen beginnt bewusst mit zwei
 unterschiedlichen Punkten (USD 100'000 und 100'100). Damit prüft der Status-Test

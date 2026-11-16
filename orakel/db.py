@@ -197,6 +197,9 @@ CREATE TABLE IF NOT EXISTS nexus_claims (
     thema TEXT NOT NULL,
     subjekt TEXT NOT NULL,
     metrik TEXT NOT NULL DEFAULT '',
+    zeitraum TEXT NOT NULL DEFAULT '',
+    bedingung TEXT NOT NULL DEFAULT '',
+    sicherheit REAL NOT NULL DEFAULT 0.5,
     quellen INTEGER NOT NULL DEFAULT 0,
     belege INTEGER NOT NULL DEFAULT 0,
     widersprueche INTEGER NOT NULL DEFAULT 0,
@@ -222,6 +225,9 @@ CREATE TABLE IF NOT EXISTS nexus_claim_quellen (
     wert REAL,
     einheit TEXT NOT NULL DEFAULT '',
     negiert INTEGER NOT NULL DEFAULT 0,
+    zeitraum TEXT NOT NULL DEFAULT '',
+    bedingung TEXT NOT NULL DEFAULT '',
+    sicherheit REAL NOT NULL DEFAULT 0.5,
     ist_kopie INTEGER NOT NULL DEFAULT 0,
     reputation REAL NOT NULL DEFAULT 0.5,
     erstellt TEXT NOT NULL,
@@ -230,8 +236,9 @@ CREATE TABLE IF NOT EXISTS nexus_claim_quellen (
 CREATE INDEX IF NOT EXISTS ix_nexus_claimq_claim ON nexus_claim_quellen(claim_id);
 CREATE INDEX IF NOT EXISTS ix_nexus_claimq_host ON nexus_claim_quellen(host);
 
--- Erkannte Widersprüche bleiben als Paar sichtbar, inklusive Grund und
--- Sicherheit. Kein Widerspruch wird stillschweigend zu einer Wahrheit.
+-- Erkannte Widersprüche bleiben als Paar sichtbar, inklusive Grund,
+-- Sicherheit und optionaler normierter Vergleichswerte in Basispunkten.
+-- Kein Widerspruch wird stillschweigend zu einer Wahrheit.
 CREATE TABLE IF NOT EXISTS nexus_widersprueche (
     id INTEGER PRIMARY KEY,
     claim_id INTEGER NOT NULL,
@@ -241,6 +248,8 @@ CREATE TABLE IF NOT EXISTS nexus_widersprueche (
     quelle_b TEXT NOT NULL,
     grund TEXT NOT NULL,
     sicherheit REAL NOT NULL,
+    wert_a_bp REAL,
+    wert_b_bp REAL,
     erstellt TEXT NOT NULL,
     UNIQUE(claim_id, meldung_a, meldung_b)
 );
@@ -485,6 +494,31 @@ class Facts:
             if "fehlgeschlagen_am" not in spalten:
                 c.execute("ALTER TABLE nexus_tasks ADD COLUMN fehlgeschlagen_am TEXT")
 
+        # Strukturierte Kernaussage auch für bestehende Datenbanken. Alte
+        # Zeilen bleiben leer bzw. auf 0.5 und werden nie nachträglich geraten.
+        for tabelle in ("nexus_claims", "nexus_claim_quellen"):
+            if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                             "AND name=?", (tabelle,)).fetchone():
+                continue
+            spalten = {r["name"] for r in c.execute(f"PRAGMA table_info({tabelle})")}
+            for name, ddl in (
+                ("zeitraum", "TEXT NOT NULL DEFAULT ''"),
+                ("bedingung", "TEXT NOT NULL DEFAULT ''"),
+                ("sicherheit", "REAL NOT NULL DEFAULT 0.5"),
+            ):
+                if name not in spalten:
+                    c.execute(f"ALTER TABLE {tabelle} ADD COLUMN {name} {ddl}")
+
+        # Normierte Vergleichswerte für bestehende Widerspruchstabellen.
+        # Alte Zeilen bleiben NULL; es werden keine Werte nachträglich geraten.
+        if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                     "AND name='nexus_widersprueche'").fetchone():
+            spalten = {r["name"] for r in c.execute(
+                "PRAGMA table_info(nexus_widersprueche)")}
+            for name in ("wert_a_bp", "wert_b_bp"):
+                if name not in spalten:
+                    c.execute(f"ALTER TABLE nexus_widersprueche ADD COLUMN {name} REAL")
+
     @contextmanager
     def conn(self) -> Iterator[sqlite3.Connection]:
         c = sqlite3.connect(self.pfad, timeout=30)
@@ -492,6 +526,9 @@ class Facts:
         try:
             yield c
             c.commit()
+        except BaseException:
+            c.rollback()
+            raise
         finally:
             c.close()
 
@@ -809,36 +846,49 @@ class Facts:
                         "analysiert", "bestaetigt", "widerlegt", "widersprueche",
                         "reputation", "vertrauen", "aktualisiert")) for r in quellen],
                 )
+            def wert(zeile: dict[str, Any], schluessel: str) -> Any:
+                if schluessel in ("zeitraum", "bedingung"):
+                    return str(zeile.get(schluessel) or "")
+                if schluessel == "sicherheit":
+                    return round(max(0.0, min(1.0, float(
+                        zeile.get(schluessel) if zeile.get(schluessel) is not None
+                        else 0.5))), 3)
+                return zeile[schluessel]
+
             if claims:
                 c.executemany(
                     "INSERT INTO nexus_claims(id,claim_key,kernaussage,thema,subjekt,"
-                    "metrik,quellen,belege,widersprueche,bestaetigungsgrad,status,"
-                    "erstmals,aktualisiert) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    [tuple(r[k] for k in (
+                    "metrik,zeitraum,bedingung,sicherheit,quellen,belege,widersprueche,"
+                    "bestaetigungsgrad,status,erstmals,aktualisiert) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    [tuple(wert(r, k) for k in (
                         "id", "claim_key", "kernaussage", "thema", "subjekt",
-                        "metrik", "quellen", "belege", "widersprueche",
-                        "bestaetigungsgrad", "status", "erstmals",
-                        "aktualisiert")) for r in claims],
+                        "metrik", "zeitraum", "bedingung", "sicherheit", "quellen",
+                        "belege", "widersprueche", "bestaetigungsgrad", "status",
+                        "erstmals", "aktualisiert")) for r in claims],
                 )
             if claim_quellen:
                 c.executemany(
                     "INSERT INTO nexus_claim_quellen(id,claim_id,meldung_key,artikel_id,"
-                    "quelle_id,host,aussage,richtung,wert,einheit,negiert,ist_kopie,"
-                    "reputation,erstellt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    [tuple(r[k] for k in (
+                    "quelle_id,host,aussage,richtung,wert,einheit,negiert,zeitraum,"
+                    "bedingung,sicherheit,ist_kopie,reputation,erstellt) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    [tuple(wert(r, k) for k in (
                         "id", "claim_id", "meldung_key", "artikel_id", "quelle_id",
                         "host", "aussage", "richtung", "wert", "einheit",
-                        "negiert", "ist_kopie", "reputation", "erstellt"))
+                        "negiert", "zeitraum", "bedingung", "sicherheit", "ist_kopie",
+                        "reputation", "erstellt"))
                      for r in claim_quellen],
                 )
             if widersprueche:
                 c.executemany(
                     "INSERT INTO nexus_widersprueche(id,claim_id,meldung_a,meldung_b,"
-                    "quelle_a,quelle_b,grund,sicherheit,erstellt) "
-                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    "quelle_a,quelle_b,grund,sicherheit,wert_a_bp,wert_b_bp,erstellt) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     [tuple(r[k] for k in (
                         "id", "claim_id", "meldung_a", "meldung_b", "quelle_a",
-                        "quelle_b", "grund", "sicherheit", "erstellt"))
+                        "quelle_b", "grund", "sicherheit"))
+                     + (r.get("wert_a_bp"), r.get("wert_b_bp"), r["erstellt"])
                      for r in widersprueche],
                 )
 

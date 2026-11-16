@@ -22,6 +22,7 @@ from .company.api import erinnerungen as company_erinnerungen
 from .company.api import konferenz as company_konferenz
 from .company.api import nachricht as company_nachricht
 from .company.api import nachrichten as company_nachrichten
+from .company.api import paper_guard as company_paper_guard
 from .company.api import raeume as company_raeume
 from .company.api import uebersicht as company_uebersicht
 from .company.memory import AgentMemory
@@ -156,6 +157,13 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         cfg = load_config(cfg_pfad)
         store = CompanyStore(Facts(cfg.db_pfad))
         return JSONResponse(company_uebersicht(store),
+                            headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/company/paper-guard")
+    def company_paper_guard_status() -> JSONResponse:
+        """Paper-only-Status aus der aktuellen Konfiguration."""
+        cfg = load_config(cfg_pfad)
+        return JSONResponse(company_paper_guard(cfg),
                             headers={"Cache-Control": "no-store"})
 
     @app.get("/api/company/agents")

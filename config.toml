@@ -8,7 +8,7 @@ zeitzone = "Europe/Zurich"
 daten_ordner = "daten"
 vault_ordner = "vault"
 db_pfad = "orakel.db"
-datenquelle = "synthetisch"        # synthetisch | csv   (MT5 liefert auf Windows der mt5_broker)
+datenquelle = "synthetisch"        # synthetisch | csv   (MT5-Exporte als CSV importieren)
 bars_pro_jahr = 24960              # M15, 24h-Markt; nur für Sharpe-Skalierung
 
 [risiko]
@@ -66,8 +66,8 @@ rsi_exit = [60, 70]
 roc_period = [20, 40]
 
 [paper]
-order_freigabe = false             # false = Probelauf (Standard). Keine echten Orders.
-broker = "csv"                     # csv | mock | mt5  (mt5 nur unter Windows)
+order_freigabe = false             # harte Policy-Sperre; muss false bleiben.
+broker = "csv"                     # Bestands-/Policywert; der Paper-Takt ruft keinen Broker auf.
 takt_sekunden = 60                 # Abstand des Paper-Takts im Dauerbetrieb
 takt_aktiv = false                 # true = Takt startet mit "orakel serve"
 

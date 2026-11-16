@@ -80,7 +80,7 @@ def load_config(pfad: str | Path = STANDARD_PFAD) -> Config:
 
 @dataclass(frozen=True, slots=True)
 class RisikoGrenzen:
-    """Die harten Grenzen. Werden im Backtest und im Paper-Broker identisch geprüft."""
+    """Die harten Grenzen. Werden im Backtest und im Paper-Takt identisch geprüft."""
 
     risk_per_trade_pct: float
     max_drawdown_pct: float

@@ -175,7 +175,7 @@ NEUE_ROLLEN: list[tuple[str, str, str, str, str]] = [
     ("J8", "Sasha", "Sandbox-Wächter",
      "Tool-Rechte prüfen; freie Shell und Fremdnetz blockieren", "tool_guard"),
     ("J9", "Elif", "Paper-Only-Enforcer",
-     "Broker-/Order-Pfad auf Paper-Sperre prüfen; Veto", "paper_guard"),
+     "Order-Pfad und Paper-Sperre prüfen; Veto", "paper_guard"),
     ("J10", "Ron", "Security-Archivar",
      "Security-Befunde redigiert dokumentieren", "security_archive"),
 ]

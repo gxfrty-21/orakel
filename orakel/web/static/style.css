@@ -61,6 +61,14 @@ button.li:hover{background:var(--panel2)}
 .li.on{background:var(--panel2);box-shadow:inset 3px 0 0 var(--accent)}
 .li b{font-weight:500;display:block}
 .li small{color:var(--dim);font-size:12px;display:block}
+.li .claimMeta{display:flex;flex-wrap:wrap;gap:2px 12px;margin-top:3px;color:var(--muted)}
+#bewertungPanel .ph{overflow-wrap:normal;hyphens:none}
+#bewertungPanel .kpi .l{overflow-wrap:anywhere;hyphens:auto}
+.li .claimWiderspruch{display:flex;flex-wrap:wrap;gap:2px 8px;align-items:center;margin-top:4px;color:var(--bad)}
+.li .claimWiderspruchWerte{display:block;flex-basis:100%;font-family:var(--mono);font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+.li .claimWiderspruchQuellen{display:block;flex-basis:100%;min-width:0;width:100%;font-size:11px;color:var(--dim)}
+.li .claimWiderspruchQuelle{font-family:var(--mono);color:var(--muted);overflow-wrap:anywhere;hyphens:auto;margin-right:2px}
+.li .claimWiderspruchPfeil{margin:0 2px;color:var(--dim)}
 .li .r{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap}
 .planStatus{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 .pill{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:3px;background:#173a2a;color:var(--good);white-space:nowrap}
@@ -204,6 +212,43 @@ button.li:hover{background:var(--panel2)}
   .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
   .kpi .v{font-size:17px}
   .kpi{padding:9px 12px}
+}
+@media (max-width:340px){
+  /* Kompaktere KPI-Spalten, damit die Beschriftungen bei 280/320 px passen. */
+  #bewertungPanel .nacht-kpis{padding-left:8px;padding-right:8px}
+  #bewertungPanel .kpis{gap:8px}
+  #bewertungPanel .kpi{padding:9px 6px}
+}
+@media (max-width:260px){
+  /* Bei 240 px passen weder die Kopfzeile noch die horizontale Navigation
+     in eine Zeile. Beide werden kompakt umbrochen, damit die Seite selbst
+     nicht horizontal scrollt. */
+  .app{grid-template-columns:minmax(0,1fr)}
+  .top{min-width:0; align-items:flex-start; gap:6px 8px; padding:7px 8px}
+  .top>*{min-width:0; max-width:100%}
+  .top .sp{display:none}
+  .brand{overflow-wrap:anywhere}
+  .chip{font-size:10px; gap:4px; padding:2px 6px}
+  .toggle{padding:4px 8px; font-size:11px}
+  header.top .mtgTaktStand{white-space:normal; overflow-wrap:anywhere; max-width:100%}
+  .side{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px;
+    min-width:0; overflow:visible; mask-image:none; padding:6px 8px}
+  .nav{min-width:0; padding:5px 7px; font-size:12px; white-space:normal;
+    overflow-wrap:anywhere; justify-content:center}
+  .nav b{line-height:1.2}
+
+  /* Bei 240 px bleiben sonst keine zwei lesbaren KPI-Spalten und die
+     Claim-Karte wird durch die Mindestbreite ihrer Grid-Kinder breiter. */
+  #v-spider{max-width:calc(100vw - 32px)}
+  #bewertungPanel .nacht-kpis{padding-left:6px;padding-right:6px}
+  #bewertungPanel .kpis{grid-template-columns:minmax(0,1fr);gap:6px}
+  #bewertungPanel .kpi{padding:8px 6px}
+  #bewertungPanel .kpi .l{overflow-wrap:anywhere}
+  #bewertungPanel .grid2{grid-template-columns:minmax(0,1fr);gap:10px}
+  #bewertungPanel .grid2>*{min-width:0}
+  #bewertungClaims .li{min-width:0}
+  #bewertungClaims .li>span:first-child{min-width:0}
+  #bewertungClaims .li b{overflow-wrap:anywhere}
 }
 @media (max-width:520px){
   h1{font-size:20px}
@@ -600,6 +645,10 @@ button.li:hover{background:var(--panel2)}
 .mtgLogKopf .toggle:disabled{opacity:.4;cursor:default}
 header.top .mtgTaktStand{font-size:11px;color:var(--muted);white-space:nowrap}
 header.top #mtgTaktStand.on{color:var(--accent)}
+@media (max-width:260px){
+  /* Die Basisregel oben hält den Taktstatus sonst in einer Zeile. */
+  header.top .mtgTaktStand{white-space:normal;overflow-wrap:anywhere}
+}
 .mtask .mtaskgrund{display:block;color:#f0a35e;margin-top:2px}
 .trNet.plus{color:#4ade80}
 .trNet.minus{color:#f87171}

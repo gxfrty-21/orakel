@@ -13,6 +13,8 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
+from ..config import Config
+from .policy import CompanyPolicy
 from .store import CompanyStore
 
 OFFENE_STATES = ("proposed", "queued", "accepted", "running", "review", "blocked")
@@ -53,6 +55,21 @@ def _json_list(roh: Any) -> list[Any]:
     except (TypeError, ValueError):
         return []
     return wert if isinstance(wert, list) else []
+
+
+def paper_guard(cfg: Config) -> dict[str, Any]:
+    """Aktueller Paper-only-Status für den Company-API-Lesepfad."""
+    policy = CompanyPolicy(cfg)
+    paper = cfg.abschnitt("paper")
+    entscheidung = policy.check_action("paper_order")
+    return {
+        **_meta("live", ["config:paper", "policy:paper"]),
+        "paper_only": policy.paper_only(),
+        "broker": paper.get("broker"),
+        "order_freigabe": paper.get("order_freigabe"),
+        "paper_order_allowed": entscheidung.allowed,
+        "grund": entscheidung.grund,
+    }
 
 
 def _aufgabe(row: Any, *, mit_profil: bool = False) -> dict[str, Any]:

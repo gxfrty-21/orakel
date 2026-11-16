@@ -64,7 +64,7 @@ ROSTER: list[tuple[str, str, str, str]] = [
     ("D5", "D", "Positionsführer", "Offene Positionen und Stops prüfen"),
     ("D6", "D", "Order-Prüfer", "Aufträge vor der Freigabe nachrechnen"),
     ("D7", "D", "Ausführungs-Wächter", "Ausführungsstatus je Auftrag protokollieren"),
-    ("D8", "D", "Abgleich", "Broker-Positionen mit der Datenbank abgleichen"),
+    ("D8", "D", "Abgleich", "Positionen mit der Datenbank abgleichen"),
     ("D9", "D", "Handelsjournal", "Trades mit Begründung ins Vault schreiben"),
     ("D10", "D", "Leistungsmessung", "Trefferquote und Profit Factor je Strategie führen"),
     ("E1", "E", "Statistiker", "Verteilung der Trade-Renditen prüfen"),
@@ -102,7 +102,7 @@ ROSTER: list[tuple[str, str, str, str]] = [
     ("H3", "H", "Testläufer", "Test-Suite ausführen"),
     ("H4", "H", "Schema-Prüfer", "Dashboard-Bericht gegen Schema 2 prüfen"),
     ("H5", "H", "Performance-Prüfer", "Laufzeit der Engine messen"),
-    ("H6", "H", "Schnittstellen-Prüfer", "Broker-Schnittstelle auf Paper-Sperre prüfen"),
+    ("H6", "H", "Schnittstellen-Prüfer", "Order-Pfad und Paper-Sperre in der Konfiguration prüfen"),
     ("H7", "H", "Fehler-Sammler", "Fehler je Lauf sammeln"),
     ("H8", "H", "Versions-Prüfer", "Version und Änderungen dokumentieren"),
     ("H9", "H", "Sicherheits-Prüfer", "Keine Zugangsdaten in Dateien finden"),
@@ -161,10 +161,17 @@ def _hdl_schema(ctx: dict[str, Any]) -> tuple[bool, str]:
 
 
 def _hdl_paper_sperre(ctx: dict[str, Any]) -> tuple[bool, str]:
+    from .company.policy import CompanyPolicy
+
     cfg = ctx["cfg"]
-    art = cfg["paper"].get("broker", "csv")
-    freigabe = bool(cfg["paper"].get("order_freigabe", False))
-    return True, f"Broker {art}, Order-Freigabe {'an' if freigabe else 'aus (Probelauf)'}"
+    paper = cfg["paper"]
+    art = paper.get("broker", "nicht gesetzt")
+    freigabe = paper.get("order_freigabe", "nicht gesetzt")
+    ok = CompanyPolicy(cfg).paper_only()
+    return ok, (
+        f"Paper-Konfiguration: Brokerwert {art}, Order-Freigabe {freigabe!r}; "
+        f"Paper-only {'aktiv' if ok else 'nicht aktiv — blockiert'}"
+    )
 
 
 def _hdl_geheimnisse(ctx: dict[str, Any]) -> tuple[bool, str]:

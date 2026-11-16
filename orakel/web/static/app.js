@@ -2239,6 +2239,7 @@ async function ladeNacht(){
     nachtFehler = String(e.message || e);
   }
   zeichneNacht();
+  zeichneBewertung(nachtDaten);
   zeichneMissionen(nachtDaten);
 }
 
@@ -2289,7 +2290,11 @@ function zeichneNacht(){
   if(n.bewertung?.fehler) teile.push(`<span class="pill r">Bewertung</span> ${esc(n.bewertung.fehler)}.`);
   else if(n.bewertung) teile.push(`Kernaussagen: ${num(n.bewertung.kernaussagen,0)} · Widersprüche: ${num(n.bewertung.widersprueche,0)}.`);
   $('#nachtDetail').innerHTML = `<div class="nacht-status">${teile.join(' ')}</div>`;
-  zeichneBewertung(nachtDaten);
+}
+
+function widerspruchsVergleich(w){
+  if(w?.wert_a_bp == null || w?.wert_b_bp == null) return '';
+  return `<span class="claimWiderspruchWerte">Vergleich: ${num(w.wert_a_bp,2)} bp <span aria-hidden="true">↔</span> ${num(w.wert_b_bp,2)} bp</span>`;
 }
 
 function zeichneBewertung(d){
@@ -2297,6 +2302,12 @@ function zeichneBewertung(d){
   const c = d?.claims?.statistik || {};
   const top = d?.claims?.top || [];
   const wid = d?.claims?.widersprueche || [];
+  const widJeClaim = new Map();
+  for(const w of wid){
+    const id = Number(w.claim_id);
+    if(!widJeClaim.has(id)) widJeClaim.set(id, []);
+    widJeClaim.get(id).push(w);
+  }
   const reps = d?.reputation || [];
   const ns = c.nach_status || {};
   $('#bewertungTag').textContent = `${num(c.gesamt,0)} Kernaussagen`;
@@ -2310,9 +2321,10 @@ function zeichneBewertung(d){
   const pill = s => s==='bestätigt' ? 'g' : (s==='widersprüchlich' ? 'r' : (s==='teilweise' ? 'w' : ''));
   $('#bewertungClaims').innerHTML = top.length ? top.map(k=>`
     <div class="li"><span><b style="font-weight:400">${esc(k.kernaussage)}</b>
-      <small>${esc(k.thema)} · ${num(k.quellen,0)} Quellen · ${num(k.belege,0)} Belege</small></span>
+      <small>${esc(k.thema)} · ${num(k.quellen,0)} Quellen · ${num(k.belege,0)} Belege</small>
+      <small class="claimMeta"><span>Zeitraum: ${esc(k.zeitraum || '–')}</span><span>Bedingung: ${esc(k.bedingung || '–')}</span><span>Extraktionssicherheit: ${num(k.sicherheit,2)}</span></small>${(widJeClaim.get(Number(k.id)) || []).map(w=>`<small class="claimWiderspruch"><span class="pill r">Widerspruch</span><span class="claimWiderspruchGrund">${esc(w.grund)}</span><span class="claimWiderspruchSicherheit">Widerspruchssicherheit: ${num(w.sicherheit,2)}</span>${widerspruchsVergleich(w)}<span class="claimWiderspruchQuellen">Quellen: <span class="claimWiderspruchQuelle">${esc(w.quelle_a || '–')}</span><span class="claimWiderspruchPfeil" aria-hidden="true">↔</span><span class="claimWiderspruchQuelle">${esc(w.quelle_b || '–')}</span></span></small>`).join('')}</span>
       <span class="pill ${pill(k.status)}">${num(k.bestaetigungsgrad,2)}</span></div>`).join('')
-    + (wid.length ? `<div class="nacht-status"><span class="pill r">Widerspruch</span> ${esc(wid[0].grund)} <span class="code">${esc(wid[0].quelle_a)} ↔ ${esc(wid[0].quelle_b)}</span></div>` : '')
+    + (wid.length ? `<div class="nacht-status"><span class="pill r">Widerspruch</span> ${esc(wid[0].grund)} <span>Widerspruchssicherheit: ${num(wid[0].sicherheit,2)}</span> <span class="code">${esc(wid[0].quelle_a)} ↔ ${esc(wid[0].quelle_b)}</span></div>` : '')
     : '<div class="empty">Noch keine Kernaussage. Der Nachtlauf bewertet Titel mit prüfbaren Zahlen, Richtungen oder Verneinungen.</div>';
 
   $('#bewertungQuellen').innerHTML = reps.length ? `<table class="tbl"><thead><tr><th>Quelle</th><th class="m">Reputation</th><th class="m">belegt</th><th class="m">verworfen</th></tr></thead><tbody>
@@ -3380,7 +3392,8 @@ function updateTaktStand(){
   setzeMissionTakt(missionTakt, false);
 })();
 
-/* Schmale Brücke für die Prüfskripte: die Ansichten bleiben ohne eigene Nav-Einträge erreichbar. */
+/* Schmale Brücke für die Prüfskripte: Ansichten und Claim-Renderer bleiben ohne eigene Nav-Einträge erreichbar. */
 window.zeige = zeige;
+window.zeichneBewertung = zeichneBewertung;
 
 })();

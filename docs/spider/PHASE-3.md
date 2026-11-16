@@ -1,6 +1,6 @@
 # Phase 3 — Quellenreputation, Kernaussagen und Widersprüche
 
-**Stand:** 10. November 2026
+**Stand:** 15. November 2026
 **Grundlage:** `orakel/nexus/bewertung.py`, `orakel/db.py`
 (`nexus_claims`, `nexus_claim_quellen`, `nexus_widersprueche`,
 `nexus_quellen_reputation`), `orakel/nexus/nacht.py`, `orakel/nexus/status.py`,
@@ -15,22 +15,34 @@ regelbasiert. Es gibt kein Sprachmodell und keine semantische Wahrheit.
 
 1. **Kernaussage extrahieren.** Zuerst der Titel, nur bei fehlendem Muster der
    erste Satz der Zusammenfassung. Eine Meldung ergibt höchstens eine
-   Kernaussage.
+   Kernaussage. Neben Thema, Subjekt, Metrik, Richtung, Wert, Einheit und
+   Verneinung werden `zeitraum`, `bedingung` und `sicherheit` erfasst.
 2. **Muster prüfen.** Eine Aussage braucht eine **Metrik** oder einen
    **konkreten Wert**; ohne Richtung muss mindestens der Wert bleiben. Fragen,
    Rechtsfloskeln („not for distribution“) und passive Verwaltungsmeldungen
-   („Minutes … held“) werden verworfen.
-3. **Gruppieren.** Der `claim_key` lautet `thema|subjekt|metrik`. Subjekt und
-   Metrik werden aus normalisierten Wörtern gebildet; Monate, Zahlen und
-   Prozentzeichen fliegen aus dem Subjekt. Bekannte Namen werden vereinheitlicht
-   (`ECB`/`EZB` → `ezb`, `Bank of England` → `boe`).
+   („Minutes … held“) werden verworfen. `zeitraum` wird nur aus expliziten
+   Datumsangaben gesetzt; relative Angaben wie „heute“ werden nicht geraten.
+   `bedingung` übernimmt eine erkennbare Wenn-/Falls-Klausel als Text. Die
+   `sicherheit` ist eine Extraktionsheuristik, keine Quellenreputation.
+3. **Gruppieren.** Der `claim_key` lautet `thema|subjekt|metrik` und bekommt bei
+   explizitem Zeitraum die Endung `|zeitraum=YYYY-MM` bzw. `YYYY-Qn`.
+   Subjekt und Metrik werden aus normalisierten Wörtern gebildet; Monate,
+   Zahlen und Prozentzeichen fliegen aus dem Subjekt. Bekannte Namen werden
+   vereinheitlicht (`ECB`/`EZB` → `ezb`, `Bank of England` → `boe`).
 4. **Bestätigungsgrad berechnen.** Nur **Originale verschiedener Hosts** zählen
    als unabhängige Quellen. Kopien bleiben als Belege sichtbar, bestätigen aber
    nichts.
 5. **Widersprüche markieren.** Verglichen werden nur unterschiedliche Hosts
-   innerhalb von sieben Tagen. Erkannt werden entgegengesetzte Richtungen
-   (`steigt`/`sinkt`), `unverändert` gegen Veränderung und Verneinung gegen
-   Behauptung. Jeder Widerspruch behält Grund und Sicherheit.
+   innerhalb von sieben Tagen. Explizit verschiedene Zeiträume sind kein
+   Widerspruch. Erkannt werden entgegengesetzte Richtungen (`steigt`/`sinkt`),
+   `unverändert` gegen Veränderung, Verneinung gegen Behauptung, unvereinbare
+   Zahlenwerte bei gleicher Einheit sowie bedingte gegen unbedingte Aussage.
+   `%`, `pp` und `bp` werden für den Zahlenvergleich kontrolliert umgerechnet
+   (1 pp = 1 % = 100 bp); gespeichert bleiben die Originalwerte. Die
+   Gleichsetzung von Prozent und Prozentpunkten ist nur eine
+   Vergleichsannahme, keine Aussage über ihre Bedeutung im Kontext.
+   Jeder Widerspruch behält Grund und Sicherheit; die Widerspruchssicherheit
+   wird durch die Extraktionssicherheit der schwächeren Aussage begrenzt.
 6. **Quellenreputation fortschreiben.** Sie startet beim Registergewicht und
    der echten Artikelqualität. Abgeschlossene Forschungsaufträge liefern
    `bestätigt`/`widerlegt`; erkannte Widersprüche werden gedämpft eingerechnet.
@@ -42,9 +54,9 @@ regelbasiert. Es gibt kein Sprachmodell und keine semantische Wahrheit.
 
 | Tabelle | Inhalt |
 |---|---|
-| `nexus_claims` | eine Zeile je normalisierter Kernthese: `claim_key`, `kernaussage`, `quellen`, `belege`, `widersprueche`, `bestaetigungsgrad`, `status` |
-| `nexus_claim_quellen` | jede Meldung zur These: `meldung_key`, `artikel_id`, `quelle_id`, `host`, `aussage`, `richtung`, `wert`, `einheit`, `negiert`, `ist_kopie`, Reputations-Snapshot |
-| `nexus_widersprueche` | Paar aus zwei Meldungen, Grund, Sicherheit; keine automatische „Wahrheit“ |
+| `nexus_claims` | eine Zeile je normalisierter Kernthese: `claim_key`, `kernaussage`, `zeitraum`, `bedingung`, `sicherheit`, `quellen`, `belege`, `widersprueche`, `bestaetigungsgrad`, `status` |
+| `nexus_claim_quellen` | jede Meldung zur These: `meldung_key`, `artikel_id`, `quelle_id`, `host`, `aussage`, `richtung`, `wert`, `einheit`, `negiert`, `zeitraum`, `bedingung`, `sicherheit`, `ist_kopie`, Reputations-Snapshot |
+| `nexus_widersprueche` | Paar aus zwei Meldungen, Grund, Sicherheit und normierte Vergleichswerte (`wert_a_bp`, `wert_b_bp`; `NULL`, wenn nicht umrechenbar); keine automatische „Wahrheit“ |
 | `nexus_quellen_reputation` | Snapshot je Registerquelle: Artikel, Analysiert, Bestätigt, Widerlegt, Widersprüche, Reputation, Vertrauensstufe |
 
 Der Rebuild ist atomar: `nexus_bewertung_ersetzen` löscht und schreibt in einer
@@ -106,8 +118,13 @@ Auftrags-Ergebnisse vorliegen, sonst `vorläufig`.
 `GET /api/nexus/claims?status=widersprüchlich&limit=50` liefert Claims,
 Widersprüche, Statistik und die vollständige Reputationsliste. Der Nachtlauf
 schreibt seine Bewertung unter `bericht["bewertung"]`; die Dashboard-Karte
-**Kernaussagen** zeigt dieselben Zahlen. Ein Fehler in der Bewertung macht den
-Lauf `ok=false`, ohne gespeicherte Meldungen zu verlieren.
+**Kernaussagen** zeigt dieselben Zahlen und je Eintrag zusätzlich Zeitraum,
+Bedingung und Extraktionssicherheit. Bei erkannten Konflikten stehen direkt am
+Claim außerdem Widerspruchsgrund, Widerspruchssicherheit, normalisierte
+Vergleichswerte in bp (falls beide Werte umrechenbar sind) und die beiden
+beteiligten Quellen (`quelle_a` ↔ `quelle_b`). Fehlende Angaben
+erscheinen als `–`, nicht als geratene Werte. Ein Fehler in der Bewertung macht den Lauf `ok=false`, ohne
+gespeicherte Meldungen zu verlieren.
 
 Manuell neu berechnen:
 
@@ -130,8 +147,23 @@ python -m orakel.nexus bewertung --db orakel.db
   die übrigen; das ist bewusst konservativ.
 - **Kopien bestätigen nicht.** Auch eine Kopie von einem anderen Host bleibt
   Kopie. Das kann echte unabhängige Berichterstattung unterschätzen.
-- **Widerspruch ist Prüfbedarf, keine Wahrheit.** Die Erkennung deckt nur
-  Richtung und Verneinung ab; Zahlenkonflikte und feine Abschwächungen nicht.
+- **Widerspruch ist Prüfbedarf, keine Wahrheit.** Die Erkennung vergleicht
+  strukturierte Felder, aber keine Bedeutung. Sie deckt keine feinen
+  Abschwächungen oder impliziten Bedingungen ab. Nur `%`, `pp` und `bp` werden
+  umgerechnet; andere Einheiten und Währungen bleiben ohne Zahlenvergleich.
+  `pp` wird dabei wie `%` mit 100 bp angesetzt. Diese Annahme ersetzt keine
+  semantische Prüfung, ob eine Prozentänderung oder eine Prozentpunktdifferenz
+  gemeint ist.
+  „Bedingung gegen unbedingte Aussage“ ist ein Prüfhinweis, kein bewiesener
+  Widerspruch.
+- **Zeiträume sind nur explizit.** Relative Angaben, fehlende Datumsbezüge und
+  unterschiedliche Perioden werden nicht interpretiert. Der Sieben-Tage-Filter
+  bezieht sich auf den Abrufzeitpunkt, nicht auf den Aussagezeitraum.
+- **Untere Darstellungsgrenze.** Die Kernaussagen-Karte wird bei 240 px
+  unterstützt. Dort wechseln ihre KPI-Kacheln und das Claim-Grid auf eine
+  Spalte; die Karte bleibt im sichtbaren Bereich. Kopf- und Navigationsleiste
+  bleiben separat scrollbar. 240 px ist keine allgemeine Mindestbreite für alle
+  anderen Ansichten.
 - **Quellenreputation ist keine Trefferquote.** Sie startet mit einem Prior
   und wird nur durch echte Auftrags-Ergebnisse belastbar. Im breiten Lauf gab
   es noch keine abgeschlossenen Aufträge; alle Quellen waren `vorläufig`.
@@ -142,18 +174,45 @@ python -m orakel.nexus bewertung --db orakel.db
 
 ## 6. Tests und echter Lauf
 
-**162 Tests grün** (10. November 2026), darunter
-`tests/test_nexus_bewertung.py` mit:
+Die Nexus-Bewertungstests in `tests/test_nexus_bewertung.py` prüfen unter
+anderem:
 
 - Richtung, Wert, Metrik und Subjekt aus echten Schlagzeilen,
 - `lässt`/`hält` als „unverändert“, Verneinung getrennt von Richtung,
 - Fragen, Rechtsfloskeln und passive Minutenmeldungen ohne Claim,
 - Monats- und Prozentreste nicht im Subjekt,
+- expliziten Zeitraum, Bedingung und Extraktionssicherheit,
+- getrennte Claims für verschiedene Zeiträume, aber keinen Widerspruch daraus,
+- keine Erfindung eines Zeitraums aus „heute“; unbekannt und explizit bleiben
+  getrennt,
+- unterschiedliche Bedingungen ohne harten Widerspruch,
+- Zahlenkonflikt bei gleicher Richtung und gleichem Zeitraum,
+- gleichwertige Angaben in Prozent, Prozentpunkten und Basispunkten ohne
+  Widerspruch,
+- Zahlenkonflikt bei abweichenden Prozent-, Prozentpunkte- oder
+  Basispunkte-Werten,
+- gespeicherte normalisierte Vergleichswerte in Basispunkten für Widersprüche
+  mit abweichenden, umrechenbaren Zahlen,
+- keine Zahlenkonflikte bei nicht umrechenbaren Einheiten,
+- `pp`, `Prozentpunkte` und `bps` werden als Einheiten erkannt,
+- bedingte gegen unbedingte Aussage als Prüfbedarf,
 - zwei unabhängige Quellen → `bestätigt`,
 - Kopie als Beleg, aber nicht als unabhängige Quelle,
 - Gegenrichtung und Verneinung → `widersprüchlich` mit Grund,
 - Quellenreputation aus echten Ergebnissen, sonst `vorläufig`,
 - Idempotenz und atomarer Rebuild.
+
+**pp-Baseline im echten Claim-Korpus:** Der versionierte Korpus enthält 34
+reale RSS-Meldungen, aber keine Gold-Einheit `pp`; die aktuelle Extraktion sagt
+ebenfalls keine pp-Einheit vorher. pp-Precision und pp-Recall sind damit
+mathematisch nicht definierbar (0/0) und werden als `n/a` ausgewiesen. Es gibt
+daher keine pp-spezifischen Fehlfälle. Die allgemeinen Claim-Fehler sind
+`seed-021` (BBC, „My mortgage is going up…“: Subjekt `uk` statt
+`mortgage going month how`, Metrik `interest rate` statt `rates`) sowie
+`seed-023` (BBC, „AI stocks climb…“) und `seed-024` (BBC, „Why the US
+midterms…“), bei denen der Claim nicht erkannt wurde. Keiner davon betrifft
+eine pp-Angabe. Reproduzierbar mit
+`python scripts/nexus_claim_baseline.py --output-dir artifacts/nexus-claim-baseline`.
 
 **Echter lokaler Lauf** mit zwölf produktiven Quellen (u. a. EZB, Fed, Bank of
 England, Bank of Japan, BBC, Guardian, WHO, UN):

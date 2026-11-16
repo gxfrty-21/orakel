@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from orakel.db import Facts
@@ -84,6 +86,27 @@ def test_prozentzahl_und_monat_verschwinden_aus_dem_subjekt():
     assert "3.75" not in a["subjekt"]
     assert "july" not in a["subjekt"]
     assert a["subjekt"] == b["subjekt"]
+    assert a["zeitraum"] == "2026-07"
+    assert b["zeitraum"] == "2026-09"
+
+
+def test_kernaussage_erkennt_zeitraum_bedingung_und_sicherheit():
+    a = _aussage_aus_text(
+        "EZB senkt den Leitzins im Juli 2026, falls die Inflation sinkt"
+    )
+    assert a is not None
+    assert a["zeitraum"] == "2026-07"
+    assert a["bedingung"] == "falls die inflation sinkt"
+    assert a["sicherheit"] == 0.8
+    assert a["subjekt"] == "ezb"
+
+
+def test_relative_zeitangabe_wird_nicht_geraten():
+    a = _aussage_aus_text("EZB senkt den Leitzins heute")
+    assert a is not None
+    assert a["zeitraum"] == ""
+    assert a["bedingung"] == ""
+    assert a["sicherheit"] == 0.9
 
 
 def test_extrahiere_aussage_nutzt_quelle_und_kopie_status(tmp_path):
@@ -163,6 +186,46 @@ def test_kopie_ist_beleg_aber_keine_unabhaengige_bestaetigung(tmp_path):
     assert claim["status"] == "unbestätigt"
 
 
+def test_bestehende_datenbank_erhaelt_strukturierte_spalten(tmp_path):
+    pfad = tmp_path / "alt.db"
+    with sqlite3.connect(pfad) as c:
+        c.executescript("""
+        CREATE TABLE nexus_claims (
+            id INTEGER PRIMARY KEY, claim_key TEXT NOT NULL UNIQUE,
+            kernaussage TEXT NOT NULL, thema TEXT NOT NULL, subjekt TEXT NOT NULL,
+            metrik TEXT NOT NULL DEFAULT '', quellen INTEGER NOT NULL DEFAULT 0,
+            belege INTEGER NOT NULL DEFAULT 0, widersprueche INTEGER NOT NULL DEFAULT 0,
+            bestaetigungsgrad REAL NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'unbestätigt',
+            erstmals TEXT NOT NULL, aktualisiert TEXT NOT NULL
+        );
+        CREATE TABLE nexus_claim_quellen (
+            id INTEGER PRIMARY KEY, claim_id INTEGER NOT NULL,
+            meldung_key TEXT NOT NULL, artikel_id INTEGER NOT NULL,
+            quelle_id TEXT NOT NULL, host TEXT NOT NULL, aussage TEXT NOT NULL,
+            richtung TEXT NOT NULL, wert REAL, einheit TEXT NOT NULL DEFAULT '',
+            negiert INTEGER NOT NULL DEFAULT 0, ist_kopie INTEGER NOT NULL DEFAULT 0,
+            reputation REAL NOT NULL DEFAULT 0.5, erstellt TEXT NOT NULL,
+            UNIQUE(claim_id, meldung_key)
+        );
+        CREATE TABLE nexus_widersprueche (
+            id INTEGER PRIMARY KEY, claim_id INTEGER NOT NULL,
+            meldung_a TEXT NOT NULL, meldung_b TEXT NOT NULL,
+            quelle_a TEXT NOT NULL, quelle_b TEXT NOT NULL,
+            grund TEXT NOT NULL, sicherheit REAL NOT NULL,
+            erstellt TEXT NOT NULL
+        );
+        """)
+    db = Facts(pfad)
+    with db.conn() as c:
+        for tabelle in ("nexus_claims", "nexus_claim_quellen"):
+            spalten = {r["name"] for r in c.execute(f"PRAGMA table_info({tabelle})")}
+            assert {"zeitraum", "bedingung", "sicherheit"} <= spalten
+        spalten = {r["name"] for r in c.execute(
+            "PRAGMA table_info(nexus_widersprueche)")}
+        assert {"wert_a_bp", "wert_b_bp"} <= spalten
+
+
 def test_gegenlaeufige_richtungen_werden_als_widerspruch_markiert(tmp_path):
     db = Facts(tmp_path / "orakel.db")
     a, b = quelle("a", "Quelle A", "a.example"), quelle("b", "Quelle B", "b.example")
@@ -182,6 +245,235 @@ def test_gegenlaeufige_richtungen_werden_als_widerspruch_markiert(tmp_path):
     assert wid["grund"] == "Richtung steigt gegen sinkt"
     assert wid["quelle_a"] == "a.example"
     assert wid["quelle_b"] == "b.example"
+    assert wid["wert_a_bp"] == 450.0
+    assert wid["wert_b_bp"] == 400.0
+
+
+def test_gleiche_metrik_mit_verschiedenen_zeitraeumen_ist_kein_widerspruch(tmp_path):
+    db = Facts(tmp_path / "orakel.db")
+    a, b = quelle("a", "Quelle A", "a.example"), quelle("b", "Quelle B", "b.example")
+    meldung(db, "m-a", a, "EZB hebt den Leitzins im Juli 2026 auf 4,5 Prozent",
+            "https://a.example/1")
+    meldung(db, "m-b", b, "EZB senkt den Leitzins im September 2026 auf 4,0 Prozent",
+            "https://b.example/1")
+
+    ergebnis = claims_auffrischen(db, [a, b])
+    assert ergebnis["kernaussagen"] == 2
+    assert ergebnis["widersprueche"] == 0
+    assert {c["zeitraum"] for c in db.nexus_claims(5)} == {"2026-07", "2026-09"}
+    assert all("zeitraum=" in c["claim_key"] for c in db.nexus_claims(5))
+
+
+def test_unterschiedliche_bedingungen_sind_kein_harter_widerspruch(tmp_path):
+    db = Facts(tmp_path / "orakel.db")
+    a, b = quelle("a", "Quelle A", "a.example"), quelle("b", "Quelle B", "b.example")
+    meldung(db, "m-a", a, "EZB senkt den Leitzins, falls die Inflation sinkt",
+            "https://a.example/1")
+    meldung(db, "m-b", b, "EZB senkt den Leitzins, falls das Wachstum sinkt",
+            "https://b.example/1")
+
+    ergebnis = claims_auffrischen(db, [a, b])
+    assert ergebnis["kernaussagen"] == 1
+    assert ergebnis["widersprueche"] == 0
+    claim = db.nexus_claims(5)[0]
+    assert claim["bedingung"] == "falls die inflation sinkt"
+    belege = db.nexus_claim_quellen_fuer([claim["id"]])
+    assert {b["bedingung"] for b in belege} == {
+        "falls die inflation sinkt", "falls das wachstum sinkt",
+    }
+
+
+def test_unbekannter_zeitraum_wird_nicht_erfunden(tmp_path):
+    db = Facts(tmp_path / "orakel.db")
+    a, b = quelle("a", "Quelle A", "a.example"), quelle("b", "Quelle B", "b.example")
+    meldung(db, "m-a", a, "EZB hebt den Leitzins heute", "https://a.example/1")
+    meldung(db, "m-b", b, "EZB senkt den Leitzins heute", "https://b.example/1")
+
+    claims_auffrischen(db, [a, b])
+    claim = db.nexus_claims(5)[0]
+    assert claim["zeitraum"] == ""
+    assert "zeitraum=" not in claim["claim_key"]
+    wid = db.nexus_widersprueche(5)[0]
+    assert wid["grund"] == "Richtung steigt gegen sinkt"
+
+
+def test_unbekannter_zeitraum_gilt_nicht_als_gleicher_zeitraum(tmp_path):
+    db = Facts(tmp_path / "orakel.db")
+    a, b = quelle("a", "Quelle A", "a.example"), quelle("b", "Quelle B", "b.example")
+    meldung(db, "m-a", a, "EZB hebt den Leitzins im Juli 2026", "https://a.example/1")
+    meldung(db, "m-b", b, "EZB senkt den Leitzins", "https://b.example/1")
+
+    ergebnis = claims_auffrischen(db, [a, b])
+    assert ergebnis["kernaussagen"] == 2
+    assert ergebnis["widersprueche"] == 0
+    assert {c["zeitraum"] for c in db.nexus_claims(5)} == {"", "2026-07"}
+
+
+def test_nicht_umrechenbare_einheiten_erzeugen_keinen_zahlenkonflikt(tmp_path):
+    db = Facts(tmp_path / "orakel.db")
+    a, b = quelle("a", "Quelle A", "a.example"), quelle("b", "Quelle B", "b.example")
+    meldung(db, "m-a", a, "EZB hebt den Leitzins im Juli 2026 auf 4,5 Prozent",
+            "https://a.example/1")
+    meldung(db, "m-b", b, "EZB hebt den Leitzins im Juli 2026 auf 4,5 Milliarden",
+            "https://b.example/1")
+
+    ergebnis = claims_auffrischen(db, [a, b])
+    assert ergebnis["widersprueche"] == 0
+    claim = db.nexus_claims(5)[0]
+    belege = db.nexus_claim_quellen_fuer([claim["id"]])
+    assert {b["einheit"] for b in belege} == {"%", "mrd"}
+
+
+def test_prozent_und_basispunkte_sind_gleichwertig(tmp_path):
+    db = Facts(tmp_path / "orakel.db")
+    a, b = quelle("a", "Quelle A", "a.example"), quelle("b", "Quelle B", "b.example")
+    meldung(db, "m-a", a, "EZB hebt den Leitzins im Juli 2026 auf 4,5 Prozent",
+            "https://a.example/1")
+    meldung(db, "m-b", b, "EZB hebt den Leitzins im Juli 2026 auf 450 Basispunkte",
+            "https://b.example/1")
+
+    ergebnis = claims_auffrischen(db, [a, b])
+    assert ergebnis["widersprueche"] == 0
+    belege = db.nexus_claim_quellen_fuer([db.nexus_claims(5)[0]["id"]])
+    assert {b["einheit"] for b in belege} == {"%", "bp"}
+    assert {b["wert"] for b in belege} == {4.5, 450.0}
+
+
+def test_prozent_und_basispunkte_konflikt_bei_abweichung(tmp_path):
+    db = Facts(tmp_path / "orakel.db")
+    a, b = quelle("a", "Quelle A", "a.example"), quelle("b", "Quelle B", "b.example")
+    meldung(db, "m-a", a, "EZB hebt den Leitzins im Juli 2026 auf 4,5 Prozent",
+            "https://a.example/1")
+    meldung(db, "m-b", b, "EZB hebt den Leitzins im Juli 2026 auf 440 Basispunkte",
+            "https://b.example/1")
+
+    ergebnis = claims_auffrischen(db, [a, b])
+    assert ergebnis["widersprueche"] == 1
+    wid = db.nexus_widersprueche(5)[0]
+    assert wid["grund"] == "Zahlenwert 4.5 % (450 bp) gegen 440 bp"
+    assert wid["sicherheit"] == 0.9
+    assert wid["wert_a_bp"] == 450.0
+    assert wid["wert_b_bp"] == 440.0
+
+
+def test_bps_wird_als_basispunkt_erkannt():
+    a = _aussage_aus_text("EZB hebt den Leitzins auf 450 bps")
+    assert a is not None
+    assert a["wert"] == 450.0
+    assert a["einheit"] == "bp"
+
+
+@pytest.mark.parametrize("text", [
+    "EZB hebt den Leitzins auf 4,5 pp",
+    "EZB hebt den Leitzins auf 4,5 Prozentpunkte",
+])
+def test_prozentpunkte_werden_als_pp_erkannt(text):
+    a = _aussage_aus_text(text)
+    assert a is not None
+    assert a["wert"] == 4.5
+    assert a["einheit"] == "pp"
+
+
+def test_prozentzeichen_wird_erkannt():
+    a = _aussage_aus_text("EZB hebt den Leitzins auf 4,5 %")
+    assert a is not None
+    assert a["wert"] == 4.5
+    assert a["einheit"] == "%"
+
+
+def test_prozentpunkte_und_prozent_sind_gleichwertig(tmp_path):
+    db = Facts(tmp_path / "orakel.db")
+    a, b = quelle("a", "Quelle A", "a.example"), quelle("b", "Quelle B", "b.example")
+    meldung(db, "m-a", a, "EZB hebt den Leitzins im Juli 2026 auf 4,5 Prozentpunkte",
+            "https://a.example/1")
+    meldung(db, "m-b", b, "EZB hebt den Leitzins im Juli 2026 auf 4,5 Prozent",
+            "https://b.example/1")
+
+    ergebnis = claims_auffrischen(db, [a, b])
+    assert ergebnis["widersprueche"] == 0
+    belege = db.nexus_claim_quellen_fuer([db.nexus_claims(5)[0]["id"]])
+    assert {b["einheit"] for b in belege} == {"pp", "%"}
+    assert {b["wert"] for b in belege} == {4.5}
+
+
+def test_prozentpunkte_und_basispunkte_sind_gleichwertig(tmp_path):
+    db = Facts(tmp_path / "orakel.db")
+    a, b = quelle("a", "Quelle A", "a.example"), quelle("b", "Quelle B", "b.example")
+    meldung(db, "m-a", a, "EZB hebt den Leitzins im Juli 2026 auf 4,5 Prozentpunkte",
+            "https://a.example/1")
+    meldung(db, "m-b", b, "EZB hebt den Leitzins im Juli 2026 auf 450 Basispunkte",
+            "https://b.example/1")
+
+    ergebnis = claims_auffrischen(db, [a, b])
+    assert ergebnis["widersprueche"] == 0
+    belege = db.nexus_claim_quellen_fuer([db.nexus_claims(5)[0]["id"]])
+    assert {b["einheit"] for b in belege} == {"pp", "bp"}
+    assert {b["wert"] for b in belege} == {4.5, 450.0}
+
+
+def test_prozentpunkte_und_basispunkte_konflikt_bei_abweichung(tmp_path):
+    db = Facts(tmp_path / "orakel.db")
+    a, b = quelle("a", "Quelle A", "a.example"), quelle("b", "Quelle B", "b.example")
+    meldung(db, "m-a", a, "EZB hebt den Leitzins im Juli 2026 auf 4,5 Prozentpunkte",
+            "https://a.example/1")
+    meldung(db, "m-b", b, "EZB hebt den Leitzins im Juli 2026 auf 440 Basispunkte",
+            "https://b.example/1")
+
+    ergebnis = claims_auffrischen(db, [a, b])
+    assert ergebnis["widersprueche"] == 1
+    wid = db.nexus_widersprueche(5)[0]
+    assert wid["grund"] == "Zahlenwert 4.5 pp (450 bp) gegen 440 bp"
+    assert wid["sicherheit"] == 0.9
+    assert wid["wert_a_bp"] == 450.0
+    assert wid["wert_b_bp"] == 440.0
+
+
+def test_zahlenkonflikt_bei_gleicher_richtung_und_gleichem_zeitraum(tmp_path):
+    db = Facts(tmp_path / "orakel.db")
+    a, b = quelle("a", "Quelle A", "a.example"), quelle("b", "Quelle B", "b.example")
+    meldung(db, "m-a", a, "EZB hebt den Leitzins im Juli 2026 auf 4,5 Prozent",
+            "https://a.example/1")
+    meldung(db, "m-b", b, "EZB hebt den Leitzins im Juli 2026 auf 4,0 Prozent",
+            "https://b.example/1")
+
+    ergebnis = claims_auffrischen(db, [a, b])
+    assert ergebnis["widersprueche"] == 1
+    wid = db.nexus_widersprueche(5)[0]
+    assert wid["grund"] == "Zahlenwert 4.5 % gegen 4 %"
+    assert wid["sicherheit"] == 0.9
+    assert wid["wert_a_bp"] == 450.0
+    assert wid["wert_b_bp"] == 400.0
+
+
+def test_widerspruchssicherheit_nutzt_die_schwaechere_kernaussage(tmp_path):
+    db = Facts(tmp_path / "orakel.db")
+    a, b = quelle("a", "Quelle A", "a.example"), quelle("b", "Quelle B", "b.example")
+    meldung(db, "m-a", a, "EZB 4,5 Prozent", "https://a.example/1")
+    meldung(db, "m-b", b, "EZB 4,0 Prozent", "https://b.example/1")
+
+    claims_auffrischen(db, [a, b])
+    wid = db.nexus_widersprueche(5)[0]
+    assert wid["grund"] == "Zahlenwert 4.5 % gegen 4 %"
+    assert wid["sicherheit"] == 0.6
+
+
+def test_bedingte_gegen_unbedingte_aussage_ist_ein_pruefbedarf(tmp_path):
+    db = Facts(tmp_path / "orakel.db")
+    a, b = quelle("a", "Quelle A", "a.example"), quelle("b", "Quelle B", "b.example")
+    meldung(db, "m-a", a, "EZB senkt den Leitzins, falls die Inflation sinkt",
+            "https://a.example/1")
+    meldung(db, "m-b", b, "EZB senkt den Leitzins", "https://b.example/1")
+
+    ergebnis = claims_auffrischen(db, [a, b])
+    assert ergebnis["widersprueche"] == 1
+    claim = db.nexus_claims(5)[0]
+    assert claim["bedingung"] == "falls die inflation sinkt"
+    assert claim["sicherheit"] == 0.8
+    beleg = db.nexus_claim_quellen_fuer([claim["id"]])[0]
+    assert beleg["bedingung"] == "falls die inflation sinkt"
+    wid = db.nexus_widersprueche(5)[0]
+    assert wid["grund"] == "Bedingung gegen unbedingte Aussage"
+    assert wid["sicherheit"] == 0.5
 
 
 def test_verneinung_gegen_behauptung_ist_ein_widerspruch(tmp_path):
