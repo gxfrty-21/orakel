@@ -364,13 +364,34 @@ Widerspruchsdetails mit Grund, Widerspruchssicherheit, normalisierten
 Vergleichswerten in bp und den beteiligten Quellen.
 Dabei prüft er, ob die Karte,
 ihre Metadaten und Widerspruchszeilen seitlich aus dem Viewport oder ihrem
-Kasten laufen. Zusätzlich werden drei bewusst lange Quellenfälle geprüft – zwei
-überlange Hostpaare und ein einzelner sehr langer Host gegen eine kurze Quelle.
-Die Quellenzeile bleibt bei 280 und 320 px im Panel, in normaler Darstellung
-auch bei 240 px; der Trenner `↔` darf nicht allein stehen.
+Kasten laufen. Zusätzlich werden vier bewusst lange Quellenfälle geprüft – zwei
+überlange Hostpaare, ein einzelner sehr langer Host mit Punkten und Bindestrichen
+sowie ein langer Host ganz ohne Punkt oder Bindestrich. Beim Extremfall ohne
+Punkt oder Bindestrich bleiben die Quellenzeilen in normaler Darstellung ohne
+Überlauf; die konkreten Breiten sind:
+
+| Viewport | Quellenzeile | Host-Spanne | Zeilen des 114-Zeichen-Hosts |
+| ---: | ---: | ---: | ---: |
+| 360 px | 298 px | 294 px | 3 |
+| 320 px | 258 px | 252 px | 4 |
+| 280 px | 218 px | 217 px | 4 |
+| 240 px | 178 px | 175 px | 5 |
+
+`scrollWidth` und `clientWidth` der Quellenzeile stimmen in allen vier Breiten
+überein; der Trenner `↔` bleibt jeweils in der Quellenzeile.
 Die Testdaten werden nur ins DOM injiziert und nicht in SQLite geschrieben. Die
 Zusammenfassung meldet `Claims 4× geprüft` (360, 320, 280 und zusätzlich
 240 px).
+
+Gezielt nur die Spider-Quellenzeile prüfen:
+
+```bash
+node scripts/pruefe-text250.mjs --ansichten spider --breiten 360,320,280
+```
+
+Der Aufruf prüft die vier Langhost-Fälle bei 360, 320 und 280 px sowie die
+zusätzliche 240-px-Claim-Prüfung. Erwartet werden Exit-Code 0, `Claims 4× geprüft`
+und die Zeile `240px/spider: OK · Seite 240px · Kopf 240/240 · Navigation 240/240`.
 
 Für Strategien, Research, das Raumschiff, Agentenraum und Konferenz gleicht der
 Lauf zusätzlich die Kerndaten mit `/api/report` ab: Zahl und Namen der

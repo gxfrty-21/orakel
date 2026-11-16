@@ -113,14 +113,23 @@ for (const [index, widerspruch] of LANGE_QUELLEN_TESTDATEN.claims.widersprueche.
     : 'a'.repeat(140) + '.example.net';
   widerspruch.quelle_b = 'noch-laengere-quellen-domain-mit-subdomain-und-hyphen.nachrichtenarchiv.example.org';
 }
-// Zusätzlicher Fall mit genau einem sehr langen Host und einer kurzen
-// Gegenseite. Er belastet die Zeile bei 280 und 320 px unabhängig vom
+// Zusätzliche Fälle mit genau einem sehr langen Host und einer kurzen
+// Gegenseite. Sie belasten die Zeile bei 280 und 320 px unabhängig vom
 // bisherigen Langhost-Paar.
 LANGE_QUELLEN_TESTDATEN.claims.widersprueche.push({
   claim_id: 900001,
   grund: 'Einzelner sehr langer Host gegen kurze Quelle',
   sicherheit: 0.6,
   quelle_a: 'ein-sehr-langer-hostname-mit-vielen-subdomains-und-hyphen.nachrichtenagentur.example.net',
+  quelle_b: 'kurz.example',
+});
+// Extremfall ohne jeden Punkt oder Bindestrich: Der Host darf nur an
+// beliebigen Zeichen umbrechen, nicht an DNS-Trennern.
+LANGE_QUELLEN_TESTDATEN.claims.widersprueche.push({
+  claim_id: 900001,
+  grund: 'Host ohne Punkt oder Bindestrich gegen kurze Quelle',
+  sicherheit: 0.6,
+  quelle_a: 'quellenhostohnebindestrichundohnepunkt'.repeat(3),
   quelle_b: 'kurz.example',
 });
 
