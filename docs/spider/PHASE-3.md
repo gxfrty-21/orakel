@@ -1,6 +1,6 @@
 # Phase 3 — Quellenreputation, Kernaussagen und Widersprüche
 
-**Stand:** 15. November 2026
+**Stand:** 16. November 2026
 **Grundlage:** `orakel/nexus/bewertung.py`, `orakel/db.py`
 (`nexus_claims`, `nexus_claim_quellen`, `nexus_widersprueche`,
 `nexus_quellen_reputation`), `orakel/nexus/nacht.py`, `orakel/nexus/status.py`,
@@ -194,7 +194,12 @@ anderem:
 - gespeicherte normalisierte Vergleichswerte in Basispunkten für Widersprüche
   mit abweichenden, umrechenbaren Zahlen,
 - keine Zahlenkonflikte bei nicht umrechenbaren Einheiten,
-- `pp`, `Prozentpunkte` und `bps` werden als Einheiten erkannt,
+- `pp`, `Prozentpunkte`, englische `percentage points` und `bps` werden als Einheiten erkannt,
+- `pp` in Fremdwörtern wie „Apps“, „Kipppunkt“ oder „Grappas“ wird nicht als
+  Einheit gewertet; nur die eigenständige Zeichenfolge nach einer Zahl zählt,
+- zusätzlich sieben echte RSS-Schlagzeilen mit pp-Fremdwörtern aus
+  `tests/fixtures/nexus_pp_fremdwoerter_rss.json` geprüft; keine davon ergibt
+  eine pp-Einheit,
 - bedingte gegen unbedingte Aussage als Prüfbedarf,
 - zwei unabhängige Quellen → `bestätigt`,
 - Kopie als Beleg, aber nicht als unabhängige Quelle,
@@ -202,16 +207,39 @@ anderem:
 - Quellenreputation aus echten Ergebnissen, sonst `vorläufig`,
 - Idempotenz und atomarer Rebuild.
 
-**pp-Baseline im echten Claim-Korpus:** Der versionierte Korpus enthält 34
-reale RSS-Meldungen, aber keine Gold-Einheit `pp`; die aktuelle Extraktion sagt
-ebenfalls keine pp-Einheit vorher. pp-Precision und pp-Recall sind damit
-mathematisch nicht definierbar (0/0) und werden als `n/a` ausgewiesen. Es gibt
-daher keine pp-spezifischen Fehlfälle. Die allgemeinen Claim-Fehler sind
-`seed-021` (BBC, „My mortgage is going up…“: Subjekt `uk` statt
-`mortgage going month how`, Metrik `interest rate` statt `rates`) sowie
-`seed-023` (BBC, „AI stocks climb…“) und `seed-024` (BBC, „Why the US
-midterms…“), bei denen der Claim nicht erkannt wurde. Keiner davon betrifft
-eine pp-Angabe. Reproduzierbar mit
+**pp-Baseline im echten Claim-Korpus:** Der versionierte Korpus enthält 39
+reale RSS-Meldungen, davon fünf gezielt ergänzte pp-Meldungen aus echten
+Google-News-RSS-Suchen: zwei deutschsprachige Treffer nach „Prozentpunkte“
+(Tagesschau und Spiegel) sowie drei englischsprachige Treffer nach
+„percentage points“ (CBS News, ERR und Tax Foundation). Die Originalseiten
+wurden am 15. bzw. 16. November 2026 geprüft; alle fünf RSS-Titel enthalten
+einen konkreten pp-Wert. Die aktuelle Extraktion erkennt alle fünf Einheiten:
+
+| Messwert | Ergebnis |
+|---|---:|
+| Erwartete pp-Claims | 5 |
+| Vorhergesagte pp-Claims | 5 |
+| Korrekte pp-Einheiten | 5 |
+| pp-Precision | 1.0 |
+| pp-Recall | 1.0 |
+
+Die pp-Fälle sind `rss-pp-001` („US-Notenbank Fed erhöht den Leitzins um 0,25
+Prozentpunkte“), `rss-pp-002` („USA: Notenbank Fed senkt Leitzins um 0,25
+Prozentpunkte“), `rss-pp-003` („Federal Reserve lowers interest rates by 0.50
+percentage points in first cut since 2020“), `rss-pp-004` („European Central
+Bank cuts key interest rates by 0.25 percentage points“) und `rss-pp-005`
+(„Tariffs Increased Retail Prices of Imports by 7 Percentage Points Prior to
+Supreme Court Ruling“). Die Stichprobe ist gezielt und klein (n=5); sie belegt,
+dass der Messpfad für deutsche und englische pp-Angaben funktioniert, ist aber
+**keine repräsentative Schätzung** der pp-Genauigkeit im gesamten
+Nachrichtenstrom. Es gibt in diesem Lauf keine pp-spezifischen False Positives
+oder False Negatives.
+Die allgemeinen Claim-Fehler sind `seed-021` (BBC, „My mortgage is going up…“:
+Subjekt `uk` statt `mortgage going month how`, Metrik `interest rate` statt
+`rates`) sowie `seed-023` (BBC, „AI stocks climb…“) und `seed-024` (BBC, „Why
+the US midterms…“), bei denen der Claim nicht erkannt wurde. Die Gesamtwerte
+liegen bei 9 erwarteten, 7 erkannten und 6 vollständig richtigen Claims
+(Precision 0.8571, Recall 0.6667). Reproduzierbar mit
 `python scripts/nexus_claim_baseline.py --output-dir artifacts/nexus-claim-baseline`.
 
 **Echter lokaler Lauf** mit zwölf produktiven Quellen (u. a. EZB, Fed, Bank of
