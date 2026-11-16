@@ -2075,7 +2075,10 @@ function fitShip(){
   if(!vp || !w || !vp.clientWidth || !w.offsetWidth) return;
   if(!w.querySelector('.px-room')) return;
   const faktor = Math.min((vp.clientWidth - 18) / w.offsetWidth, (vp.clientHeight - 18) / w.offsetHeight, 1);
-  shipZoom = Math.max(0.16, Math.min(2.5, faktor));
+  /* Bei 240 px ist der feste Mindestzoom 0,16 breiter als der Viewport.
+     Dort darf der Fit-Zoom bis auf den tatsächlichen Faktor sinken. */
+  const mindestZoom = vp.clientWidth <= 260 ? 0.1 : 0.16;
+  shipZoom = Math.max(mindestZoom, Math.min(2.5, faktor));
   shipX = (vp.clientWidth - w.offsetWidth * shipZoom) / 2;
   shipY = (vp.clientHeight - w.offsetHeight * shipZoom) / 2;
   shipZoomInit = true;
@@ -2776,7 +2779,12 @@ if (forecastBtn) forecastBtn.onclick = async () => {
 async function lade(){
   try{
     const r = await fetch('/api/report',{cache:'no-store'});
-    R = await r.json();
+    const neu = await r.json();
+    // Die Lab-Kurve ist eine Tastatur-Lesefläche. Ein Re-Render mitten in der
+    // Bedienung würde Fokus, Tooltip und Live-Region zurücksetzen.
+    const a = document.activeElement;
+    if (a && a.closest && a.closest('#v-lab')) return;
+    R = neu;
     renderTop();
     zeichne();
   }catch(e){

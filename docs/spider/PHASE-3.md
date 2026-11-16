@@ -160,10 +160,14 @@ python -m orakel.nexus bewertung --db orakel.db
   unterschiedliche Perioden werden nicht interpretiert. Der Sieben-Tage-Filter
   bezieht sich auf den Abrufzeitpunkt, nicht auf den Aussagezeitraum.
 - **Untere Darstellungsgrenze.** Die Kernaussagen-Karte wird bei 240 px
-  unterstützt. Dort wechseln ihre KPI-Kacheln und das Claim-Grid auf eine
-  Spalte; die Karte bleibt im sichtbaren Bereich. Kopf- und Navigationsleiste
-  bleiben separat scrollbar. 240 px ist keine allgemeine Mindestbreite für alle
-  anderen Ansichten.
+  unterstützt. Dort ist das Panel 208 px breit (206 px Innenbreite), die
+  Quellenzeile misst 178 px und bricht zweizeilig um; KPI-Kacheln und
+  Claim-Grid wechseln auf eine Spalte. Die Seite bleibt mit
+  `scrollWidth === clientWidth === 240` ohne horizontalen Überlauf. Kopf- und
+  Navigationsleiste brechen kompakt um. Der vollständige 250-%-Lauf über alle
+  zwölf Ansichten ist bei 240 px grün (`240px: 12/12`). 240 px ist die untere
+  geprüfte Breite und keine allgemeine Mindestbreite für alle anderen
+  Ansichten; darunter gibt es keine Layoutzusage.
 - **Quellenreputation ist keine Trefferquote.** Sie startet mit einem Prior
   und wird nur durch echte Auftrags-Ergebnisse belastbar. Im breiten Lauf gab
   es noch keine abgeschlossenen Aufträge; alle Quellen waren `vorläufig`.
@@ -268,7 +272,37 @@ Artikelbasis, keine gemessene Trefferquote.
 
 ---
 
-## 7. Nächster Schritt
+## 7. Browser-Prüfung: 24 Befunde im 250-%-Lauf (360 px)
+
+Ein lokaler 250-%-Lauf meldete 24 Befunde. Die Meldungen stammen aus
+**`360px/lab`**, nicht aus dem 240-px-Lauf: Der separate 250-%-Lauf über alle
+zwölf Ansichten bei 240 px war mit `240px: 12/12` grün. Die Zuordnung zum
+240-px-Lauf war falsch.
+
+| Gruppe | Anzahl | Befund |
+|---|---:|---|
+| Home/Live-Region | 2 | `Home` kehrt nicht zum ersten Punkt zurück (`0` statt `0.0`); die Live-Region ist danach leer. |
+| Tooltip-Position | 1 | Leerer Tooltip ausserhalb des Viewports (`29–47 × 3955–3965` bei `360 × 900`). |
+| Startpunkt | 5 | Datum `—`; Kapital `USD 0`; Prozentwert, Hochstand und Abstand nicht lesbar. |
+| Viertelpunkt | 5 | Datum `—`; Kapital `USD 0`; Prozentwert, Hochstand und Abstand nicht lesbar. |
+| Mittelpunkt | 5 | Datum `—`; Kapital `USD 0`; Prozentwert, Hochstand und Abstand nicht lesbar. |
+| Dreiviertelpunkt | 5 | Datum `—`; Kapital `USD 0`; Prozentwert, Hochstand und Abstand nicht lesbar. |
+| Shift+Tab | 1 | Erwartetes vorheriges Element und tatsächlich fokussiertes Element stimmen nicht überein (`donchianlookback=20 A` statt `donchian lookback=20`). |
+| **Summe** | **24** | |
+
+Ursache war der 8-Sekunden-Auto-Refresh: Er baute die fokussierte Kapitalkurve
+neu auf und setzte Fokus, Tooltip und Live-Region zurück. Die 24 Meldungen sind
+Folge dieses einen Zustandsverlusts. Die App pausiert den Refresh jetzt bei
+Fokus im Lab-Bereich. Der deterministische 8,5-Sekunden-Test sowie der
+vollständige Standardlauf und der 240-px-250-%-Lauf sind ohne Befund.
+
+Der erfolgreiche CI-Job `text250` aus Run `43811966526` verwendete denselben
+Seed und denselben Lab-Code, lief mit 74,39 s aber etwas schneller als der
+lokale Lauf mit 80 s. Der 8-Sekunden-Takt traf dort deshalb nicht das
+fokussierte Lab-Fenster; der CI-Erfolg ist kein Gegenbeweis für den lokalen
+Befund.
+
+## 8. Nächster Schritt
 
 Die Phasen 4 und 5 sind umgesetzt: Die Claims sind die Eingabe für persistente
 Missionen mit fünf Aufgaben, Lease, Retry, Gegenargumenten und Bericht. Siehe
