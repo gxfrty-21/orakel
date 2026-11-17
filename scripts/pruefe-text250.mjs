@@ -32,7 +32,9 @@
  * Zusätzlich wird die Kopfzeile bei 1024 px auf horizontalen Überlauf und
  * einen sichtbaren «Lauf starten»-Button geprüft. Bei 1440 px wird die
  * kompakte Abteilungslegende auf vollständige, überlauffreie Darstellung
- * geprüft.
+ * geprüft. Der Auto-Refresh der Lab-Kurve wird über eine echte
+ * /api/report-Antwort mit HTTP 200 und sichtbarem Datenmarker geprüft; Fokus,
+ * Tooltip, Live-Region und Zeiger müssen dabei unverändert bleiben.
  */
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -1379,8 +1381,10 @@ async function pruefeKurvenTastatur(page, ansicht) {
 /**
  * Der 8-Sekunden-Auto-Refresh darf eine fokussierte Lab-Kurve nicht neu
  * aufbauen: Sonst gehen Fokus, Tooltip und Live-Region mitten in der
- * Tastaturbedienung verloren. Der Test wartet 8,5 Sekunden und verlangt,
- * dass in diesem Fenster eine Refresh-Anfrage tatsächlich startet.
+ * Tastaturbedienung verloren. Der Test wartet deterministisch auf eine echte
+ * /api/report-Antwort, verlangt HTTP 200 und einen kontrollierten Marker im
+ * Kopfbereich. Damit ist belegt, dass der Refresh tatsächlich Daten verarbeitet
+ * hat, ohne dass die fokussierte Kurve neu gerendert wurde.
  */
 async function pruefeLabAutoRefresh(page, ansicht) {
   const befunde = [];
@@ -1404,14 +1408,55 @@ async function pruefeLabAutoRefresh(page, ansicht) {
     befunde.push('Auto-Refresh-Prüfung konnte die Kapitalkurve nicht fokussieren');
     return befunde;
   }
-  let refreshAnfragen = 0;
-  const zaehleRefresh = req => {
-    if (req.url().endsWith('/api/report')) refreshAnfragen++;
+
+  const marker = `refresh-probe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const timeout = Symbol('refresh-timeout');
+  let meldeRefresh;
+  let routeFehler = null;
+  const antwortVersprechen = new Promise(resolve => { meldeRefresh = resolve; });
+  const handler = async route => {
+    try {
+      const antwort = await route.fetch();
+      if (!antwort.ok()) {
+        await route.fulfill({ response: antwort });
+        meldeRefresh({ status: antwort.status(), ok: false });
+        return;
+      }
+      const daten = await antwort.json();
+      if (!daten || typeof daten !== 'object' || Array.isArray(daten)) {
+        throw new Error('Bericht ist kein JSON-Objekt');
+      }
+      daten.datenquelle = marker;
+      await route.fulfill({ response: antwort, json: daten });
+      meldeRefresh({ status: antwort.status(), ok: true });
+    } catch (fehler) {
+      routeFehler = fehler instanceof Error ? fehler.message : String(fehler);
+      await route.abort().catch(() => {});
+      meldeRefresh(null);
+    }
   };
-  page.on('request', zaehleRefresh);
-  await page.waitForTimeout(8500);
-  page.off('request', zaehleRefresh);
-  if (!refreshAnfragen) befunde.push('Auto-Refresh lief im 8,5-Sekunden-Fenster nicht');
+  await page.route('**/api/report', handler);
+  let timeoutId;
+  const timeoutVersprechen = new Promise(resolve => {
+    timeoutId = setTimeout(() => resolve(timeout), 12000);
+  });
+  const antwort = await Promise.race([antwortVersprechen, timeoutVersprechen]);
+  clearTimeout(timeoutId);
+  if (antwort === timeout) {
+    befunde.push('Auto-Refresh lieferte innerhalb von 12 Sekunden keine Antwort');
+  } else if (!antwort) {
+    befunde.push(`Auto-Refresh-Antwort konnte nicht geprüft werden${routeFehler ? ` (${routeFehler})` : ''}`);
+  } else if (!antwort.ok || antwort.status !== 200) {
+    befunde.push(`Auto-Refresh antwortet mit HTTP ${antwort.status}`);
+  } else {
+    const markerSichtbar = await page.waitForFunction(
+      m => (document.querySelector('#banner')?.textContent || '').includes(m),
+      marker, { timeout: 3000 },
+    ).then(() => true).catch(() => false);
+    if (!markerSichtbar) befunde.push('Auto-Refresh-Daten wurden nicht gerendert');
+  }
+  await page.unroute('**/api/report', handler).catch(() => {});
+
   const nachher = await lese();
   if (!nachher.fokus) befunde.push('Auto-Refresh nimmt der Kapitalkurve den Fokus');
   if (nachher.text !== vorher.text) befunde.push(`Auto-Refresh verändert den Tooltip («${nachher.text || 'leer'}» statt «${vorher.text}»)`);
@@ -2517,7 +2562,7 @@ async function main() {
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${refreshGesamt ? ` · Refresh ${refreshGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${refreshGesamt ? ` · Refresh ${refreshGesamt}× geprüft (HTTP 200, Marker)` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {
