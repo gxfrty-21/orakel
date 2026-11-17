@@ -164,8 +164,10 @@ python -m orakel.nexus bewertung --db orakel.db
   Quellenzeile misst 178 px und bricht zweizeilig um; KPI-Kacheln und
   Claim-Grid wechseln auf eine Spalte. Die Seite bleibt mit
   `scrollWidth === clientWidth === 240` ohne horizontalen Überlauf. Kopf- und
-  Navigationsleiste brechen kompakt um. Der vollständige 250-%-Lauf über alle
-  zwölf Ansichten ist bei 240 px grün (`240px: 12/12`). 240 px ist die untere
+  Navigationsleiste brechen kompakt um. Die zwölf Ansichten werden bei 240 px
+  in normaler Schrift geprüft (`240px: 12/12`); der volle 250-%-Lauf bei
+  240 px bleibt ausserhalb der Zusage, die CI prüft 250 % bei 360/320/280 px.
+  240 px ist die untere
   geprüfte Breite und keine allgemeine Mindestbreite für alle anderen
   Ansichten; darunter gibt es keine Layoutzusage.
 - **Quellenreputation ist keine Trefferquote.** Sie startet mit einem Prior
@@ -275,9 +277,9 @@ Artikelbasis, keine gemessene Trefferquote.
 ## 7. Browser-Prüfung: 24 Befunde im 250-%-Lauf (360 px)
 
 Ein lokaler 250-%-Lauf meldete 24 Befunde. Die Meldungen stammen aus
-**`360px/lab`**, nicht aus dem 240-px-Lauf: Der separate 250-%-Lauf über alle
-zwölf Ansichten bei 240 px war mit `240px: 12/12` grün. Die Zuordnung zum
-240-px-Lauf war falsch.
+**`360px/lab`**. Ein separater 240-px-Durchgang in normaler Schrift war mit
+`240px: 12/12` grün; er war kein 250-%-Lauf. Die Zuordnung zum 240-px-Lauf
+war falsch.
 
 | Gruppe | Anzahl | Befund |
 |---|---:|---|
@@ -297,8 +299,9 @@ Fokus im sichtbaren Lab-Detail (insbesondere auf der Kapitalkurve) nur den
 Ansichts-Render; Daten und Kopfzeile werden weiter aktualisiert. Ein Fokus auf
 der Lab-Liste, einem anderen Lab-Element oder in einem ausgeblendeten Lab
 blockiert den Render nicht. Der deterministische Test mit echter
-/api/report-Antwort (HTTP 200, Marker) sowie der vollständige Standardlauf und
-der 240-px-250-%-Lauf sind ohne Befund.
+/api/report-Antwort (HTTP 200, Marker) ist ohne Befund; der vollständige
+12-Ansichten-Standardlauf wurde nach dieser Verschärfung nicht erneut
+ausgeführt. Ein voller 250-%-Lauf bei 240 px ist nicht belegt.
 
 Der erfolgreiche CI-Job `text250` aus Run `43811966526` verwendete denselben
 Seed und denselben Lab-Code, lief mit 74,39 s aber etwas schneller als der

@@ -289,13 +289,15 @@ eine neue Produktionsdatenbank anlegt.
 `scripts/pruefe-text250.mjs` skaliert die Schrift im Dashboard auf 250 %
 (Faktor 2,5 auf berechnete Schriftgrössen und Zeilenhöhen). Bei 360, 320 und
 280 px prüft es, ob Inhalte seitlich aus ihrem Kasten oder aus dem Viewport
-laufen. Zusätzlich prüft es alle zwölf Ansichten bei 240 px sowie die
-Kernaussagen-Karte und die Kopf- und Navigationsleiste. Die vier KPI-Kacheln
+laufen. Davon getrennt prüft der Lauf alle zwölf Ansichten bei 240 px
+ausschliesslich in normaler Schrift sowie die Kernaussagen-Karte und die
+Kopf- und Navigationsleiste. Die vier KPI-Kacheln
 und das Claim-Grid wechseln auf eine Spalte, die Quellenzeile bleibt im
 Panel. Kopf und Navigation brechen kompakt um; die Seite scrollt dort nicht
-horizontal. **Der vollständige 250-%-Lauf ist bei 240 px nach den
-CSS-Korrekturen grün (12/12 Ansichten); 240 px ist die untere geprüfte
-Breite, darunter gibt es keine Layoutzusage.**
+horizontal. **240 px wird ausschliesslich in normaler Schrift geprüft; der
+12/12-Nachweis gilt nur dafür. Der 250-%-Lauf läuft ausschliesslich bei 360,
+320 und 280 px. Ein voller 250-%-Lauf bei 240 px ist nicht Teil der Zusage.
+240 px ist die untere geprüfte Breite, darunter gibt es keine Layoutzusage.**
 
 Die 240-px-Prüfung misst alle zwölf Ansichten in normaler Schrift bei
 240 × 900 px. Jede Zeile prüft Seiten-, Kopf- und Navigationsbreite:
@@ -316,7 +318,8 @@ Die 240-px-Prüfung misst alle zwölf Ansichten in normaler Schrift bei
 | Konferenz | 240 px | OK |
 
 Der erfolgreiche [text250-CI-Lauf](https://github.com/gxfrty-21/orakel/actions/runs/43811966526/job/133115401944)
-bestätigt diese 12/12-Prüfung. Der CI-Schritt verlangt dafür die Zusammenfassung
+bestätigt diesen 12/12-Nachweis für normale Schrift bei 240 px. Der
+CI-Schritt verlangt dafür die Zusammenfassung
 `240px: 12/12 Ansichten ohne horizontalen Überlauf`.
 
 Der spätere erfolgreiche [CI-Lauf 43939906217](https://github.com/gxfrty-21/orakel/actions/runs/43939906217)
@@ -337,9 +340,11 @@ Die Kernaussagen-Karte ist bei 240 px in normaler Darstellung tragfähig:
   Überlauf. Kopf und Navigation umbrechen kompakt und bleiben jeweils innerhalb
   ihrer 240-px-Container.
 
-Der vollständige 250-%-Lauf über alle zwölf Ansichten ist bei 240 px grün
-(`240px: 12/12`). Der gezielte Spider-Lauf prüft die Karte zusätzlich bei
-240 px, auch wenn 240 px nicht in `--breiten` steht:
+Die 240-px-Prüfung umfasst alle zwölf Ansichten in normaler Schrift
+(`240px: 12/12`). Der 250-%-Lauf läuft ausschliesslich bei 360, 320 und
+280 px; 240 px ist nicht Teil davon.
+Der gezielte Spider-Lauf prüft die Karte zusätzlich bei 240 px, auch wenn
+240 px nicht in `--breiten` steht:
 
 ```bash
 node scripts/pruefe-text250.mjs --ansichten spider --breiten 240 \
@@ -349,7 +354,7 @@ node scripts/pruefe-text250.mjs --ansichten spider --breiten 240 \
 Erwartet werden Exit-Code 0, `240px/spider: OK · Seite 240px · Kopf 240/240 ·
 Navigation 240/240`, `240px: 1/1 Ansichten ohne horizontalen Überlauf` und
 `Claims 1× geprüft`. Der Standardlauf mit `--breiten 360,320,280` prüft die
-Karte zusätzlich bei 240 px und meldet `Claims 4× geprüft`.
+Karte zusätzlich bei 240 px in normaler Schrift und meldet `Claims 4× geprüft`.
 
 **240 px ist die untere geprüfte Breite.** Darunter gibt es keine Layoutzusage,
 weder für die Karte noch für die übrigen Ansichten.
