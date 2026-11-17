@@ -113,6 +113,8 @@ const CLAIM_TESTDATEN = {
 // Zusätzliche Daten für den Umbruchtest mit bewusst überlangen Quellenhosts.
 // Sie werden ebenfalls nur im Browser gerendert; die normalen Claim-Erwartungen
 // bleiben unverändert.
+const LANGHOST_114 = 'quellenhostohnebindestrichundohnepunkt'.repeat(3);
+let langhost114Pruefungen = 0;
 const LANGE_QUELLEN_TESTDATEN = JSON.parse(JSON.stringify(CLAIM_TESTDATEN));
 for (const [index, widerspruch] of LANGE_QUELLEN_TESTDATEN.claims.widersprueche.entries()) {
   widerspruch.quelle_a = index === 0
@@ -136,7 +138,7 @@ LANGE_QUELLEN_TESTDATEN.claims.widersprueche.push({
   claim_id: 900001,
   grund: 'Host ohne Punkt oder Bindestrich gegen kurze Quelle',
   sicherheit: 0.6,
-  quelle_a: 'quellenhostohnebindestrichundohnepunkt'.repeat(3),
+  quelle_a: LANGHOST_114,
   quelle_b: 'kurz.example',
 });
 
@@ -261,7 +263,7 @@ async function pruefeLangeQuellen(page) {
   await page.evaluate(daten => window.zeichneBewertung(daten), LANGE_QUELLEN_TESTDATEN);
   await page.waitForTimeout(80);
   const langhosts = LANGE_QUELLEN_TESTDATEN.claims.widersprueche.map(widerspruch => widerspruch.quelle_a);
-  return page.evaluate((erwarteteLanghosts) => {
+  const befund = await page.evaluate((erwarteteLanghosts) => {
     const befund = [];
     const liste = document.querySelector('#bewertungClaims');
     if (!liste) return ['Claim-Liste #bewertungClaims fehlt'];
@@ -306,6 +308,8 @@ async function pruefeLangeQuellen(page) {
     }
     return befund;
   }, langhosts);
+  if (langhosts.includes(LANGHOST_114) && befund.length === 0) langhost114Pruefungen++;
+  return befund;
 }
 
 /** Misst die bereits geöffnete Spider-Seite mit den Claim-Testdaten. */
@@ -2760,13 +2764,19 @@ async function main() {
 
   for (const text of hinweise) console.warn(`Hinweis: ${text}`);
 
+  if (langhost114Pruefungen !== claimPruefungen) {
+    fehler.push(`Langhost 114 Zeichen: ${langhost114Pruefungen} Prüfungen statt ${claimPruefungen}`);
+  }
   if (fehler.length) {
     console.error(`\nBefunde: ${fehler.length}`);
     for (const zeile of fehler.slice(0, 120)) console.error(`  ✗ ${zeile}`);
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${refreshGesamt ? ` · Refresh ${refreshGesamt}× geprüft (HTTP 200, Marker)` : ''}${labFokusGesamt ? ` · Lab-Fokus ${labFokusGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  if (langhost114Pruefungen) {
+    console.log(`Langhost 114 Zeichen: ${langhost114Pruefungen}× geprüft · ${LANGHOST_114.length} Zeichen · kein Überlauf`);
+  }
+  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${langhost114Pruefungen ? ` · Langhost 114 ${langhost114Pruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${refreshGesamt ? ` · Refresh ${refreshGesamt}× geprüft (HTTP 200, Marker)` : ''}${labFokusGesamt ? ` · Lab-Fokus ${labFokusGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {

@@ -287,15 +287,16 @@ eine neue Produktionsdatenbank anlegt.
 ## Browser-Prüfung bei grosser Schrift
 
 `scripts/pruefe-text250.mjs` skaliert die Schrift im Dashboard auf 250 %
-(Faktor 2,5 auf berechnete Schriftgrössen und Zeilenhöhen). Bei 360, 320 und
-280 px prüft es, ob Inhalte seitlich aus ihrem Kasten oder aus dem Viewport
-laufen. Zusätzlich prüft es alle zwölf Ansichten bei 240 px sowie die
+(Faktor 2,5 auf berechnete Schriftgrössen und Zeilenhöhen). Der 250-%-Lauf
+prüft ausschliesslich 360, 320 und 280 px und misst dort, ob Inhalte seitlich
+aus ihrem Kasten oder aus dem Viewport laufen. Davon getrennt prüft der Lauf
+alle zwölf Ansichten bei 240 px ausschliesslich in normaler Schrift sowie die
 Kernaussagen-Karte und die Kopf- und Navigationsleiste. Die vier KPI-Kacheln
 und das Claim-Grid wechseln auf eine Spalte, die Quellenzeile bleibt im
 Panel. Kopf und Navigation brechen kompakt um; die Seite scrollt dort nicht
-horizontal. **240 px ist in normaler Schrift für alle zwölf Ansichten
-geprüft (12/12). Der volle 250-%-Lauf bei 240 px bleibt ausserhalb der
-Zusage; die CI prüft 250 % bei 360/320/280 px. 240 px ist die untere
+horizontal. **240 px wird ausschliesslich in normaler Schrift geprüft
+(12/12). Der 250-%-Lauf läuft ausschliesslich bei 360, 320 und 280 px; ein
+voller 250-%-Lauf bei 240 px ist nicht Teil der Zusage. 240 px ist die untere
 geprüfte Breite, darunter gibt es keine Layoutzusage.**
 
 Die 240-px-Prüfung misst alle zwölf Ansichten in normaler Schrift bei
@@ -351,7 +352,7 @@ node scripts/pruefe-text250.mjs --ansichten spider --breiten 240 \
 Erwartet werden Exit-Code 0, `240px/spider: OK · Seite 240px · Kopf 240/240 ·
 Navigation 240/240`, `240px: 1/1 Ansichten ohne horizontalen Überlauf` und
 `Claims 1× geprüft`. Der Standardlauf mit `--breiten 360,320,280` prüft die
-Karte zusätzlich bei 240 px und meldet `Claims 4× geprüft`.
+Karte zusätzlich bei 240 px in normaler Schrift und meldet `Claims 4× geprüft`.
 
 **240 px ist die untere geprüfte Breite.** Darunter gibt es keine Layoutzusage,
 weder für die Karte noch für die übrigen Ansichten.
@@ -420,8 +421,11 @@ Punkt oder Bindestrich bleiben die Quellenzeilen in normaler Darstellung ohne
 `scrollWidth` und `clientWidth` der Quellenzeile stimmen in allen vier Breiten
 überein; der Trenner `↔` bleibt jeweils in der Quellenzeile.
 Die Testdaten werden nur ins DOM injiziert und nicht in SQLite geschrieben. Die
-Zusammenfassung meldet `Claims 4× geprüft` (360, 320, 280 und zusätzlich
-240 px).
+Zusammenfassung meldet `Claims 4× geprüft` (250 % bei 360, 320 und 280 px
+sowie zusätzlich 240 px in normaler Schrift) sowie explizit
+`Langhost 114 Zeichen: 4× geprüft`; damit ist der
+Extremfall ohne Punkt oder Bindestrich unabhängig von der Claim-Zusammenfassung
+im Log nachweisbar.
 
 Gezielt nur die Spider-Quellenzeile prüfen:
 
@@ -430,8 +434,9 @@ node scripts/pruefe-text250.mjs --ansichten spider --breiten 360,320,280
 ```
 
 Der Aufruf prüft die vier Langhost-Fälle bei 360, 320 und 280 px sowie die
-zusätzliche 240-px-Claim-Prüfung. Erwartet werden Exit-Code 0, `Claims 4× geprüft`
-und die Zeile `240px/spider: OK · Seite 240px · Kopf 240/240 · Navigation 240/240`.
+zusätzliche 240-px-Claim-Prüfung in normaler Schrift. Erwartet werden Exit-Code 0, `Claims 4× geprüft`,
+`Langhost 114 Zeichen: 4× geprüft` und die Zeile
+`240px/spider: OK · Seite 240px · Kopf 240/240 · Navigation 240/240`.
 Die Belastbarkeitsgrenze und der separate 240-px-Aufruf sind oben dokumentiert.
 
 Für Strategien, Research, das Raumschiff, Agentenraum und Konferenz gleicht der
