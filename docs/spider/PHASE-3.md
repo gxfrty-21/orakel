@@ -164,9 +164,10 @@ python -m orakel.nexus bewertung --db orakel.db
   Quellenzeile misst 178 px und bricht zweizeilig um; KPI-Kacheln und
   Claim-Grid wechseln auf eine Spalte. Die Seite bleibt mit
   `scrollWidth === clientWidth === 240` ohne horizontalen Überlauf. Kopf- und
-  Navigationsleiste brechen kompakt um. Der vollständige 250-%-Lauf über alle
-  zwölf Ansichten ist bei 240 px grün (`240px: 12/12`). 240 px ist die untere
-  geprüfte Breite und keine allgemeine Mindestbreite für alle anderen
+  Navigationsleiste brechen kompakt um. Die zwölf Ansichten werden bei 240 px
+  in normaler Schrift geprüft (`240px: 12/12`); der volle 250-%-Lauf bei
+  240 px bleibt ausserhalb der Zusage, die CI prüft 250 % bei 360/320/280 px.
+  240 px ist die untere geprüfte Breite und keine allgemeine Mindestbreite für alle anderen
   Ansichten; darunter gibt es keine Layoutzusage.
 - **Quellenreputation ist keine Trefferquote.** Sie startet mit einem Prior
   und wird nur durch echte Auftrags-Ergebnisse belastbar. Im breiten Lauf gab
@@ -211,21 +212,66 @@ anderem:
 - Quellenreputation aus echten Ergebnissen, sonst `vorläufig`,
 - Idempotenz und atomarer Rebuild.
 
-**pp-Baseline im echten Claim-Korpus:** Der versionierte Korpus enthält 39
-reale RSS-Meldungen, davon fünf gezielt ergänzte pp-Meldungen aus echten
+**Getrennte Claim- und pp-Baseline:** Der allgemeine Claim-Korpus enthält 34
+reale RSS-Meldungen aus dem Seed-Snapshot. Die fünf gezielten pp-Meldungen aus
+echten Google-News-RSS-Suchen liegen separat in
+`tests/fixtures/nexus_pp_probe_korpus.json`. Dadurch bleiben die
+34-Meldungen-Metriken mit der ursprünglichen Basis vergleichbar; pp-Werte
+werden nicht in die allgemeinen Precision-/Recall-Werte eingemischt.
+
+Allgemeiner Claim-Korpus (34 Meldungen):
+
+| Messwert | Ergebnis |
+|---|---:|
+| Erwartete Claims | 4 |
+| Erkannte Claims | 2 |
+| Vollständig richtige Claims | 1 |
+| Claim-Precision | 0.5 |
+| Claim-Recall | 0.25 |
+
+Die drei Abweichungen sind `seed-021` (BBC, „My mortgage is going up…“: Subjekt
+`uk` statt `mortgage going month how`, Metrik `interest rate` statt `rates`)
+sowie `seed-023` (BBC, „AI stocks climb…“) und `seed-024` (BBC, „Why the US
+midterms…“), bei denen der Claim nicht erkannt wurde. Reproduzierbar mit:
+
+```bash
+python scripts/nexus_claim_baseline.py \
+  --output-dir artifacts/nexus-claim-baseline
+```
+
+**pp_probe (5 Meldungen, getrennt):** Die fünf Fälle stammen aus echten
 Google-News-RSS-Suchen: zwei deutschsprachige Treffer nach „Prozentpunkte“
 (Tagesschau und Spiegel) sowie drei englischsprachige Treffer nach
 „percentage points“ (CBS News, ERR und Tax Foundation). Die Originalseiten
 wurden am 15. bzw. 16. November 2026 geprüft; alle fünf RSS-Titel enthalten
-einen konkreten pp-Wert. Die aktuelle Extraktion erkennt alle fünf Einheiten:
+einen konkreten pp-Wert. Die Extraktion erkennt alle fünf Einheiten. Für die
+strengen pp-Metriken ist die Einheit Voraussetzung; zusätzlich müssen Subjekt,
+Metrik, Wert und Richtung übereinstimmen. Ein nicht vollständig passender
+vorhergesagter pp-Claim zählt als FP, ein nicht vollständig passender
+erwarteter pp-Claim als FN; bei Feldfehlern kann derselbe Fall als FP und FN
+zählen.
 
 | Messwert | Ergebnis |
 |---|---:|
 | Erwartete pp-Claims | 5 |
 | Vorhergesagte pp-Claims | 5 |
-| Korrekte pp-Einheiten | 5 |
-| pp-Precision | 1.0 |
-| pp-Recall | 1.0 |
+| Korrekte pp-Einheiten (nur Einheit) | 5 |
+| TP (strikt) | 5 |
+| FP (strikt) | 0 |
+| FN (strikt) | 0 |
+| pp-Precision (nur Einheit) | 1.0 |
+| pp-Recall (nur Einheit) | 1.0 |
+| pp-Precision (strikt) | 1.0 |
+| pp-Recall (strikt) | 1.0 |
+
+Strikte Feldtreffer (jeweils 5 geprüft):
+
+| Feld | Treffer | Geprüft |
+|---|---:|---:|
+| `subjekt` | 5 | 5 |
+| `metrik` | 5 | 5 |
+| `wert` | 5 | 5 |
+| `richtung` | 5 | 5 |
 
 Die pp-Fälle sind `rss-pp-001` („US-Notenbank Fed erhöht den Leitzins um 0,25
 Prozentpunkte“), `rss-pp-002` („USA: Notenbank Fed senkt Leitzins um 0,25
@@ -236,15 +282,18 @@ Bank cuts key interest rates by 0.25 percentage points“) und `rss-pp-005`
 Supreme Court Ruling“). Die Stichprobe ist gezielt und klein (n=5); sie belegt,
 dass der Messpfad für deutsche und englische pp-Angaben funktioniert, ist aber
 **keine repräsentative Schätzung** der pp-Genauigkeit im gesamten
-Nachrichtenstrom. Es gibt in diesem Lauf keine pp-spezifischen False Positives
-oder False Negatives.
-Die allgemeinen Claim-Fehler sind `seed-021` (BBC, „My mortgage is going up…“:
-Subjekt `uk` statt `mortgage going month how`, Metrik `interest rate` statt
-`rates`) sowie `seed-023` (BBC, „AI stocks climb…“) und `seed-024` (BBC, „Why
-the US midterms…“), bei denen der Claim nicht erkannt wurde. Die Gesamtwerte
-liegen bei 9 erwarteten, 7 erkannten und 6 vollständig richtigen Claims
-(Precision 0.8571, Recall 0.6667). Reproduzierbar mit
-`python scripts/nexus_claim_baseline.py --output-dir artifacts/nexus-claim-baseline`.
+Nachrichtenstrom. In diesem Lauf gibt es weder auf der Einheiten- noch auf der
+strikten Feldebene pp-spezifische False Positives oder False Negatives.
+Reproduzierbar mit:
+
+```bash
+python scripts/nexus_claim_baseline.py \
+  --korpus tests/fixtures/nexus_pp_probe_korpus.json \
+  --output-dir artifacts/nexus-pp-probe
+```
+
+Die tatsächliche Abdeckung der 32 englischen Registerfeeds — Abruferfolg,
+Aktualität und pp-Ausbeute — steht als [Matrix in FEED-ABDECKUNG.md](FEED-ABDECKUNG.md).
 
 **Echter lokaler Lauf** mit zwölf produktiven Quellen (u. a. EZB, Fed, Bank of
 England, Bank of Japan, BBC, Guardian, WHO, UN):

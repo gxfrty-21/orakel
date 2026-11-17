@@ -154,7 +154,7 @@ der erzeugte Rohbericht liegt nach dem Lauf unter
 | Dashboard | Orakel-Design, 12 Ansichten, Live-Polling, 2D-Agenten-Querschnitt, «Lauf starten» |
 | Dauerbetrieb | persistenter Plan, Backoff, Ressourcenlimits, Jobprotokoll und Betriebsansicht |
 
-Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswahl einmal geöffnet; scheitert er, gibt es keinen Ersatzkandidaten. Im Lab zeigt ein Chart die aggregierte Kapitalkurve der Testfenster; beim Überfahren nennt ein Tooltip Kapitalstand, Veränderung seit dem Start in Prozent, Datum sowie den bisherigen Höchststand mit Abstand in Prozent; per Tastatur (Tab, Pfeiltasten, Home/Ende) ist dieselbe Anzeige erreichbar. Solange der Tastaturfokus im Lab-Bereich liegt, pausiert der Auto-Refresh, damit die Anzeige beim Ablesen nicht neu aufgebaut wird. Dort und in der Strategien-Ansicht lässt sich zudem bei jedem Kandidaten die Liste der Walk-Forward-Fenster aufklappen: Trainings- und Testblock, gewählter Parameter, Trades, Profit Factor und Netto je Fenster.
+Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswahl einmal geöffnet; scheitert er, gibt es keinen Ersatzkandidaten. Im Lab zeigt ein Chart die aggregierte Kapitalkurve der Testfenster; beim Überfahren nennt ein Tooltip Kapitalstand, Veränderung seit dem Start in Prozent, Datum sowie den bisherigen Höchststand mit Abstand in Prozent; per Tastatur (Tab, Pfeiltasten, Home/Ende) ist dieselbe Anzeige erreichbar. Solange der Tastaturfokus im sichtbaren Lab-Detail liegt, pausiert der Auto-Refresh nur den Ansichts-Render, damit die Anzeige beim Ablesen nicht neu aufgebaut wird; Daten und Kopfzeile werden weiter aktualisiert. Ein Fokus auf der Lab-Liste oder einem anderen Lab-Element blockiert den Render nicht; ein ausgeblendetes Lab ebenfalls nicht. Dort und in der Strategien-Ansicht lässt sich zudem bei jedem Kandidaten die Liste der Walk-Forward-Fenster aufklappen: Trainings- und Testblock, gewählter Parameter, Trades, Profit Factor und Netto je Fenster.
 
 ## Risikogrenzen (deine Vorgaben)
 
@@ -293,9 +293,10 @@ laufen. Zusätzlich prüft es alle zwölf Ansichten bei 240 px sowie die
 Kernaussagen-Karte und die Kopf- und Navigationsleiste. Die vier KPI-Kacheln
 und das Claim-Grid wechseln auf eine Spalte, die Quellenzeile bleibt im
 Panel. Kopf und Navigation brechen kompakt um; die Seite scrollt dort nicht
-horizontal. **Der vollständige 250-%-Lauf ist bei 240 px nach den
-CSS-Korrekturen grün (12/12 Ansichten); 240 px ist die untere geprüfte
-Breite, darunter gibt es keine Layoutzusage.**
+horizontal. **240 px ist in normaler Schrift für alle zwölf Ansichten
+geprüft (12/12). Der volle 250-%-Lauf bei 240 px bleibt ausserhalb der
+Zusage; die CI prüft 250 % bei 360/320/280 px. 240 px ist die untere
+geprüfte Breite, darunter gibt es keine Layoutzusage.**
 
 Die 240-px-Prüfung misst alle zwölf Ansichten in normaler Schrift bei
 240 × 900 px. Jede Zeile prüft Seiten-, Kopf- und Navigationsbreite:
@@ -337,9 +338,10 @@ Die Kernaussagen-Karte ist bei 240 px in normaler Darstellung tragfähig:
   Überlauf. Kopf und Navigation umbrechen kompakt und bleiben jeweils innerhalb
   ihrer 240-px-Container.
 
-Der vollständige 250-%-Lauf über alle zwölf Ansichten ist bei 240 px grün
-(`240px: 12/12`). Der gezielte Spider-Lauf prüft die Karte zusätzlich bei
-240 px, auch wenn 240 px nicht in `--breiten` steht:
+Die 240-px-Prüfung umfasst alle zwölf Ansichten in normaler Schrift
+(`240px: 12/12`). Ein voller 250-%-Lauf bei 240 px ist nicht Teil der Zusage.
+Der gezielte Spider-Lauf prüft die Karte zusätzlich bei 240 px, auch wenn
+240 px nicht in `--breiten` steht:
 
 ```bash
 node scripts/pruefe-text250.mjs --ansichten spider --breiten 240 \
@@ -531,7 +533,8 @@ In einer frischen Ubuntu-24.04-Umgebung (amd64) fehlen Chromium oft die
 nötigen Laufzeitbibliotheken und Fonts. Das Setup-Skript lädt die Pakete als
 `.deb` herunter, entpackt sie in das ignorierte Verzeichnis `.playwright-local/`
 und richtet `LD_LIBRARY_PATH` sowie Fontconfig ein. Es installiert nichts
-systemweit, benötigt kein `sudo` und prüft am Ende den Chromium-Start:
+systemweit, benötigt kein `sudo` und prüft am Ende den Chromium-Start und die
+geladenen Font-Metriken:
 
 ```bash
 bash scripts/setup-playwright-local.sh

@@ -1,33 +1,9 @@
 {
-  "version": 3,
-  "beschreibung": "Reale RSS-Meldungen aus seed/orakel-seed.db sowie fünf pp-Meldungen aus echten Google-News-RSS-Suchen (zwei deutsch, drei englisch); Goldfelder manuell anhand von Titel, Zusammenfassung und Originalseite.",
+  "version": 4,
+  "typ": "claim",
+  "beschreibung": "34 reale RSS-Meldungen aus seed/orakel-seed.db. Die fünf gezielten pp-Meldungen liegen getrennt in nexus_pp_probe_korpus.json; dadurch bleiben die Gesamtmetriken mit der 34-Meldungen-Basis vergleichbar.",
   "stand": "2026-11-16",
-  "pp_quellen": [
-    {
-      "rss_suche": "Google News RSS: \"Prozentpunkte\" (de-DE)",
-      "rss_url": "https://news.google.com/rss/search?q=%22Prozentpunkte%22&hl=de&gl=DE&ceid=DE%3Ade",
-      "abgerufen": "2026-11-15",
-      "pruefung": "Originalseiten am 2026-11-15 mit HTTP 200 abgerufen und gegen die RSS-Schlagzeile geprüft."
-    },
-    {
-      "rss_suche": "Google News RSS: \"percentage points\" interest rates (en-US)",
-      "rss_url": "https://news.google.com/rss/search?q=%22percentage+points%22+interest+rates&hl=en-US&gl=US&ceid=US%3Aen",
-      "abgerufen": "2026-11-16",
-      "pruefung": "RSS-Titel am 2026-11-16 abgerufen; Originalseite mit HTTP 200 geprüft."
-    },
-    {
-      "rss_suche": "Google News RSS: \"percentage points\" central bank (en-US)",
-      "rss_url": "https://news.google.com/rss/search?q=%22percentage+points%22+central+bank&hl=en-US&gl=US&ceid=US%3Aen",
-      "abgerufen": "2026-11-16",
-      "pruefung": "RSS-Titel am 2026-11-16 abgerufen; Originalseite mit HTTP 200 geprüft."
-    },
-    {
-      "rss_suche": "Google News RSS: \"percentage points\" economy (en-US)",
-      "rss_url": "https://news.google.com/rss/search?q=%22percentage+points%22+economy&hl=en-US&gl=US&ceid=US%3Aen",
-      "abgerufen": "2026-11-16",
-      "pruefung": "RSS-Titel am 2026-11-16 abgerufen; Originalseite mit HTTP 200 geprüft."
-    }
-  ],
+  "pp_probe": "tests/fixtures/nexus_pp_probe_korpus.json",
   "felder": [
     "claim",
     "thema",
@@ -717,111 +693,6 @@
         "einheit": null,
         "negiert": null,
         "begruendung": "Verwaltungs-, Durchsetzungs- oder Verfahrensmeldung ohne Markt-Claim."
-      }
-    },
-    {
-      "id": "rss-pp-001",
-      "quelle": "Tagesschau",
-      "quelle_id": "tagesschau",
-      "titel": "US-Notenbank Fed erhöht den Leitzins um 0,25 Prozentpunkte",
-      "zusammenfassung": "US-Notenbank Fed erhöht den Leitzins um 0,25 Prozentpunkte",
-      "url": "https://www.tagesschau.de/wirtschaft/weltwirtschaft/fed-leitzins-erhoeht-100.html",
-      "veroeffentlicht": "Wed, 16 Sep 2026 07:00:00 GMT",
-      "provenienz": "Google-News-RSS-Suche „Prozentpunkte“ (de-DE), RSS-Titel vom 16.09.2026; Originalseite am 15.11.2026 mit HTTP 200 geprüft.",
-      "erwartet": {
-        "claim": true,
-        "thema": "makro",
-        "subjekt": "notenbank fed",
-        "metrik": "leitzins",
-        "richtung": "steigt",
-        "wert": 0.25,
-        "einheit": "pp",
-        "negiert": false,
-        "begruendung": "Die Fed erhöht den Leitzins um 0,25 Prozentpunkte; das ist eine konkrete geldpolitische Richtungs- und Wertaussage."
-      }
-    },
-    {
-      "id": "rss-pp-002",
-      "quelle": "Spiegel",
-      "quelle_id": "spiegel",
-      "titel": "USA: Notenbank Fed senkt Leitzins um 0,25 Prozentpunkte",
-      "zusammenfassung": "USA: Notenbank Fed senkt Leitzins um 0,25 Prozentpunkte",
-      "url": "https://www.spiegel.de/wirtschaft/usa-notenbank-fed-senkt-leitzins-um-0-25-prozentpunkte-a-d38a1e38-4bef-4103-a42e-56691c032495",
-      "veroeffentlicht": "Wed, 17 Sep 2025 07:00:00 GMT",
-      "provenienz": "Google-News-RSS-Suche „Prozentpunkte“ (de-DE), RSS-Titel vom 17.09.2025; Originalseite am 15.11.2026 mit HTTP 200 geprüft.",
-      "erwartet": {
-        "claim": true,
-        "thema": "makro",
-        "subjekt": "usa notenbank fed",
-        "metrik": "leitzins",
-        "richtung": "sinkt",
-        "wert": 0.25,
-        "einheit": "pp",
-        "negiert": false,
-        "begruendung": "Die Fed senkt den Leitzins um 0,25 Prozentpunkte; das ist eine konkrete geldpolitische Richtungs- und Wertaussage."
-      }
-    },
-    {
-      "id": "rss-pp-003",
-      "quelle": "CBS News",
-      "quelle_id": null,
-      "titel": "Federal Reserve lowers interest rates by 0.50 percentage points in first cut since 2020",
-      "zusammenfassung": "Federal Reserve lowers interest rates by 0.50 percentage points in first cut since 2020",
-      "url": "https://www.cbsnews.com/news/fed-rate-cut-decision-federal-reserve-interest-rates-september-meeting/",
-      "veroeffentlicht": "Wed, 18 Sep 2024 07:00:00 GMT",
-      "provenienz": "Google-News-RSS-Suche \"percentage points\" interest rates (en-US), RSS-Titel vom 18.09.2024; Originalseite am 16.11.2026 mit HTTP 200 geprüft.",
-      "erwartet": {
-        "claim": true,
-        "thema": "makro",
-        "subjekt": "fed",
-        "metrik": "rates",
-        "richtung": "sinkt",
-        "wert": 0.5,
-        "einheit": "pp",
-        "negiert": false,
-        "begruendung": "Die Fed senkt die Zinsen um 0,50 Prozentpunkte; das ist eine konkrete geldpolitische Richtungs- und Wertaussage."
-      }
-    },
-    {
-      "id": "rss-pp-004",
-      "quelle": "ERR",
-      "quelle_id": null,
-      "titel": "European Central Bank cuts key interest rates by 0.25 percentage points",
-      "zusammenfassung": "European Central Bank cuts key interest rates by 0.25 percentage points",
-      "url": "https://news.err.ee/1609667489/european-central-bank-cuts-key-interest-rates-by-0-25-percentage-points",
-      "veroeffentlicht": "Thu, 17 Apr 2025 07:00:00 GMT",
-      "provenienz": "Google-News-RSS-Suche \"percentage points\" central bank (en-US), RSS-Titel vom 17.04.2025; Originalseite am 16.11.2026 mit HTTP 200 geprüft.",
-      "erwartet": {
-        "claim": true,
-        "thema": "makro",
-        "subjekt": "ezb",
-        "metrik": "rates",
-        "richtung": "sinkt",
-        "wert": 0.25,
-        "einheit": "pp",
-        "negiert": false,
-        "begruendung": "Die EZB senkt die Leitzinsen um 0,25 Prozentpunkte; das ist eine konkrete geldpolitische Richtungs- und Wertaussage."
-      }
-    },
-    {
-      "id": "rss-pp-005",
-      "quelle": "Tax Foundation",
-      "quelle_id": null,
-      "titel": "Tariffs Increased Retail Prices of Imports by 7 Percentage Points Prior to Supreme Court Ruling",
-      "zusammenfassung": "Tariffs Increased Retail Prices of Imports by 7 Percentage Points Prior to Supreme Court Ruling",
-      "url": "https://taxfoundation.org/blog/trump-tariffs-raise-prices-consumers",
-      "veroeffentlicht": "Tue, 03 Mar 2026 08:00:00 GMT",
-      "provenienz": "Google-News-RSS-Suche \"percentage points\" economy (en-US), RSS-Titel vom 03.03.2026; Originalseite am 16.11.2026 mit HTTP 200 geprüft.",
-      "erwartet": {
-        "claim": true,
-        "thema": "allgemein",
-        "subjekt": "tariffs",
-        "metrik": "prices",
-        "richtung": "steigt",
-        "wert": 7.0,
-        "einheit": "pp",
-        "negiert": false,
-        "begruendung": "Die Zölle erhöhten die Einzelhandelspreise importierter Güter um 7 Prozentpunkte; das ist eine konkrete Preis- und Wertaussage."
       }
     }
   ]
