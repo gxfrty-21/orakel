@@ -26,6 +26,7 @@
  *   Die Seite samt Kopf und Navigation wird zusätzlich bei 240 px auf Umbruch
  *   und horizontalen Überlauf geprüft.
  *   --bild-praefix <name>  Gibt Screenshots und HTML einen eindeutigen Namenspräfix
+ *   --ergebnis <json>      Schreibt das maschinenlesbare Text250-Ergebnis
  *   --selbsttest-cluster   Prüft mehrere gleichzeitige Cluster-Fehler und eindeutige Screenshotnamen
  *   --selbsttest-agent      Prüft einen fehlenden Agenten samt Screenshotpfad
  *
@@ -40,7 +41,7 @@
  */
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
 
 const LANGS = 'Donaudampfschifffahrtsgesellschaftskapitänsmützenhalterungsverordnung';
@@ -53,6 +54,41 @@ const WARTEZEIT = {
   overview: 300, risk: 350, lab: 400, strat: 500, research: 500, globe: 1300,
   betrieb: 750, ship: 1500, spider: 650, kb: 1500, agents: 500, konf: 500,
 };
+const ERGEBNIS_SCHEMA = 'text250-result.v1';
+const ergebnisFaelle = new Map();
+
+/**
+ * Hält das maschinenlesbare Ergebnis unabhängig von den Log-Zählern. Die IDs
+ * werden aus dem Pflichtmanifest in scripts/text250-required-checks.json
+ * referenziert; CI wertet diese IDs aus, nicht die Zeilen im Klartextlog.
+ */
+function meldeFall(id, bestanden, details = '') {
+  const eintrag = { id, status: bestanden ? 'passed' : 'failed' };
+  if (!bestanden && details) eintrag.details = details;
+  ergebnisFaelle.set(id, eintrag);
+}
+
+function schreibeErgebnis(opts) {
+  if (!opts.ergebnis) return;
+  const faelle = [...ergebnisFaelle.values()].sort((a, b) => a.id.localeCompare(b.id));
+  const daten = {
+    schema: ERGEBNIS_SCHEMA,
+    generated_at: new Date().toISOString(),
+    source_commit: process.env.GITHUB_SHA || null,
+    url: opts.url,
+    breiten: opts.breiten,
+    ansichten: opts.ansichten,
+    cases: faelle,
+    summary: {
+      total: faelle.length,
+      passed: faelle.filter(fall => fall.status === 'passed').length,
+      failed: faelle.filter(fall => fall.status !== 'passed').length,
+    },
+  };
+  mkdirSync(dirname(opts.ergebnis), { recursive: true });
+  writeFileSync(opts.ergebnis, JSON.stringify(daten, null, 2) + '\n');
+  console.log(`Ergebnis geschrieben: ${opts.ergebnis} (${daten.summary.passed}/${daten.summary.total} Fälle bestanden)`);
+}
 
 // Deterministische Browser-Testdaten für die Claim-Karte. Der Seed enthält
 // keine Claims; die Daten werden nur im Browser gerendert und nie in SQLite
@@ -114,7 +150,6 @@ const CLAIM_TESTDATEN = {
 // Sie werden ebenfalls nur im Browser gerendert; die normalen Claim-Erwartungen
 // bleiben unverändert.
 const LANGHOST_114 = 'quellenhostohnebindestrichundohnepunkt'.repeat(3);
-let langhost114Pruefungen = 0;
 const LANGE_QUELLEN_TESTDATEN = JSON.parse(JSON.stringify(CLAIM_TESTDATEN));
 for (const [index, widerspruch] of LANGE_QUELLEN_TESTDATEN.claims.widersprueche.entries()) {
   widerspruch.quelle_a = index === 0
@@ -155,7 +190,7 @@ async function pruefeClaimMetadaten(browser, url, breite) {
     );
     await page.locator('.nav[data-v="spider"]').click();
     await page.waitForTimeout(WARTEZEIT.spider);
-    return [...seitenfehler, ...await pruefeClaimMetadatenAufSeite(page)];
+    return [...seitenfehler, ...await pruefeClaimMetadatenAufSeite(page, breite)];
   } finally {
     await page.close();
   }
@@ -259,7 +294,7 @@ async function pruefeClaimWiderspruchsdetails(page) {
 }
 
 /** Prüft den Umbruch der Quellenzeile mit sehr langen Hostnamen. */
-async function pruefeLangeQuellen(page) {
+async function pruefeLangeQuellen(page, breite) {
   await page.evaluate(daten => window.zeichneBewertung(daten), LANGE_QUELLEN_TESTDATEN);
   await page.waitForTimeout(80);
   const langhosts = LANGE_QUELLEN_TESTDATEN.claims.widersprueche.map(widerspruch => widerspruch.quelle_a);
@@ -308,12 +343,14 @@ async function pruefeLangeQuellen(page) {
     }
     return befund;
   }, langhosts);
-  if (langhosts.includes(LANGHOST_114) && befund.length === 0) langhost114Pruefungen++;
+  const hat114 = langhosts.includes(LANGHOST_114);
+  meldeFall(`text250.langhost114.${breite}`, hat114 && befund.length === 0,
+    hat114 ? befund.join('; ') : 'LANGHOST_114 fehlt in den Testdaten');
   return befund;
 }
 
 /** Misst die bereits geöffnete Spider-Seite mit den Claim-Testdaten. */
-async function pruefeClaimMetadatenAufSeite(page) {
+async function pruefeClaimMetadatenAufSeite(page, breite) {
   if (!await page.evaluate(() => typeof window.zeichneBewertung === 'function')) {
     return ['Claim-Renderer zeichneBewertung fehlt'];
   }
@@ -445,7 +482,7 @@ async function pruefeClaimMetadatenAufSeite(page) {
     }
     return befund.slice(0, 20);
   });
-  return [...befund, ...await pruefeLangeQuellen(page)];
+  return [...befund, ...await pruefeLangeQuellen(page, breite)];
 }
 
 function argumente(argv) {
@@ -456,6 +493,7 @@ function argumente(argv) {
     tabellen: true,
     bilder: null,
     bildPraefix: '',
+    ergebnis: null,
     negativtest: false,
     selbsttestCluster: false,
     selbsttestAgent: false,
@@ -467,6 +505,7 @@ function argumente(argv) {
     else if (arg === '--ansichten') opts.ansichten = argv[++i].split(',').map(s => s.trim()).filter(Boolean);
     else if (arg === '--ohne-tabellen') opts.tabellen = false;
     else if (arg === '--bilder') opts.bilder = argv[++i];
+    else if (arg === '--ergebnis') opts.ergebnis = argv[++i];
     else if (arg === '--bild-praefix') {
       opts.bildPraefix = artefaktSlug(argv[++i] || '').slice(0, 40);
       if (!opts.bildPraefix) { console.error('--bild-praefix benötigt einen Namen.'); process.exit(2); }
@@ -477,7 +516,7 @@ function argumente(argv) {
     else if (arg === '--hilfe' || arg === '-h') {
       console.log('Aufruf: node scripts/pruefe-text250.mjs [--url URL] [--breiten 360,320,280]\n' +
         '       [--ansichten overview,risk,lab,strat,research,globe,betrieb,ship,spider,kb,agents,konf] [--ohne-tabellen]\n' +
-        '       [--bilder <verzeichnis>] [--bild-praefix <name>] [--negativtest] [--selbsttest-cluster] [--selbsttest-agent]\n' +
+        '       [--bilder <verzeichnis>] [--bild-praefix <name>] [--ergebnis <json>] [--negativtest] [--selbsttest-cluster] [--selbsttest-agent]\n' +
         '       Die Seite samt Kopf und Navigation wird zusätzlich bei 240 px geprüft.');
       process.exit(0);
     }
@@ -2637,6 +2676,7 @@ async function main() {
 
   try {
     const kopfBefunde = await pruefeKopfzeile(browser, opt.url);
+    meldeFall('text250.header.1024', kopfBefunde.length === 0, kopfBefunde.join('; '));
     if (kopfBefunde.length) {
       for (const text of kopfBefunde) fehler.push(`1024px/kopf: ${text}`);
     } else {
@@ -2645,9 +2685,13 @@ async function main() {
 
     const schmaleErgebnis = await pruefe240Ansichten(browser, opt.url, opt.ansichten);
     schmaleAnsichten = schmaleErgebnis.ergebnisse.length;
+    for (const eintrag of schmaleErgebnis.ergebnisse) {
+      meldeFall(`text250.240.${eintrag.ansicht}`, eintrag.ok);
+    }
     for (const text of schmaleErgebnis.befund) fehler.push(text);
 
     const desktopLegendeBefunde = await pruefeLegendeDesktop(browser, opt.url);
+    meldeFall('text250.legend.1440', desktopLegendeBefunde.length === 0, desktopLegendeBefunde.join('; '));
     if (desktopLegendeBefunde.length) {
       for (const text of desktopLegendeBefunde) fehler.push(`1440px/legende: ${text}`);
     } else {
@@ -2656,10 +2700,12 @@ async function main() {
 
     if (opt.ansichten.includes('lab')) {
       const refreshBefunde = await pruefeLabAutoRefresh(browser, opt.url, 'lab');
+      meldeFall('text250.refresh', refreshBefunde.length === 0, refreshBefunde.join('; '));
       if (refreshBefunde.length === 0) refreshGesamt++;
       for (const text of refreshBefunde) fehler.push(`${LAB_FOKUS_BREITE}px/lab: ${text}`);
       for (const variante of LAB_FOKUS_VARIANTEN) {
         const labFokusBefunde = await pruefeLabFokusAutoRefresh(browser, opt.url, LAB_FOKUS_BREITE, variante);
+        meldeFall(`text250.lab-focus.${variante.id}`, labFokusBefunde.length === 0, labFokusBefunde.join('; '));
         if (labFokusBefunde.length === 0) labFokusGesamt++;
         for (const text of labFokusBefunde) fehler.push(`${LAB_FOKUS_BREITE}px/lab: ${text}`);
       }
@@ -2743,6 +2789,7 @@ async function main() {
     if (opt.ansichten.includes('spider')) {
       for (const breite of claimBreiten) {
         const claimBefunde = await pruefeClaimMetadaten(browser, opt.url, breite);
+        meldeFall(`text250.claims.${breite}`, claimBefunde.length === 0, claimBefunde.join('; '));
         if (claimBefunde.length) {
           for (const text of claimBefunde) fehler.push(`${breite}px/spider: ${text}`);
         } else {
@@ -2764,19 +2811,19 @@ async function main() {
 
   for (const text of hinweise) console.warn(`Hinweis: ${text}`);
 
-  if (langhost114Pruefungen !== claimPruefungen) {
-    fehler.push(`Langhost 114 Zeichen: ${langhost114Pruefungen} Prüfungen statt ${claimPruefungen}`);
-  }
+  schreibeErgebnis(opt);
   if (fehler.length) {
     console.error(`\nBefunde: ${fehler.length}`);
     for (const zeile of fehler.slice(0, 120)) console.error(`  ✗ ${zeile}`);
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  if (langhost114Pruefungen) {
-    console.log(`Langhost 114 Zeichen: ${langhost114Pruefungen}× geprüft · ${LANGHOST_114.length} Zeichen · kein Überlauf`);
+  const langhost114Anzahl = [...ergebnisFaelle.values()]
+    .filter(fall => fall.id.startsWith('text250.langhost114.') && fall.status === 'passed').length;
+  if (langhost114Anzahl) {
+    console.log(`Langhost 114 Zeichen: ${langhost114Anzahl}× geprüft · ${LANGHOST_114.length} Zeichen · kein Überlauf`);
   }
-  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${langhost114Pruefungen ? ` · Langhost 114 ${langhost114Pruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${refreshGesamt ? ` · Refresh ${refreshGesamt}× geprüft (HTTP 200, Marker)` : ''}${labFokusGesamt ? ` · Lab-Fokus ${labFokusGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${langhost114Anzahl ? ` · Langhost 114 ${langhost114Anzahl}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${refreshGesamt ? ` · Refresh ${refreshGesamt}× geprüft (HTTP 200, Marker)` : ''}${labFokusGesamt ? ` · Lab-Fokus ${labFokusGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {
