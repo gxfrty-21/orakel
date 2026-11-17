@@ -34,8 +34,8 @@
  * einen sichtbaren «Lauf starten»-Button geprüft. Bei 1440 px wird die
  * kompakte Abteilungslegende auf vollständige, überlauffreie Darstellung
  * geprüft. Der Auto-Refresh der Lab-Kurve wird über eine echte
- * /api/report-Antwort mit HTTP 200 und sichtbarem Datenmarker geprüft; Fokus,
- * Tooltip, Live-Region und Zeiger müssen dabei unverändert bleiben. Zusätzliche
+ * /api/report-Antwort mit HTTP 200 und getrennten Kopf- und Datenmarkern
+ * geprüft; Fokus, Tooltip, Live-Region und Zeiger müssen unverändert bleiben. Zusätzliche
  * Regressionstests fokussieren einen Lab-Knopf und ein ausgeblendetes Lab; in
  * beiden Fällen muss der Auto-Refresh weiter rendern.
  */
@@ -1452,8 +1452,8 @@ async function oeffneLabSeite(browser, url, breite) {
  * gehen Fokus, Tooltip und Live-Region mitten in der Tastaturbedienung
  * verloren. Der echte 8-Sekunden-Callback wird unter der Playwright-Uhr
  * gezielt ausgelöst; so hängt dieser Test nicht an einem echten Zeitfenster.
- * Der Datenmarker macht sichtbar, dass die Kopfzeile aktualisiert wurde,
- * während die Lab-Liste unverändert bleibt.
+ * Getrennte Kopf- und Datenmarker machen sichtbar, dass Kopfzeile und
+ * Berichtsdaten übernommen wurden, während die Lab-Liste unverändert bleibt.
  */
 async function pruefeLabAutoRefreshAufSeite(page, ansicht) {
   const befunde = [];
@@ -1474,12 +1474,20 @@ async function pruefeLabAutoRefreshAufSeite(page, ansicht) {
     };
   }, ansicht);
   const vorher = await lese();
+  const vorherDaten = await page.evaluate(() =>
+    document.querySelector('#labList')?.dataset.berichtKandidat || '');
   if (!vorher.fokus || !vorher.text || !vorher.live) {
     befunde.push('Auto-Refresh-Prüfung konnte die Kapitalkurve nicht fokussieren');
     return befunde;
   }
+  if (!vorherDaten) {
+    befunde.push('Auto-Refresh-Prüfung ohne Datenstand am Lab');
+    return befunde;
+  }
 
-  const marker = `refresh-probe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const stempel = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const kopfMarker = `refresh-kopf-${stempel}`;
+  const datenMarker = `refresh-daten-${stempel}`;
   const timeout = Symbol('refresh-timeout');
   let meldeRefresh;
   let routeFehler = null;
@@ -1496,10 +1504,13 @@ async function pruefeLabAutoRefreshAufSeite(page, ansicht) {
       if (!daten || typeof daten !== 'object' || Array.isArray(daten)) {
         throw new Error('Bericht ist kein JSON-Objekt');
       }
-      for (const kandidat of (Array.isArray(daten.validierungen) ? daten.validierungen : [])) {
-        if (kandidat && typeof kandidat === 'object') kandidat.symbol = marker;
+      if (!Array.isArray(daten.validierungen) || daten.validierungen.length === 0) {
+        throw new Error('Bericht enthält keine Validierungen');
       }
-      daten.datenquelle = marker;
+      for (const kandidat of daten.validierungen) {
+        if (kandidat && typeof kandidat === 'object') kandidat.symbol = datenMarker;
+      }
+      daten.datenquelle = kopfMarker;
       await route.fulfill({ response: antwort, json: daten });
       meldeRefresh({ status: antwort.status(), ok: true });
     } catch (fehler) {
@@ -1523,13 +1534,25 @@ async function pruefeLabAutoRefreshAufSeite(page, ansicht) {
   } else if (!antwort.ok || antwort.status !== 200) {
     befunde.push(`Auto-Refresh antwortet mit HTTP ${antwort.status}`);
   } else {
-    const markerSichtbar = await page.waitForFunction(
+    const kopfSichtbar = await page.waitForFunction(
       m => (document.querySelector('#banner')?.textContent || '').includes(m),
-      marker, { timeout: 3000 },
+      kopfMarker, { timeout: 3000 },
     ).then(() => true).catch(() => false);
-    if (!markerSichtbar) befunde.push('Auto-Refresh-Daten wurden nicht gerendert');
+    if (!kopfSichtbar) befunde.push('Auto-Refresh aktualisiert die Kopfzeile nicht');
+
+    const datenNachher = await page.waitForFunction(
+      m => (document.querySelector('#labList')?.dataset.berichtKandidat || '') === m,
+      datenMarker, { timeout: 3000 },
+    ).then(() => page.evaluate(() => document.querySelector('#labList')?.dataset.berichtKandidat || ''))
+      .catch(() => '');
+    if (datenNachher !== datenMarker) {
+      befunde.push(`Auto-Refresh übernimmt die Berichtsdaten nicht (Datenstand «${datenNachher || 'leer'}» statt «${datenMarker}»)`);
+    } else if (datenNachher === vorherDaten) {
+      befunde.push('Auto-Refresh lässt den Datenstand unverändert');
+    }
+
     const listeNachher = await page.locator('#labList').innerText();
-    if (listeNachher.includes(marker)) {
+    if (listeNachher.includes(datenMarker)) {
       befunde.push('Auto-Refresh zeichnet die Lab-Liste trotz fokussierter Kurve neu');
     }
   }
@@ -2823,7 +2846,7 @@ async function main() {
   if (langhost114Anzahl) {
     console.log(`Langhost 114 Zeichen: ${langhost114Anzahl}× geprüft · ${LANGHOST_114.length} Zeichen · kein Überlauf`);
   }
-  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${langhost114Anzahl ? ` · Langhost 114 ${langhost114Anzahl}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${refreshGesamt ? ` · Refresh ${refreshGesamt}× geprüft (HTTP 200, Marker)` : ''}${labFokusGesamt ? ` · Lab-Fokus ${labFokusGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${langhost114Anzahl ? ` · Langhost 114 ${langhost114Anzahl}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${refreshGesamt ? ` · Refresh ${refreshGesamt}× geprüft (HTTP 200, Kopf- und Datenmarker)` : ''}${labFokusGesamt ? ` · Lab-Fokus ${labFokusGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {

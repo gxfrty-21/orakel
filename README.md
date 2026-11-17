@@ -589,8 +589,8 @@ JSON-Ergebnis mit stabilen Fall-IDs. CI prüft es mit
 `scripts/pruefe-text250-ergebnis.mjs` gegen
 `scripts/text250-required-checks.json`. Zu den Pflichtfällen gehören die
 zwölf 240-px-Ansichten, die vier Claim-Breiten, der 114-Zeichen-Langhost ohne
-Punkt oder Bindestrich, der Lab-Auto-Refresh mit HTTP 200 und Marker sowie die
-beiden Lab-Fokus-Varianten. Die Zähler im Klartextlog wie `Claims 4×` sind nur
+Punkt oder Bindestrich, der Lab-Auto-Refresh mit HTTP 200 sowie getrennten
+Kopf- und Datenmarkern und die beiden Lab-Fokus-Varianten. Die Zähler im Klartextlog wie `Claims 4×` sind nur
 noch für Menschen lesbar und kein CI-Gate.
 
 Nach einem fehlgeschlagenen, abgebrochenen oder abgelaufenen Lauf. Die Befehle
