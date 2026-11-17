@@ -2784,6 +2784,12 @@ async function lade(){
     // pausieren, wenn der Fokus im sichtbaren Lab-Detail liegt; sonst würden
     // Fokus, Tooltip und Live-Region zurückgesetzt.
     R = neu;
+    // Nichtvisueller Datenstand für den Auto-Refresh-Test: Bei fokussiertem
+    // Lab-Detail wird nur der Ansichts-Render pausiert, R aber ersetzt. Das
+    // Attribut macht die übernommenen Berichtsdaten prüfbar, ohne die stabile
+    // Lab-Ansicht neu zu zeichnen.
+    const laborDaten = document.querySelector('#labList');
+    if (laborDaten) laborDaten.dataset.berichtKandidat = neu.validierungen?.[0]?.symbol || '';
     renderTop();
     if (!document.activeElement?.closest('#v-lab:not([hidden]) #labDetail')) zeichne();
   }catch(e){
