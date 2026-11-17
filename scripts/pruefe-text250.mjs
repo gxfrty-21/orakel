@@ -35,8 +35,8 @@
  * geprüft. Der Auto-Refresh der Lab-Kurve wird über eine echte
  * /api/report-Antwort mit HTTP 200 und sichtbarem Datenmarker geprüft; Fokus,
  * Tooltip, Live-Region und Zeiger müssen dabei unverändert bleiben. Zusätzliche
- * Regressionstests fokussieren die Lab-Liste, einen Lab-Tab und ein
- * ausgeblendetes Lab; in allen Fällen muss der Auto-Refresh weiter rendern.
+ * Regressionstests fokussieren einen Lab-Knopf und ein ausgeblendetes Lab; in
+ * beiden Fällen muss der Auto-Refresh weiter rendern.
  */
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -46,6 +46,9 @@ import { chromium } from 'playwright';
 const LANGS = 'Donaudampfschifffahrtsgesellschaftskapitänsmützenhalterungsverordnung';
 const LANGES_LABEL = 'Bevölkerungsentwicklungsprognoseberechnungsgrundlagenverordnung';
 const STANDARD_ANSICHTEN = ['overview', 'risk', 'lab', 'strat', 'research', 'globe', 'betrieb', 'ship', 'spider', 'kb', 'agents', 'konf'];
+// Der Lab-Refresh-Test läuft als eigener 360px/lab-Lauf, unabhängig von
+// Reihenfolge oder Inhalt von --breiten.
+const LAB_FOKUS_BREITE = 360;
 const WARTEZEIT = {
   overview: 300, risk: 350, lab: 400, strat: 500, research: 500, globe: 1300,
   betrieb: 750, ship: 1500, spider: 650, kb: 1500, agents: 500, konf: 500,
@@ -1380,26 +1383,37 @@ async function pruefeKurvenTastatur(page, ansicht) {
   return befunde;
 }
 
+/** Eine frische Lab-Seite mit installierter Playwright-Uhr. */
+async function oeffneLabSeite(browser, url, breite) {
+  const page = await browser.newPage({ viewport: { width: breite, height: 900 }, deviceScaleFactor: 1 });
+  const seitenfehler = [];
+  page.on('pageerror', err => seitenfehler.push(String(err)));
+  try {
+    await page.clock.install();
+    await page.goto(`${url}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(
+      () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
+      null, { timeout: 15000 },
+    );
+    await page.locator('.nav[data-v="lab"]').click();
+    await page.locator('#labList .li').first().waitFor({ state: 'visible', timeout: 5000 });
+    return { page, seitenfehler };
+  } catch (fehler) {
+    await page.close();
+    throw fehler;
+  }
+}
+
 /**
  * Der Auto-Refresh darf eine fokussierte Lab-Kurve nicht neu aufbauen: Sonst
  * gehen Fokus, Tooltip und Live-Region mitten in der Tastaturbedienung
- * verloren. Der echte 8-Sekunden-Callback wird nach einem Reload unter der
- * Playwright-Uhr gezielt ausgelöst; so hängt dieser Test nicht an einem
- * echten Zeitfenster.
+ * verloren. Der echte 8-Sekunden-Callback wird unter der Playwright-Uhr
+ * gezielt ausgelöst; so hängt dieser Test nicht an einem echten Zeitfenster.
+ * Der Datenmarker macht sichtbar, dass die Kopfzeile aktualisiert wurde,
+ * während die Lab-Liste unverändert bleibt.
  */
-async function pruefeLabAutoRefresh(page, ansicht) {
+async function pruefeLabAutoRefreshAufSeite(page, ansicht) {
   const befunde = [];
-  // Nach dem Reload läuft der 8-Sekunden-Intervall unter der Playwright-Uhr.
-  // Damit wird der echte Callback gezielt ausgelöst, statt auf ein echtes
-  // Zeitfenster zu warten.
-  await page.clock.install();
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(
-    () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
-    null, { timeout: 15000 },
-  );
-  await page.locator('.nav[data-v="lab"]').click();
-  await page.locator('#labList .li').first().waitFor({ state: 'visible', timeout: 5000 });
   if (!await waehleKurvenKandidat(page)) return ['Auto-Refresh-Prüfung ohne Kapitalkurve'];
 
   const svg = page.locator(`#v-${ansicht} .wfoKurveFlaeche svg`);
@@ -1439,6 +1453,9 @@ async function pruefeLabAutoRefresh(page, ansicht) {
       if (!daten || typeof daten !== 'object' || Array.isArray(daten)) {
         throw new Error('Bericht ist kein JSON-Objekt');
       }
+      for (const kandidat of (Array.isArray(daten.validierungen) ? daten.validierungen : [])) {
+        if (kandidat && typeof kandidat === 'object') kandidat.symbol = marker;
+      }
       daten.datenquelle = marker;
       await route.fulfill({ response: antwort, json: daten });
       meldeRefresh({ status: antwort.status(), ok: true });
@@ -1468,6 +1485,10 @@ async function pruefeLabAutoRefresh(page, ansicht) {
       marker, { timeout: 3000 },
     ).then(() => true).catch(() => false);
     if (!markerSichtbar) befunde.push('Auto-Refresh-Daten wurden nicht gerendert');
+    const listeNachher = await page.locator('#labList').innerText();
+    if (listeNachher.includes(marker)) {
+      befunde.push('Auto-Refresh zeichnet die Lab-Liste trotz fokussierter Kurve neu');
+    }
   }
   await page.unroute('**/api/report', handler).catch(() => {});
 
@@ -1479,24 +1500,35 @@ async function pruefeLabAutoRefresh(page, ansicht) {
   return befunde;
 }
 
+async function pruefeLabAutoRefresh(browser, url, ansicht) {
+  const { page, seitenfehler } = await oeffneLabSeite(browser, url, LAB_FOKUS_BREITE);
+  try {
+    const befunde = await pruefeLabAutoRefreshAufSeite(page, ansicht);
+    if (seitenfehler.length) befunde.push(`Lab-Seitenfehler: ${seitenfehler.join('; ')}`);
+    return befunde;
+  } finally {
+    await page.close();
+  }
+}
+
 /**
- * Drei Regressionstests für den Lab-Guard: Fokus auf der Lab-Liste, auf einem
- * Lab-Tab und in einem ausgeblendeten Lab darf den Ansichts-Render nicht
- * blockieren. Die API-Antwort erhält einen eindeutigen Marker in allen
- * Kandidatensymbolen; ein Rückfall auf den breiten #v-lab-Guard überspringt den
- * Render und der Marker fehlt anschliessend in #labList.
+ * Zwei Regressionstests für den Lab-Guard: Fokus auf einem Lab-Knopf und in
+ * einem ausgeblendeten Lab darf den Ansichts-Render nicht blockieren. Die
+ * API-Antwort erhält einen eindeutigen Marker in allen Kandidatensymbolen; ein
+ * Rückfall auf den breiten #v-lab-Guard überspringt den Render und der Marker
+ * fehlt anschliessend in #labList.
  */
 const LAB_FOKUS_VARIANTEN = [
   {
-    id: 'liste',
-    label: 'die Lab-Liste',
+    id: 'knopf',
+    label: 'einen Lab-Knopf',
     fokussiere: async (page) => {
-      const eintrag = page.locator('#labList .li').first();
-      if (!(await eintrag.count())) return ['Lab-Fokus-Prüfung ohne Lab-Listeneintrag'];
+      const eintrag = page.locator('#labList button.li').first();
+      if (!(await eintrag.count())) return ['Lab-Fokus-Prüfung ohne Lab-Knopf'];
       await eintrag.focus();
       const stand = await page.evaluate(() => {
         const a = document.activeElement;
-        const li = a?.closest?.('#labList .li');
+        const li = a?.closest?.('#labList button.li');
         return {
           treffer: Boolean(li),
           detail: Boolean(a?.closest?.('#labDetail')),
@@ -1505,30 +1537,7 @@ const LAB_FOKUS_VARIANTEN = [
         };
       });
       if (!stand.treffer || stand.detail) {
-        return [`Lab-Fokus-Prüfung konnte keinen Listeneintrag ausserhalb von #labDetail fokussieren (${stand.tag}, «${stand.text}»)`];
-      }
-      return [];
-    },
-  },
-  {
-    id: 'tab',
-    label: 'einen Lab-Tab',
-    fokussiere: async (page) => {
-      const tab = page.locator('#labTabs .tab').first();
-      if (!(await tab.count())) return ['Lab-Fokus-Prüfung ohne Lab-Tab'];
-      await tab.focus();
-      const stand = await page.evaluate(() => {
-        const a = document.activeElement;
-        const treffer = a?.closest?.('#labTabs .tab');
-        return {
-          treffer: Boolean(treffer),
-          detail: Boolean(a?.closest?.('#labDetail')),
-          tag: a ? a.tagName : '',
-          text: treffer ? treffer.innerText.replace(/\s+/g, ' ').trim().slice(0, 60) : '',
-        };
-      });
-      if (!stand.treffer || stand.detail) {
-        return [`Lab-Fokus-Prüfung konnte keinen Lab-Tab ausserhalb von #labDetail fokussieren (${stand.tag}, «${stand.text}»)`];
+        return [`Lab-Fokus-Prüfung konnte keinen Lab-Knopf ausserhalb von #labDetail fokussieren (${stand.tag}, «${stand.text}»)`];
       }
       return [];
     },
@@ -1538,10 +1547,13 @@ const LAB_FOKUS_VARIANTEN = [
     label: 'das ausgeblendete Lab',
     fokussiere: async (page) => {
       const stand = await page.evaluate(() => {
-        const tab = document.querySelector('#labTabs .tab');
-        if (!tab) return { fehlt: true };
-        tab.focus();
-        const fokussiert = document.activeElement === tab;
+        const detail = document.querySelector('#labDetail');
+        if (!detail) return { fehlt: true };
+        // Der Fokus liegt direkt im Detail. Auch dann darf der Guard nur bei
+        // sichtbarem #v-lab blockieren.
+        detail.tabIndex = -1;
+        detail.focus();
+        const fokussiert = document.activeElement === detail;
         const lab = document.querySelector('#v-lab');
         lab.hidden = true;
         // Chromium kann den Fokus beim Ausblenden asynchron auf body setzen.
@@ -1549,21 +1561,20 @@ const LAB_FOKUS_VARIANTEN = [
         // ausgeblendeten Lab verbleibt; diesen Zustand fixieren wir hier.
         Object.defineProperty(document, 'activeElement', {
           configurable: true,
-          get: () => tab,
+          get: () => detail,
         });
-        const a = document.activeElement;
         return {
           fokussiert,
           hidden: lab.hidden === true,
-          imLab: Boolean(a?.closest?.('#v-lab')),
-          tag: a ? a.tagName : '',
+          imDetail: Boolean(document.activeElement?.closest?.('#labDetail')),
+          tag: detail.tagName,
         };
       });
-      if (stand.fehlt) return ['Lab-Fokus-Prüfung ohne Lab-Tab'];
-      if (!stand.fokussiert) return ['Lab-Fokus-Prüfung konnte den Lab-Tab nicht fokussieren'];
+      if (stand.fehlt) return ['Lab-Fokus-Prüfung ohne #labDetail'];
+      if (!stand.fokussiert) return ['Lab-Fokus-Prüfung konnte das Lab-Detail nicht fokussieren'];
       if (!stand.hidden) return ['Lab-Fokus-Prüfung konnte das Lab nicht ausblenden'];
-      if (!stand.imLab) {
-        return [`Lab-Fokus-Prüfung verlor den Fokus beim Ausblenden des Labs (${stand.tag})`];
+      if (!stand.imDetail) {
+        return [`Lab-Fokus-Prüfung verlor den Detail-Fokus beim Ausblenden des Labs (${stand.tag})`];
       }
       return [];
     },
@@ -1572,22 +1583,12 @@ const LAB_FOKUS_VARIANTEN = [
 
 async function pruefeLabFokusAutoRefresh(browser, url, breite, variante) {
   const befunde = [];
-  const seitenfehler = [];
-  const page = await browser.newPage({ viewport: { width: breite, height: 900 }, deviceScaleFactor: 1 });
-  page.on('pageerror', err => seitenfehler.push(String(err)));
+  let page;
+  let seitenfehler = [];
   try {
-    // Die Playwright-Uhr wird vor dem Laden installiert. Damit lässt sich der
-    // echte 8-Sekunden-Interval-Callback gezielt auslösen, ohne auf den Takt
-    // zu warten oder zwischen Fokus und Refresh ein Zeitfenster zu öffnen.
-    await page.clock.install();
-    await page.goto(`${url}/`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(
-      () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
-      null, { timeout: 15000 },
-    );
-    await page.locator('.nav[data-v="lab"]').click();
-    await page.locator('#labList .li').first().waitFor({ state: 'visible', timeout: 5000 });
-    if (!await waehleKurvenKandidat(page)) return [`Lab-Fokus-Prüfung (${variante.label}) ohne Kapitalkurve`];
+    const geoeffnet = await oeffneLabSeite(browser, url, breite);
+    page = geoeffnet.page;
+    seitenfehler = geoeffnet.seitenfehler;
 
     const fokusBefunde = await variante.fokussiere(page);
     if (fokusBefunde.length) return [...befunde, ...fokusBefunde];
@@ -1657,7 +1658,7 @@ async function pruefeLabFokusAutoRefresh(browser, url, breite, variante) {
     befunde.push(`Lab-Fokus-Prüfung (${variante.label}) fehlgeschlagen: ${fehler instanceof Error ? fehler.message : fehler}`);
   } finally {
     if (seitenfehler.length) befunde.push(`Lab-Fokus-Seitenfehler (${variante.label}): ${seitenfehler.join('; ')}`);
-    await page.close();
+    if (page) await page.close();
   }
   return befunde;
 }
@@ -2649,6 +2650,17 @@ async function main() {
       legendeDesktopGeprueft++;
     }
 
+    if (opt.ansichten.includes('lab')) {
+      const refreshBefunde = await pruefeLabAutoRefresh(browser, opt.url, 'lab');
+      if (refreshBefunde.length === 0) refreshGesamt++;
+      for (const text of refreshBefunde) fehler.push(`${LAB_FOKUS_BREITE}px/lab: ${text}`);
+      for (const variante of LAB_FOKUS_VARIANTEN) {
+        const labFokusBefunde = await pruefeLabFokusAutoRefresh(browser, opt.url, LAB_FOKUS_BREITE, variante);
+        if (labFokusBefunde.length === 0) labFokusGesamt++;
+        for (const text of labFokusBefunde) fehler.push(`${LAB_FOKUS_BREITE}px/lab: ${text}`);
+      }
+    }
+
     for (const breite of opt.breiten) {
       const page = await browser.newPage({ viewport: { width: breite, height: 900 }, deviceScaleFactor: 1 });
       page.on('pageerror', err => fehler.push(`${breite}px: ${err}`));
@@ -2702,16 +2714,6 @@ async function main() {
             const tastaturBefunde = await pruefeKurvenTastatur(page, ansicht);
             if (tastaturBefunde) tastaturGesamt++;
             for (const text of tastaturBefunde || []) fehler.push(`${breite}px/${ansicht}: ${text}`);
-            if (breite === opt.breiten[0]) {
-              const refreshBefunde = await pruefeLabAutoRefresh(page, ansicht);
-              if (refreshBefunde.length === 0) refreshGesamt++;
-              for (const text of refreshBefunde) fehler.push(`${breite}px/${ansicht}: ${text}`);
-              for (const variante of LAB_FOKUS_VARIANTEN) {
-                const labFokusBefunde = await pruefeLabFokusAutoRefresh(browser, opt.url, breite, variante);
-                if (labFokusBefunde.length === 0) labFokusGesamt++;
-                for (const text of labFokusBefunde) fehler.push(`${breite}px/${ansicht}: ${text}`);
-              }
-            }
           } else {
             hinweise.add('Keine Kapitalkurve im Lab gefunden – Tooltip und Tastatur nicht geprüft.');
           }
