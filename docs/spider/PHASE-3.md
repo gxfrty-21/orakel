@@ -324,9 +324,9 @@ Artikelbasis, keine gemessene Trefferquote.
 ## 7. Browser-Prüfung: 24 Befunde im 250-%-Lauf (360 px)
 
 Ein lokaler 250-%-Lauf meldete 24 Befunde. Die Meldungen stammen aus
-**`360px/lab`**, nicht aus dem 240-px-Lauf: Der separate 250-%-Lauf über alle
-zwölf Ansichten bei 240 px war mit `240px: 12/12` grün. Die Zuordnung zum
-240-px-Lauf war falsch.
+**`360px/lab`**. Ein separater 240-px-Durchgang in normaler Schrift war mit
+`240px: 12/12` grün; er war kein 250-%-Lauf. Die Zuordnung zum 240-px-Lauf war
+falsch.
 
 | Gruppe | Anzahl | Befund |
 |---|---:|---|

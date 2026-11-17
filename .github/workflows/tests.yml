@@ -264,6 +264,10 @@ jobs:
             echo "Claim-Prüfung wurde nicht für alle vier Breiten ausgeführt"
             exit 1
           fi
+          if ! grep -q 'Langhost 114 Zeichen: 4× geprüft' artifacts/text250/lauf.log; then
+            echo "Der 114-Zeichen-Langhost wurde nicht für alle vier Claim-Breiten geprüft"
+            exit 1
+          fi
           if ! grep -q 'Refresh 1× geprüft (HTTP 200, Marker)' artifacts/text250/lauf.log; then
             echo "Auto-Refresh-Prüfung inklusive HTTP- und Marker-Nachweis wurde nicht ausgeführt"
             exit 1
