@@ -28,7 +28,7 @@ from orakel.nexus.bewertung import _aussage_aus_text, _erster_satz
 STANDARD_KORPUS = ROOT / "tests" / "fixtures" / "nexus_claim_korpus.json"
 PP_PROBE_KORPUS = ROOT / "tests" / "fixtures" / "nexus_pp_probe_korpus.json"
 FELDER = ("thema", "subjekt", "metrik", "richtung", "wert", "einheit", "negiert")
-PP_FELDER = ("subjekt", "metrik", "wert", "richtung")
+PP_FELDER = ("subjekt", "metrik", "richtung", "wert", "negiert")
 
 
 def lade_korpus(pfad: str | Path = STANDARD_KORPUS) -> dict[str, Any]:
@@ -85,7 +85,7 @@ def _subjekt_passt(erwartet: object, vorhergesagt: object) -> bool:
 
 
 def _ist_pp(einheit: object) -> bool:
-    """Erkennt die Einheit pp unabhängig von Gross-/Kleinschreibung oder Langform."""
+    """Prüft die normalisierte Einheit auf `pp`; Langformen liefert bereits die Extraktion als `pp`."""
     return _text_normalisieren(einheit) == "pp"
 
 
@@ -141,12 +141,9 @@ def bewerte(korpus: dict[str, Any]) -> dict[str, Any]:
         pp_erwartet += int(soll_pp)
         pp_vorhergesagt += int(ist_pp)
         pp_feldfehler: list[str] = []
-        pp_strict = False
-        if soll_pp:
+        if soll_pp and ist_pp:
             for feld in PP_FELDER:
                 pp_feldgesamt[feld] += 1
-                if not ist_pp:
-                    continue
                 if _feld_passt(feld, erwartet.get(feld), vorhergesagt.get(feld)):
                     pp_feldtreffer[feld] += 1
                 else:
@@ -154,41 +151,22 @@ def bewerte(korpus: dict[str, Any]) -> dict[str, Any]:
                         f"{feld}: erwartet={erwartet.get(feld)!r}, "
                         f"vorhergesagt={vorhergesagt.get(feld)!r}"
                     )
-        if soll_pp and ist_pp:
-            pp_richtig += 1
-            pp_strict = not pp_feldfehler
-        if pp_strict:
-            pp_tp += 1
-            pp_status = "TP"
-        elif soll_pp and ist_pp:
-            pp_fp += 1
-            pp_fn += 1
-            pp_status = "FP+FN"
-        elif soll_pp:
-            pp_fn += 1
-            pp_status = "FN"
-        elif ist_pp:
-            pp_fp += 1
-            pp_status = "FP"
-        else:
-            pp_status = "–"
+        pp_richtig += int(soll_pp and ist_pp)
+        pp_tp_fall = bool(soll_pp and ist_pp and not pp_feldfehler)
+        pp_fp_fall = bool(ist_pp and not pp_tp_fall)
+        pp_fn_fall = bool(soll_pp and not pp_tp_fall)
+        pp_tp += int(pp_tp_fall)
+        pp_fp += int(pp_fp_fall)
+        pp_fn += int(pp_fn_fall)
         if soll_pp or ist_pp:
-            if soll_pp and not ist_pp:
-                pp_abweichung = "pp nicht erkannt"
-            elif not soll_pp and ist_pp:
-                pp_abweichung = "unerwartete pp-Einheit"
-            else:
-                pp_abweichung = "Felder nicht vollständig" if pp_feldfehler else "–"
             pp_faelle.append({
                 "id": meldung["id"],
-                "titel": meldung["titel"],
                 "erwartet_pp": soll_pp,
                 "erkannt_pp": ist_pp,
-                "claim_erkannt": ist_claim,
-                "strict_korrekt": pp_strict,
-                "status": pp_status,
+                "tp": pp_tp_fall,
+                "fp": pp_fp_fall,
+                "fn": pp_fn_fall,
                 "feldfehler": pp_feldfehler,
-                "abweichung": pp_abweichung,
             })
 
         abweichungen: list[str] = []
@@ -310,8 +288,8 @@ def _bericht(ergebnis: dict[str, Any], korpus: dict[str, Any]) -> str:
         "",
         "## pp-Erkennung und strikte Felder",
         "",
-        "Die Einheit `pp` ist die Zulassungsbedingung. Ein strikter TP verlangt",
-        "zusätzlich einen Treffer in Subjekt, Metrik, Wert und Richtung. Ein",
+        "Ein strikter TP verlangt die erkannte Einheit `pp` und zusätzlich einen",
+        "Treffer in Subjekt, Metrik, Richtung, Wert und Negation. Ein",
         "vorhergesagter pp-Claim ohne vollständigen Treffer zählt als FP, ein",
         "erwarteter pp-Claim ohne vollständigen Treffer als FN; bei Feldfehlern",
         "kann derselbe Fall als FP und FN zählen. Die Einheit-Precision/Recall",
@@ -321,7 +299,6 @@ def _bericht(ergebnis: dict[str, Any], korpus: dict[str, Any]) -> str:
         "|---|---:|",
         f"| Erwartete pp-Claims | {ergebnis['pp_erwartet']} |",
         f"| Vorhergesagte pp-Claims | {ergebnis['pp_vorhergesagt']} |",
-        f"| Korrekte pp-Einheiten (nur Einheit) | {ergebnis['pp_richtig']} |",
         f"| TP (strikt) | {ergebnis['pp_tp']} |",
         f"| FP (strikt) | {ergebnis['pp_fp']} |",
         f"| FN (strikt) | {ergebnis['pp_fn']} |",
@@ -335,10 +312,14 @@ def _bericht(ergebnis: dict[str, Any], korpus: dict[str, Any]) -> str:
         zeilen += [
             "### Strikte pp-Feldtreffer",
             "",
-            "Geprüft werden nur erwartete pp-Claims; die Einheit muss erkannt sein.",
+            "Geprüft werden nur erwartete pp-Claims mit erkannter Einheit; die",
+            "übrigen Felder werden nur dort verglichen. Die Einheit ist",
+            "Zulassungsbedingung und steht als eigene Zeile davor, damit die strikte",
+            "Quote nicht nur die Einheit misst.",
             "",
             "| Feld | Treffer | Geprüft |",
             "|---|---:|---:|",
+            f"| `einheit` | {ergebnis['pp_richtig']} | {ergebnis['pp_erwartet']} |",
         ]
         for feld in PP_FELDER:
             zeilen.append(
@@ -348,15 +329,15 @@ def _bericht(ergebnis: dict[str, Any], korpus: dict[str, Any]) -> str:
         zeilen.append("")
     if ergebnis["pp_faelle"]:
         zeilen += [
-            "| ID | Erwartet pp | Erkannt pp | Claim erkannt | Strikt | Status | Feldfehler |",
-            "|---|---:|---:|---:|---:|---|---|",
+            "| ID | Erwartet pp | Erkannt pp | TP | FP | FN | Feldfehler |",
+            "|---|---:|---:|---:|---:|---:|---|",
         ]
         for fall in ergebnis["pp_faelle"]:
             feldfehler = "; ".join(fall["feldfehler"]) or "–"
             zeilen.append(
                 f"| `{fall['id']}` | {fall['erwartet_pp']} | {fall['erkannt_pp']} | "
-                f"{fall['claim_erkannt']} | {fall['strict_korrekt']} | "
-                f"{fall['status']} | {feldfehler} |"
+                f"{int(fall['tp'])} | {int(fall['fp'])} | {int(fall['fn'])} | "
+                f"{feldfehler} |"
             )
         zeilen.append("")
     else:

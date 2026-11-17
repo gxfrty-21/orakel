@@ -132,8 +132,15 @@ def test_pp_probe_baseline_ist_reproduzierbar_und_vollstaendig():
         "rss-pp-001", "rss-pp-002", "rss-pp-003", "rss-pp-004", "rss-pp-005",
     ]
     assert all(fall["erwartet_pp"] and fall["erkannt_pp"] for fall in erster["pp_faelle"])
-    assert all(fall["strict_korrekt"] and fall["status"] == "TP"
+    assert all(fall["tp"] and not fall["fp"] and not fall["fn"]
                for fall in erster["pp_faelle"])
+    assert all(
+        set(fall) == {
+            "id", "erwartet_pp", "erkannt_pp", "tp", "fp", "fn", "feldfehler",
+        }
+        for fall in erster["pp_faelle"]
+    )
+    assert modul.PP_FELDER == ("subjekt", "metrik", "richtung", "wert", "negiert")
     assert all(erster["pp_feldtreffer"][feld] == 5 for feld in modul.PP_FELDER)
     assert all(erster["pp_feldgesamt"][feld] == 5 for feld in modul.PP_FELDER)
     assert all(erster["feldtreffer"][feld] == 5 for feld in modul.FELDER)
@@ -170,6 +177,7 @@ def test_gemischte_ansicht_ist_nur_optional():
         ("metrik", "falsche metrik"),
         ("wert", 99.0),
         ("richtung", "sinkt"),
+        ("negiert", True),
     ],
 )
 def test_pp_strikte_feldfehler_zaehlen_als_fp_und_fn(feld, falscher_wert):
@@ -198,9 +206,10 @@ def test_pp_strikte_feldfehler_zaehlen_als_fp_und_fn(feld, falscher_wert):
             assert ergebnis["pp_feldtreffer"][anderes_feld] == 5
 
     pp_fall = next(f for f in ergebnis["pp_faelle"] if f["id"] == "rss-pp-001")
-    assert pp_fall["strict_korrekt"] is False
-    assert pp_fall["status"] == "FP+FN"
-    assert any(feld in fehler for fehler in pp_fall["feldfehler"])
+    assert pp_fall["tp"] is False
+    assert pp_fall["fp"] is True
+    assert pp_fall["fn"] is True
+    assert [fehler.split(":")[0] for fehler in pp_fall["feldfehler"]] == [feld]
 
 
 def test_pp_vorhersage_ohne_gold_zaehlt_als_fp():
@@ -226,5 +235,22 @@ def test_pp_vorhersage_ohne_gold_zaehlt_als_fp():
     pp_fall = next(f for f in ergebnis["pp_faelle"] if f["id"] == "rss-pp-001")
     assert pp_fall["erwartet_pp"] is False
     assert pp_fall["erkannt_pp"] is True
-    assert pp_fall["status"] == "FP"
-    assert pp_fall["strict_korrekt"] is False
+    assert pp_fall["tp"] is False
+    assert pp_fall["fp"] is True
+    assert pp_fall["fn"] is False
+    assert pp_fall["feldfehler"] == []
+    # Nur die vier erwarteten pp-Fälle mit erkannter Einheit werden verglichen.
+    assert all(wert == 4 for wert in ergebnis["pp_feldgesamt"].values())
+    assert all(wert == 4 for wert in ergebnis["pp_feldtreffer"].values())
+
+
+def test_feldvergleich_prueft_einheit_und_negation():
+    modul = _modul(
+        "nexus_pp_strict_felder_test",
+        ROOT / "scripts" / "nexus_claim_baseline.py",
+    )
+
+    assert modul._feld_passt("einheit", "pp", "pp") is True
+    assert modul._feld_passt("einheit", "pp", "%") is False
+    assert modul._feld_passt("negiert", False, False) is True
+    assert modul._feld_passt("negiert", True, False) is False
