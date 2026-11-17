@@ -1386,7 +1386,7 @@ async function pruefeKurvenTastatur(page, ansicht) {
  * Kopfbereich. Damit ist belegt, dass der Refresh tatsächlich Daten verarbeitet
  * hat, ohne dass die fokussierte Kurve neu gerendert wurde.
  */
-async function pruefeLabAutoRefresh(page, ansicht) {
+async function pruefeLabAutoRefresh(page, ansicht, optionen = {}) {
   const befunde = [];
   const svg = page.locator(`#v-${ansicht} .wfoKurveFlaeche svg`);
   if (!(await svg.count())) return ['Auto-Refresh-Prüfung ohne Kapitalkurve'];
@@ -1407,6 +1407,12 @@ async function pruefeLabAutoRefresh(page, ansicht) {
   if (!vorher.fokus || !vorher.text || !vorher.live) {
     befunde.push('Auto-Refresh-Prüfung konnte die Kapitalkurve nicht fokussieren');
     return befunde;
+  }
+  if (optionen.erzwingeRerender) {
+    // Negativfall: Fokus verlassen, damit der Guard den Ansichts-Render nicht
+    // mehr pausiert und die Kurve beim nächsten Refresh neu zeichnet.
+    await svg.evaluate(el => el.blur());
+    await page.mouse.move(0, 0);
   }
 
   const marker = `refresh-probe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1462,6 +1468,66 @@ async function pruefeLabAutoRefresh(page, ansicht) {
   if (nachher.text !== vorher.text) befunde.push(`Auto-Refresh verändert den Tooltip («${nachher.text || 'leer'}» statt «${vorher.text}»)`);
   if (nachher.live !== vorher.live) befunde.push(`Auto-Refresh verändert die Live-Region («${nachher.live || 'leer'}» statt «${vorher.live}»)`);
   if (nachher.zeiger !== vorher.zeiger) befunde.push(`Auto-Refresh verschiebt den Zeiger (${nachher.zeiger} statt ${vorher.zeiger})`);
+  return befunde;
+}
+
+/**
+ * Negativtest für den Refresh-Guard: Er muss ausbleibenden Refresh und ein
+ * erzwungenes Re-Render der Lab-Kurve als Befund erkennen. Beide Fehlerbilder
+ * werden gezielt injiziert; nur wenn der Guard sie meldet, ist er wirksam.
+ */
+async function pruefeLabAutoRefreshNegativ(browser, url, breite) {
+  const befunde = [];
+  const oeffne = async (initSkript = null) => {
+    const page = await browser.newPage({ viewport: { width: breite, height: 900 }, deviceScaleFactor: 1 });
+    if (initSkript) await page.addInitScript(initSkript);
+    await page.goto(`${url}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(
+      () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
+      null, { timeout: 15000 },
+    );
+    const nav = page.locator('.nav[data-v="lab"]');
+    if (await nav.count()) await nav.click();
+    else await page.evaluate(() => zeige('lab'));
+    await page.waitForTimeout(WARTEZEIT.lab);
+    await skaliere(page, 2.5);
+    await page.waitForTimeout(150);
+    return page;
+  };
+
+  // 1. Ausbleibender Refresh: Der Acht-Sekunden-Aufruf wird vor dem Laden
+  //    blockiert. Der Guard darf nicht stillschweigend bestehen.
+  const ohne = await oeffne(() => {
+    const original = window.setInterval;
+    window.setInterval = (fn, ms, ...rest) => {
+      if (ms === 8000) return 0;
+      return original(fn, ms, ...rest);
+    };
+  });
+  try {
+    const ohneBefunde = await pruefeLabAutoRefresh(ohne, 'lab');
+    if (!ohneBefunde.some(text => /keine Antwort/.test(text))) {
+      befunde.push(`Negativtest erkennt ausbleibenden Refresh nicht («${ohneBefunde.join('; ') || 'keine Befunde'}»)`);
+    }
+  } finally {
+    await ohne.close();
+  }
+
+  // 2. Erzwungenes Re-Render: Nach dem Verlassen des Fokus muss der Guard den
+  //    Fokusverlust als Befund melden, statt den Refresh stillschweigend
+  //    durchzuwinken.
+  const mit = await oeffne();
+  try {
+    const mitBefunde = await pruefeLabAutoRefresh(mit, 'lab', { erzwingeRerender: true });
+    if (mitBefunde.some(text => /nicht gerendert/.test(text))) {
+      befunde.push(`Erzwungenes Re-Render blieb aus («${mitBefunde.join('; ')}»)`);
+    } else if (!mitBefunde.some(text => /Fokus/.test(text))) {
+      befunde.push(`Negativtest erkennt erzwungenes Re-Render nicht («${mitBefunde.join('; ') || 'keine Befunde'}»)`);
+    }
+  } finally {
+    await mit.close();
+  }
+
   return befunde;
 }
 
@@ -2431,7 +2497,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const fehler = [];
   const hinweise = new Set();
-  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, refreshGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, legendeDesktopGeprueft = 0, kopfGeprueft = 0, schmaleAnsichten = 0, schreibwegeGesamt = 0, claimPruefungen = 0;
+  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, refreshGesamt = 0, refreshNegativGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, legendeDesktopGeprueft = 0, kopfGeprueft = 0, schmaleAnsichten = 0, schreibwegeGesamt = 0, claimPruefungen = 0;
 
   try {
     const kopfBefunde = await pruefeKopfzeile(browser, opt.url);
@@ -2509,6 +2575,9 @@ async function main() {
               const refreshBefunde = await pruefeLabAutoRefresh(page, ansicht);
               if (refreshBefunde.length === 0) refreshGesamt++;
               for (const text of refreshBefunde) fehler.push(`${breite}px/${ansicht}: ${text}`);
+              const refreshNegativBefunde = await pruefeLabAutoRefreshNegativ(browser, opt.url, breite);
+              if (refreshNegativBefunde.length === 0) refreshNegativGesamt++;
+              for (const text of refreshNegativBefunde) fehler.push(`${breite}px/lab-negativ: ${text}`);
             }
           } else {
             hinweise.add('Keine Kapitalkurve im Lab gefunden – Tooltip und Tastatur nicht geprüft.');
@@ -2562,7 +2631,7 @@ async function main() {
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${refreshGesamt ? ` · Refresh ${refreshGesamt}× geprüft (HTTP 200, Marker)` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${refreshGesamt ? ` · Refresh ${refreshGesamt}× geprüft (HTTP 200, Marker)` : ''}${refreshNegativGesamt ? ` · Refresh-Negativ ${refreshNegativGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {
