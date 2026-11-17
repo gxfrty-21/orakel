@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Reproduzierbare Baseline für die Nexus-Claim-Extraktion.
 
-Der Korpus liegt als versionierte JSON-Datei vor und enthält reale RSS-Meldungen
-aus dem Seed-Snapshot sowie ergänzende pp-Meldungen aus echten RSS-Suchen. Die
-Baseline nutzt bewusst die aktuelle, produktive Extraktion; sie ist keine neue
-Heuristik und keine LLM-Auswertung.
+Die Baseline liest einen versionierten JSON-Korpus. Der allgemeine
+Claim-Korpus enthält 34 reale RSS-Meldungen aus dem Seed-Snapshot; die fünf
+gezielten pp-Meldungen liegen getrennt in `nexus_pp_probe_korpus.json`. Beide
+Korpora werden mit derselben produktiven Extraktion ausgewertet, aber getrennt
+berichtet. Die Baseline ist keine neue Heuristik und keine LLM-Auswertung.
 """
 
 from __future__ import annotations
@@ -23,7 +24,9 @@ if str(ROOT) not in sys.path:
 from orakel.nexus.bewertung import _aussage_aus_text, _erster_satz
 
 STANDARD_KORPUS = ROOT / "tests" / "fixtures" / "nexus_claim_korpus.json"
+PP_PROBE_KORPUS = ROOT / "tests" / "fixtures" / "nexus_pp_probe_korpus.json"
 FELDER = ("thema", "subjekt", "metrik", "richtung", "wert", "einheit", "negiert")
+PP_FELDER = ("subjekt", "metrik", "wert", "richtung")
 
 
 def lade_korpus(pfad: str | Path = STANDARD_KORPUS) -> dict[str, Any]:
@@ -91,9 +94,14 @@ def bewerte(korpus: dict[str, Any]) -> dict[str, Any]:
     pp_erwartet = 0
     pp_vorhergesagt = 0
     pp_richtig = 0
+    pp_tp = 0
+    pp_fp = 0
+    pp_fn = 0
     pp_faelle: list[dict[str, Any]] = []
     feldtreffer = {feld: 0 for feld in FELDER}
     feldgesamt = {feld: 0 for feld in FELDER}
+    pp_feldtreffer = {feld: 0 for feld in PP_FELDER}
+    pp_feldgesamt = {feld: 0 for feld in PP_FELDER}
 
     for meldung in meldungen:
         erwartet = meldung["erwartet"]
@@ -107,21 +115,54 @@ def bewerte(korpus: dict[str, Any]) -> dict[str, Any]:
         ist_pp = ist_claim and _ist_pp(vorhergesagt.get("einheit")) if vorhergesagt else False
         pp_erwartet += int(soll_pp)
         pp_vorhergesagt += int(ist_pp)
+        pp_feldfehler: list[str] = []
+        pp_strict = False
+        if soll_pp:
+            for feld in PP_FELDER:
+                pp_feldgesamt[feld] += 1
+                if not ist_pp:
+                    continue
+                if _feld_passt(feld, erwartet.get(feld), vorhergesagt.get(feld)):
+                    pp_feldtreffer[feld] += 1
+                else:
+                    pp_feldfehler.append(
+                        f"{feld}: erwartet={erwartet.get(feld)!r}, "
+                        f"vorhergesagt={vorhergesagt.get(feld)!r}"
+                    )
         if soll_pp and ist_pp:
             pp_richtig += 1
+            pp_strict = not pp_feldfehler
+        if pp_strict:
+            pp_tp += 1
+            pp_status = "TP"
+        elif soll_pp and ist_pp:
+            pp_fp += 1
+            pp_fn += 1
+            pp_status = "FP+FN"
+        elif soll_pp:
+            pp_fn += 1
+            pp_status = "FN"
+        elif ist_pp:
+            pp_fp += 1
+            pp_status = "FP"
+        else:
+            pp_status = "–"
         if soll_pp or ist_pp:
             if soll_pp and not ist_pp:
                 pp_abweichung = "pp nicht erkannt"
             elif not soll_pp and ist_pp:
                 pp_abweichung = "unerwartete pp-Einheit"
             else:
-                pp_abweichung = "–"
+                pp_abweichung = "Felder nicht vollständig" if pp_feldfehler else "–"
             pp_faelle.append({
                 "id": meldung["id"],
                 "titel": meldung["titel"],
                 "erwartet_pp": soll_pp,
                 "erkannt_pp": ist_pp,
                 "claim_erkannt": ist_claim,
+                "strict_korrekt": pp_strict,
+                "status": pp_status,
+                "feldfehler": pp_feldfehler,
                 "abweichung": pp_abweichung,
             })
 
@@ -192,6 +233,15 @@ def bewerte(korpus: dict[str, Any]) -> dict[str, Any]:
         if pp_vorhergesagt else None,
         "pp_recall": round(pp_richtig / pp_erwartet, 4)
         if pp_erwartet else None,
+        "pp_tp": pp_tp,
+        "pp_fp": pp_fp,
+        "pp_fn": pp_fn,
+        "pp_strict_precision": round(pp_tp / (pp_tp + pp_fp), 4)
+        if (pp_tp + pp_fp) else None,
+        "pp_strict_recall": round(pp_tp / (pp_tp + pp_fn), 4)
+        if (pp_tp + pp_fn) else None,
+        "pp_feldtreffer": pp_feldtreffer,
+        "pp_feldgesamt": pp_feldgesamt,
         "pp_faelle": pp_faelle,
         "feldtreffer": feldtreffer,
         "feldgesamt": feldgesamt,
@@ -204,6 +254,7 @@ def _bericht(ergebnis: dict[str, Any], korpus: dict[str, Any]) -> str:
         "# Nexus-Claim-Baseline",
         "",
         f"**Korpus:** {ergebnis['meldungen']} reale RSS-Meldungen  ",
+        f"**Korpus-Typ:** `{korpus.get('typ', 'claim')}`  ",
         f"**Stand:** {ergebnis['stand']}  ",
         "**Extraktion:** aktueller Produktivpfad (`Titel`, sonst erster Satz)",
         "",
@@ -223,30 +274,55 @@ def _bericht(ergebnis: dict[str, Any], korpus: dict[str, Any]) -> str:
         f"| Claim-Yield | {ergebnis['claim_yield']} |",
         f"| Erwartete Claim-Quote | {ergebnis['erwartete_claim_quote']} |",
         "",
-        "## pp-Erkennung",
+        "## pp-Erkennung und strikte Felder",
         "",
-        "Die pp-Kennzahlen zählen die Einheit `pp` unabhängig von den übrigen",
-        "Claim-Feldern. Ein erwarteter pp-Claim, der nicht erkannt wird, zählt als",
-        "False Negative; ein vorhergesagter pp-Claim ohne pp-Gold zählt als False",
-        "Positive. Die Werte sind nur definiert, wenn der jeweilige Nenner grösser",
-        "als null ist.",
+        "Die Einheit `pp` ist die Zulassungsbedingung. Ein strikter TP verlangt",
+        "zusätzlich einen Treffer in Subjekt, Metrik, Wert und Richtung. Ein",
+        "vorhergesagter pp-Claim ohne vollständigen Treffer zählt als FP, ein",
+        "erwarteter pp-Claim ohne vollständigen Treffer als FN; bei Feldfehlern",
+        "kann derselbe Fall als FP und FN zählen. Die Einheit-Precision/Recall",
+        "bleibt davon getrennt.",
         "",
         "| Kennzahl | Wert |",
         "|---|---:|",
         f"| Erwartete pp-Claims | {ergebnis['pp_erwartet']} |",
         f"| Vorhergesagte pp-Claims | {ergebnis['pp_vorhergesagt']} |",
-        f"| Korrekte pp-Einheiten | {ergebnis['pp_richtig']} |",
-        f"| pp-Precision | {ergebnis['pp_precision'] if ergebnis['pp_precision'] is not None else 'n/a'} |",
-        f"| pp-Recall | {ergebnis['pp_recall'] if ergebnis['pp_recall'] is not None else 'n/a'} |",
+        f"| Korrekte pp-Einheiten (nur Einheit) | {ergebnis['pp_richtig']} |",
+        f"| TP (strikt) | {ergebnis['pp_tp']} |",
+        f"| FP (strikt) | {ergebnis['pp_fp']} |",
+        f"| FN (strikt) | {ergebnis['pp_fn']} |",
+        f"| pp-Precision (nur Einheit) | {ergebnis['pp_precision'] if ergebnis['pp_precision'] is not None else 'n/a'} |",
+        f"| pp-Recall (nur Einheit) | {ergebnis['pp_recall'] if ergebnis['pp_recall'] is not None else 'n/a'} |",
+        f"| pp-Precision (strikt) | {ergebnis['pp_strict_precision'] if ergebnis['pp_strict_precision'] is not None else 'n/a'} |",
+        f"| pp-Recall (strikt) | {ergebnis['pp_strict_recall'] if ergebnis['pp_strict_recall'] is not None else 'n/a'} |",
         "",
     ]
+    if ergebnis["pp_erwartet"]:
+        zeilen += [
+            "### Strikte pp-Feldtreffer",
+            "",
+            "Geprüft werden nur erwartete pp-Claims; die Einheit muss erkannt sein.",
+            "",
+            "| Feld | Treffer | Geprüft |",
+            "|---|---:|---:|",
+        ]
+        for feld in PP_FELDER:
+            zeilen.append(
+                f"| `{feld}` | {ergebnis['pp_feldtreffer'][feld]} | "
+                f"{ergebnis['pp_feldgesamt'][feld]} |"
+            )
+        zeilen.append("")
     if ergebnis["pp_faelle"]:
-        zeilen += ["| ID | Erwartet pp | Erkannt pp | Claim erkannt | Abweichung |",
-                   "|---|---:|---:|---:|---|"]
+        zeilen += [
+            "| ID | Erwartet pp | Erkannt pp | Claim erkannt | Strikt | Status | Feldfehler |",
+            "|---|---:|---:|---:|---:|---|---|",
+        ]
         for fall in ergebnis["pp_faelle"]:
+            feldfehler = "; ".join(fall["feldfehler"]) or "–"
             zeilen.append(
                 f"| `{fall['id']}` | {fall['erwartet_pp']} | {fall['erkannt_pp']} | "
-                f"{fall['claim_erkannt']} | {fall['abweichung']} |"
+                f"{fall['claim_erkannt']} | {fall['strict_korrekt']} | "
+                f"{fall['status']} | {feldfehler} |"
             )
         zeilen.append("")
     else:
@@ -277,16 +353,27 @@ def _bericht(ergebnis: dict[str, Any], korpus: dict[str, Any]) -> str:
             f"| `{fall['id']}` | {fall['erwartet_claim']} | {fall['erkannt_claim']} | "
             f"{fall['korrekt']} | {abweichung} |"
         )
+    if ergebnis["pp_erwartet"]:
+        grenzen = [
+            "- Der `pp_probe` ist eine gezielte Stichprobe aus fünf echten",
+            "  RSS-Meldungen und keine laufende Produktions- oder Zufallsstichprobe.",
+            "- Die fünf pp-Meldungen wurden über Google-News-RSS-Suchen gefunden und an",
+            "  den verlinkten Originalseiten geprüft; die pp-Kennzahlen sind wegen n=5",
+            "  keine repräsentative Schätzung.",
+        ]
+    else:
+        grenzen = [
+            "- Der allgemeine Claim-Korpus enthält 34 Seed-Meldungen und ist keine",
+            "  laufende Produktions- oder Zufallsstichprobe.",
+            "- Die fünf gezielten pp-Meldungen liegen getrennt in",
+            "  `tests/fixtures/nexus_pp_probe_korpus.json`; die pp-Metriken werden",
+            "  separat berichtet und verändern die allgemeinen Metriken nicht.",
+        ]
     zeilen += [
         "",
         "## Grenzen",
         "",
-        "- Der Korpus ist ein Snapshot aus `seed/orakel-seed.db` plus einer kleinen,",
-        "  gezielten pp-Stichprobe aus echten RSS-Suchen; er ist keine laufende",
-        "  Produktions- oder Zufallsstichprobe.",
-        "- Die fünf pp-Meldungen wurden über Google-News-RSS-Suchen gefunden und an",
-        "  den verlinkten Originalseiten geprüft; die pp-Kennzahlen sind wegen n=5",
-        "  keine repräsentative Schätzung.",
+        *grenzen,
         "- Die Goldfelder wurden manuell aus Titel, Zusammenfassung und Originalseite",
         "  gesetzt.",
         "- Ein fehlender Claim kann auch bedeuten, dass die Meldung bewusst als",
@@ -301,11 +388,16 @@ def _bericht(ergebnis: dict[str, Any], korpus: dict[str, Any]) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--korpus", type=Path, default=STANDARD_KORPUS)
-    parser.add_argument("--output-dir", type=Path,
-                        default=ROOT / "artifacts" / "nexus-claim-baseline")
+    parser.add_argument(
+        "--korpus", type=Path, default=STANDARD_KORPUS,
+        help=("Korpus-JSON; pp_probe: tests/fixtures/nexus_pp_probe_korpus.json")
+    )
+    parser.add_argument("--output-dir", type=Path, default=None)
     args = parser.parse_args()
     korpus = lade_korpus(args.korpus)
+    if args.output_dir is None:
+        ordner = "nexus-pp-probe" if korpus.get("typ") == "pp_probe" else "nexus-claim-baseline"
+        args.output_dir = ROOT / "artifacts" / ordner
     ergebnis = bewerte(korpus)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     (args.output_dir / "messwerte.json").write_text(
@@ -315,12 +407,15 @@ def main() -> int:
     (args.output_dir / "report.md").write_text(
         _bericht(ergebnis, korpus), encoding="utf-8",
     )
-    print(f"Korpus: {ergebnis['meldungen']} Meldungen")
+    print(f"Korpus: {ergebnis['meldungen']} Meldungen ({korpus.get('typ', 'claim')})")
     print(f"Erwartete/erkannte/richtige Claims: "
           f"{ergebnis['erwartete_claims']}/{ergebnis['erkannte_claims']}/"
           f"{ergebnis['richtige_claims']}")
     print(f"Claim-Precision: {ergebnis['claim_precision']}, "
           f"Claim-Recall: {ergebnis['claim_recall']}")
+    if ergebnis["pp_erwartet"]:
+        print(f"pp strikt TP/FP/FN: "
+              f"{ergebnis['pp_tp']}/{ergebnis['pp_fp']}/{ergebnis['pp_fn']}")
     print(f"Bericht: {args.output_dir / 'report.md'}")
     return 0
 
