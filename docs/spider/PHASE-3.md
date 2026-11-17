@@ -295,10 +295,12 @@ neu auf und setzte Fokus, Tooltip und Live-Region zurück. Die 24 Meldungen sind
 Folge dieses einen Zustandsverlusts. Die App pausiert den Refresh jetzt bei
 Fokus im sichtbaren Lab-Detail (insbesondere auf der Kapitalkurve) nur den
 Ansichts-Render; Daten und Kopfzeile werden weiter aktualisiert. Ein Fokus auf
-der Lab-Liste, einem anderen Lab-Element oder in einem ausgeblendeten Lab
-blockiert den Render nicht. Der deterministische Test mit echter
-/api/report-Antwort (HTTP 200, Marker) sowie der vollständige Standardlauf und
-der 240-px-250-%-Lauf sind ohne Befund.
+einem Lab-Knopf in der Liste oder im ausgeblendeten Lab-Detail blockiert den
+Render nicht. Die drei Refresh-Fälle (sichtbare Kurve, Lab-Knopf,
+ausgeblendetes Lab-Detail) laufen als eigener deterministischer 360px/lab-Lauf
+mit echter /api/report-Antwort (HTTP 200, Marker); dieser Lauf ist ohne Befund.
+Der vollständige 12-Ansichten-Standardlauf wurde nach dieser Verschärfung
+nicht erneut ausgeführt.
 
 Der erfolgreiche CI-Job `text250` aus Run `43811966526` verwendete denselben
 Seed und denselben Lab-Code, lief mit 74,39 s aber etwas schneller als der
