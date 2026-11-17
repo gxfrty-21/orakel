@@ -2780,13 +2780,18 @@ async function lade(){
   try{
     const r = await fetch('/api/report',{cache:'no-store'});
     const neu = await r.json();
-    // Die Lab-Kurve ist eine Tastatur-Lesefläche. Ein Re-Render mitten in der
-    // Bedienung würde Fokus, Tooltip und Live-Region zurücksetzen.
-    const a = document.activeElement;
-    if (a && a.closest && a.closest('#v-lab')) return;
+    // Daten und Kopfzeile immer aktualisieren. Nur den Ansichts-Render
+    // pausieren, wenn der Fokus im sichtbaren Lab-Detail liegt; sonst würden
+    // Fokus, Tooltip und Live-Region zurückgesetzt.
     R = neu;
+    // Nichtvisueller Datenstand für den Auto-Refresh-Test: Bei fokussiertem
+    // Lab-Detail wird nur der Ansichts-Render pausiert, R aber ersetzt. Das
+    // Attribut macht die übernommenen Berichtsdaten prüfbar, ohne die stabile
+    // Lab-Ansicht neu zu zeichnen.
+    const laborDaten = document.querySelector('#labList');
+    if (laborDaten) laborDaten.dataset.berichtKandidat = neu.validierungen?.[0]?.symbol || '';
     renderTop();
-    zeichne();
+    if (!document.activeElement?.closest('#v-lab:not([hidden]) #labDetail')) zeichne();
   }catch(e){
     $('#banner').className = 'banner b-sim';
     $('#banner').innerHTML = '<b>FEHLER</b>' + esc(e.message);

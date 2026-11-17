@@ -1531,6 +1531,189 @@ async function pruefeLabAutoRefreshNegativ(browser, url, breite) {
   return befunde;
 }
 
+/**
+ * Drei Regressionstests für den Lab-Guard: Fokus auf der Lab-Liste, auf einem
+ * Lab-Tab und in einem ausgeblendeten Lab darf den Ansichts-Render nicht
+ * blockieren. Die API-Antwort erhält einen eindeutigen Marker in allen
+ * Kandidatensymbolen; ein Rückfall auf den breiten #v-lab-Guard überspringt den
+ * Render und der Marker fehlt anschliessend in #labList.
+ */
+const LAB_FOKUS_VARIANTEN = [
+  {
+    id: 'liste',
+    label: 'die Lab-Liste',
+    fokussiere: async (page) => {
+      const eintrag = page.locator('#labList .li').first();
+      if (!(await eintrag.count())) return ['Lab-Fokus-Prüfung ohne Lab-Listeneintrag'];
+      await eintrag.focus();
+      const stand = await page.evaluate(() => {
+        const a = document.activeElement;
+        const li = a?.closest?.('#labList .li');
+        return {
+          treffer: Boolean(li),
+          detail: Boolean(a?.closest?.('#labDetail')),
+          tag: a ? a.tagName : '',
+          text: li ? li.innerText.replace(/\s+/g, ' ').trim().slice(0, 60) : '',
+        };
+      });
+      if (!stand.treffer || stand.detail) {
+        return [`Lab-Fokus-Prüfung konnte keinen Listeneintrag ausserhalb von #labDetail fokussieren (${stand.tag}, «${stand.text}»)`];
+      }
+      return [];
+    },
+  },
+  {
+    id: 'tab',
+    label: 'einen Lab-Tab',
+    fokussiere: async (page) => {
+      const tab = page.locator('#labTabs .tab').first();
+      if (!(await tab.count())) return ['Lab-Fokus-Prüfung ohne Lab-Tab'];
+      await tab.focus();
+      const stand = await page.evaluate(() => {
+        const a = document.activeElement;
+        const treffer = a?.closest?.('#labTabs .tab');
+        return {
+          treffer: Boolean(treffer),
+          detail: Boolean(a?.closest?.('#labDetail')),
+          tag: a ? a.tagName : '',
+          text: treffer ? treffer.innerText.replace(/\s+/g, ' ').trim().slice(0, 60) : '',
+        };
+      });
+      if (!stand.treffer || stand.detail) {
+        return [`Lab-Fokus-Prüfung konnte keinen Lab-Tab ausserhalb von #labDetail fokussieren (${stand.tag}, «${stand.text}»)`];
+      }
+      return [];
+    },
+  },
+  {
+    id: 'ausgeblendet',
+    label: 'das ausgeblendete Lab',
+    fokussiere: async (page) => {
+      const stand = await page.evaluate(() => {
+        const tab = document.querySelector('#labTabs .tab');
+        if (!tab) return { fehlt: true };
+        tab.focus();
+        const fokussiert = document.activeElement === tab;
+        const lab = document.querySelector('#v-lab');
+        lab.hidden = true;
+        // Chromium kann den Fokus beim Ausblenden asynchron auf body setzen.
+        // Der Guard soll aber auch dann nicht blockieren, wenn der Fokus im
+        // ausgeblendeten Lab verbleibt; diesen Zustand fixieren wir hier.
+        Object.defineProperty(document, 'activeElement', {
+          configurable: true,
+          get: () => tab,
+        });
+        const a = document.activeElement;
+        return {
+          fokussiert,
+          hidden: lab.hidden === true,
+          imLab: Boolean(a?.closest?.('#v-lab')),
+          tag: a ? a.tagName : '',
+        };
+      });
+      if (stand.fehlt) return ['Lab-Fokus-Prüfung ohne Lab-Tab'];
+      if (!stand.fokussiert) return ['Lab-Fokus-Prüfung konnte den Lab-Tab nicht fokussieren'];
+      if (!stand.hidden) return ['Lab-Fokus-Prüfung konnte das Lab nicht ausblenden'];
+      if (!stand.imLab) {
+        return [`Lab-Fokus-Prüfung verlor den Fokus beim Ausblenden des Labs (${stand.tag})`];
+      }
+      return [];
+    },
+  },
+];
+
+async function pruefeLabFokusAutoRefresh(browser, url, breite, variante) {
+  const befunde = [];
+  const seitenfehler = [];
+  const page = await browser.newPage({ viewport: { width: breite, height: 900 }, deviceScaleFactor: 1 });
+  page.on('pageerror', err => seitenfehler.push(String(err)));
+  try {
+    // Die Playwright-Uhr wird vor dem Laden installiert. Damit lässt sich der
+    // echte 8-Sekunden-Interval-Callback gezielt auslösen, ohne auf den Takt
+    // zu warten oder zwischen Fokus und Refresh ein Zeitfenster zu öffnen.
+    await page.clock.install();
+    await page.goto(`${url}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(
+      () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
+      null, { timeout: 15000 },
+    );
+    await page.locator('.nav[data-v="lab"]').click();
+    await page.locator('#labList .li').first().waitFor({ state: 'visible', timeout: 5000 });
+    if (!await waehleKurvenKandidat(page)) return [`Lab-Fokus-Prüfung (${variante.label}) ohne Kapitalkurve`];
+
+    const fokusBefunde = await variante.fokussiere(page);
+    if (fokusBefunde.length) return [...befunde, ...fokusBefunde];
+
+    const marker = `refresh-${variante.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const timeout = Symbol('lab-fokus-refresh-timeout');
+    let meldeRefresh;
+    let routeFehler = null;
+    const antwortVersprechen = new Promise(resolve => { meldeRefresh = resolve; });
+    const handler = async route => {
+      try {
+        const antwort = await route.fetch();
+        if (!antwort.ok()) {
+          await route.fulfill({ response: antwort });
+          meldeRefresh({ status: antwort.status(), ok: false });
+          return;
+        }
+        const daten = await antwort.json();
+        if (!daten || typeof daten !== 'object' || Array.isArray(daten)) {
+          throw new Error('Bericht ist kein JSON-Objekt');
+        }
+        if (!Array.isArray(daten.validierungen) || daten.validierungen.length === 0) {
+          throw new Error('Bericht enthält keine Validierungen');
+        }
+        for (const kandidat of daten.validierungen) {
+          if (kandidat && typeof kandidat === 'object') kandidat.symbol = marker;
+        }
+        daten.datenquelle = marker;
+        await route.fulfill({ response: antwort, json: daten });
+        meldeRefresh({ status: antwort.status(), ok: true });
+      } catch (fehler) {
+        routeFehler = fehler instanceof Error ? fehler.message : String(fehler);
+        await route.abort().catch(() => {});
+        meldeRefresh(null);
+      }
+    };
+    await page.route('**/api/report', handler);
+    await page.clock.runFor(8000);
+    let timeoutId;
+    const timeoutVersprechen = new Promise(resolve => {
+      timeoutId = setTimeout(() => resolve(timeout), 5000);
+    });
+    const antwort = await Promise.race([antwortVersprechen, timeoutVersprechen]);
+    clearTimeout(timeoutId);
+    if (antwort === timeout) {
+      befunde.push(`Lab-Fokus-Auto-Refresh (${variante.label}) lieferte nach dem Vorspulen keine Antwort`);
+    } else if (!antwort) {
+      befunde.push(`Lab-Fokus-Auto-Refresh-Antwort (${variante.label}) konnte nicht geprüft werden${routeFehler ? ` (${routeFehler})` : ''}`);
+    } else if (!antwort.ok || antwort.status !== 200) {
+      befunde.push(`Lab-Fokus-Auto-Refresh (${variante.label}) antwortet mit HTTP ${antwort.status}`);
+    } else {
+      const bannerSichtbar = await page.waitForFunction(
+        m => (document.querySelector('#banner')?.textContent || '').includes(m),
+        marker, { timeout: 3000 },
+      ).then(() => true).catch(() => false);
+      const listeSichtbar = await page.waitForFunction(
+        m => (document.querySelector('#labList')?.textContent || '').includes(m),
+        marker, { timeout: 3000 },
+      ).then(() => true).catch(() => false);
+      if (!bannerSichtbar) befunde.push(`Lab-Fokus-Auto-Refresh-Daten (${variante.label}) wurden nicht verarbeitet`);
+      if (!listeSichtbar) {
+        befunde.push(`Auto-Refresh hält die Lab-Liste bei Fokus auf ${variante.label} an (breiter #v-lab-Guard?)`);
+      }
+    }
+    await page.unroute('**/api/report', handler).catch(() => {});
+  } catch (fehler) {
+    befunde.push(`Lab-Fokus-Prüfung (${variante.label}) fehlgeschlagen: ${fehler instanceof Error ? fehler.message : fehler}`);
+  } finally {
+    if (seitenfehler.length) befunde.push(`Lab-Fokus-Seitenfehler (${variante.label}): ${seitenfehler.join('; ')}`);
+    await page.close();
+  }
+  return befunde;
+}
+
 /** Die Zoom-Knöpfe dürfen ihre Symbole nicht abschneiden. */
 async function pruefeZoom(page, ansicht) {
   return page.evaluate((ansicht) => {
@@ -2497,7 +2680,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const fehler = [];
   const hinweise = new Set();
-  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, refreshGesamt = 0, refreshNegativGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, legendeDesktopGeprueft = 0, kopfGeprueft = 0, schmaleAnsichten = 0, schreibwegeGesamt = 0, claimPruefungen = 0;
+  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, refreshGesamt = 0, refreshNegativGesamt = 0, labFokusGesamt = 0, listenRefreshGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, legendeDesktopGeprueft = 0, kopfGeprueft = 0, schmaleAnsichten = 0, schreibwegeGesamt = 0, claimPruefungen = 0;
 
   try {
     const kopfBefunde = await pruefeKopfzeile(browser, opt.url);
@@ -2584,6 +2767,12 @@ async function main() {
               const refreshNegativBefunde = await pruefeLabAutoRefreshNegativ(browser, opt.url, breite);
               if (refreshNegativBefunde.length === 0) refreshNegativGesamt++;
               for (const text of refreshNegativBefunde) fehler.push(`${breite}px/lab-negativ: ${text}`);
+              for (const variante of LAB_FOKUS_VARIANTEN) {
+                const labFokusBefunde = await pruefeLabFokusAutoRefresh(browser, opt.url, breite, variante);
+                if (labFokusBefunde.length === 0) labFokusGesamt++;
+                if (variante.id === 'liste' && labFokusBefunde.length === 0) listenRefreshGesamt++;
+                for (const text of labFokusBefunde) fehler.push(`${breite}px/${ansicht}: ${text}`);
+              }
             }
           } else {
             hinweise.add('Keine Kapitalkurve im Lab gefunden – Tooltip und Tastatur nicht geprüft.');
@@ -2637,7 +2826,7 @@ async function main() {
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${refreshGesamt ? ` · Refresh ${refreshGesamt}× geprüft (HTTP 200, Marker)` : ''}${refreshNegativGesamt ? ` · Refresh-Negativ ${refreshNegativGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${refreshGesamt ? ` · Refresh ${refreshGesamt}× geprüft (HTTP 200, Marker)` : ''}${refreshNegativGesamt ? ` · Refresh-Negativ ${refreshNegativGesamt}× geprüft` : ''}${labFokusGesamt ? ` · Lab-Fokus ${labFokusGesamt}× geprüft` : ''}${listenRefreshGesamt ? ` · Listen-Refresh ${listenRefreshGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {
