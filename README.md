@@ -318,8 +318,8 @@ Die 240-px-Prüfung misst alle zwölf Ansichten in normaler Schrift bei
 | Konferenz | 240 px | OK |
 
 Der erfolgreiche [text250-CI-Lauf](https://github.com/gxfrty-21/orakel/actions/runs/43811966526/job/133115401944)
-bestätigt diese 12/12-Prüfung. Der CI-Schritt verlangt dafür die Zusammenfassung
-`240px: 12/12 Ansichten ohne horizontalen Überlauf`.
+bestätigt diese 12/12-Prüfung. Der CI-Schritt prüft dafür die expliziten
+Fall-IDs `text250.240.<ansicht>` aus dem maschinenlesbaren Ergebnis.
 
 Der spätere erfolgreiche [CI-Lauf 43939906217](https://github.com/gxfrty-21/orakel/actions/runs/43939906217)
 auf PR-Head `5f21361` bestätigt diese Prüfung ebenfalls; alle sechs Jobs waren
@@ -423,9 +423,11 @@ Punkt oder Bindestrich bleiben die Quellenzeilen in normaler Darstellung ohne
 Die Testdaten werden nur ins DOM injiziert und nicht in SQLite geschrieben. Die
 Zusammenfassung meldet `Claims 4× geprüft` (250 % bei 360, 320 und 280 px
 sowie zusätzlich 240 px in normaler Schrift) sowie explizit
-`Langhost 114 Zeichen: 4× geprüft`; damit ist der
+`Langhost 114 Zeichen: 4× geprüft`. Diese Zähler sind nur für Menschen lesbar;
+verbindlich sind die expliziten IDs `text250.claims.<breite>` und
+`text250.langhost114.<breite>` im maschinenlesbaren Ergebnis. Damit ist der
 Extremfall ohne Punkt oder Bindestrich unabhängig von der Claim-Zusammenfassung
-im Log nachweisbar.
+im Ergebnis nachweisbar.
 
 Gezielt nur die Spider-Quellenzeile prüfen:
 
@@ -577,10 +579,19 @@ entfernt gezielt einen Agenten aus Cluster A und verlangt den Befund samt Screen
 `selbsttest-agent-...-abteilung-a-hat-9-statt-10-agenten.png`. In GitHub Actions
 läuft derselbe Prüflauf als eigener
 Job `text250` der Workflow-Datei `.github/workflows/tests.yml`; bei Erfolg lädt
-er `lauf.log` und `negativtest.log` kompakt als Artefakt
-`text250-laufprotokoll` hoch. Schlägt er fehl, lädt er Bilder, Befundtexte und
-HTML als Artefakt `text250-diagnose` und das Serverprotokoll als
-`text250-serverlog` hoch (je 7 Tage).
+er `lauf.log`, `negativtest.log` und das maschinenlesbare `ergebnis.json`
+kompakt als Artefakt `text250-laufprotokoll` hoch. Schlägt er fehl, lädt er
+Bilder, Befundtexte und HTML als Artefakt `text250-diagnose` und das
+Serverprotokoll als `text250-serverlog` hoch (je 7 Tage).
+
+Der Lauf schreibt mit `--ergebnis artifacts/text250/ergebnis.json` ein
+JSON-Ergebnis mit stabilen Fall-IDs. CI prüft es mit
+`scripts/pruefe-text250-ergebnis.mjs` gegen
+`scripts/text250-required-checks.json`. Zu den Pflichtfällen gehören die
+zwölf 240-px-Ansichten, die vier Claim-Breiten, der 114-Zeichen-Langhost ohne
+Punkt oder Bindestrich, der Lab-Auto-Refresh mit HTTP 200 und Marker sowie die
+beiden Lab-Fokus-Varianten. Die Zähler im Klartextlog wie `Claims 4×` sind nur
+noch für Menschen lesbar und kein CI-Gate.
 
 Nach einem fehlgeschlagenen, abgebrochenen oder abgelaufenen Lauf. Die Befehle
 setzen eine angemeldete GitHub CLI voraus (`gh auth login`):

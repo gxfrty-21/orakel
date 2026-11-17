@@ -1,0 +1,106 @@
+{
+  "schema": "text250-required-checks.v1",
+  "description": "Pflichtfälle des Text250-Browserlaufs. Jede ID muss im maschinenlesbaren Ergebnis mit status=passed vorhanden sein.",
+  "checks": [
+    {
+      "id": "text250.header.1024",
+      "description": "Kopfzeile bei 1024 px ohne horizontalen Überlauf und mit sichtbarem Lauf-starten-Knopf."
+    },
+    {
+      "id": "text250.240.overview",
+      "description": "Übersicht bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+    },
+    {
+      "id": "text250.240.risk",
+      "description": "Risiko & Daten bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+    },
+    {
+      "id": "text250.240.lab",
+      "description": "Lab bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+    },
+    {
+      "id": "text250.240.strat",
+      "description": "Strategien bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+    },
+    {
+      "id": "text250.240.research",
+      "description": "Research bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+    },
+    {
+      "id": "text250.240.globe",
+      "description": "Weltkugel bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+    },
+    {
+      "id": "text250.240.betrieb",
+      "description": "Betrieb bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+    },
+    {
+      "id": "text250.240.ship",
+      "description": "Raumschiff bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+    },
+    {
+      "id": "text250.240.spider",
+      "description": "Spider bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+    },
+    {
+      "id": "text250.240.kb",
+      "description": "Wissensbank bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+    },
+    {
+      "id": "text250.240.agents",
+      "description": "Agentenraum bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+    },
+    {
+      "id": "text250.240.konf",
+      "description": "Konferenz bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+    },
+    {
+      "id": "text250.legend.1440",
+      "description": "Kompakte Abteilungslegende bei 1440 px vollständig und ohne horizontalen Überlauf."
+    },
+    {
+      "id": "text250.claims.360",
+      "description": "Claim-Karte samt Widerspruchsdetails bei 360 px in 250 % ohne Überlauf."
+    },
+    {
+      "id": "text250.claims.320",
+      "description": "Claim-Karte samt Widerspruchsdetails bei 320 px in 250 % ohne Überlauf."
+    },
+    {
+      "id": "text250.claims.280",
+      "description": "Claim-Karte samt Widerspruchsdetails bei 280 px in 250 % ohne Überlauf."
+    },
+    {
+      "id": "text250.claims.240",
+      "description": "Claim-Karte samt Widerspruchsdetails bei 240 px in normaler Schrift ohne Überlauf."
+    },
+    {
+      "id": "text250.langhost114.360",
+      "description": "114-Zeichen-Langhost ohne Punkt oder Bindestrich bei 360 px in 250 % ohne Überlauf."
+    },
+    {
+      "id": "text250.langhost114.320",
+      "description": "114-Zeichen-Langhost ohne Punkt oder Bindestrich bei 320 px in 250 % ohne Überlauf."
+    },
+    {
+      "id": "text250.langhost114.280",
+      "description": "114-Zeichen-Langhost ohne Punkt oder Bindestrich bei 280 px in 250 % ohne Überlauf."
+    },
+    {
+      "id": "text250.langhost114.240",
+      "description": "114-Zeichen-Langhost ohne Punkt oder Bindestrich bei 240 px in normaler Schrift ohne Überlauf."
+    },
+    {
+      "id": "text250.refresh",
+      "description": "Lab-Auto-Refresh mit HTTP 200, sichtbarem Datenmarker und unverändertem Fokus, Tooltip, Live-Region und Zeiger."
+    },
+    {
+      "id": "text250.lab-focus.knopf",
+      "description": "Lab-Fokus auf einem Knopf ausserhalb des Details blockiert den Auto-Refresh nicht."
+    },
+    {
+      "id": "text250.lab-focus.ausgeblendet",
+      "description": "Fokus im ausgeblendeten Lab blockiert den Auto-Refresh nicht."
+    }
+  ]
+}

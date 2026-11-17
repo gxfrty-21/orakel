@@ -255,32 +255,17 @@ jobs:
             exit 1
           fi
 
-          if ! node scripts/pruefe-text250.mjs --bilder artifacts/text250 | tee artifacts/text250/lauf.log; then
+          if ! node scripts/pruefe-text250.mjs --bilder artifacts/text250 \
+               --ergebnis artifacts/text250/ergebnis.json | tee artifacts/text250/lauf.log; then
             echo "--- Serverprotokoll ---"
             tail -50 artifacts/text250/server.log
             exit 1
           fi
-          if ! grep -q 'Claims 4× geprüft' artifacts/text250/lauf.log; then
-            echo "Claim-Prüfung wurde nicht für alle vier Breiten ausgeführt"
-            exit 1
-          fi
-          if ! grep -q 'Langhost 114 Zeichen: 4× geprüft' artifacts/text250/lauf.log; then
-            echo "Der 114-Zeichen-Langhost wurde nicht für alle vier Claim-Breiten geprüft"
-            exit 1
-          fi
-          if ! grep -q 'Refresh 1× geprüft (HTTP 200, Marker)' artifacts/text250/lauf.log; then
-            echo "Auto-Refresh-Prüfung inklusive HTTP- und Marker-Nachweis wurde nicht ausgeführt"
-            exit 1
-          fi
-          if ! grep -q 'Lab-Fokus 2× geprüft' artifacts/text250/lauf.log; then
-            echo "Lab-Fokus-Prüfungen für Lab-Knopf und ausgeblendetes Lab wurden nicht ausgeführt"
-            exit 1
-          fi
-          if ! grep -q '240px: 12/12 Ansichten ohne horizontalen Überlauf' \
-               artifacts/text250/lauf.log; then
-            echo "240-px-Prüfung wurde nicht für alle zwölf Ansichten ausgeführt"
-            exit 1
-          fi
+          # CI prüft explizite Fall-IDs aus Ergebnis und Pflichtmanifest. Die
+          # Klartextzähler bleiben nur für Menschen lesbar und sind kein Gate.
+          node scripts/pruefe-text250-ergebnis.mjs \
+            --ergebnis artifacts/text250/ergebnis.json \
+            --pflicht scripts/text250-required-checks.json
 
           # Der Negativtest schreibt absichtlich falsche Kerndaten ins DOM und
           # muss für jede der sechs Inhaltsansichten, den fehlenden Abteilungstab,
@@ -504,6 +489,7 @@ jobs:
           path: |
             artifacts/text250/lauf.log
             artifacts/text250/negativtest.log
+            artifacts/text250/ergebnis.json
           if-no-files-found: error
           retention-days: 7
 
@@ -517,6 +503,7 @@ jobs:
             artifacts/text250/*.png
             artifacts/text250/*.html
             artifacts/text250/*.txt
+            artifacts/text250/ergebnis.json
             artifacts/text250/selbsttest/*.png
             artifacts/text250/selbsttest/*.html
             artifacts/text250/selbsttest/*.txt
