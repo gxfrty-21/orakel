@@ -574,12 +574,13 @@ er `lauf.log` und `negativtest.log` kompakt als Artefakt
 HTML als Artefakt `text250-diagnose` und das Serverprotokoll als
 `text250-serverlog` hoch (je 7 Tage).
 
-Der Job prüft den Lab-Refresh über `Refresh 1× geprüft (HTTP 200, Marker)` und
-seit dem Negativtest zusätzlich über `Refresh-Negativ 1× geprüft`. Der
-Negativtest blockiert den Acht-Sekunden-Refresh und erzwingt nach dem Verlassen
-des Lab-Fokus ein Re-Render; beide Fehlerbilder müssen als Befund erscheinen,
-sonst scheitert `text250`. Die Marker `Refresh-Negativ` und
-`Refresh 1× geprüft` werden im Erfolgsprotokoll ausgegeben.
+Der Job prüft den Lab-Refresh bei 360 und 280 px über
+`Refresh 2× geprüft (HTTP 200, Marker)` und seit dem Negativtest zusätzlich über
+`Refresh-Negativ 1× geprüft`. Der Negativtest blockiert den
+Acht-Sekunden-Refresh und erzwingt nach dem Verlassen des Lab-Fokus ein
+Re-Render; beide Fehlerbilder müssen als Befund erscheinen, sonst scheitert
+`text250`. Die Marker `Refresh-Negativ` und `Refresh 2× geprüft` werden im
+Erfolgsprotokoll ausgegeben.
 
 Nach einem fehlgeschlagenen, abgebrochenen oder abgelaufenen Lauf. Die Befehle
 setzen eine angemeldete GitHub CLI voraus (`gh auth login`):

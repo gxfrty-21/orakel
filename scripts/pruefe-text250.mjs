@@ -2571,10 +2571,16 @@ async function main() {
             const tastaturBefunde = await pruefeKurvenTastatur(page, ansicht);
             if (tastaturBefunde) tastaturGesamt++;
             for (const text of tastaturBefunde || []) fehler.push(`${breite}px/${ansicht}: ${text}`);
-            if (breite === opt.breiten[0]) {
+            // Der Refresh wird bei 360 und 280 px geprüft; das CI-Gate verlangt
+            // zwei erfolgreiche Prüfungen. Der Negativtest läuft einmal am
+            // ersten Breitenwert, weil er beide Fehlerbilder unabhängig von der
+            // Breite injiziert.
+            if (breite === 360 || breite === 280) {
               const refreshBefunde = await pruefeLabAutoRefresh(page, ansicht);
               if (refreshBefunde.length === 0) refreshGesamt++;
               for (const text of refreshBefunde) fehler.push(`${breite}px/${ansicht}: ${text}`);
+            }
+            if (breite === opt.breiten[0]) {
               const refreshNegativBefunde = await pruefeLabAutoRefreshNegativ(browser, opt.url, breite);
               if (refreshNegativBefunde.length === 0) refreshNegativGesamt++;
               for (const text of refreshNegativBefunde) fehler.push(`${breite}px/lab-negativ: ${text}`);
