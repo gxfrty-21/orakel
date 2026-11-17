@@ -293,8 +293,12 @@ zwölf Ansichten bei 240 px war mit `240px: 12/12` grün. Die Zuordnung zum
 Ursache war der 8-Sekunden-Auto-Refresh: Er baute die fokussierte Kapitalkurve
 neu auf und setzte Fokus, Tooltip und Live-Region zurück. Die 24 Meldungen sind
 Folge dieses einen Zustandsverlusts. Die App pausiert den Refresh jetzt bei
-Fokus im Lab-Bereich. Der deterministische 8,5-Sekunden-Test sowie der
-vollständige Standardlauf und der 240-px-250-%-Lauf sind ohne Befund.
+Fokus im sichtbaren Lab-Detail (insbesondere auf der Kapitalkurve) nur den
+Ansichts-Render; Daten und Kopfzeile werden weiter aktualisiert. Ein Fokus auf
+der Lab-Liste, einem anderen Lab-Element oder in einem ausgeblendeten Lab
+blockiert den Render nicht. Der deterministische Test mit echter
+/api/report-Antwort (HTTP 200, Marker) sowie der vollständige Standardlauf und
+der 240-px-250-%-Lauf sind ohne Befund.
 
 Der erfolgreiche CI-Job `text250` aus Run `43811966526` verwendete denselben
 Seed und denselben Lab-Code, lief mit 74,39 s aber etwas schneller als der
