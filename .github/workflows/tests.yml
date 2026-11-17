@@ -264,6 +264,10 @@ jobs:
             echo "Claim-Prüfung wurde nicht für alle vier Breiten ausgeführt"
             exit 1
           fi
+          if ! grep -q 'Refresh 1× geprüft' artifacts/text250/lauf.log; then
+            echo "Auto-Refresh-Prüfung wurde nicht ausgeführt"
+            exit 1
+          fi
           if ! grep -q '240px: 12/12 Ansichten ohne horizontalen Überlauf' \
                artifacts/text250/lauf.log; then
             echo "240-px-Prüfung wurde nicht für alle zwölf Ansichten ausgeführt"
