@@ -531,7 +531,8 @@ In einer frischen Ubuntu-24.04-Umgebung (amd64) fehlen Chromium oft die
 nötigen Laufzeitbibliotheken und Fonts. Das Setup-Skript lädt die Pakete als
 `.deb` herunter, entpackt sie in das ignorierte Verzeichnis `.playwright-local/`
 und richtet `LD_LIBRARY_PATH` sowie Fontconfig ein. Es installiert nichts
-systemweit, benötigt kein `sudo` und prüft am Ende den Chromium-Start:
+systemweit, benötigt kein `sudo` und prüft am Ende den Chromium-Start und die
+geladenen Font-Metriken:
 
 ```bash
 bash scripts/setup-playwright-local.sh
