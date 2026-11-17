@@ -268,6 +268,10 @@ jobs:
             echo "Auto-Refresh-Prüfung inklusive HTTP- und Marker-Nachweis wurde nicht ausgeführt"
             exit 1
           fi
+          if ! grep -q 'Lab-Fokus 3× geprüft' artifacts/text250/lauf.log; then
+            echo "Lab-Fokus-Prüfungen für Liste, Tab und ausgeblendetes Lab wurden nicht ausgeführt"
+            exit 1
+          fi
           if ! grep -q '240px: 12/12 Ansichten ohne horizontalen Überlauf' \
                artifacts/text250/lauf.log; then
             echo "240-px-Prüfung wurde nicht für alle zwölf Ansichten ausgeführt"
