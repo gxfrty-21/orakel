@@ -295,6 +295,19 @@ python scripts/nexus_claim_baseline.py \
 Die tatsächliche Abdeckung der 32 englischen Registerfeeds — Abruferfolg,
 Aktualität und pp-Ausbeute — steht als [Matrix in FEED-ABDECKUNG.md](FEED-ABDECKUNG.md).
 
+**Optional: gemischte Ansicht.** Wer die fünf pp-Meldungen bewusst zusammen
+mit den 34 Claim-Meldungen sehen will, schaltet die Diagnoseansicht explizit
+ein. Sie ist kein Standardlauf und ersetzt keine der beiden Baselines:
+
+```bash
+python scripts/nexus_claim_baseline.py --gemischt \
+  --output-dir artifacts/nexus-gemischt
+```
+
+Die Auswertung umfasst dann 39 Meldungen; die pp-Fälle beeinflussen
+Claim-Precision, Claim-Recall und Claim-Yield. Der Bericht kennzeichnet die
+Ansicht als `gemischt` und als „Nur Diagnose“.
+
 **Echter lokaler Lauf** mit zwölf produktiven Quellen (u. a. EZB, Fed, Bank of
 England, Bank of Japan, BBC, Guardian, WHO, UN):
 

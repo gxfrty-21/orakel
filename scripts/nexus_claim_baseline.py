@@ -5,7 +5,9 @@ Die Baseline liest einen versionierten JSON-Korpus. Der allgemeine
 Claim-Korpus enthält 34 reale RSS-Meldungen aus dem Seed-Snapshot; die fünf
 gezielten pp-Meldungen liegen getrennt in `nexus_pp_probe_korpus.json`. Beide
 Korpora werden mit derselben produktiven Extraktion ausgewertet, aber getrennt
-berichtet. Die Baseline ist keine neue Heuristik und keine LLM-Auswertung.
+berichtet. Die gemischte Ansicht ist nur über `--gemischt` erreichbar und dient
+ausschliesslich der Diagnose. Die Baseline ist keine neue Heuristik und keine
+LLM-Auswertung.
 """
 
 from __future__ import annotations
@@ -35,6 +37,29 @@ def lade_korpus(pfad: str | Path = STANDARD_KORPUS) -> dict[str, Any]:
     if not isinstance(daten, dict) or not isinstance(daten.get("meldungen"), list):
         raise ValueError("Korpus braucht ein Objekt mit einer Meldungsliste")
     return daten
+
+
+def lade_gemischten_korpus(
+    claim_pfad: str | Path = STANDARD_KORPUS,
+    pp_pfad: str | Path = PP_PROBE_KORPUS,
+) -> dict[str, Any]:
+    """Nur für die optionale Diagnose: 34 Claim- plus 5 pp_probe-Meldungen."""
+    claim = lade_korpus(claim_pfad)
+    pp_probe = lade_korpus(pp_pfad)
+    meldungen = [*claim["meldungen"], *pp_probe["meldungen"]]
+    ids = [meldung["id"] for meldung in meldungen]
+    if len(ids) != len(set(ids)):
+        raise ValueError("Gemischt: doppelte Meldungs-IDs")
+    return {
+        "version": f"{claim.get('version')}+{pp_probe.get('version')}",
+        "typ": "gemischt",
+        "beschreibung": (
+            "Optionale Diagnoseansicht aus 34 Claim-Meldungen und 5 "
+            "pp_probe-Meldungen; nicht die Standard-Baseline."
+        ),
+        "stand": claim.get("stand"),
+        "meldungen": meldungen,
+    }
 
 
 def _aktuelle_aussage(meldung: dict[str, Any]) -> dict[str, Any] | None:
@@ -258,6 +283,15 @@ def _bericht(ergebnis: dict[str, Any], korpus: dict[str, Any]) -> str:
         f"**Stand:** {ergebnis['stand']}  ",
         "**Extraktion:** aktueller Produktivpfad (`Titel`, sonst erster Satz)",
         "",
+    ]
+    if korpus.get("typ") == "gemischt":
+        zeilen += [
+            "> **Nur Diagnose:** 34 Claim- und 5 pp_probe-Meldungen gemeinsam.",
+            "> Diese Ansicht ist keine Standard-Baseline; die pp-Meldungen verändern",
+            "> Claim-Precision, Claim-Recall und Claim-Yield.",
+            "",
+        ]
+    zeilen += [
         "## Kennzahlen",
         "",
         "| Kennzahl | Wert |",
@@ -353,7 +387,14 @@ def _bericht(ergebnis: dict[str, Any], korpus: dict[str, Any]) -> str:
             f"| `{fall['id']}` | {fall['erwartet_claim']} | {fall['erkannt_claim']} | "
             f"{fall['korrekt']} | {abweichung} |"
         )
-    if ergebnis["pp_erwartet"]:
+    if korpus.get("typ") == "gemischt":
+        grenzen = [
+            "- Diese gemischte Ansicht ist nur eine optionale Diagnose: 34 Claim-",
+            "  und 5 pp_probe-Meldungen werden gemeinsam ausgewertet. Sie ist keine",
+            "  Standard-Baseline; die pp-Meldungen verändern Claim-Precision/Recall",
+            "  und Claim-Yield.",
+        ]
+    elif ergebnis["pp_erwartet"]:
         grenzen = [
             "- Der `pp_probe` ist eine gezielte Stichprobe aus fünf echten",
             "  RSS-Meldungen und keine laufende Produktions- oder Zufallsstichprobe.",
@@ -388,15 +429,28 @@ def _bericht(ergebnis: dict[str, Any], korpus: dict[str, Any]) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
+    auswahl = parser.add_mutually_exclusive_group()
+    auswahl.add_argument(
         "--korpus", type=Path, default=STANDARD_KORPUS,
         help=("Korpus-JSON; pp_probe: tests/fixtures/nexus_pp_probe_korpus.json")
     )
+    auswahl.add_argument(
+        "--gemischt", action="store_true",
+        help=(
+            "34 Claim- und 5 pp_probe-Meldungen nur zur Diagnose gemeinsam "
+            "auswerten; nicht die Standard-Baseline"
+        ),
+    )
     parser.add_argument("--output-dir", type=Path, default=None)
     args = parser.parse_args()
-    korpus = lade_korpus(args.korpus)
+    korpus = lade_gemischten_korpus() if args.gemischt else lade_korpus(args.korpus)
     if args.output_dir is None:
-        ordner = "nexus-pp-probe" if korpus.get("typ") == "pp_probe" else "nexus-claim-baseline"
+        if korpus.get("typ") == "pp_probe":
+            ordner = "nexus-pp-probe"
+        elif korpus.get("typ") == "gemischt":
+            ordner = "nexus-gemischt"
+        else:
+            ordner = "nexus-claim-baseline"
         args.output_dir = ROOT / "artifacts" / ordner
     ergebnis = bewerte(korpus)
     args.output_dir.mkdir(parents=True, exist_ok=True)

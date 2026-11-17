@@ -140,6 +140,29 @@ def test_pp_probe_baseline_ist_reproduzierbar_und_vollstaendig():
     assert all(erster["feldgesamt"][feld] == 5 for feld in modul.FELDER)
 
 
+def test_gemischte_ansicht_ist_nur_optional():
+    modul = _modul("nexus_gemischt_test", ROOT / "scripts" / "nexus_claim_baseline.py")
+
+    assert len(modul.lade_korpus()["meldungen"]) == 34
+
+    gemischt = modul.lade_gemischten_korpus()
+    assert gemischt["typ"] == "gemischt"
+    assert len(gemischt["meldungen"]) == 39
+    assert len({m["id"] for m in gemischt["meldungen"]}) == 39
+
+    ergebnis = modul.bewerte(gemischt)
+    assert ergebnis["meldungen"] == 39
+    assert ergebnis["erwartete_claims"] == 9
+    assert ergebnis["erkannte_claims"] == 7
+    assert ergebnis["richtige_claims"] == 6
+    assert ergebnis["claim_precision"] == 0.8571
+    assert ergebnis["claim_recall"] == 0.6667
+    assert ergebnis["pp_erwartet"] == 5
+    assert ergebnis["pp_tp"] == 5
+    assert ergebnis["pp_fp"] == 0
+    assert ergebnis["pp_fn"] == 0
+
+
 @pytest.mark.parametrize(
     ("feld", "falscher_wert"),
     [
