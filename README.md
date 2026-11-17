@@ -270,15 +270,17 @@ ORAKEL_DB_PFAD=/tmp/orakel-widerspruch.db python -m orakel serve --host 127.0.0.
 # Im ersten Terminal:
 node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300
 
-# Negativtest: verfälscht im DOM den Widerspruchsgrund und entfernt danach
-# die Widerspruchszeile; beide Fälle müssen als Fehler erkannt werden.
+# Negativtest: verfälscht im DOM den Widerspruchsgrund, entfernt danach
+# die Widerspruchszeile und entfernt sie zusätzlich aus einer Kopie der
+# API-Antwort; alle drei Fälle müssen als Fehler erkannt werden.
 node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300 --negativtest
 ```
 
-Der Negativtest verändert keine Datenbank und keine API-Antwort. Er prüft, dass
-derselbe Kartenprüfer eine falsche Widerspruchszeile und eine fehlende
-Widerspruchszeile zuverlässig ablehnt. Der CI-Job `text250` führt den positiven
-Test und den Negativtest auf einer frischen Seed-Kopie aus. Das
+Der Negativtest verändert keine Datenbank und keine echte API-Antwort. Er prüft,
+dass derselbe Kartenprüfer eine falsche Widerspruchszeile und eine fehlende
+Widerspruchszeile zuverlässig ablehnt und dass der API-Prüfer eine aus der
+API-Antwort entfernte Widerspruchszeile erkennt. Der CI-Job `text250` führt den
+positiven Test und den Negativtest auf einer frischen Seed-Kopie aus. Das
 Seed-Skript verweigert eine fehlende Zieldatenbank, damit es nicht versehentlich
 eine neue Produktionsdatenbank anlegt.
 
