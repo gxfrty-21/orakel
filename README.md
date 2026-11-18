@@ -279,10 +279,15 @@ node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300 --negativtes
 Der Negativtest verändert keine Datenbank und keine echte API-Antwort. Er prüft,
 dass derselbe Kartenprüfer eine falsche Widerspruchszeile und eine fehlende
 Widerspruchszeile zuverlässig ablehnt und dass der API-Prüfer eine aus der
-API-Antwort entfernte Widerspruchszeile erkennt. Der CI-Job `text250` führt den
-positiven Test und den Negativtest auf einer frischen Seed-Kopie aus. Das
-Seed-Skript verweigert eine fehlende Zieldatenbank, damit es nicht versehentlich
-eine neue Produktionsdatenbank anlegt.
+API-Antwort entfernte Widerspruchszeile erkennt. Der eigene CI-Job
+`Widerspruch-E2E 3/3` führt den positiven Test und den Negativtest auf einer
+frischen Seed-Kopie aus. Sein stabiler Check-Name ist `Widerspruch-E2E 3/3`;
+bei Erfolg lädt er `lauf.log` und `negativtest.log` als Artefakt
+`widerspruch-e2e-3-3-erfolg` hoch; zusätzlich erscheint
+`Widerspruch-E2E-Negativtest: 3/3 bestanden` im Job-Log und in der
+Job-Zusammenfassung. Das Seed-Skript verweigert eine fehlende
+Zieldatenbank, damit es nicht versehentlich eine neue Produktionsdatenbank
+anlegt.
 
 ## Browser-Prüfung bei grosser Schrift
 
@@ -425,8 +430,10 @@ Punkt oder Bindestrich bleiben die Quellenzeilen in normaler Darstellung ohne
 Die Testdaten werden nur ins DOM injiziert und nicht in SQLite geschrieben. Die
 Zusammenfassung meldet `Claims 4× geprüft` (250 % bei 360, 320 und 280 px
 sowie zusätzlich 240 px in normaler Schrift) sowie explizit
-`Langhost 114 Zeichen: 4× geprüft`. Diese Zähler sind nur für Menschen lesbar;
-verbindlich sind die expliziten IDs `text250.claims.<breite>` und
+`Langhost 114 Zeichen: 4× geprüft`. Beide Klartextzähler sind nur für
+Menschen lesbar und kein CI-Gate.
+Verbindlich sind die Zähler `claims: 4` und `langhost114: 4` im Check-Manifest
+sowie die expliziten IDs `text250.claims.<breite>` und
 `text250.langhost114.<breite>` im maschinenlesbaren Ergebnis. Damit ist der
 Extremfall ohne Punkt oder Bindestrich unabhängig von der Claim-Zusammenfassung
 im Ergebnis nachweisbar.
@@ -438,10 +445,20 @@ node scripts/pruefe-text250.mjs --ansichten spider --breiten 360,320,280
 ```
 
 Der Aufruf prüft die vier Langhost-Fälle bei 360, 320 und 280 px sowie die
-zusätzliche 240-px-Claim-Prüfung in normaler Schrift. Erwartet werden Exit-Code 0, `Claims 4× geprüft`,
-`Langhost 114 Zeichen: 4× geprüft` und die Zeile
+zusätzliche 240-px-Claim-Prüfung in normaler Schrift. Erwartet werden Exit-Code 0,
+`Claims 4× geprüft`, `Langhost 114 Zeichen: 4× geprüft` und die Zeile
 `240px/spider: OK · Seite 240px · Kopf 240/240 · Navigation 240/240`.
 Die Belastbarkeitsgrenze und der separate 240-px-Aufruf sind oben dokumentiert.
+
+Zusätzlich prüft der Lauf bei 240, 280 und 360 px in jeder Ansicht die
+Geometrie: Steuerelemente mit verstecktem Überlauf dürfen ihren Inhalt nicht
+abschneiden, statisch positionierte Steuerelemente innerhalb desselben
+Bausteins dürfen sich nicht überlappen, und der Tastaturfokus muss einen
+sichtbaren Ring zeigen. Gemessen werden DOM-Rechtecke
+und berechnete Stile; Screenshot-Goldens werden dafür nicht verwendet. Die
+Fälle `text250.geometrie.<breite>` und der Manifest-Zähler `geometrie`
+(36 im Profil `voll`, 6 im Seed-Profil) belegen, dass die Prüfung tatsächlich
+lief.
 
 Für Strategien, Research, das Raumschiff, Agentenraum und Konferenz gleicht der
 Lauf zusätzlich die Kerndaten mit `/api/report` ab: Zahl und Namen der
@@ -587,13 +604,42 @@ Bilder, Befundtexte und HTML als Artefakt `text250-diagnose` und das
 Serverprotokoll als `text250-serverlog` hoch (je 7 Tage).
 
 Der Lauf schreibt mit `--ergebnis artifacts/text250/ergebnis.json` ein
-JSON-Ergebnis mit stabilen Fall-IDs. CI prüft es mit
-`scripts/pruefe-text250-ergebnis.mjs` gegen
-`scripts/text250-required-checks.json`. Zu den Pflichtfällen gehören die
-zwölf 240-px-Ansichten, die vier Claim-Breiten, der 114-Zeichen-Langhost ohne
-Punkt oder Bindestrich, der Lab-Auto-Refresh mit HTTP 200 sowie getrennten
-Kopf- und Datenmarkern und die beiden Lab-Fokus-Varianten. Die Zähler im Klartextlog wie `Claims 4×` sind nur
-noch für Menschen lesbar und kein CI-Gate.
+JSON-Ergebnis mit stabilen Fall-IDs und den tatsächlichen Zählern im Feld
+`counters`. Enthält der Seed-Bericht keine Validierungen, bricht der Lauf vor
+der Inhaltsprüfung mit Exit-Code 1 ab, statt leer zu bestehen; die Meldung nennt
+`ORAKEL_DB_PFAD` und die Seed-Datenbank als Prüfpunkte. CI prüft es mit `scripts/pruefe-text250-ergebnis.mjs` gegen das
+Check-Manifest `scripts/text250-required-checks.json` (Schema
+`text250-check-manifest.v2`). Das Manifest nennt je Profil – `voll`,
+`seed-tastatur`, `negativtest`, `selbsttest-cluster` und `selbsttest-agent` –
+die erwarteten Zähler, die Pflichtfall-IDs und optional erlaubte Skips. CI
+vergleicht jeden erwarteten Zähler mit dem tatsächlichen Wert (zum Beispiel
+`refresh: 2` oder `langhost114: 4`) und scheitert ausserdem an fehlenden
+Pflichtfällen und an jedem unerwarteten Skip, also einem Fall mit
+`status: skipped`, den das Profil nicht ausdrücklich in `allow_skips` nennt.
+Zu den Pflichtfällen des Profils `voll` gehören die zwölf 240-px-Ansichten,
+die vier Claim-Breiten, der 114-Zeichen-Langhost ohne Punkt oder Bindestrich,
+der Lab-Auto-Refresh bei 360 und 280 px mit HTTP 200, sichtbarem Datenmarker,
+getrennten Kopf- und Datenmarkern und erneutem Rendern nach Fokusverlust sowie
+die beiden Lab-Fokus-Varianten. Die Klartextzeilen im Laufprotokoll wie
+`Claims 4×` oder `Refresh 2×` sind nur für Menschen lesbar und kein Gate.
+
+### CI auf Feature-Branches ohne Pull Request
+
+Ein Push auf einen Branch startet den Workflow `Tests` direkt; ein offener Pull
+Request ist dafür nicht nötig. `main` bleibt eingeschlossen, damit Railway sein
+"Wait for CI" weiterhin erkennt. Bei Branches mit offenem Pull Request entsteht
+dadurch zusätzlich zum PR-Lauf ein Push-Lauf. Zusätzlich ist der Workflow
+manuell startbar, sobald diese Fassung auf `main` und im gewählten Branch
+liegt:
+
+```bash
+gh workflow run tests.yml --ref ci/negativtest-13
+```
+
+GitHub bietet `workflow_dispatch` erst an, wenn die Workflow-Datei auf dem
+Default-Branch existiert; auch der gewählte Branch muss den Trigger enthalten.
+Für bereits gepushte Commits löst der neue Push-Trigger nicht rückwirkend aus.
+Der manuelle Lauf testet die Spitze des angegebenen Branches.
 
 Nach einem fehlgeschlagenen, abgebrochenen oder abgelaufenen Lauf. Die Befehle
 setzen eine angemeldete GitHub CLI voraus (`gh auth login`):
