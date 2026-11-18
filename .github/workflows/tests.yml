@@ -111,6 +111,27 @@ jobs:
           python scripts/pruefe_doku.py --negativtest
           python scripts/pruefe_doku.py
 
+  # Prüft, dass das Review-Paket ausschliesslich freigegebene Quellen aus HEAD
+  # enthält und jede Kopie byteweise zum Commit passt. Läuft ohne artifacts/,
+  # weil aus dem Commit in ein temporäres Verzeichnis gebaut wird.
+  review_paket:
+    name: Review-Paket
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Freigabe, Kopien und ZIP prüfen
+        run: |
+          python scripts/baue_review_paket.py --pruefen
+
   # Stellt sicher, dass das Dockerfile inklusive Seed-DB weiterhin baut.
   docker:
     runs-on: ubuntu-24.04
