@@ -268,7 +268,8 @@
     "EVIDENZ.json",
     "EVIDENZ.md",
     "ORAKEL-REVIEW-PAKET.md",
-    "QUELLEN-DECKUNG.md"
+    "QUELLEN-DECKUNG.md",
+    "QUICKSTART.md"
   ],
   "belege": [
     "belege/240px-kernaussagen-karte.png",
