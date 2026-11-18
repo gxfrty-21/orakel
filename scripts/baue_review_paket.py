@@ -187,7 +187,8 @@ def pruefe_unerlaubte_dateien(freigabe: dict, ausgabe: str) -> None:
         raise Abweichung('Nicht freigegebene Dateien im Paket: ' + ', '.join(sorted(unerlaubt)[:8]))
 
 
-def schreibe_manifest(eintraege: list[dict], ausgabe: str, commit: str, branch: str) -> None:
+def schreibe_manifest(eintraege: list[dict], ausgabe: str, commit: str, branch: str,
+                      freigabe: dict) -> None:
     liste = [{
         'target': e['target'],
         'sha256': e['sha256'],
@@ -306,7 +307,7 @@ def baue(freigabe: dict, commit: str, branch: str, ausgabe: str,
     eintraege = quellen + weitere
     pruefe_kopien(quellen, ausgabe)
     pruefe_unerlaubte_dateien(freigabe, ausgabe)
-    schreibe_manifest(eintraege, ausgabe, commit, branch)
+    schreibe_manifest(eintraege, ausgabe, commit, branch, freigabe)
     baue_zip(eintraege, ausgabe)
     zip_sha = sha256_datei(os.path.join(ausgabe, ZIP_NAME))
     with open(os.path.join(ausgabe, ZIP_NAME + '.sha256'), 'w', encoding='utf-8') as f:
