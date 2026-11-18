@@ -1812,15 +1812,17 @@ async function pruefeLabGuardLogik(browser, url, breite, bilderPfad = null) {
       vLab.hidden = true;
       ergebnis.versteckt = { detail: guard(detail), innen: guard(innen) };
       vLab.hidden = vorherHidden;
-      // Default-Parameter am echten Fokus prüfen.
+      // Default-Parameter am echten Fokus prüfen: das fokussierbare SVG der
+      // Kapitalkurve im Detail, kein synthetischer tabindex am Panel.
       liste.focus();
       ergebnis.aktivListe = guard();
-      const hatteTabindex = detail.hasAttribute('tabindex');
-      detail.tabIndex = -1;
-      detail.focus();
-      ergebnis.aktivDetail = guard();
-      if (!hatteTabindex) detail.removeAttribute('tabindex');
-      liste.focus();
+      const kurve = detail.querySelector('.wfoKurveFlaeche svg[tabindex]')
+        || detail.querySelector('[tabindex="0"], button, a[href]');
+      ergebnis.fokussierbar = Boolean(kurve);
+      if (kurve) {
+        kurve.focus();
+        ergebnis.aktivDetail = guard();
+      }
       return ergebnis;
     });
 
@@ -1837,7 +1839,11 @@ async function pruefeLabGuardLogik(browser, url, breite, bilderPfad = null) {
         if (wert !== false) befunde.push(`Guard(${name}) blockiert bei ausgeblendetem Lab (${wert}), erwartet false`);
       }
       if (stand.aktivListe !== false) befunde.push('Guard blockiert bei Fokus auf der Lab-Liste');
-      if (stand.aktivDetail !== true) befunde.push('Guard blockiert nicht bei Fokus im sichtbaren Lab-Detail');
+      if (!stand.fokussierbar) {
+        befunde.push('Lab-Guard-Prüfung ohne fokussierbares Element im Detail (Guard am echten Fokus nicht geprüft)');
+      } else if (stand.aktivDetail !== true) {
+        befunde.push('Guard blockiert nicht bei Fokus im sichtbaren Lab-Detail');
+      }
     }
   } catch (fehler) {
     befunde.push(`Lab-Guard-Prüfung fehlgeschlagen: ${fehler instanceof Error ? fehler.message : fehler}`);
@@ -1874,7 +1880,8 @@ async function pruefeLabPauseHinweis(browser, url, breite, bilderPfad = null) {
       befunde.push('Lab-Pause-Prüfung: die Lab-Liste ist nicht sichtbar (versteckte Knoten zählen nicht)');
       return befunde;
     }
-    await page.locator('#labDetail .card').first().waitFor({ state: 'visible', timeout: 5000 });
+    // Ein Kandidat mit Kapitalkurve liefert das fokussierbare SVG im Detail.
+    if (!await waehleKurvenKandidat(page)) befunde.push('Lab-Pause-Prüfung ohne Kapitalkurve');
 
     const hinweisVorher = await page.evaluate(() => {
       const el = document.querySelector('#labNeu');
@@ -1893,14 +1900,20 @@ async function pruefeLabPauseHinweis(browser, url, breite, bilderPfad = null) {
     }
     if (!hinweisVorher.hidden || hinweisVorher.text) befunde.push('Status ist ohne ausstehende Daten bereits sichtbar');
 
+    // Echter Fokus auf ein vorhandenes Bedienelement im Detail (SVG der
+    // Kapitalkurve oder ein Knopf), kein synthetischer tabindex am Panel.
     const fokusDetail = await page.evaluate(() => {
       const detail = document.querySelector('#labDetail');
-      if (!detail) return false;
-      detail.tabIndex = -1;
-      detail.focus();
-      return document.activeElement === detail;
+      if (!detail) return 'ohne_detail';
+      const ziel = detail.querySelector('.wfoKurveFlaeche svg[tabindex]')
+        || detail.querySelector('[tabindex="0"], button, a[href]');
+      if (!ziel) return 'ohne_ziel';
+      ziel.focus();
+      return document.activeElement?.closest?.('#labDetail') ? 'ok' : 'ohne_fokus';
     });
-    if (!fokusDetail) return [...befunde, 'Fokus liess sich nicht ins sichtbare Lab-Detail setzen'];
+    if (fokusDetail === 'ohne_detail') return [...befunde, 'Lab-Pause-Prüfung ohne Lab-Detail'];
+    if (fokusDetail === 'ohne_ziel') return [...befunde, 'Lab-Pause-Prüfung ohne fokussierbares Element im Detail'];
+    if (fokusDetail !== 'ok') return [...befunde, 'Fokus liess sich nicht ins sichtbare Lab-Detail setzen'];
 
     const marker = `pause-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const handler = async route => {
@@ -1921,39 +1934,57 @@ async function pruefeLabPauseHinweis(browser, url, breite, bilderPfad = null) {
     };
     await page.route('**/api/report', handler);
     await page.clock.runFor(8000);
-    await page.waitForFunction(
-      m => (document.querySelector('#banner')?.textContent || '').includes(m),
-      marker, { timeout: 3000 },
-    ).catch(() => {});
-    await page.waitForTimeout(200);
-
-    const leseStand = m => page.evaluate(stand => {
-      const sichtbar = el => {
+    // Auf den Endzustand warten statt feste Pausen: Daten übernommen und
+    // Status sichtbar. Schlägt die Pause fehl, läuft das in den Timeout.
+    // Sichtbarkeitshelfer einmal definieren und in Warten und Auslesen nutzen.
+    await page.evaluate(() => {
+      window.__sichtbar = el => {
         if (!el || el.closest('[hidden]')) return false;
         const r = el.getBoundingClientRect();
         const s = getComputedStyle(el);
         return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
       };
+    });
+    await page.waitForFunction(
+      m => {
+        const banner = document.querySelector('#banner');
+        const el = document.querySelector('#labNeu');
+        return Boolean(banner && (banner.textContent || '').includes(m))
+          && window.__sichtbar(el) && (el.textContent || '').includes('Neue Daten');
+      },
+      marker, { timeout: 3000 },
+    ).catch(() => {});
+
+    const leseStand = m => page.evaluate(stand => {
+      const liste = document.querySelector('#labList');
       const el = document.querySelector('#labNeu');
       return {
         banner: (document.querySelector('#banner')?.textContent || '').includes(stand),
-        listeMarker: [...document.querySelectorAll('#labList .li')]
-          .some(li => sichtbar(li) && (li.textContent || '').includes(stand)),
-        hinweisSichtbar: sichtbar(el) && (el?.textContent || '').includes('Neue Daten'),
-        hinweisText: (el?.textContent || '').trim(),
+        listeMarker: [...liste.querySelectorAll('.li')]
+          .some(li => window.__sichtbar(li) && (li.textContent || '').includes(stand)),
+        hinweisSichtbar: window.__sichtbar(el) && (el.textContent || '').includes('Neue Daten'),
+        hinweisText: (el.textContent || '').trim(),
         fokusInListe: Boolean(document.activeElement?.closest?.('#labList .li')),
-        fokusImDetail: Boolean(document.activeElement?.closest?.('#labDetail')),
       };
     }, m);
     const pausiert = await leseStand(marker);
     if (!pausiert.banner) befunde.push('Pausierter Render: neue Daten wurden nicht übernommen');
     if (pausiert.listeMarker) befunde.push('Pausierter Render: die Lab-Liste wurde trotz Fokus im Detail neu gezeichnet');
     if (!pausiert.hinweisSichtbar) befunde.push(`Pausierter Render: kein sichtbarer Status «neue Daten» (${pausiert.hinweisText || 'leer'})`);
-    if (!pausiert.fokusImDetail) befunde.push('Fokus lag vor dem Verlassen nicht mehr im Detail');
 
-    // Verlassen des Details: sofortiges Neuzeichnen ohne Zeitsprung.
+    // Verlassen des Details: sofortiges Neuzeichnen ohne Zeitsprung. Der
+    // Marker muss sichtbar in der Liste stehen und der Status verschwunden sein.
     await page.locator('#labList .li').first().focus();
-    await page.waitForTimeout(300);
+    await page.waitForFunction(
+      m => {
+        const liste = document.querySelector('#labList');
+        const el = document.querySelector('#labNeu');
+        return [...liste.querySelectorAll('.li')]
+          .some(li => window.__sichtbar(li) && (li.textContent || '').includes(m))
+          && el.hidden === true && !(el.textContent || '').trim();
+      },
+      marker, { timeout: 3000 },
+    ).catch(() => {});
     const danach = await leseStand(marker);
     if (!danach.listeMarker) befunde.push('Nach dem Verlassen des Details wurde nicht sofort neu gezeichnet');
     if (danach.hinweisSichtbar || danach.hinweisText) befunde.push('Status bleibt nach dem Neuzeichnen stehen');
