@@ -207,8 +207,18 @@ def schreibe_manifest(eintraege: list[dict], ausgabe: str, commit: str, branch: 
                 'log': eintrag['target'],
                 'log_sha256': eintrag['sha256'],
             })
+    gruppen = []
+    for gruppe in freigabe.get('gruppen') or []:
+        passend = [e for e in eintraege if e['target'].startswith(gruppe['praefix'])]
+        gruppen.append({
+            'name': gruppe['name'],
+            'praefix': gruppe['praefix'],
+            'zweck': gruppe['zweck'],
+            'dateien': len(passend),
+            'bytes': sum(e['bytes'] for e in passend),
+        })
     manifest = {
-        'schema': 'review-paket.v5',
+        'schema': 'review-paket.v6',
         'commit': commit,
         'branch': branch,
         'dirty': False,
@@ -216,6 +226,7 @@ def schreibe_manifest(eintraege: list[dict], ausgabe: str, commit: str, branch: 
         'freigabe': 'scripts/review-paket-freigabe.json',
         'builder': 'scripts/baue_review_paket.py',
         'generated_at': '2026-11-18T00:00:00Z',
+        'quellgruppen': gruppen,
         'pruefungen': sorted(pruefungen, key=lambda p: p['name']),
         'files': liste,
     }

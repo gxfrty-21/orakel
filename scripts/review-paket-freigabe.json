@@ -284,5 +284,17 @@
     "belege/evidenz-pytest.log",
     "belege/text250-ci-0481025-lauf.log",
     "belege/text250-ci-0481025-negativtest.log"
+  ],
+  "gruppen": [
+    {
+      "name": "orakel/nexus",
+      "praefix": "dateien/code/nexus/",
+      "zweck": "Claim-Erkennung, pp-Metriken, Widerspruchslogik, Feed- und Nachtbetrieb; Import in scripts/nexus_claim_baseline.py"
+    },
+    {
+      "name": "orakel/web/static",
+      "praefix": "dateien/web/static/",
+      "zweck": "Dashboard, Tooltip, Tastaturbedienung, Lab-Fokus und 240/360-Layout"
+    }
   ]
 }
