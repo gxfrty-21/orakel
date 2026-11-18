@@ -284,6 +284,10 @@ jobs:
             echo "Pausierter Render wurde nicht auf Statusanzeige und sofortiges Neuzeichnen geprüft"
             exit 1
           fi
+          if ! grep -q 'Listen-Umsortierung 1× geprüft' artifacts/text250/lauf.log; then
+            echo "Listen-Umsortierung wurde nicht auf Kandidaten-, Fokus- und Scrollerhalt geprüft"
+            exit 1
+          fi
           if ! grep -q 'Listen-Refresh 1× geprüft' artifacts/text250/lauf.log; then
             echo "Listen-Refresh wurde im 250-%-Lauf nicht geprüft"
             exit 1
