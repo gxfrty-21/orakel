@@ -315,12 +315,17 @@ Render wegen Fokus im sichtbaren Lab-Detail pausiert, zeigt `#labNeu` dezent
 `aria-live="polite"`); beim Verlassen des Details (Fokuswechsel oder Klick ins
 Leere) wird sofort neu gezeichnet, statt den nächsten Takt abzuwarten.
 `Lab-Pause 1× geprüft` belegt Status und sofortiges Neuzeichnen samt
-Fokuserhalt. Der vollständige
+Fokuserhalt. Die Kandidatenliste wird beim Refresh nicht neu aufgebaut,
+sondern über die Kandidatenkennung wiederverwendet und nur umsortiert;
+`Listen-Umsortierung 1× geprüft` kehrt die Reihenfolge um und verlangt
+denselben ausgewählten Kandidaten, denselben fokussierten DOM-Knoten und
+dieselbe Scrollposition. Der vollständige
 Standardlauf lief nach dieser Verschärfung erneut über alle zwölf Ansichten bei
 360, 320 und 280 px und endete ohne Befund; er meldete `Refresh 2× geprüft
 (HTTP 200, Marker)`, `Refresh-Negativ 1× geprüft`, `Lab-Fokus 2× geprüft`,
-`Listen-Refresh 1× geprüft`, `Lab-Guard 1× geprüft`, `Lab-Pause 1× geprüft` und
-`240px: 12/12 Ansichten ohne horizontalen Überlauf`. Ein voller 250-%-Lauf bei 240 px ist nicht belegt.
+`Listen-Refresh 1× geprüft`, `Lab-Guard 1× geprüft`, `Lab-Pause 1× geprüft`,
+`Listen-Umsortierung 1× geprüft` und `240px: 12/12 Ansichten ohne horizontalen
+Überlauf`. Ein voller 250-%-Lauf bei 240 px ist nicht belegt.
 
 Der erfolgreiche CI-Job `text250` aus Run `43811966526` verwendete denselben
 Seed und denselben Lab-Code, lief mit 74,39 s aber etwas schneller als der
