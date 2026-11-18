@@ -369,25 +369,64 @@ function renderLab(){
   const items = v.filter(x=>labFilter==='all'||x.urteil===labFilter)
     .sort((a,b)=>(b.urteil==='bestanden')-(a.urteil==='bestanden')||((b.out_of_sample||{}).profit_factor||0)-((a.out_of_sample||{}).profit_factor||0));
   const liste = $('#labList');
-  // Der Auto-Refresh ersetzt die Einträge über innerHTML. Ohne Rettung fällt
-  // der Tastaturfokus auf body und die Liste springt an den Anfang.
-  const fokusK = document.activeElement?.closest?.('#labList .li')?.dataset.k ?? null;
+  // Der Refresh baut die Liste nicht unter dem Nutzer neu auf: Einträge werden
+  // über ihre Kennung wiederverwendet und nur in die neue Reihenfolge gebracht.
+  // Fokus, Scrollposition und Auswahl bleiben damit erhalten, auch wenn sich
+  // die Sortierung ändert (Auswahl über labKennung, nicht über den Index).
+  const fokusEl = document.activeElement?.closest?.('#labList .li') ?? null;
+  const fokusK = fokusEl?.dataset.id ?? null;
+  // Rückfall über die Position, wenn der Refresh alle Kennungen austauscht
+  // (etwa bei neuen Symbolen) und der alte Knoten nicht wiederverwendet wird.
+  const fokusIndex = fokusEl?.dataset.k ?? null;
   const scroll = liste.scrollTop;
   if(labWahl){
     const idx = items.findIndex(o=>labKennung(o)===labWahl);
     if(idx>=0) labSel = idx;
   }
   if(labSel>=items.length) labSel = 0;
-  liste.innerHTML = items.length ? items.map((o,k)=>`<button class="li ${k===labSel?'on':''}" data-k="${k}">
-    <span><b>${esc(o.symbol)} · ${esc(o.strategie)}</b><small>${esc(params(o.parameter))}</small></span>
-    <span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">${selbst(o.urteil)}
-    <span class="r">${num((o.out_of_sample||{}).profit_factor,2)}</span></span></button>`).join('')
-    : '<div class="empty">Keine Einträge.</div>';
-  liste.querySelectorAll('.li').forEach(b=>b.onclick=()=>{labSel=+b.dataset.k;labWahl=labKennung(items[labSel]);renderLab();});
+  if(!items.length){
+    liste.innerHTML = '<div class="empty">Keine Einträge.</div>';
+  }else{
+    liste.querySelector('.empty')?.remove();
+    const frei = new Map();
+    liste.querySelectorAll('.li').forEach(el=>{
+      const id = el.dataset.id || '';
+      if(!frei.has(id)) frei.set(id, []);
+      frei.get(id).push(el);
+    });
+    items.forEach((o,k)=>{
+      const id = labKennung(o);
+      let el = frei.get(id)?.shift();
+      if(!el){
+        el = document.createElement('button');
+        el.className = 'li';
+        el.dataset.id = id;
+      }
+      el.dataset.k = k;
+      el.classList.toggle('on', k===labSel);
+      const signatur = `${esc(o.symbol)}|${esc(o.strategie)}|${esc(params(o.parameter))}|${o.urteil}|${num((o.out_of_sample||{}).profit_factor,2)}`;
+      if(el.dataset.signatur !== signatur){
+        el.dataset.signatur = signatur;
+        el.innerHTML = `<span><b>${esc(o.symbol)} · ${esc(o.strategie)}</b><small>${esc(params(o.parameter))}</small></span>
+          <span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">${selbst(o.urteil)}
+          <span class="r">${num((o.out_of_sample||{}).profit_factor,2)}</span></span>`;
+      }
+      el.onclick = () => { labSel = +el.dataset.k; labWahl = labKennung(items[labSel]); renderLab(); };
+      liste.appendChild(el);
+    });
+    frei.forEach(rest => rest.forEach(el => el.remove()));
+  }
   liste.scrollTop = scroll;
-  if(fokusK!=null){
-    const ziel = liste.querySelector(`.li[data-k="${fokusK}"]`);
-    if(ziel) ziel.focus({preventScroll:true});
+  if(fokusK || fokusIndex != null){
+    // Beim Verschieben bleibt der Fokus normalerweise auf demselben Knoten;
+    // nur wenn der Browser ihn verliert, wird er gezielt wiederhergestellt.
+    const aktiv = document.activeElement?.closest?.('#labList .li');
+    const passt = aktiv && (fokusK ? aktiv.dataset.id === fokusK : aktiv.dataset.k === fokusIndex);
+    if(!passt){
+      const ziel = (fokusK && [...liste.querySelectorAll('.li')].find(el => el.dataset.id === fokusK))
+        || (fokusIndex != null ? [...liste.querySelectorAll('.li')].find(el => el.dataset.k === fokusIndex) : null);
+      if(ziel) ziel.focus({preventScroll:true});
+    }
     liste.scrollTop = scroll;
   }
   const o = items[labSel];
