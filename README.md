@@ -294,10 +294,10 @@ alle zwölf Ansichten bei 240 px ausschliesslich in normaler Schrift sowie die
 Kernaussagen-Karte und die Kopf- und Navigationsleiste. Die vier KPI-Kacheln
 und das Claim-Grid wechseln auf eine Spalte, die Quellenzeile bleibt im
 Panel. Kopf und Navigation brechen kompakt um; die Seite scrollt dort nicht
-horizontal. **240 px wird ausschliesslich in normaler Schrift geprüft
-(12/12). Der 250-%-Lauf läuft ausschliesslich bei 360, 320 und 280 px; ein
-voller 250-%-Lauf bei 240 px ist nicht Teil der Zusage. 240 px ist die untere
-geprüfte Breite, darunter gibt es keine Layoutzusage.**
+horizontal. **240 px wird ausschliesslich in normaler Schrift geprüft; der
+12/12-Nachweis gilt nur dafür. Der 250-%-Lauf läuft ausschliesslich bei 360,
+320 und 280 px. Ein voller 250-%-Lauf bei 240 px ist nicht Teil der Zusage.
+240 px ist die untere geprüfte Breite, darunter gibt es keine Layoutzusage.**
 
 Die 240-px-Prüfung misst alle zwölf Ansichten in normaler Schrift bei
 240 × 900 px. Jede Zeile prüft Seiten-, Kopf- und Navigationsbreite:
@@ -318,8 +318,9 @@ Die 240-px-Prüfung misst alle zwölf Ansichten in normaler Schrift bei
 | Konferenz | 240 px | OK |
 
 Der erfolgreiche [text250-CI-Lauf](https://github.com/gxfrty-21/orakel/actions/runs/43811966526/job/133115401944)
-bestätigt diese 12/12-Prüfung. Der CI-Schritt prüft dafür die expliziten
-Fall-IDs `text250.240.<ansicht>` aus dem maschinenlesbaren Ergebnis.
+bestätigt diesen 12/12-Nachweis für normale Schrift bei 240 px. Der CI-Schritt
+prüft dafür die expliziten Fall-IDs `text250.240.<ansicht>` aus dem
+maschinenlesbaren Ergebnis.
 
 Der spätere erfolgreiche [CI-Lauf 43939906217](https://github.com/gxfrty-21/orakel/actions/runs/43939906217)
 auf PR-Head `5f21361` bestätigt diese Prüfung ebenfalls; alle sechs Jobs waren
@@ -340,7 +341,8 @@ Die Kernaussagen-Karte ist bei 240 px in normaler Darstellung tragfähig:
   ihrer 240-px-Container.
 
 Die 240-px-Prüfung umfasst alle zwölf Ansichten in normaler Schrift
-(`240px: 12/12`). Ein voller 250-%-Lauf bei 240 px ist nicht Teil der Zusage.
+(`240px: 12/12`). Der 250-%-Lauf läuft ausschliesslich bei 360, 320 und
+280 px; 240 px ist nicht Teil davon.
 Der gezielte Spider-Lauf prüft die Karte zusätzlich bei 240 px, auch wenn
 240 px nicht in `--breiten` steht:
 
