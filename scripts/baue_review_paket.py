@@ -195,8 +195,20 @@ def schreibe_manifest(eintraege: list[dict], ausgabe: str, commit: str, branch: 
         'herkunft': e['herkunft'],
         **({'source': e['source'], 'commit': commit} if e['herkunft'] == 'commit' else {}),
     } for e in sorted(eintraege, key=lambda x: x['target'])]
+    pruefungen = []
+    evidenz_pfad = os.path.join(ausgabe, 'EVIDENZ.json')
+    if os.path.exists(evidenz_pfad):
+        for eintrag in json.load(open(evidenz_pfad, encoding='utf-8')).get('dateien', []):
+            pruefungen.append({
+                'name': eintrag['name'],
+                'befehl': eintrag['befehl'],
+                'exit_code': eintrag['exit_code'],
+                'ergebnis': eintrag.get('log', ''),
+                'log': eintrag['target'],
+                'log_sha256': eintrag['sha256'],
+            })
     manifest = {
-        'schema': 'review-paket.v4',
+        'schema': 'review-paket.v5',
         'commit': commit,
         'branch': branch,
         'dirty': False,
@@ -204,6 +216,7 @@ def schreibe_manifest(eintraege: list[dict], ausgabe: str, commit: str, branch: 
         'freigabe': 'scripts/review-paket-freigabe.json',
         'builder': 'scripts/baue_review_paket.py',
         'generated_at': '2026-11-18T00:00:00Z',
+        'pruefungen': sorted(pruefungen, key=lambda p: p['name']),
         'files': liste,
     }
     with open(os.path.join(ausgabe, MANIFEST_NAME), 'w', encoding='utf-8') as f:
