@@ -299,12 +299,28 @@ Fokus im sichtbaren Lab-Detail (insbesondere auf der Kapitalkurve) nur den
 Ansichts-Render; Daten und Kopfzeile werden weiter aktualisiert. Ein Fokus auf
 der Lab-Liste, einem anderen Lab-Element oder in einem ausgeblendeten Lab
 blockiert den Render nicht. Der deterministische Test mit echter
-/api/report-Antwort (HTTP 200, Marker) ist ohne Befund. Der vollständige
+/api/report-Antwort (HTTP 200, Marker) ist ohne Befund; er belegt den Fall für
+die Lab-Liste und für ein weiteres Lab-Element (einen Lab-Tab). Ein
+ausgeblendetes Lab prüft er nicht über den Fokus, weil Chromium den Fokus beim
+Ausblenden auf body setzt. Stattdessen prüft `Lab-Guard 1× geprüft` die
+Guard-Regel direkt: Der Detail-Knoten wird explizit übergeben, während `#v-lab`
+hidden ist, und der Guard muss false liefern; `document.activeElement` bleibt
+dabei unangetastet. Dieselbe Prüfung belegt, dass Liste, Tab und body den
+Render nicht blockieren und dass die Regel am echten Fokus dasselbe Ergebnis
+liefert. Die Fokus-Tests werten den Datenmarker nur an sichtbaren Knoten und
+verlangen nach dem Refresh einen sichtbaren Fokus; bei Befunden legt der Lauf
+Screenshot und Playwright-Trace unter `artifacts/text250/` ab. Solange der
+Render wegen Fokus im sichtbaren Lab-Detail pausiert, zeigt `#labNeu` dezent
+«Neue Daten verfügbar» und ist eine höfliche Live-Region (`role="status"`,
+`aria-live="polite"`); beim Verlassen des Details (Fokuswechsel oder Klick ins
+Leere) wird sofort neu gezeichnet, statt den nächsten Takt abzuwarten.
+`Lab-Pause 1× geprüft` belegt Status und sofortiges Neuzeichnen samt
+Fokuserhalt. Der vollständige
 Standardlauf lief nach dieser Verschärfung erneut über alle zwölf Ansichten bei
 360, 320 und 280 px und endete ohne Befund; er meldete `Refresh 2× geprüft
-(HTTP 200, Marker)`, `Refresh-Negativ 1× geprüft`, `Lab-Fokus 3× geprüft`,
-`Listen-Refresh 1× geprüft` und `240px: 12/12 Ansichten ohne horizontalen
-Überlauf`. Ein voller 250-%-Lauf bei 240 px ist nicht belegt.
+(HTTP 200, Marker)`, `Refresh-Negativ 1× geprüft`, `Lab-Fokus 2× geprüft`,
+`Listen-Refresh 1× geprüft`, `Lab-Guard 1× geprüft`, `Lab-Pause 1× geprüft` und
+`240px: 12/12 Ansichten ohne horizontalen Überlauf`. Ein voller 250-%-Lauf bei 240 px ist nicht belegt.
 
 Der erfolgreiche CI-Job `text250` aus Run `43811966526` verwendete denselben
 Seed und denselben Lab-Code, lief mit 74,39 s aber etwas schneller als der

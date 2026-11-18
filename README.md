@@ -154,7 +154,7 @@ der erzeugte Rohbericht liegt nach dem Lauf unter
 | Dashboard | Orakel-Design, 12 Ansichten, Live-Polling, 2D-Agenten-Querschnitt, «Lauf starten» |
 | Dauerbetrieb | persistenter Plan, Backoff, Ressourcenlimits, Jobprotokoll und Betriebsansicht |
 
-Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswahl einmal geöffnet; scheitert er, gibt es keinen Ersatzkandidaten. Im Lab zeigt ein Chart die aggregierte Kapitalkurve der Testfenster; beim Überfahren nennt ein Tooltip Kapitalstand, Veränderung seit dem Start in Prozent, Datum sowie den bisherigen Höchststand mit Abstand in Prozent; per Tastatur (Tab, Pfeiltasten, Home/Ende) ist dieselbe Anzeige erreichbar. Solange der Tastaturfokus im sichtbaren Lab-Detail liegt, pausiert der Auto-Refresh nur den Ansichts-Render, damit die Anzeige beim Ablesen nicht neu aufgebaut wird; Daten und Kopfzeile werden weiter aktualisiert. Ein Fokus auf der Lab-Liste oder einem anderen Lab-Element blockiert den Render nicht; ein ausgeblendetes Lab ebenfalls nicht. Dort und in der Strategien-Ansicht lässt sich zudem bei jedem Kandidaten die Liste der Walk-Forward-Fenster aufklappen: Trainings- und Testblock, gewählter Parameter, Trades, Profit Factor und Netto je Fenster.
+Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswahl einmal geöffnet; scheitert er, gibt es keinen Ersatzkandidaten. Im Lab zeigt ein Chart die aggregierte Kapitalkurve der Testfenster; beim Überfahren nennt ein Tooltip Kapitalstand, Veränderung seit dem Start in Prozent, Datum sowie den bisherigen Höchststand mit Abstand in Prozent; per Tastatur (Tab, Pfeiltasten, Home/Ende) ist dieselbe Anzeige erreichbar. Solange der Tastaturfokus im sichtbaren Lab-Detail liegt, pausiert der Auto-Refresh nur den Ansichts-Render, damit die Anzeige beim Ablesen nicht neu aufgebaut wird; Daten und Kopfzeile werden weiter aktualisiert. Ein Fokus auf der Lab-Liste oder einem anderen Lab-Element blockiert den Render nicht; ein ausgeblendetes Lab ebenfalls nicht. Beim automatischen Neuaufbau bleiben Tastaturfokus, Scrollposition und Auswahl der Lab-Liste erhalten. Der Acht-Sekunden-Refresh läuft single-flight, pausiert in einem Hintergrundtab und lädt beim Zurückkehren sofort nach. Der text250-Lauf prüft das mit einer echten `/api/report`-Antwort für die Lab-Liste und ein weiteres Lab-Element (einen Lab-Tab); ein ausgeblendetes Lab prüft er nicht separat, weil Chromium den Fokus beim Ausblenden auf `body` setzt. Dort und in der Strategien-Ansicht lässt sich zudem bei jedem Kandidaten die Liste der Walk-Forward-Fenster aufklappen: Trainings- und Testblock, gewählter Parameter, Trades, Profit Factor und Netto je Fenster.
 
 ## Risikogrenzen (deine Vorgaben)
 
@@ -585,7 +585,17 @@ Der Job prüft den Lab-Refresh bei 360 und 280 px über
 den ersten Eintrag der Lab-Liste, löst den Acht-Sekunden-Takt über die
 Playwright-Uhr aus und verlangt ein Re-Render der Kapitalkurve; er meldet
 `Listen-Refresh 1× geprüft`, und das Gate bricht ab, wenn diese Zeile im
-Erfolgsprotokoll fehlt. Der Negativtest blockiert den
+Erfolgsprotokoll fehlt. Die Lab-Fokus-Tests werten den Datenmarker nur an
+sichtbaren Knoten und verlangen nach dem Refresh einen sichtbaren Fokus; ein
+ausgeblendeter Eintrag oder ein Marker nur in versteckten Knoten besteht nicht.
+Die Guard-Regel wird zusätzlich direkt geprüft (`Lab-Guard 1× geprüft`):
+sichtbares Lab-Detail blockiert den Render, Liste, Tab und ausgeblendetes Lab
+nicht, ohne `document.activeElement` zu überschreiben. Bei Befunden legt der
+Lauf Screenshot und Playwright-Trace unter `artifacts/text250/` ab. Ist der Render
+wegen Fokus im sichtbaren Lab-Detail pausiert, zeigt `#labNeu` dezent «Neue
+Daten verfügbar» und ist als höfliche Live-Region (`role="status"`,
+`aria-live="polite"`) für Screenreader angekündigt; beim Verlassen des Details
+wird sofort neu gezeichnet. Das prüft `Lab-Pause 1× geprüft`. Der Negativtest blockiert den
 Acht-Sekunden-Refresh und erzwingt nach dem Verlassen des Lab-Fokus ein
 Re-Render; beide Fehlerbilder müssen als Befund erscheinen, sonst scheitert
 `text250`. Die Marker `Refresh-Negativ`, `Refresh 2× geprüft` und
