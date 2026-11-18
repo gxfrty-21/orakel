@@ -581,11 +581,15 @@ HTML als Artefakt `text250-diagnose` und das Serverprotokoll als
 
 Der Job prüft den Lab-Refresh bei 360 und 280 px über
 `Refresh 2× geprüft (HTTP 200, Marker)` und seit dem Negativtest zusätzlich über
-`Refresh-Negativ 1× geprüft`. Der Negativtest blockiert den
+`Refresh-Negativ 1× geprüft`. Ein eigener Regressionstest setzt den Fokus auf
+den ersten Eintrag der Lab-Liste, löst den Acht-Sekunden-Takt über die
+Playwright-Uhr aus und verlangt ein Re-Render der Kapitalkurve; er meldet
+`Listen-Refresh 1× geprüft`, und das Gate bricht ab, wenn diese Zeile im
+Erfolgsprotokoll fehlt. Der Negativtest blockiert den
 Acht-Sekunden-Refresh und erzwingt nach dem Verlassen des Lab-Fokus ein
 Re-Render; beide Fehlerbilder müssen als Befund erscheinen, sonst scheitert
-`text250`. Die Marker `Refresh-Negativ` und `Refresh 2× geprüft` werden im
-Erfolgsprotokoll ausgegeben.
+`text250`. Die Marker `Refresh-Negativ`, `Refresh 2× geprüft` und
+`Listen-Refresh 1× geprüft` werden im Erfolgsprotokoll ausgegeben.
 
 Nach einem fehlgeschlagenen, abgebrochenen oder abgelaufenen Lauf. Die Befehle
 setzen eine angemeldete GitHub CLI voraus (`gh auth login`):

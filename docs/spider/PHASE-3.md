@@ -299,9 +299,12 @@ Fokus im sichtbaren Lab-Detail (insbesondere auf der Kapitalkurve) nur den
 Ansichts-Render; Daten und Kopfzeile werden weiter aktualisiert. Ein Fokus auf
 der Lab-Liste, einem anderen Lab-Element oder in einem ausgeblendeten Lab
 blockiert den Render nicht. Der deterministische Test mit echter
-/api/report-Antwort (HTTP 200, Marker) ist ohne Befund; der vollständige
-12-Ansichten-Standardlauf wurde nach dieser Verschärfung nicht erneut
-ausgeführt. Ein voller 250-%-Lauf bei 240 px ist nicht belegt.
+/api/report-Antwort (HTTP 200, Marker) ist ohne Befund. Der vollständige
+Standardlauf lief nach dieser Verschärfung erneut über alle zwölf Ansichten bei
+360, 320 und 280 px und endete ohne Befund; er meldete `Refresh 2× geprüft
+(HTTP 200, Marker)`, `Refresh-Negativ 1× geprüft`, `Lab-Fokus 3× geprüft`,
+`Listen-Refresh 1× geprüft` und `240px: 12/12 Ansichten ohne horizontalen
+Überlauf`. Ein voller 250-%-Lauf bei 240 px ist nicht belegt.
 
 Der erfolgreiche CI-Job `text250` aus Run `43811966526` verwendete denselben
 Seed und denselben Lab-Code, lief mit 74,39 s aber etwas schneller als der
