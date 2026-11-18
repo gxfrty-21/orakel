@@ -2,7 +2,7 @@
 (() => {
 const $ = s => document.querySelector(s);
 const COL = { accent:'#5fe0c8', amber:'#e8b45a', good:'#62d68a', bad:'#e2616b', blue:'#8fb8ff', dim:'#55606d' };
-let R = null, current = 'overview', labFilter = 'all', labSel = 0, stratSel = 0, depSel = 'A';
+let R = null, current = 'overview', labFilter = 'all', labSel = 0, labWahl = '', stratSel = 0, depSel = 'A';
 let globeView = null, globeFailed = false, globeWindow = '24h', globeRequest = 0, globeAbort = null, globeLoading = null;
 let nachtDaten = null, nachtFehler = null;
 let graphWindow = '7d', graphDaten = null, kalibrierungDaten = null;
@@ -178,7 +178,7 @@ function renderRisk(){
 /* ---------- Lab ---------- */
 document.querySelector('#labTabs').onclick = e => {
   const b = e.target.closest('.tab'); if(!b) return;
-  labFilter = b.dataset.f; labSel = 0;
+  labFilter = b.dataset.f; labSel = 0; labWahl = '';
   document.querySelectorAll('#labTabs .tab').forEach(t=>t.classList.toggle('on',t===b));
   renderLab();
 };
@@ -354,6 +354,12 @@ function wfoFoldsBlock(o){
     </tbody></table></div></details>`;
 }
 
+/* Stabile Kennung eines Kandidaten. Auswahl und Fokus sollen einen Neuaufbau
+   der Liste überstehen, auch wenn sich deren Reihenfolge ändert. */
+function labKennung(o){
+  return o ? `${o.symbol ?? ''}|${o.strategie ?? ''}|${params(o.parameter)}` : '';
+}
+
 function renderLab(){
   const v = R.validierungen||[], selbst = u => `<span class="pill ${u==='bestanden'?'':u==='abgelehnt'?'r':'g'}">${esc(u).toUpperCase()}</span>`;
   $('#labKpis').innerHTML = [['Geprüft',v.length,'Kandidaten'],['Bestanden',v.filter(x=>x.urteil==='bestanden').length,'alle Regeln inkl. Holdout'],
@@ -362,12 +368,28 @@ function renderLab(){
     .map(q=>`<div class="kpi"><div class="l">${q[0]}</div><div class="v">${q[1]}</div><div class="n">${q[2]}</div></div>`).join('');
   const items = v.filter(x=>labFilter==='all'||x.urteil===labFilter)
     .sort((a,b)=>(b.urteil==='bestanden')-(a.urteil==='bestanden')||((b.out_of_sample||{}).profit_factor||0)-((a.out_of_sample||{}).profit_factor||0));
-  $('#labList').innerHTML = items.length ? items.map((o,k)=>`<button class="li ${k===labSel?'on':''}" data-k="${k}">
+  const liste = $('#labList');
+  // Der Auto-Refresh ersetzt die Einträge über innerHTML. Ohne Rettung fällt
+  // der Tastaturfokus auf body und die Liste springt an den Anfang.
+  const fokusK = document.activeElement?.closest?.('#labList .li')?.dataset.k ?? null;
+  const scroll = liste.scrollTop;
+  if(labWahl){
+    const idx = items.findIndex(o=>labKennung(o)===labWahl);
+    if(idx>=0) labSel = idx;
+  }
+  if(labSel>=items.length) labSel = 0;
+  liste.innerHTML = items.length ? items.map((o,k)=>`<button class="li ${k===labSel?'on':''}" data-k="${k}">
     <span><b>${esc(o.symbol)} · ${esc(o.strategie)}</b><small>${esc(params(o.parameter))}</small></span>
     <span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">${selbst(o.urteil)}
     <span class="r">${num((o.out_of_sample||{}).profit_factor,2)}</span></span></button>`).join('')
     : '<div class="empty">Keine Einträge.</div>';
-  document.querySelectorAll('#labList .li').forEach(b=>b.onclick=()=>{labSel=+b.dataset.k;renderLab();});
+  liste.querySelectorAll('.li').forEach(b=>b.onclick=()=>{labSel=+b.dataset.k;labWahl=labKennung(items[labSel]);renderLab();});
+  liste.scrollTop = scroll;
+  if(fokusK!=null){
+    const ziel = liste.querySelector(`.li[data-k="${fokusK}"]`);
+    if(ziel) ziel.focus({preventScroll:true});
+    liste.scrollTop = scroll;
+  }
   const o = items[labSel];
   if(!o){ $('#labDetail').innerHTML = '<div class="empty">Keine Auswahl.</div>'; return; }
   const I=o.in_sample||{}, O=o.out_of_sample||{}, G=o.gesamt||{}, H=o.holdout||{}, Hk=H.kennzahlen||{};
@@ -2776,6 +2798,34 @@ if (forecastBtn) forecastBtn.onclick = async () => {
 };
 
 /* ---------- Laden ---------- */
+// Guard für den Ansichts-Render: Nur ein Fokus im sichtbaren Lab-Detail
+// pausiert den Neuaufbau. Ein Fokus auf Liste oder Tabs und ein ausgeblendetes
+// Lab blockieren ihn nicht. Der Parameter macht die Regel direkt prüfbar.
+function pausiertRenderWegenLabDetail(aktiv = document.activeElement){
+  return Boolean(aktiv && aktiv.closest && aktiv.closest('#v-lab:not([hidden]) #labDetail'));
+}
+// Während der pausierte Render neue Daten nur übernimmt, zeigt #labNeu das
+// sichtbar und als höfliche Live-Region an. Beim Verlassen des Details wird
+// sofort gezeichnet, statt den nächsten Acht-Sekunden-Takt abzuwarten.
+let labNeuAusstehend = false;
+function setzeLabNeuStatus(ausstehend){
+  labNeuAusstehend = ausstehend;
+  const el = document.querySelector('#labNeu');
+  if(!el) return;
+  el.textContent = ausstehend ? 'Neue Daten verfügbar' : '';
+  el.hidden = !ausstehend;
+}
+function zeichneLabNeu(){
+  if(!labNeuAusstehend || pausiertRenderWegenLabDetail()) return;
+  // Vor dem Zeichnen löschen: renderLab stellt den Fokus wieder her, dessen
+  // focusin sonst erneut hier landet (Rekursion).
+  setzeLabNeuStatus(false);
+  zeichne();
+}
+document.addEventListener('focusin', zeichneLabNeu);
+// focusout: Der Fokus kann auf body fallen (Klick auf ein nicht fokussierbares
+// Element). Erst nach dem Fokuswechsel zeichnen, damit er nicht ins Leere geht.
+document.addEventListener('focusout', () => setTimeout(zeichneLabNeu, 0));
 async function lade(){
   try{
     const r = await fetch('/api/report',{cache:'no-store'});
@@ -2791,7 +2841,8 @@ async function lade(){
     const laborDaten = document.querySelector('#labList');
     if (laborDaten) laborDaten.dataset.berichtKandidat = neu.validierungen?.[0]?.symbol || '';
     renderTop();
-    if (!document.activeElement?.closest('#v-lab:not([hidden]) #labDetail')) zeichne();
+    if (pausiertRenderWegenLabDetail()) setzeLabNeuStatus(true);
+    else { zeichne(); setzeLabNeuStatus(false); }
   }catch(e){
     $('#banner').className = 'banner b-sim';
     $('#banner').innerHTML = '<b>FEHLER</b>' + esc(e.message);
@@ -2814,14 +2865,22 @@ $('#runBtn').onclick = async () => {
 lade();
 // Kein Auto-Refresh, während ein Auftrag bearbeitet wird oder ein Feld den Fokus hat:
 // sonst gehen Eingaben nach acht Sekunden verloren.
-setInterval(() => {
+// Single-flight: Läuft noch eine Antwort, wird der Takt übersprungen statt einen
+// zweiten Aufruf zu starten; langsame Antworten können sich so nicht überlappen.
+// Im Hintergrundtab pausiert der Takt; beim Zurückkehren wird sofort nachgeladen.
+let ladeLaeuft = false;
+async function autoRefresh(){
+  if (document.hidden || ladeLaeuft) return;
   if (document.querySelector('details.ordEdit[open]')) return;
   // Ein geöffneter Missionsbericht darf nicht unter dem Leser verschwinden.
   if (document.querySelector('.mission-report:not([hidden])')) return;
   const a = document.activeElement;
   if (a && /^(SELECT|TEXTAREA|INPUT)$/.test(a.tagName)) return;
-  lade();
-}, 8000);
+  ladeLaeuft = true;
+  try{ await lade(); }finally{ ladeLaeuft = false; }
+}
+setInterval(autoRefresh, 8000);
+document.addEventListener('visibilitychange', () => { if(!document.hidden) autoRefresh(); });
 let sitzungDaten = null;
 let protokolleDaten = [];
 let altStunden = 1;
@@ -3408,5 +3467,6 @@ function updateTaktStand(){
 /* Schmale Brücke für die Prüfskripte: Ansichten und Claim-Renderer bleiben ohne eigene Nav-Einträge erreichbar. */
 window.zeige = zeige;
 window.zeichneBewertung = zeichneBewertung;
+window.pausiertRenderWegenLabDetail = pausiertRenderWegenLabDetail;
 
 })();
