@@ -1999,6 +1999,119 @@ async function pruefeLabPauseHinweis(browser, url, breite, bilderPfad = null) {
 }
 
 /**
+ * Der Refresh darf die Lab-Liste nicht unter dem Nutzer neu aufbauen. Der Test
+ * kehrt die Kandidatenreihenfolge um (neue Profit-Factor-Werte, gleiche
+ * Kennungen) und verlangt, dass derselbe Kandidat ausgewählt bleibt, der Fokus
+ * auf demselben DOM-Knoten sitzt (Marke überlebt) und die Scrollposition steht.
+ */
+async function pruefeListenUmsortierung(browser, url, breite, bilderPfad = null) {
+  const befunde = [];
+  const context = await browser.newContext({ viewport: { width: breite, height: 900 }, deviceScaleFactor: 1 });
+  const page = await context.newPage();
+  page.on('pageerror', err => befunde.push(`Listen-Umsortierung-Seitenfehler: ${err}`));
+  await context.tracing.start({ screenshots: true, snapshots: true });
+  try {
+    await page.clock.install();
+    await page.goto(`${url}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(
+      () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
+      null, { timeout: 15000 },
+    );
+    await page.locator('.nav[data-v="lab"]').click();
+    const listeSichtbar = await page.locator('#labList .li').first()
+      .waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
+    if (!listeSichtbar) {
+      befunde.push('Listen-Umsortierung: die Lab-Liste ist nicht sichtbar');
+      return befunde;
+    }
+
+    const vorher = await page.evaluate(() => {
+      const liste = document.querySelector('#labList');
+      let lis = [...liste.querySelectorAll('.li')];
+      if (lis.length < 2) return { genug: false };
+      // Auswahl auf den zweiten Kandidaten, Fokus auf den ersten: beide müssen
+      // nach der Umsortierung bei ihrem Kandidaten bleiben.
+      lis[1].click();
+      lis = [...liste.querySelectorAll('.li')];
+      lis[0].focus();
+      liste.scrollTop = Math.min(80, Math.max(0, liste.scrollHeight - liste.clientHeight));
+      const fokus = document.activeElement?.closest?.('#labList .li');
+      const auswahl = liste.querySelector('.li.on');
+      if (!fokus || !auswahl) return { genug: false };
+      fokus.__testMarke = 'vorher';
+      return {
+        genug: true,
+        fokusId: fokus.dataset.id,
+        auswahlId: auswahl.dataset.id,
+        scroll: liste.scrollTop,
+        reihenfolge: [...liste.querySelectorAll('.li')].map(el => el.dataset.id),
+      };
+    });
+    if (!vorher.genug) {
+      befunde.push('Listen-Umsortierung: weniger als zwei Kandidaten in der Liste');
+      return befunde;
+    }
+
+    const handler = async route => {
+      try {
+        const antwort = await route.fetch();
+        const daten = await antwort.json();
+        if (!Array.isArray(daten.validierungen) || daten.validierungen.length < 2) {
+          throw new Error('zu wenige Kandidaten');
+        }
+        // Umgekehrte Reihenfolge mit eindeutigen Profit-Factor-Werten: die
+        // Kennungen bleiben gleich, nur die Sortierung ändert sich.
+        daten.validierungen = [...daten.validierungen].reverse().map((k, i) => ({
+          ...k,
+          out_of_sample: { ...(k.out_of_sample || {}), profit_factor: 1000 - i },
+        }));
+        await route.fulfill({ response: antwort, json: daten });
+      } catch {
+        await route.abort().catch(() => {});
+      }
+    };
+    await page.route('**/api/report', handler);
+    await page.clock.runFor(8000);
+    await page.waitForTimeout(400);
+
+    const nachher = await page.evaluate(() => {
+      const liste = document.querySelector('#labList');
+      const fokus = document.activeElement?.closest?.('#labList .li');
+      return {
+        fokusId: fokus?.dataset.id ?? null,
+        marke: fokus?.__testMarke ?? null,
+        auswahlId: liste.querySelector('.li.on')?.dataset.id ?? null,
+        scroll: liste.scrollTop,
+        reihenfolge: [...liste.querySelectorAll('.li')].map(el => el.dataset.id),
+      };
+    });
+    await page.unroute('**/api/report', handler).catch(() => {});
+
+    const gleich = nachher.reihenfolge.length === vorher.reihenfolge.length
+      && nachher.reihenfolge.every((id, i) => id === vorher.reihenfolge[i]);
+    if (gleich) befunde.push('Listen-Umsortierung: die Reihenfolge änderte sich nicht, der Test belegt nichts');
+    if (nachher.fokusId !== vorher.fokusId) {
+      befunde.push(`Listen-Umsortierung verliert den Fokus (${vorher.fokusId} → ${nachher.fokusId})`);
+    }
+    if (nachher.marke !== 'vorher') {
+      befunde.push('Listen-Umsortierung baut die Einträge neu auf (der fokussierte Knoten wurde ersetzt)');
+    }
+    if (nachher.auswahlId !== vorher.auswahlId) {
+      befunde.push(`Listen-Umsortierung wechselt die Auswahl (${vorher.auswahlId} → ${nachher.auswahlId})`);
+    }
+    if (nachher.scroll !== vorher.scroll) {
+      befunde.push(`Listen-Umsortierung setzt die Scrollposition zurück (${vorher.scroll} → ${nachher.scroll})`);
+    }
+  } catch (fehler) {
+    befunde.push(`Listen-Umsortierung fehlgeschlagen: ${fehler instanceof Error ? fehler.message : fehler}`);
+  } finally {
+    await schreibeFehlerbeleg(context, page, befunde, bilderPfad, `listen-umsortierung-${breite}px`).catch(() => {});
+    await context.close();
+  }
+  return befunde;
+}
+
+/**
  * Der Acht-Sekunden-Takt darf sich bei langsamen Antworten nicht überlappen,
  * im Hintergrundtab nicht laden und beim Zurückkehren sofort nachladen. Der
  * Takt läuft über die Playwright-Uhr; die Sichtbarkeit wird über document.hidden
@@ -3052,7 +3165,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const fehler = [];
   const hinweise = new Set();
-  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, refreshGesamt = 0, refreshNegativGesamt = 0, labFokusGesamt = 0, listenRefreshGesamt = 0, labGuardGesamt = 0, labPauseGesamt = 0, taktGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, legendeDesktopGeprueft = 0, kopfGeprueft = 0, schmaleAnsichten = 0, schreibwegeGesamt = 0, claimPruefungen = 0;
+  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, refreshGesamt = 0, refreshNegativGesamt = 0, labFokusGesamt = 0, listenRefreshGesamt = 0, labGuardGesamt = 0, labPauseGesamt = 0, listenUmsortierungGesamt = 0, taktGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, legendeDesktopGeprueft = 0, kopfGeprueft = 0, schmaleAnsichten = 0, schreibwegeGesamt = 0, claimPruefungen = 0;
 
   try {
     const kopfBefunde = await pruefeKopfzeile(browser, opt.url);
@@ -3151,6 +3264,9 @@ async function main() {
               const labPauseBefunde = await pruefeLabPauseHinweis(browser, opt.url, breite, opt.bilder);
               if (labPauseBefunde.length === 0) labPauseGesamt++;
               for (const text of labPauseBefunde) fehler.push(`${breite}px/lab-pause: ${text}`);
+              const umsortierBefunde = await pruefeListenUmsortierung(browser, opt.url, breite, opt.bilder);
+              if (umsortierBefunde.length === 0) listenUmsortierungGesamt++;
+              for (const text of umsortierBefunde) fehler.push(`${breite}px/lab-liste: ${text}`);
             }
           } else {
             hinweise.add('Keine Kapitalkurve im Lab gefunden – Tooltip und Tastatur nicht geprüft.');
@@ -3208,7 +3324,7 @@ async function main() {
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${refreshGesamt ? ` · Refresh ${refreshGesamt}× geprüft (HTTP 200, Marker)` : ''}${refreshNegativGesamt ? ` · Refresh-Negativ ${refreshNegativGesamt}× geprüft` : ''}${labFokusGesamt ? ` · Lab-Fokus ${labFokusGesamt}× geprüft` : ''}${labGuardGesamt ? ` · Lab-Guard ${labGuardGesamt}× geprüft` : ''}${labPauseGesamt ? ` · Lab-Pause ${labPauseGesamt}× geprüft` : ''}${listenRefreshGesamt ? ` · Listen-Refresh ${listenRefreshGesamt}× geprüft` : ''}${taktGesamt ? ` · Refresh-Takt ${taktGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${refreshGesamt ? ` · Refresh ${refreshGesamt}× geprüft (HTTP 200, Marker)` : ''}${refreshNegativGesamt ? ` · Refresh-Negativ ${refreshNegativGesamt}× geprüft` : ''}${labFokusGesamt ? ` · Lab-Fokus ${labFokusGesamt}× geprüft` : ''}${labGuardGesamt ? ` · Lab-Guard ${labGuardGesamt}× geprüft` : ''}${labPauseGesamt ? ` · Lab-Pause ${labPauseGesamt}× geprüft` : ''}${listenUmsortierungGesamt ? ` · Listen-Umsortierung ${listenUmsortierungGesamt}× geprüft` : ''}${listenRefreshGesamt ? ` · Listen-Refresh ${listenRefreshGesamt}× geprüft` : ''}${taktGesamt ? ` · Refresh-Takt ${taktGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {
