@@ -1532,101 +1532,93 @@ async function pruefeLabAutoRefreshNegativ(browser, url, breite) {
 }
 
 /**
- * Drei Regressionstests für den Lab-Guard: Fokus auf der Lab-Liste, auf einem
- * Lab-Tab und in einem ausgeblendeten Lab darf den Ansichts-Render nicht
- * blockieren. Die API-Antwort erhält einen eindeutigen Marker in allen
- * Kandidatensymbolen; ein Rückfall auf den breiten #v-lab-Guard überspringt den
- * Render und der Marker fehlt anschliessend in #labList.
+ * Zwei Regressionstests für den Lab-Guard: Ein Fokus auf der Lab-Liste oder auf
+ * einem Lab-Tab liegt in #v-lab, aber ausserhalb von #labDetail und darf den
+ * Ansichts-Render nicht blockieren. Die API-Antwort erhält einen eindeutigen
+ * Marker in allen Kandidatensymbolen; ein Rückfall auf einen breiten
+ * #v-lab-Guard überspringt den Render und der Marker fehlt in #labList.
+ *
+ * Der frühere dritte Fall mit ausgeblendetem Lab entfällt: Chromium setzt den
+ * Fokus beim Ausblenden auf body. Der Zustand «Fokus in #labDetail, während
+ * #v-lab hidden ist» liesse sich nur durch Überschreiben von
+ * document.activeElement herstellen und prüfte damit eine im Browser
+ * unerreichbare Situation; einen Guard-Fehler, den die beiden echten
+ * Fokustests nicht schon melden, erkennt er nicht.
  */
 const LAB_FOKUS_VARIANTEN = [
-  {
-    id: 'liste',
-    label: 'die Lab-Liste',
-    fokussiere: async (page) => {
-      const eintrag = page.locator('#labList .li').first();
-      if (!(await eintrag.count())) return ['Lab-Fokus-Prüfung ohne Lab-Listeneintrag'];
-      await eintrag.focus();
-      const stand = await page.evaluate(() => {
-        const a = document.activeElement;
-        const li = a?.closest?.('#labList .li');
-        return {
-          treffer: Boolean(li),
-          detail: Boolean(a?.closest?.('#labDetail')),
-          tag: a ? a.tagName : '',
-          text: li ? li.innerText.replace(/\s+/g, ' ').trim().slice(0, 60) : '',
-        };
-      });
-      if (!stand.treffer || stand.detail) {
-        return [`Lab-Fokus-Prüfung konnte keinen Listeneintrag ausserhalb von #labDetail fokussieren (${stand.tag}, «${stand.text}»)`];
-      }
-      return [];
-    },
-  },
-  {
-    id: 'tab',
-    label: 'einen Lab-Tab',
-    fokussiere: async (page) => {
-      const tab = page.locator('#labTabs .tab').first();
-      if (!(await tab.count())) return ['Lab-Fokus-Prüfung ohne Lab-Tab'];
-      await tab.focus();
-      const stand = await page.evaluate(() => {
-        const a = document.activeElement;
-        const treffer = a?.closest?.('#labTabs .tab');
-        return {
-          treffer: Boolean(treffer),
-          detail: Boolean(a?.closest?.('#labDetail')),
-          tag: a ? a.tagName : '',
-          text: treffer ? treffer.innerText.replace(/\s+/g, ' ').trim().slice(0, 60) : '',
-        };
-      });
-      if (!stand.treffer || stand.detail) {
-        return [`Lab-Fokus-Prüfung konnte keinen Lab-Tab ausserhalb von #labDetail fokussieren (${stand.tag}, «${stand.text}»)`];
-      }
-      return [];
-    },
-  },
-  {
-    id: 'ausgeblendet',
-    label: 'das ausgeblendete Lab',
-    fokussiere: async (page) => {
-      const stand = await page.evaluate(() => {
-        const tab = document.querySelector('#labTabs .tab');
-        if (!tab) return { fehlt: true };
-        tab.focus();
-        const fokussiert = document.activeElement === tab;
-        const lab = document.querySelector('#v-lab');
-        lab.hidden = true;
-        // Chromium kann den Fokus beim Ausblenden asynchron auf body setzen.
-        // Der Guard soll aber auch dann nicht blockieren, wenn der Fokus im
-        // ausgeblendeten Lab verbleibt; diesen Zustand fixieren wir hier.
-        Object.defineProperty(document, 'activeElement', {
-          configurable: true,
-          get: () => tab,
-        });
-        const a = document.activeElement;
-        return {
-          fokussiert,
-          hidden: lab.hidden === true,
-          imLab: Boolean(a?.closest?.('#v-lab')),
-          tag: a ? a.tagName : '',
-        };
-      });
-      if (stand.fehlt) return ['Lab-Fokus-Prüfung ohne Lab-Tab'];
-      if (!stand.fokussiert) return ['Lab-Fokus-Prüfung konnte den Lab-Tab nicht fokussieren'];
-      if (!stand.hidden) return ['Lab-Fokus-Prüfung konnte das Lab nicht ausblenden'];
-      if (!stand.imLab) {
-        return [`Lab-Fokus-Prüfung verlor den Fokus beim Ausblenden des Labs (${stand.tag})`];
-      }
-      return [];
-    },
-  },
+  { id: 'liste', label: 'die Lab-Liste', element: 'Lab-Listeneintrag', selektor: '#labList .li' },
+  { id: 'tab', label: 'einen Lab-Tab', element: 'Lab-Tab', selektor: '#labTabs .tab' },
 ];
 
-async function pruefeLabFokusAutoRefresh(browser, url, breite, variante) {
+/**
+ * Fokussiert das erste Element der Variante und belegt, dass der Fokus in
+ * #v-lab, aber ausserhalb von #labDetail liegt. Nur so unterscheidet der
+ * Refresh-Test den schmalen Guard von einem breiten #v-lab-Guard.
+ */
+async function fokussiereLabAusserhalbDetail(page, variante) {
+  const ziel = page.locator(variante.selektor).first();
+  if (!(await ziel.count())) return [`Lab-Fokus-Prüfung ohne ${variante.element}`];
+  // Nur sichtbare Knoten sind echte Fokusziele; ein ausgeblendeter Eintrag
+  // liesse sich nicht fokussieren und dürfte keinen Test bestehen.
+  const sichtbar = await ziel.evaluate(el => {
+    if (el.closest('[hidden]')) return false;
+    const r = el.getBoundingClientRect();
+    const s = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
+  });
+  if (!sichtbar) return [`Lab-Fokus-Prüfung: ${variante.element} ist nicht sichtbar`];
+  await ziel.focus();
+  const stand = await page.evaluate(selektor => {
+    const a = document.activeElement;
+    const treffer = a?.closest?.(selektor);
+    return {
+      imZiel: Boolean(treffer),
+      imDetail: Boolean(a?.closest?.('#labDetail')),
+      tag: a ? a.tagName : '',
+      text: treffer ? treffer.innerText.replace(/\s+/g, ' ').trim().slice(0, 60) : '',
+    };
+  }, variante.selektor);
+  if (!stand.imZiel || stand.imDetail) {
+    return [`Lab-Fokus-Prüfung konnte keinen ${variante.element} ausserhalb von #labDetail fokussieren (${stand.tag}, «${stand.text}»)`];
+  }
+  return [];
+}
+
+/**
+ * Fokus, Scrollposition und Auswahl der Lab-Liste vor und nach dem Refresh.
+ * `scrollen` setzt vorher eine mittlere Position; ist die Liste kürzer als ihr
+ * Rahmen, bleibt es bei 0. Nach dem Neuaufbau müssen alle drei Werte gleich
+ * sein, sonst springt die Liste beim Ablesen zurück oder verliert den Fokus.
+ */
+async function erhebeLabListenzustand(page, selektor, scrollen = false) {
+  return page.evaluate(([sel, sc]) => {
+    const liste = document.querySelector('#labList');
+    if (liste && sc) liste.scrollTop = Math.min(120, Math.max(0, liste.scrollHeight - liste.clientHeight));
+    const a = document.activeElement;
+    const ziel = a?.closest?.(sel) || null;
+    const sichtbar = el => {
+      if (!el || el.closest('[hidden]')) return false;
+      const r = el.getBoundingClientRect();
+      const s = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
+    };
+    return {
+      fokus: ziel ? (ziel.dataset.k ?? ziel.textContent.trim()) : null,
+      fokusSichtbar: sichtbar(ziel),
+      scroll: liste ? liste.scrollTop : null,
+      auswahl: liste?.querySelector('.li.on')?.dataset.k ?? null,
+    };
+  }, [selektor, scrollen]);
+}
+
+async function pruefeLabFokusAutoRefresh(browser, url, breite, variante, bilderPfad = null) {
   const befunde = [];
   const seitenfehler = [];
-  const page = await browser.newPage({ viewport: { width: breite, height: 900 }, deviceScaleFactor: 1 });
+  const context = await browser.newContext({ viewport: { width: breite, height: 900 }, deviceScaleFactor: 1 });
+  const page = await context.newPage();
   page.on('pageerror', err => seitenfehler.push(String(err)));
+  // Trace nur bei Befunden sichern; er hält Fokusverlauf und DOM-Snapshots fest.
+  await context.tracing.start({ screenshots: true, snapshots: true });
   try {
     // Die Playwright-Uhr wird vor dem Laden installiert. Damit lässt sich der
     // echte 8-Sekunden-Interval-Callback gezielt auslösen, ohne auf den Takt
@@ -1638,11 +1630,16 @@ async function pruefeLabFokusAutoRefresh(browser, url, breite, variante) {
       null, { timeout: 15000 },
     );
     await page.locator('.nav[data-v="lab"]').click();
-    await page.locator('#labList .li').first().waitFor({ state: 'visible', timeout: 5000 });
+    // Sichtbarkeit als eigene Bedingung melden; ein Timeout allein wäre nicht
+    // von einem fehlenden Element zu unterscheiden.
+    const listeSichtbar = await page.locator('#labList .li').first()
+      .waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
+    if (!listeSichtbar) return [`Lab-Fokus-Prüfung (${variante.label}): die Lab-Liste ist nicht sichtbar (versteckte Knoten zählen nicht)`];
     if (!await waehleKurvenKandidat(page)) return [`Lab-Fokus-Prüfung (${variante.label}) ohne Kapitalkurve`];
 
-    const fokusBefunde = await variante.fokussiere(page);
+    const fokusBefunde = await fokussiereLabAusserhalbDetail(page, variante);
     if (fokusBefunde.length) return [...befunde, ...fokusBefunde];
+    const zustandVorher = await erhebeLabListenzustand(page, variante.selektor, true);
 
     const marker = `refresh-${variante.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const timeout = Symbol('lab-fokus-refresh-timeout');
@@ -1691,17 +1688,43 @@ async function pruefeLabFokusAutoRefresh(browser, url, breite, variante) {
     } else if (!antwort.ok || antwort.status !== 200) {
       befunde.push(`Lab-Fokus-Auto-Refresh (${variante.label}) antwortet mit HTTP ${antwort.status}`);
     } else {
-      const bannerSichtbar = await page.waitForFunction(
-        m => (document.querySelector('#banner')?.textContent || '').includes(m),
-        marker, { timeout: 3000 },
-      ).then(() => true).catch(() => false);
-      const listeSichtbar = await page.waitForFunction(
+      await page.waitForFunction(
         m => (document.querySelector('#labList')?.textContent || '').includes(m),
         marker, { timeout: 3000 },
-      ).then(() => true).catch(() => false);
-      if (!bannerSichtbar) befunde.push(`Lab-Fokus-Auto-Refresh-Daten (${variante.label}) wurden nicht verarbeitet`);
-      if (!listeSichtbar) {
-        befunde.push(`Auto-Refresh hält die Lab-Liste bei Fokus auf ${variante.label} an (breiter #v-lab-Guard?)`);
+      ).catch(() => {});
+      // Marker nur an sichtbaren Knoten werten: textContent allein zählt auch
+      // ausgeblendete Einträge und würde einen stummen Render verdecken.
+      const beleg = await page.evaluate(m => {
+        const sichtbar = el => {
+          if (!el || el.closest('[hidden]')) return false;
+          const r = el.getBoundingClientRect();
+          const s = getComputedStyle(el);
+          return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
+        };
+        const liste = [...document.querySelectorAll('#labList .li')]
+          .some(li => sichtbar(li) && (li.textContent || '').includes(m));
+        const banner = document.querySelector('#banner');
+        return { liste, banner: sichtbar(banner) && (banner.textContent || '').includes(m) };
+      }, marker);
+      if (!beleg.banner) befunde.push(`Lab-Fokus-Auto-Refresh-Daten (${variante.label}) wurden nicht sichtbar verarbeitet`);
+      if (!beleg.liste) {
+        befunde.push(`Auto-Refresh hält die Lab-Liste bei Fokus auf ${variante.label} an (breiter #v-lab-Guard?) oder der Marker steht nur in versteckten Knoten`);
+      } else {
+        // Der Neuaufbau ersetzt die Listeneinträge; Fokus, Scrollposition und
+        // Auswahl müssen ihn überstehen.
+        const zustandNachher = await erhebeLabListenzustand(page, variante.selektor);
+        if (zustandNachher.fokus !== zustandVorher.fokus) {
+          befunde.push(`Auto-Refresh verliert den Fokus auf ${variante.label} (${zustandVorher.fokus === null ? 'kein Fokus' : `«${zustandVorher.fokus}»`} → ${zustandNachher.fokus === null ? 'kein Fokus' : `«${zustandNachher.fokus}»`})`);
+        }
+        if (zustandNachher.scroll !== zustandVorher.scroll) {
+          befunde.push(`Auto-Refresh setzt die Scrollposition der Lab-Liste zurück (${zustandVorher.scroll} → ${zustandNachher.scroll})`);
+        }
+        if (zustandNachher.auswahl !== zustandVorher.auswahl) {
+          befunde.push(`Auto-Refresh verliert die Auswahl in der Lab-Liste (${zustandVorher.auswahl} → ${zustandNachher.auswahl})`);
+        }
+        if (zustandNachher.fokusSichtbar !== true) {
+          befunde.push(`Auto-Refresh lässt den Fokus auf ${variante.label} in einem unsichtbaren Knoten zurück`);
+        }
       }
     }
     await page.unroute('**/api/report', handler).catch(() => {});
@@ -1709,6 +1732,324 @@ async function pruefeLabFokusAutoRefresh(browser, url, breite, variante) {
     befunde.push(`Lab-Fokus-Prüfung (${variante.label}) fehlgeschlagen: ${fehler instanceof Error ? fehler.message : fehler}`);
   } finally {
     if (seitenfehler.length) befunde.push(`Lab-Fokus-Seitenfehler (${variante.label}): ${seitenfehler.join('; ')}`);
+    await schreibeFehlerbeleg(context, page, befunde, bilderPfad, `lab-fokus-${breite}px-${variante.id}`).catch(() => {});
+    await context.close();
+  }
+  return befunde;
+}
+
+/**
+ * Legt bei Befunden einen Screenshot und einen Playwright-Trace ab, damit sich
+ * Fokusverlust und versteckte Marker nachvollziehen lassen. Ohne Befund wird
+ * der Trace verworfen und nichts geschrieben.
+ */
+async function schreibeFehlerbeleg(context, page, befunde, bilderPfad, name) {
+  if (!befunde.length || !bilderPfad) {
+    await context.tracing.stop().catch(() => {});
+    return;
+  }
+  mkdirSync(bilderPfad, { recursive: true });
+  const basis = join(bilderPfad, `text250-${name}`);
+  await page.screenshot({ path: `${basis}.png`, fullPage: true }).catch(() => {});
+  await context.tracing.stop({ path: `${basis}-trace.zip` }).catch(() => {});
+  console.log(`Belege (${name}): ${basis}.png, ${basis}-trace.zip`);
+}
+
+/**
+ * Prüft die Guard-Regel direkt statt nur über den Fokusverlauf: Liste, Tab und
+ * body dürfen den Render nicht blockieren, das Lab-Detail samt Inhalt schon.
+ * Der ausgeblendete Fall wird über den echten DOM-Zustand (#v-lab hidden) und
+ * einen explizit übergebenen Knoten geprüft; document.activeElement bleibt
+ * unangetastet. Zusätzlich muss die Regel am echten Fokus dasselbe liefern.
+ */
+async function pruefeLabGuardLogik(browser, url, breite, bilderPfad = null) {
+  const befunde = [];
+  const context = await browser.newContext({ viewport: { width: breite, height: 900 }, deviceScaleFactor: 1 });
+  const page = await context.newPage();
+  page.on('pageerror', err => befunde.push(`Lab-Guard-Seitenfehler: ${err}`));
+  await context.tracing.start({ screenshots: true, snapshots: true });
+  try {
+    await page.goto(`${url}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(
+      () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
+      null, { timeout: 15000 },
+    );
+    await page.locator('.nav[data-v="lab"]').click();
+    const listeSichtbar = await page.locator('#labList .li').first()
+      .waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
+    if (!listeSichtbar) {
+      befunde.push('Lab-Guard-Prüfung: die Lab-Liste ist nicht sichtbar (versteckte Knoten zählen nicht)');
+      return befunde;
+    }
+    if (!await waehleKurvenKandidat(page)) befunde.push('Lab-Guard-Prüfung ohne Kapitalkurve');
+
+    const stand = await page.evaluate(() => {
+      const guard = window.pausiertRenderWegenLabDetail;
+      if (typeof guard !== 'function') return { guard: false };
+      const teile = {
+        liste: document.querySelector('#labList .li'),
+        tab: document.querySelector('#labTabs .tab'),
+        detail: document.querySelector('#labDetail'),
+        vLab: document.querySelector('#v-lab'),
+      };
+      const fehlend = Object.entries(teile).filter(([, el]) => !el).map(([name]) => name);
+      if (fehlend.length) return { guard: true, fehlend };
+      const { liste, tab, detail, vLab } = teile;
+      const innen = detail.firstElementChild || detail;
+      const ergebnis = {
+        guard: true,
+        direkt: {
+          liste: guard(liste),
+          tab: guard(tab),
+          detail: guard(detail),
+          innen: guard(innen),
+          body: guard(document.body),
+          leer: guard(null),
+        },
+      };
+      // Ausgeblendetes Lab: echter DOM-Zustand, kein activeElement-Eingriff.
+      const vorherHidden = vLab.hidden;
+      vLab.hidden = true;
+      ergebnis.versteckt = { detail: guard(detail), innen: guard(innen) };
+      vLab.hidden = vorherHidden;
+      // Default-Parameter am echten Fokus prüfen.
+      liste.focus();
+      ergebnis.aktivListe = guard();
+      const hatteTabindex = detail.hasAttribute('tabindex');
+      detail.tabIndex = -1;
+      detail.focus();
+      ergebnis.aktivDetail = guard();
+      if (!hatteTabindex) detail.removeAttribute('tabindex');
+      liste.focus();
+      return ergebnis;
+    });
+
+    if (!stand.guard) {
+      befunde.push('Guard-Funktion pausiertRenderWegenLabDetail fehlt');
+    } else if (stand.fehlend) {
+      befunde.push(`Lab-Guard-Prüfung ohne Knoten: ${stand.fehlend.join(', ')}`);
+    } else {
+      for (const [name, wert] of Object.entries(stand.direkt)) {
+        const erwartet = name === 'detail' || name === 'innen';
+        if (wert !== erwartet) befunde.push(`Guard(${name}) liefert ${wert}, erwartet ${erwartet}`);
+      }
+      for (const [name, wert] of Object.entries(stand.versteckt)) {
+        if (wert !== false) befunde.push(`Guard(${name}) blockiert bei ausgeblendetem Lab (${wert}), erwartet false`);
+      }
+      if (stand.aktivListe !== false) befunde.push('Guard blockiert bei Fokus auf der Lab-Liste');
+      if (stand.aktivDetail !== true) befunde.push('Guard blockiert nicht bei Fokus im sichtbaren Lab-Detail');
+    }
+  } catch (fehler) {
+    befunde.push(`Lab-Guard-Prüfung fehlgeschlagen: ${fehler instanceof Error ? fehler.message : fehler}`);
+  } finally {
+    await schreibeFehlerbeleg(context, page, befunde, bilderPfad, `lab-guard-${breite}px`).catch(() => {});
+    await context.close();
+  }
+  return befunde;
+}
+
+/**
+ * Pausiert der Ansichts-Render wegen Fokus im sichtbaren Lab-Detail, müssen
+ * neue Daten sichtbar und für Screenreader angekündigt werden (#labNeu als
+ * höfliche Live-Region). Beim Verlassen des Details wird sofort gezeichnet,
+ * ohne den nächsten Acht-Sekunden-Takt abzuwarten.
+ */
+async function pruefeLabPauseHinweis(browser, url, breite, bilderPfad = null) {
+  const befunde = [];
+  const context = await browser.newContext({ viewport: { width: breite, height: 900 }, deviceScaleFactor: 1 });
+  const page = await context.newPage();
+  page.on('pageerror', err => befunde.push(`Lab-Pause-Seitenfehler: ${err}`));
+  await context.tracing.start({ screenshots: true, snapshots: true });
+  try {
+    await page.clock.install();
+    await page.goto(`${url}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(
+      () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
+      null, { timeout: 15000 },
+    );
+    await page.locator('.nav[data-v="lab"]').click();
+    const listeSichtbar = await page.locator('#labList .li').first()
+      .waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
+    if (!listeSichtbar) {
+      befunde.push('Lab-Pause-Prüfung: die Lab-Liste ist nicht sichtbar (versteckte Knoten zählen nicht)');
+      return befunde;
+    }
+    await page.locator('#labDetail .card').first().waitFor({ state: 'visible', timeout: 5000 });
+
+    const hinweisVorher = await page.evaluate(() => {
+      const el = document.querySelector('#labNeu');
+      if (!el) return { vorhanden: false };
+      return {
+        vorhanden: true,
+        hidden: el.hidden,
+        text: el.textContent.trim(),
+        role: el.getAttribute('role'),
+        live: el.getAttribute('aria-live'),
+      };
+    });
+    if (!hinweisVorher.vorhanden) return [...befunde, 'Lab-Pause-Prüfung ohne Statuselement #labNeu'];
+    if (hinweisVorher.role !== 'status' || hinweisVorher.live !== 'polite') {
+      befunde.push(`Status ist keine höfliche Live-Region (role=${hinweisVorher.role}, aria-live=${hinweisVorher.live})`);
+    }
+    if (!hinweisVorher.hidden || hinweisVorher.text) befunde.push('Status ist ohne ausstehende Daten bereits sichtbar');
+
+    const fokusDetail = await page.evaluate(() => {
+      const detail = document.querySelector('#labDetail');
+      if (!detail) return false;
+      detail.tabIndex = -1;
+      detail.focus();
+      return document.activeElement === detail;
+    });
+    if (!fokusDetail) return [...befunde, 'Fokus liess sich nicht ins sichtbare Lab-Detail setzen'];
+
+    const marker = `pause-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const handler = async route => {
+      try {
+        const antwort = await route.fetch();
+        const daten = await antwort.json();
+        if (!daten || typeof daten !== 'object' || !Array.isArray(daten.validierungen)) {
+          throw new Error('Bericht enthält keine Validierungen');
+        }
+        for (const kandidat of daten.validierungen) {
+          if (kandidat && typeof kandidat === 'object') kandidat.symbol = marker;
+        }
+        daten.datenquelle = marker;
+        await route.fulfill({ response: antwort, json: daten });
+      } catch {
+        await route.abort().catch(() => {});
+      }
+    };
+    await page.route('**/api/report', handler);
+    await page.clock.runFor(8000);
+    await page.waitForFunction(
+      m => (document.querySelector('#banner')?.textContent || '').includes(m),
+      marker, { timeout: 3000 },
+    ).catch(() => {});
+    await page.waitForTimeout(200);
+
+    const leseStand = m => page.evaluate(stand => {
+      const sichtbar = el => {
+        if (!el || el.closest('[hidden]')) return false;
+        const r = el.getBoundingClientRect();
+        const s = getComputedStyle(el);
+        return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
+      };
+      const el = document.querySelector('#labNeu');
+      return {
+        banner: (document.querySelector('#banner')?.textContent || '').includes(stand),
+        listeMarker: [...document.querySelectorAll('#labList .li')]
+          .some(li => sichtbar(li) && (li.textContent || '').includes(stand)),
+        hinweisSichtbar: sichtbar(el) && (el?.textContent || '').includes('Neue Daten'),
+        hinweisText: (el?.textContent || '').trim(),
+        fokusInListe: Boolean(document.activeElement?.closest?.('#labList .li')),
+        fokusImDetail: Boolean(document.activeElement?.closest?.('#labDetail')),
+      };
+    }, m);
+    const pausiert = await leseStand(marker);
+    if (!pausiert.banner) befunde.push('Pausierter Render: neue Daten wurden nicht übernommen');
+    if (pausiert.listeMarker) befunde.push('Pausierter Render: die Lab-Liste wurde trotz Fokus im Detail neu gezeichnet');
+    if (!pausiert.hinweisSichtbar) befunde.push(`Pausierter Render: kein sichtbarer Status «neue Daten» (${pausiert.hinweisText || 'leer'})`);
+    if (!pausiert.fokusImDetail) befunde.push('Fokus lag vor dem Verlassen nicht mehr im Detail');
+
+    // Verlassen des Details: sofortiges Neuzeichnen ohne Zeitsprung.
+    await page.locator('#labList .li').first().focus();
+    await page.waitForTimeout(300);
+    const danach = await leseStand(marker);
+    if (!danach.listeMarker) befunde.push('Nach dem Verlassen des Details wurde nicht sofort neu gezeichnet');
+    if (danach.hinweisSichtbar || danach.hinweisText) befunde.push('Status bleibt nach dem Neuzeichnen stehen');
+    if (!danach.fokusInListe) befunde.push('Neuzeichnen nach dem Verlassen des Details verliert den Fokus');
+  } catch (fehler) {
+    befunde.push(`Lab-Pause-Prüfung fehlgeschlagen: ${fehler instanceof Error ? fehler.message : fehler}`);
+  } finally {
+    await schreibeFehlerbeleg(context, page, befunde, bilderPfad, `lab-pause-${breite}px`).catch(() => {});
+    await context.close();
+  }
+  return befunde;
+}
+
+/**
+ * Der Acht-Sekunden-Takt darf sich bei langsamen Antworten nicht überlappen,
+ * im Hintergrundtab nicht laden und beim Zurückkehren sofort nachladen. Der
+ * Takt läuft über die Playwright-Uhr; die Sichtbarkeit wird über document.hidden
+ * und ein echtes visibilitychange-Event gesteuert.
+ */
+async function pruefeRefreshTakt(browser, url, breite) {
+  const befunde = [];
+  const page = await browser.newPage({ viewport: { width: breite, height: 900 }, deviceScaleFactor: 1 });
+  page.on('pageerror', err => befunde.push(`Seitenfehler: ${err}`));
+  let anfragen = 0;
+  let halten = false;
+  const offen = [];
+  const freigeben = () => offen.splice(0).forEach(loesen => loesen());
+  try {
+    await page.clock.install();
+    await page.route('**/api/report', async route => {
+      anfragen++;
+      try {
+        const antwort = await route.fetch();
+        if (halten) await new Promise(resolve => offen.push(resolve));
+        await route.fulfill({ response: antwort });
+      } catch {
+        // Seite wird geschlossen oder die Route abgebrochen; kein Befund.
+      }
+    });
+    await page.goto(`${url}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(
+      () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
+      null, { timeout: 15000 },
+    );
+    const start = anfragen;
+
+    // 1. Single-flight: Die erste Antwort bleibt offen; zwei weitere Takte
+    //    dürfen keinen zweiten Aufruf starten.
+    halten = true;
+    await page.clock.runFor(8000);
+    await page.waitForTimeout(50);
+    if (anfragen !== start + 1) befunde.push(`Takt startet keinen Aufruf (${anfragen - start} statt 1)`);
+    await page.clock.runFor(16000);
+    await page.waitForTimeout(50);
+    if (anfragen !== start + 1) befunde.push(`Überlappender Refresh: ${anfragen - start} parallele Aufrufe`);
+
+    // 2. Nach dem Auflösen lädt der nächste Takt wieder. Ab hier werden
+    //    Antworten nicht mehr gehalten, damit der Takt deterministisch läuft;
+    //    die Überlappungsfreiheit ist oben bereits belegt.
+    halten = false;
+    freigeben();
+    await page.waitForTimeout(300);
+    const nachAufloesen = anfragen;
+    let taktAufrufe = 0;
+    for (let i = 0; i < 3 && taktAufrufe === 0; i++) {
+      await page.clock.runFor(8000);
+      await page.waitForTimeout(150);
+      taktAufrufe = anfragen - nachAufloesen;
+    }
+    if (taktAufrufe !== 1) befunde.push(`Takt lädt nach aufgelöster Antwort nicht weiter (${taktAufrufe} Aufrufe)`);
+    freigeben();
+    await page.waitForTimeout(300);
+
+    // 3. Hintergrundtab: kein Aufruf; Zurückkehren lädt sofort nach.
+    const versteckt = await page.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      return document.hidden;
+    });
+    if (!versteckt) befunde.push('Sichtbarkeit liess sich nicht auf «versteckt» setzen');
+    const vorHintergrund = anfragen;
+    await page.clock.runFor(24000);
+    await page.waitForTimeout(50);
+    if (anfragen !== vorHintergrund) befunde.push(`Refresh läuft im Hintergrundtab weiter (${anfragen - vorHintergrund} Aufrufe)`);
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.waitForTimeout(50);
+    if (anfragen !== vorHintergrund + 1) befunde.push(`Beim Zurückkehren fehlt das sofortige Nachladen (${anfragen - vorHintergrund} Aufrufe)`);
+  } catch (fehler) {
+    befunde.push(`Takt-Prüfung fehlgeschlagen: ${fehler instanceof Error ? fehler.message : fehler}`);
+  } finally {
+    freigeben();
+    await page.waitForTimeout(100).catch(() => {});
+    await page.unroute('**/api/report').catch(() => {});
     await page.close();
   }
   return befunde;
@@ -2680,7 +3021,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const fehler = [];
   const hinweise = new Set();
-  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, refreshGesamt = 0, refreshNegativGesamt = 0, labFokusGesamt = 0, listenRefreshGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, legendeDesktopGeprueft = 0, kopfGeprueft = 0, schmaleAnsichten = 0, schreibwegeGesamt = 0, claimPruefungen = 0;
+  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, refreshGesamt = 0, refreshNegativGesamt = 0, labFokusGesamt = 0, listenRefreshGesamt = 0, labGuardGesamt = 0, labPauseGesamt = 0, taktGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, legendeDesktopGeprueft = 0, kopfGeprueft = 0, schmaleAnsichten = 0, schreibwegeGesamt = 0, claimPruefungen = 0;
 
   try {
     const kopfBefunde = await pruefeKopfzeile(browser, opt.url);
@@ -2768,11 +3109,17 @@ async function main() {
               if (refreshNegativBefunde.length === 0) refreshNegativGesamt++;
               for (const text of refreshNegativBefunde) fehler.push(`${breite}px/lab-negativ: ${text}`);
               for (const variante of LAB_FOKUS_VARIANTEN) {
-                const labFokusBefunde = await pruefeLabFokusAutoRefresh(browser, opt.url, breite, variante);
+                const labFokusBefunde = await pruefeLabFokusAutoRefresh(browser, opt.url, breite, variante, opt.bilder);
                 if (labFokusBefunde.length === 0) labFokusGesamt++;
                 if (variante.id === 'liste' && labFokusBefunde.length === 0) listenRefreshGesamt++;
                 for (const text of labFokusBefunde) fehler.push(`${breite}px/${ansicht}: ${text}`);
               }
+              const labGuardBefunde = await pruefeLabGuardLogik(browser, opt.url, breite, opt.bilder);
+              if (labGuardBefunde.length === 0) labGuardGesamt++;
+              for (const text of labGuardBefunde) fehler.push(`${breite}px/lab-guard: ${text}`);
+              const labPauseBefunde = await pruefeLabPauseHinweis(browser, opt.url, breite, opt.bilder);
+              if (labPauseBefunde.length === 0) labPauseGesamt++;
+              for (const text of labPauseBefunde) fehler.push(`${breite}px/lab-pause: ${text}`);
             }
           } else {
             hinweise.add('Keine Kapitalkurve im Lab gefunden – Tooltip und Tastatur nicht geprüft.');
@@ -2807,6 +3154,10 @@ async function main() {
       }
     }
 
+    const taktBefunde = await pruefeRefreshTakt(browser, opt.url, opt.breiten[0]);
+    if (taktBefunde.length === 0) taktGesamt++;
+    for (const text of taktBefunde) fehler.push(`takt: ${text}`);
+
     const schreibPage = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1 });
     schreibPage.on('pageerror', err => fehler.push(`schreibwege: ${err}`));
     await schreibPage.goto(`${opt.url}/`, { waitUntil: 'domcontentloaded' });
@@ -2826,7 +3177,7 @@ async function main() {
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${refreshGesamt ? ` · Refresh ${refreshGesamt}× geprüft (HTTP 200, Marker)` : ''}${refreshNegativGesamt ? ` · Refresh-Negativ ${refreshNegativGesamt}× geprüft` : ''}${labFokusGesamt ? ` · Lab-Fokus ${labFokusGesamt}× geprüft` : ''}${listenRefreshGesamt ? ` · Listen-Refresh ${listenRefreshGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${refreshGesamt ? ` · Refresh ${refreshGesamt}× geprüft (HTTP 200, Marker)` : ''}${refreshNegativGesamt ? ` · Refresh-Negativ ${refreshNegativGesamt}× geprüft` : ''}${labFokusGesamt ? ` · Lab-Fokus ${labFokusGesamt}× geprüft` : ''}${labGuardGesamt ? ` · Lab-Guard ${labGuardGesamt}× geprüft` : ''}${labPauseGesamt ? ` · Lab-Pause ${labPauseGesamt}× geprüft` : ''}${listenRefreshGesamt ? ` · Listen-Refresh ${listenRefreshGesamt}× geprüft` : ''}${taktGesamt ? ` · Refresh-Takt ${taktGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {
