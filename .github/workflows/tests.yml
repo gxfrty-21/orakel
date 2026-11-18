@@ -272,12 +272,24 @@ jobs:
             echo "Refresh-Negativtest für ausbleibenden Refresh und Re-Render wurde nicht ausgeführt"
             exit 1
           fi
-          if ! grep -q 'Lab-Fokus 3× geprüft' artifacts/text250/lauf.log; then
-            echo "Lab-Fokus-Prüfungen für Liste, Tab und ausgeblendetes Lab wurden nicht ausgeführt"
+          if ! grep -q 'Lab-Fokus 2× geprüft' artifacts/text250/lauf.log; then
+            echo "Lab-Fokus-Prüfungen für Liste und Tab wurden nicht ausgeführt"
+            exit 1
+          fi
+          if ! grep -q 'Lab-Guard 1× geprüft' artifacts/text250/lauf.log; then
+            echo "Direkte Guard-Prüfung (sichtbares Detail, Liste, Tab, ausgeblendetes Lab) wurde nicht ausgeführt"
+            exit 1
+          fi
+          if ! grep -q 'Lab-Pause 1× geprüft' artifacts/text250/lauf.log; then
+            echo "Pausierter Render wurde nicht auf Statusanzeige und sofortiges Neuzeichnen geprüft"
             exit 1
           fi
           if ! grep -q 'Listen-Refresh 1× geprüft' artifacts/text250/lauf.log; then
             echo "Listen-Refresh wurde im 250-%-Lauf nicht geprüft"
+            exit 1
+          fi
+          if ! grep -q 'Refresh-Takt 1× geprüft' artifacts/text250/lauf.log; then
+            echo "Refresh-Takt wurde nicht auf Überlappung, Hintergrundtab und sofortiges Nachladen geprüft"
             exit 1
           fi
           if ! grep -q '240px: 12/12 Ansichten ohne horizontalen Überlauf' \
@@ -521,6 +533,7 @@ jobs:
             artifacts/text250/*.png
             artifacts/text250/*.html
             artifacts/text250/*.txt
+            artifacts/text250/*-trace.zip
             artifacts/text250/selbsttest/*.png
             artifacts/text250/selbsttest/*.html
             artifacts/text250/selbsttest/*.txt
