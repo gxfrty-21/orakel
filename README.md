@@ -39,6 +39,15 @@ python -m venv .venv
 .venv/bin/python -m orakel unternehmen
 ```
 
+### Lange Läufe
+
+«Lauf starten» blockiert nicht mehr. `POST /api/lauf` legt nur einen Auftrag an
+und antwortet sofort mit `202` und `{"id": …}`; ein Hintergrund-Arbeiter führt
+ihn aus. `GET /api/lauf/{id}` liefert `status` (`offen`, `aktiv`, `fertig`,
+`fehler`) sowie bei Erfolg die Zusammenfassung aus Dauer, Validierungen, Plan
+und Fehlern. Das Dashboard fragt alle zwei Sekunden nach und lädt den Bericht
+erst danach neu.
+
 Die Company-Schicht ist additiv und standardmäßig **nicht** in den laufenden
 Paper-Takt eingebunden (`[unternehmen] aktiv = false`). Sie enthält noch keine
 3D-Welt, keine LLM-Anbindung und keine echten Orders.
