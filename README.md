@@ -429,9 +429,10 @@ Punkt oder Bindestrich bleiben die Quellenzeilen in normaler Darstellung ohne
 überein; der Trenner `↔` bleibt jeweils in der Quellenzeile.
 Die Testdaten werden nur ins DOM injiziert und nicht in SQLite geschrieben. Die
 Zusammenfassung meldet `Claims 4× geprüft` (250 % bei 360, 320 und 280 px
-sowie zusätzlich 240 px in normaler Schrift) sowie explizit
-`Langhost 114 Zeichen: 4× geprüft`. Beide Klartextzähler sind nur für
-Menschen lesbar und kein CI-Gate.
+sowie zusätzlich 240 px in normaler Schrift) sowie
+`Langhost 114 (114 Zeichen) 4× geprüft`. Beide Klartextzähler stehen in
+derselben Zusammenfassungszeile, sind nur für Menschen lesbar und kein
+CI-Gate.
 Verbindlich sind die Zähler `claims: 4` und `langhost114: 4` im Check-Manifest
 sowie die expliziten IDs `text250.claims.<breite>` und
 `text250.langhost114.<breite>` im maschinenlesbaren Ergebnis. Damit ist der
@@ -446,7 +447,7 @@ node scripts/pruefe-text250.mjs --ansichten spider --breiten 360,320,280
 
 Der Aufruf prüft die vier Langhost-Fälle bei 360, 320 und 280 px sowie die
 zusätzliche 240-px-Claim-Prüfung in normaler Schrift. Erwartet werden Exit-Code 0,
-`Claims 4× geprüft`, `Langhost 114 Zeichen: 4× geprüft` und die Zeile
+`Claims 4× geprüft`, `Langhost 114 (114 Zeichen) 4× geprüft` und die Zeile
 `240px/spider: OK · Seite 240px · Kopf 240/240 · Navigation 240/240`.
 Die Belastbarkeitsgrenze und der separate 240-px-Aufruf sind oben dokumentiert.
 
