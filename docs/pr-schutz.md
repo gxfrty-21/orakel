@@ -35,8 +35,8 @@ Entscheidung über die Doku-Prüfung nicht unbemerkt ausfallen kann.
 Die Doku-Prüfung läuft nur bei doku-relevanten Änderungen
 (`if: needs.changes.outputs.doku == 'true'`). Ein übersprungener Job meldet
 laut GitHub-Dokumentation `Success` und blockiert den Merge auch als
-Required Check nicht; belegt an PR #177, dessen Check `Doku-Prüfung` mit
-`skipped` abgeschlossen ist.
+Required Check nicht; belegt an PR #179, dessen Check `Doku-Prüfung` auf
+`830167b` mit `skipped` abgeschlossen ist und der anschließend gemergt wurde.
 
 ## Weitere Regeln
 
