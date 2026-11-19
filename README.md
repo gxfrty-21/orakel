@@ -228,6 +228,14 @@ sowie neun englische Altnamen; alles muss erkannt werden. Der eigene CI-Job
 `doku` führt beide Läufe aus, sobald Markdown-Dateien oder das Prüfskript
 geändert wurden; andernfalls wird er übersprungen.
 
+### Schutz von `main`
+
+`main` ist durch ein Repository-Ruleset geschützt: Änderungen laufen
+ausschliesslich über Pull Requests, und sechs Required Checks müssen grün sein.
+Die aktuelle Liste der Checks, das Skip-Verhalten der Doku-Prüfung und die
+Bypass-Regeln stehen in [docs/pr-schutz.md](docs/pr-schutz.md); diese Datei ist
+der verbindliche Stand und wird bei Änderungen am Ruleset mitgepflegt.
+
 ### Lokaler Pre-Commit-Hook
 
 Der versionierte Hook `.githooks/pre-commit` startet die Doku-Prüfung, sobald
