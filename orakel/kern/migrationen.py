@@ -1,0 +1,242 @@
+"""Nummerierte Migrationen für die Fakten-Datenbank.
+
+Jede Datei ``orakel/migrations/NNNN_name.sql`` wird genau einmal angewendet;
+die Tabelle ``schema_migrationen`` hält fest, welche Nummer wann lief. Ein
+Downgrade nutzt die gleichnamige Datei ``NNNN_name.down.sql``.
+
+Bestandsdatenbanken aus der Zeit vor dieser Tabelle werden übernommen
+(Baseline): Enthält die Datei bereits Tabellen und ist ``PRAGMA user_version``
+mindestens 1, hat die frühere Initialisierung Schema und Spalten vollständig
+angelegt. Die Nummern werden dann als angewendet vermerkt, ohne die Dateien
+erneut auszuführen.
+
+Vor jedem Lauf, der auf einer bestehenden Datenbank tatsächlich etwas ändert,
+entsteht eine Sicherung per SQLite-Online-Backup. Schlägt eine Migration fehl,
+wird ihre Transaktion zurückgerollt; die Datenbank bleibt auf dem Stand davor.
+"""
+from __future__ import annotations
+
+import sqlite3
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Iterable
+
+MIGRATIONS_ORDNER = Path(__file__).resolve().parents[1] / "migrations"
+TABELLE = "schema_migrationen"
+SCHEMA_TABELLE_SQL = f"""
+CREATE TABLE IF NOT EXISTS {TABELLE} (
+    nummer INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    angewendet_am TEXT NOT NULL
+)
+"""
+
+
+class MigrationsFehler(RuntimeError):
+    """Migrationen sind nicht eindeutig, fehlerhaft oder nicht umkehrbar."""
+
+
+@dataclass(frozen=True, slots=True)
+class Migration:
+    nummer: int
+    name: str
+    hoch: Path
+    runter: Path | None
+
+    @property
+    def stand(self) -> str:
+        return f"{self.nummer:04d}_{self.name}"
+
+
+def dateien(ordner: Path | None = None) -> list[Migration]:
+    """Liest die Migrationen in Nummernreihenfolge und prüft ihre Eindeutigkeit."""
+    basis = Path(ordner or MIGRATIONS_ORDNER)
+    hoch: dict[int, Migration] = {}
+    for pfad in sorted(basis.glob("[0-9][0-9][0-9][0-9]_*.sql")):
+        if pfad.name.endswith(".down.sql"):
+            continue
+        try:
+            nummer = int(pfad.name[:4])
+        except ValueError as fehler:  # pragma: no cover - glob erzwingt Ziffern
+            raise MigrationsFehler(f"Ungültiger Dateiname: {pfad.name}") from fehler
+        if nummer in hoch:
+            raise MigrationsFehler(f"Nummer {nummer} doppelt vergeben: {pfad.name}")
+        runter = pfad.with_name(pfad.name[:-4] + ".down.sql")
+        hoch[nummer] = Migration(nummer, pfad.name[5:-4], pfad,
+                                 runter if runter.exists() else None)
+    if not hoch:
+        raise MigrationsFehler(f"Keine Migrationen in {basis}")
+    return [hoch[nummer] for nummer in sorted(hoch)]
+
+
+def _statements(sql: str) -> Iterable[str]:
+    """Teilt ein SQL-Skript in vollständige Anweisungen (ohne Kommentarzeilen)."""
+    puffer = ""
+    for zeile in sql.splitlines(keepends=True):
+        if not puffer and (not zeile.strip() or zeile.lstrip().startswith("--")):
+            continue
+        puffer += zeile
+        if sqlite3.complete_statement(puffer):
+            if puffer.strip():
+                yield puffer.strip()
+            puffer = ""
+    if puffer.strip():
+        yield puffer.strip()
+
+
+def _wende_datei_an(c: sqlite3.Connection, datei: Path) -> None:
+    """Führt eine Datei in einer Transaktion aus; bei Fehler bleibt nichts zurück."""
+    c.execute("BEGIN")
+    try:
+        for anweisung in _statements(datei.read_text(encoding="utf-8")):
+            if anweisung.upper().startswith("PRAGMA"):
+                # WAL und foreign_keys setzt der Aufrufer vor der Transaktion.
+                continue
+            try:
+                c.execute(anweisung)
+            except sqlite3.OperationalError as fehler:
+                # SQLite kennt kein ADD COLUMN IF NOT EXISTS. Eine bereits
+                # vorhandene Spalte ist kein Fehler, sondern der Normalfall bei
+                # einer frisch angelegten Datenbank.
+                if "duplicate column name" not in str(fehler):
+                    raise
+        c.commit()
+    except Exception as fehler:
+        c.rollback()
+        raise MigrationsFehler(f"{datei.name}: {fehler}") from fehler
+
+
+def _verbinde(pfad: Path) -> sqlite3.Connection:
+    c = sqlite3.connect(pfad, timeout=30)
+    c.row_factory = sqlite3.Row
+    c.execute("PRAGMA busy_timeout = 5000")
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("PRAGMA foreign_keys=ON")
+    return c
+
+
+def _tabellen(c: sqlite3.Connection) -> list[str]:
+    return [r["name"] for r in c.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' "
+        "AND name NOT LIKE 'sqlite_%' AND name != ?", (TABELLE,))]
+
+
+def _benutzer_version(c: sqlite3.Connection) -> int:
+    return int(c.execute("PRAGMA user_version").fetchone()[0])
+
+
+def angewendet(pfad: str | Path) -> list[int]:
+    """Nummern der bereits angewendeten Migrationen (leer, wenn Tabelle fehlt)."""
+    c = sqlite3.connect(pfad)
+    try:
+        vorhanden = c.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (TABELLE,)).fetchone()
+        if not vorhanden:
+            return []
+        return [int(r[0]) for r in c.execute(
+            f"SELECT nummer FROM {TABELLE} ORDER BY nummer")]
+    finally:
+        c.close()
+
+
+def _sichere(pfad: Path, jetzt: datetime) -> Path:
+    ziel = pfad.with_name(f"{pfad.name}.vor-migration-{jetzt:%Y%m%d-%H%M%S}.bak")
+    quelle = sqlite3.connect(pfad)
+    kopie = sqlite3.connect(ziel)
+    try:
+        quelle.backup(kopie)
+    finally:
+        kopie.close()
+        quelle.close()
+    return ziel
+
+
+def anwenden(pfad: str | Path, *, ordner: Path | None = None, bis: int | None = None,
+             jetzt: datetime | None = None) -> dict[str, object]:
+    """Wendet alle offenen Migrationen bis einschliesslich ``bis`` an."""
+    datei = Path(pfad)
+    datei.parent.mkdir(parents=True, exist_ok=True)
+    jetzt = jetzt or datetime.now(timezone.utc)
+    alle = dateien(ordner)
+    c = _verbinde(datei)
+    try:
+        c.executescript(SCHEMA_TABELLE_SQL)
+        c.commit()
+        stand = {int(r["nummer"]) for r in c.execute(f"SELECT nummer FROM {TABELLE}")}
+        bestand = _tabellen(c)
+        basisuebernahme = False
+        if bestand and not stand and _benutzer_version(c) >= 1:
+            c.executemany(
+                f"INSERT INTO {TABELLE} (nummer, name, angewendet_am) VALUES (?, ?, ?)",
+                [(m.nummer, m.name, jetzt.isoformat(timespec="seconds")) for m in alle],
+            )
+            c.commit()
+            stand = {m.nummer for m in alle}
+            basisuebernahme = True
+
+        offen = [m for m in alle
+                 if m.nummer not in stand and (bis is None or m.nummer <= bis)]
+        sicherung = None
+        if offen and bestand and not basisuebernahme:
+            sicherung = _sichere(datei, jetzt)
+
+        angewendet_nummern: list[int] = []
+        for migration in offen:
+            _wende_datei_an(c, migration.hoch)
+            c.execute(
+                f"INSERT INTO {TABELLE} (nummer, name, angewendet_am) VALUES (?, ?, ?)",
+                (migration.nummer, migration.name, jetzt.isoformat(timespec="seconds")),
+            )
+            c.commit()
+            angewendet_nummern.append(migration.nummer)
+
+        neuer_stand = max(stand | set(angewendet_nummern), default=0)
+        if neuer_stand:
+            # Auch die alte Initialisierung kannte nur user_version; der Wert
+            # bleibt als grobe Standanzeige erhalten (höchste Migration).
+            c.execute(f"PRAGMA user_version = {neuer_stand}")
+            c.commit()
+
+        return {
+            "angewendet": angewendet_nummern,
+            "basisuebernahme": basisuebernahme,
+            "backup": str(sicherung) if sicherung else None,
+            "stand": neuer_stand,
+        }
+    finally:
+        c.close()
+
+
+def zurueckrollen(pfad: str | Path, *, bis: int = 0, ordner: Path | None = None,
+                  jetzt: datetime | None = None) -> dict[str, object]:
+    """Rollt Migrationen oberhalb von ``bis`` mit ihren Down-Dateien zurück.
+
+    Das löscht Daten der betroffenen Tabellen. Die Sicherung entsteht vor dem
+    ersten Rückrollschritt; ohne Down-Datei bricht der Lauf ab, bevor etwas
+    geändert wurde.
+    """
+    datei = Path(pfad)
+    jetzt = jetzt or datetime.now(timezone.utc)
+    alle = {m.nummer: m for m in dateien(ordner)}
+    stand = angewendet(datei)
+    zurueck = sorted((nummer for nummer in stand if nummer > bis), reverse=True)
+    fehlend = [nummer for nummer in zurueck
+               if alle.get(nummer) is None or alle[nummer].runter is None]
+    if fehlend:
+        raise MigrationsFehler(
+            "Kein Downgrade hinterlegt für: " + ", ".join(f"{n:04d}" for n in fehlend))
+    if not zurueck:
+        return {"zurueckgerollt": [], "backup": None}
+
+    sicherung = _sichere(datei, jetzt)
+    c = _verbinde(datei)
+    try:
+        for nummer in zurueck:
+            _wende_datei_an(c, alle[nummer].runter)  # type: ignore[arg-type]
+            c.execute(f"DELETE FROM {TABELLE} WHERE nummer = ?", (nummer,))
+            c.commit()
+    finally:
+        c.close()
+    return {"zurueckgerollt": zurueck, "backup": str(sicherung)}
