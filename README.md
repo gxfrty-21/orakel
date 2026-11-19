@@ -13,6 +13,10 @@ Broker-Order. `[paper] order_freigabe` bleibt als harte Policy-Sperre auf
 **Raumschiff-Doku:** [docs/raumschiff/README.md](docs/raumschiff/README.md)
 — Planung und aktueller 2D-Agenten-Querschnitt (103 Räume, elf Abteilungen, Zoom/Pan, Detailspalte).
 
+**Architektur:** [docs/ARCHITEKTUR-KERN.md](docs/ARCHITEKTUR-KERN.md)
+— Grenze zwischen Handelskern (`orakel/kern/`) und Oberfläche, Prüfung in der
+CI und Feature-Stopp für Agenten und Raumschiff.
+
 ## Schnellstart
 
 ```bash
