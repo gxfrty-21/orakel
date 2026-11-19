@@ -7,8 +7,8 @@ import sys
 import time
 from pathlib import Path
 
-from .config import load_config
-from .data import lade_csv, synthetische_kerzen
+from .config import RisikoGrenzen, load_config
+from .data import df_aus_db, lade_csv, synthetische_kerzen
 from .db import Facts
 from .knowledge import Vault
 
@@ -54,6 +54,42 @@ def cmd_pruefen(args: argparse.Namespace) -> int:
     print(f"Bericht: {args.bericht} ({bericht['dauer_sekunden']} s)")
     if bestanden == 0:
         print("Keine Strategie hat den Richter bestanden — es wird nicht gehandelt.")
+    return 0
+
+
+def _commit() -> str:
+    """Aktueller Commit für den Bericht; ohne git (Container) leer."""
+    import subprocess
+
+    try:
+        r = subprocess.run(['git', '-c', 'safe.directory=*', 'rev-parse', 'HEAD'],
+                           capture_output=True, text=True, timeout=10)
+        return r.stdout.strip() if r.returncode == 0 else ''
+    except (OSError, subprocess.SubprocessError):
+        return ''
+
+
+def cmd_strategie_bericht(args: argparse.Namespace) -> int:
+    from .strategiebericht import erstelle_bericht, schreibe_bericht
+
+    cfg = _cfg(args.config)
+    db = Facts(Path(args.db) if args.db else cfg.db_pfad)
+    grenzen = RisikoGrenzen.aus_config(cfg)
+    symbole = args.symbol or db.symbole()
+    mindestens = int(cfg["daten"]["min_kerzen"])
+    daten = {symbol: df_aus_db(db.kerzen(symbol, "M15")) for symbol in symbole}
+    daten = {symbol: df for symbol, df in daten.items() if len(df) >= mindestens}
+    if not daten:
+        print(f"Keine Kerzen mit mindestens {mindestens} Bars — Bericht nicht erstellt.")
+        return 1
+
+    quelle = args.quelle or (f"{args.db} (Datenbank)" if args.db else str(cfg.db_pfad))
+    bericht = erstelle_bericht(daten, cfg, grenzen, quelle=quelle, commit=_commit())
+    json_pfad, md_pfad = schreibe_bericht(bericht, args.ausgabe)
+    z = bericht["zusammenfassung"]
+    print(f"Strategie-Bericht: {z['kandidaten']} Kandidaten · bestanden {z['bestanden']} · "
+          f"abgelehnt {z['abgelehnt']} · ohne Daten {z['ohne_ausreichende_daten']}")
+    print(f"Geschrieben: {json_pfad} und {md_pfad}")
     return 0
 
 
@@ -244,6 +280,15 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--ohne-konferenz", action="store_true")
     pr.add_argument("--mit-spider", action="store_true", help="Recherche mitlaufen lassen")
     pr.set_defaults(func=cmd_pruefen)
+
+    sb = sub.add_parser("strategie-bericht",
+                        help="Alle Strategien je Symbol prüfen und Bericht schreiben")
+    sb.add_argument("--config", default="config.toml")
+    sb.add_argument("--db", default=None, help="Datenbank mit Kerzen (Standard: config.toml)")
+    sb.add_argument("--quelle", default=None, help="Bezeichnung der Datenquelle im Bericht")
+    sb.add_argument("--symbol", nargs="*", default=None, help="Nur diese Symbole prüfen")
+    sb.add_argument("--ausgabe", default="artifacts/strategie-bericht")
+    sb.set_defaults(func=cmd_strategie_bericht)
 
     s = sub.add_parser("serve", help="Dashboard im Browser starten")
     s.add_argument("--host", default="0.0.0.0")

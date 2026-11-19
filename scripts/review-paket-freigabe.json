@@ -261,6 +261,22 @@
     {
       "quelle": "orakel/web/static/vaultgraph.js",
       "ziel": "dateien/web/static/vaultgraph.js"
+    },
+    {
+      "quelle": "orakel/strategiebericht.py",
+      "ziel": "dateien/orakel/strategiebericht.py"
+    },
+    {
+      "quelle": "tests/test_strategiebericht.py",
+      "ziel": "dateien/tests/test_strategiebericht.py"
+    },
+    {
+      "quelle": "scripts/baue_review_paket.py",
+      "ziel": "dateien/scripts/baue_review_paket.py"
+    },
+    {
+      "quelle": "tests/test_review_paket.py",
+      "ziel": "dateien/tests/test_review_paket.py"
     }
   ],
   "dokumente": [
@@ -272,6 +288,9 @@
     "QUICKSTART.md"
   ],
   "belege": [
+    "belege/evidenz-strategie.log",
+    "belege/strategie-bericht.json",
+    "belege/strategie-bericht.md",
     "belege/240px-kernaussagen-karte.png",
     "belege/240px-test.log",
     "belege/280px-langhost-quellenzeile.png",
