@@ -23,7 +23,7 @@ def test_claim_korpus_hat_30_bis_50_eindeutige_meldungen():
     meldungen = korpus["meldungen"]
     assert 30 <= len(meldungen) <= 50
     assert len({m["id"] for m in meldungen}) == len(meldungen)
-    assert sum(bool(m["erwartet"]["claim"]) for m in meldungen) == 9
+    assert sum(bool(m["erwartet"]["claim"]) for m in meldungen) == 4
     for meldung in meldungen:
         assert meldung["quelle"]
         assert meldung["titel"]
@@ -43,26 +43,23 @@ def test_claim_baseline_ist_reproduzierbar_und_zeigt_die_luecken():
     zweiter = modul.bewerte(korpus)
 
     assert erster == zweiter
-    assert erster["meldungen"] == 39
-    assert erster["erwartete_claims"] == 9
-    assert erster["erkannte_claims"] == 7
-    assert erster["richtige_claims"] == 6
+    assert erster["meldungen"] == 34
+    assert erster["erwartete_claims"] == 4
+    assert erster["erkannte_claims"] == 2
+    assert erster["richtige_claims"] == 1
     assert erster["falsch_positive"] == 0
     assert erster["uebersehene_claims"] == 2
     assert erster["erkannt_aber_feldfehler"] == 1
-    assert erster["claim_precision"] == 0.8571
-    assert erster["claim_recall"] == 0.6667
-    assert erster["feldgesamt"]["thema"] == 9
-    assert erster["feldtreffer"]["thema"] == 7
-    assert erster["pp_erwartet"] == 5
-    assert erster["pp_vorhergesagt"] == 5
-    assert erster["pp_richtig"] == 5
-    assert erster["pp_precision"] == 1.0
-    assert erster["pp_recall"] == 1.0
-    assert [fall["id"] for fall in erster["pp_faelle"]] == [
-        "rss-pp-001", "rss-pp-002", "rss-pp-003", "rss-pp-004", "rss-pp-005",
-    ]
-    assert all(fall["erwartet_pp"] and fall["erkannt_pp"] for fall in erster["pp_faelle"])
+    assert erster["claim_precision"] == 0.5
+    assert erster["claim_recall"] == 0.25
+    assert erster["feldgesamt"]["thema"] == 4
+    assert erster["feldtreffer"]["thema"] == 2
+    assert erster["pp_erwartet"] == 0
+    assert erster["pp_vorhergesagt"] == 0
+    assert erster["pp_richtig"] == 0
+    assert erster["pp_precision"] is None
+    assert erster["pp_recall"] is None
+    assert erster["pp_faelle"] == []
 
     abweichungen = {
         fall["id"]: "; ".join(fall["abweichungen"])

@@ -1,6 +1,6 @@
 # Phase 3 — Quellenreputation, Kernaussagen und Widersprüche
 
-**Stand:** 16. November 2026
+**Stand:** 15. November 2026
 **Grundlage:** `orakel/nexus/bewertung.py`, `orakel/db.py`
 (`nexus_claims`, `nexus_claim_quellen`, `nexus_widersprueche`,
 `nexus_quellen_reputation`), `orakel/nexus/nacht.py`, `orakel/nexus/status.py`,
@@ -160,15 +160,10 @@ python -m orakel.nexus bewertung --db orakel.db
   unterschiedliche Perioden werden nicht interpretiert. Der Sieben-Tage-Filter
   bezieht sich auf den Abrufzeitpunkt, nicht auf den Aussagezeitraum.
 - **Untere Darstellungsgrenze.** Die Kernaussagen-Karte wird bei 240 px
-  unterstützt. Dort ist das Panel 208 px breit (206 px Innenbreite), die
-  Quellenzeile misst 178 px und bricht zweizeilig um; KPI-Kacheln und
-  Claim-Grid wechseln auf eine Spalte. Die Seite bleibt mit
-  `scrollWidth === clientWidth === 240` ohne horizontalen Überlauf. Kopf- und
-  Navigationsleiste brechen kompakt um. Die zwölf Ansichten werden bei 240 px
-  in normaler Schrift geprüft (`240px: 12/12`); der volle 250-%-Lauf bei
-  240 px bleibt ausserhalb der Zusage, die CI prüft 250 % bei 360/320/280 px.
-  240 px ist die untere geprüfte Breite und keine allgemeine Mindestbreite für alle anderen
-  Ansichten; darunter gibt es keine Layoutzusage.
+  unterstützt. Dort wechseln ihre KPI-Kacheln und das Claim-Grid auf eine
+  Spalte; die Karte bleibt im sichtbaren Bereich. Kopf- und Navigationsleiste
+  bleiben separat scrollbar. 240 px ist keine allgemeine Mindestbreite für alle
+  anderen Ansichten.
 - **Quellenreputation ist keine Trefferquote.** Sie startet mit einem Prior
   und wird nur durch echte Auftrags-Ergebnisse belastbar. Im breiten Lauf gab
   es noch keine abgeschlossenen Aufträge; alle Quellen waren `vorläufig`.
@@ -199,12 +194,7 @@ anderem:
 - gespeicherte normalisierte Vergleichswerte in Basispunkten für Widersprüche
   mit abweichenden, umrechenbaren Zahlen,
 - keine Zahlenkonflikte bei nicht umrechenbaren Einheiten,
-- `pp`, `Prozentpunkte`, englische `percentage points` und `bps` werden als Einheiten erkannt,
-- `pp` in Fremdwörtern wie „Apps“, „Kipppunkt“ oder „Grappas“ wird nicht als
-  Einheit gewertet; nur die eigenständige Zeichenfolge nach einer Zahl zählt,
-- zusätzlich sieben echte RSS-Schlagzeilen mit pp-Fremdwörtern aus
-  `tests/fixtures/nexus_pp_fremdwoerter_rss.json` geprüft; keine davon ergibt
-  eine pp-Einheit,
+- `pp`, `Prozentpunkte` und `bps` werden als Einheiten erkannt,
 - bedingte gegen unbedingte Aussage als Prüfbedarf,
 - zwei unabhängige Quellen → `bestätigt`,
 - Kopie als Beleg, aber nicht als unabhängige Quelle,
@@ -212,39 +202,16 @@ anderem:
 - Quellenreputation aus echten Ergebnissen, sonst `vorläufig`,
 - Idempotenz und atomarer Rebuild.
 
-**pp-Baseline im echten Claim-Korpus:** Der versionierte Korpus enthält 39
-reale RSS-Meldungen, davon fünf gezielt ergänzte pp-Meldungen aus echten
-Google-News-RSS-Suchen: zwei deutschsprachige Treffer nach „Prozentpunkte“
-(Tagesschau und Spiegel) sowie drei englischsprachige Treffer nach
-„percentage points“ (CBS News, ERR und Tax Foundation). Die Originalseiten
-wurden am 15. bzw. 16. November 2026 geprüft; alle fünf RSS-Titel enthalten
-einen konkreten pp-Wert. Die aktuelle Extraktion erkennt alle fünf Einheiten:
-
-| Messwert | Ergebnis |
-|---|---:|
-| Erwartete pp-Claims | 5 |
-| Vorhergesagte pp-Claims | 5 |
-| Korrekte pp-Einheiten | 5 |
-| pp-Precision | 1.0 |
-| pp-Recall | 1.0 |
-
-Die pp-Fälle sind `rss-pp-001` („US-Notenbank Fed erhöht den Leitzins um 0,25
-Prozentpunkte“), `rss-pp-002` („USA: Notenbank Fed senkt Leitzins um 0,25
-Prozentpunkte“), `rss-pp-003` („Federal Reserve lowers interest rates by 0.50
-percentage points in first cut since 2020“), `rss-pp-004` („European Central
-Bank cuts key interest rates by 0.25 percentage points“) und `rss-pp-005`
-(„Tariffs Increased Retail Prices of Imports by 7 Percentage Points Prior to
-Supreme Court Ruling“). Die Stichprobe ist gezielt und klein (n=5); sie belegt,
-dass der Messpfad für deutsche und englische pp-Angaben funktioniert, ist aber
-**keine repräsentative Schätzung** der pp-Genauigkeit im gesamten
-Nachrichtenstrom. Es gibt in diesem Lauf keine pp-spezifischen False Positives
-oder False Negatives.
-Die allgemeinen Claim-Fehler sind `seed-021` (BBC, „My mortgage is going up…“:
-Subjekt `uk` statt `mortgage going month how`, Metrik `interest rate` statt
-`rates`) sowie `seed-023` (BBC, „AI stocks climb…“) und `seed-024` (BBC, „Why
-the US midterms…“), bei denen der Claim nicht erkannt wurde. Die Gesamtwerte
-liegen bei 9 erwarteten, 7 erkannten und 6 vollständig richtigen Claims
-(Precision 0.8571, Recall 0.6667). Reproduzierbar mit
+**pp-Baseline im echten Claim-Korpus:** Der versionierte Korpus enthält 34
+reale RSS-Meldungen, aber keine Gold-Einheit `pp`; die aktuelle Extraktion sagt
+ebenfalls keine pp-Einheit vorher. pp-Precision und pp-Recall sind damit
+mathematisch nicht definierbar (0/0) und werden als `n/a` ausgewiesen. Es gibt
+daher keine pp-spezifischen Fehlfälle. Die allgemeinen Claim-Fehler sind
+`seed-021` (BBC, „My mortgage is going up…“: Subjekt `uk` statt
+`mortgage going month how`, Metrik `interest rate` statt `rates`) sowie
+`seed-023` (BBC, „AI stocks climb…“) und `seed-024` (BBC, „Why the US
+midterms…“), bei denen der Claim nicht erkannt wurde. Keiner davon betrifft
+eine pp-Angabe. Reproduzierbar mit
 `python scripts/nexus_claim_baseline.py --output-dir artifacts/nexus-claim-baseline`.
 
 **Echter lokaler Lauf** mit zwölf produktiven Quellen (u. a. EZB, Fed, Bank of
@@ -273,39 +240,7 @@ Artikelbasis, keine gemessene Trefferquote.
 
 ---
 
-## 7. Browser-Prüfung: 24 Befunde im 250-%-Lauf (360 px)
-
-Ein lokaler 250-%-Lauf meldete 24 Befunde. Die Meldungen stammen aus
-**`360px/lab`**, nicht aus dem 240-px-Lauf: Die 240-px-Prüfung über alle
-zwölf Ansichten in normaler Schrift war mit `240px: 12/12` grün. Die Zuordnung
-zum 240-px-Lauf war falsch; ein voller 250-%-Lauf bei 240 px ist nicht belegt.
-
-| Gruppe | Anzahl | Befund |
-|---|---:|---|
-| Home/Live-Region | 2 | `Home` kehrt nicht zum ersten Punkt zurück (`0` statt `0.0`); die Live-Region ist danach leer. |
-| Tooltip-Position | 1 | Leerer Tooltip ausserhalb des Viewports (`29–47 × 3955–3965` bei `360 × 900`). |
-| Startpunkt | 5 | Datum `—`; Kapital `USD 0`; Prozentwert, Hochstand und Abstand nicht lesbar. |
-| Viertelpunkt | 5 | Datum `—`; Kapital `USD 0`; Prozentwert, Hochstand und Abstand nicht lesbar. |
-| Mittelpunkt | 5 | Datum `—`; Kapital `USD 0`; Prozentwert, Hochstand und Abstand nicht lesbar. |
-| Dreiviertelpunkt | 5 | Datum `—`; Kapital `USD 0`; Prozentwert, Hochstand und Abstand nicht lesbar. |
-| Shift+Tab | 1 | Erwartetes vorheriges Element und tatsächlich fokussiertes Element stimmen nicht überein (`donchianlookback=20 A` statt `donchian lookback=20`). |
-| **Summe** | **24** | |
-
-Ursache war der 8-Sekunden-Auto-Refresh: Er baute die fokussierte Kapitalkurve
-neu auf und setzte Fokus, Tooltip und Live-Region zurück. Die 24 Meldungen sind
-Folge dieses einen Zustandsverlusts. Die App pausiert den Refresh jetzt bei
-Fokus im sichtbaren Lab-Detail (insbesondere auf der Kapitalkurve) nur den
-Ansichts-Render; Daten und Kopfzeile werden weiter aktualisiert. Andere
-Lab-Elemente und ein ausgeblendetes Lab blockieren ihn nicht. Der deterministische 8,5-Sekunden-Test sowie der
-vollständige Standardlauf und der 240-px-Normallauf sind ohne Befund.
-
-Der erfolgreiche CI-Job `text250` aus Run `43811966526` verwendete denselben
-Seed und denselben Lab-Code, lief mit 74,39 s aber etwas schneller als der
-lokale Lauf mit 80 s. Der 8-Sekunden-Takt traf dort deshalb nicht das
-fokussierte Lab-Fenster; der CI-Erfolg ist kein Gegenbeweis für den lokalen
-Befund.
-
-## 8. Nächster Schritt
+## 7. Nächster Schritt
 
 Die Phasen 4 und 5 sind umgesetzt: Die Claims sind die Eingabe für persistente
 Missionen mit fünf Aufgaben, Lease, Retry, Gegenargumenten und Bericht. Siehe

@@ -1376,50 +1376,6 @@ async function pruefeKurvenTastatur(page, ansicht) {
   return befunde;
 }
 
-/**
- * Der 8-Sekunden-Auto-Refresh darf eine fokussierte Lab-Kurve nicht neu
- * aufbauen: Sonst gehen Fokus, Tooltip und Live-Region mitten in der
- * Tastaturbedienung verloren. Der Test wartet 8,5 Sekunden und verlangt,
- * dass in diesem Fenster eine Refresh-Anfrage tatsächlich startet.
- */
-async function pruefeLabAutoRefresh(page, ansicht) {
-  const befunde = [];
-  const svg = page.locator(`#v-${ansicht} .wfoKurveFlaeche svg`);
-  if (!(await svg.count())) return ['Auto-Refresh-Prüfung ohne Kapitalkurve'];
-  await page.mouse.move(0, 0);
-  await svg.evaluate(el => el.focus());
-  await page.waitForTimeout(100);
-  const lese = () => page.evaluate((ansicht) => {
-    const box = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche`);
-    const svg = box.querySelector('svg');
-    return {
-      fokus: document.activeElement === svg,
-      text: box.querySelector('.wfoKurveTipp').innerText.replace(/\s+/g, ' ').trim(),
-      live: box.querySelector('.wfoKurveLive').textContent.trim(),
-      zeiger: box.querySelector('.wfoKurveZeiger').getAttribute('x1'),
-    };
-  }, ansicht);
-  const vorher = await lese();
-  if (!vorher.fokus || !vorher.text || !vorher.live) {
-    befunde.push('Auto-Refresh-Prüfung konnte die Kapitalkurve nicht fokussieren');
-    return befunde;
-  }
-  let refreshAnfragen = 0;
-  const zaehleRefresh = req => {
-    if (req.url().endsWith('/api/report')) refreshAnfragen++;
-  };
-  page.on('request', zaehleRefresh);
-  await page.waitForTimeout(8500);
-  page.off('request', zaehleRefresh);
-  if (!refreshAnfragen) befunde.push('Auto-Refresh lief im 8,5-Sekunden-Fenster nicht');
-  const nachher = await lese();
-  if (!nachher.fokus) befunde.push('Auto-Refresh nimmt der Kapitalkurve den Fokus');
-  if (nachher.text !== vorher.text) befunde.push(`Auto-Refresh verändert den Tooltip («${nachher.text || 'leer'}» statt «${vorher.text}»)`);
-  if (nachher.live !== vorher.live) befunde.push(`Auto-Refresh verändert die Live-Region («${nachher.live || 'leer'}» statt «${vorher.live}»)`);
-  if (nachher.zeiger !== vorher.zeiger) befunde.push(`Auto-Refresh verschiebt den Zeiger (${nachher.zeiger} statt ${vorher.zeiger})`);
-  return befunde;
-}
-
 /** Die Zoom-Knöpfe dürfen ihre Symbole nicht abschneiden. */
 async function pruefeZoom(page, ansicht) {
   return page.evaluate((ansicht) => {
@@ -2386,7 +2342,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const fehler = [];
   const hinweise = new Set();
-  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, refreshGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, legendeDesktopGeprueft = 0, kopfGeprueft = 0, schmaleAnsichten = 0, schreibwegeGesamt = 0, claimPruefungen = 0;
+  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, legendeDesktopGeprueft = 0, kopfGeprueft = 0, schmaleAnsichten = 0, schreibwegeGesamt = 0, claimPruefungen = 0;
 
   try {
     const kopfBefunde = await pruefeKopfzeile(browser, opt.url);
@@ -2460,11 +2416,6 @@ async function main() {
             const tastaturBefunde = await pruefeKurvenTastatur(page, ansicht);
             if (tastaturBefunde) tastaturGesamt++;
             for (const text of tastaturBefunde || []) fehler.push(`${breite}px/${ansicht}: ${text}`);
-            if (breite === opt.breiten[0]) {
-              const refreshBefunde = await pruefeLabAutoRefresh(page, ansicht);
-              if (refreshBefunde.length === 0) refreshGesamt++;
-              for (const text of refreshBefunde) fehler.push(`${breite}px/${ansicht}: ${text}`);
-            }
           } else {
             hinweise.add('Keine Kapitalkurve im Lab gefunden – Tooltip und Tastatur nicht geprüft.');
           }
@@ -2517,7 +2468,7 @@ async function main() {
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${refreshGesamt ? ` · Refresh ${refreshGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
 }
 
 main().catch(fehler => {

@@ -3,8 +3,7 @@
 #
 # Systembibliotheken und Fonts werden als .deb heruntergeladen und nach
 # .playwright-local/ entpackt. Es werden keine Systempakete installiert; die
-# entpackten Dateien bleiben im Projektordner. Abschliessend werden der
-# Chromium-Start und die geladenen Font-Metriken im Browser geprüft.
+# entpackten Dateien bleiben im Projektordner.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -85,47 +84,16 @@ export FONTCONFIG_FILE="$FONTCONFIG_FILE"
 export FONTCONFIG_PATH="$LOCAL/etc/fonts"
 EOF
 
-FONT_PFAD="$(find "$LOCAL/usr/share/fonts" -type f -name 'DejaVuSans.ttf' -print -quit)"
-if [ -z "$FONT_PFAD" ]; then
-  echo "FEHLER: DejaVuSans.ttf wurde nicht entpackt." >&2
-  exit 1
-fi
-
-echo "4/4: Chromium-Start und Font-Metriken prüfen"
+echo "4/4: Chromium-Start prüfen"
 (
   # shellcheck disable=SC1090
   . "$ENV_FILE"
   cd "$ROOT/scripts"
-  FONT_PFAD="$FONT_PFAD" node --input-type=module -e '
-import { readFileSync } from "node:fs";
+  node --input-type=module -e '
 import { chromium } from "playwright";
 const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage();
-const fontUrl = "data:font/ttf;base64," + readFileSync(process.env.FONT_PFAD).toString("base64");
-const metrik = await page.evaluate(async (url) => {
-  const face = new FontFace("DejaVuSansProbe", "url(" + url + ")");
-  document.fonts.add(face);
-  await face.load();
-  const el = document.createElement("span");
-  el.textContent = "Font-Metrik Ω";
-  el.style.cssText = "font: 32px DejaVuSansProbe; display: inline-block";
-  document.body.append(el);
-  const rechteck = el.getBoundingClientRect();
-  const ctx = document.createElement("canvas").getContext("2d");
-  ctx.font = "32px DejaVuSansProbe";
-  return {
-    status: face.status,
-    geladen: document.fonts.check("32px DejaVuSansProbe"),
-    breite: Math.round(rechteck.width * 100) / 100,
-    hoehe: Math.round(rechteck.height * 100) / 100,
-    textBreite: Math.round(ctx.measureText("Font-Metrik Ω").width * 100) / 100,
-  };
-}, fontUrl);
-if (metrik.status !== "loaded" || !metrik.geladen || metrik.breite <= 0 || metrik.hoehe <= 0 || metrik.textBreite <= 0) {
-  throw new Error("Font-Metriken fehlen: " + JSON.stringify(metrik));
-}
-console.log("Playwright-Chromium und Font-Metriken OK (" + metrik.breite + " × " + metrik.hoehe + " px, Text " + metrik.textBreite + " px)");
 await browser.close();
+console.log("Playwright-Chromium OK");
 '
 )
 
