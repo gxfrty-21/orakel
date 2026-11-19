@@ -25,6 +25,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { chromium } from 'playwright';
 
+import { ERWARTET, apiBefund } from './widerspruch-api-pruefung.mjs';
+
 const FALL = {
   positiv: 'widerspruch-e2e.positiv',
   domFalsch: 'widerspruch-e2e.negativ.dom-falsch',
@@ -34,15 +36,6 @@ const FALL = {
 
 const FAELLE = [];
 let OPT = null;
-
-const ERWARTET = {
-  grund: 'Richtung steigt gegen sinkt',
-  sicherheit: 0.8,
-  quelleA: 'e2e-a.example',
-  quelleB: 'e2e-b.example',
-  wertA: 450,
-  wertB: 400,
-};
 
 function argumente(argv) {
   const opts = {
@@ -101,40 +94,6 @@ function schreibeErgebnis(fehlerText = null) {
   };
   mkdirSync(dirname(OPT.ergebnis), { recursive: true });
   writeFileSync(OPT.ergebnis, JSON.stringify(ergebnis, null, 2) + '\n', 'utf8');
-}
-
-function apiBefund(status) {
-  if (!status || status.ok !== true) {
-    throw new Error('API-Antwort ist nicht ok');
-  }
-  const claims = status.claims || {};
-  const widersprueche = claims.widersprueche || [];
-  const passend = widersprueche.find(w =>
-    w.grund === ERWARTET.grund &&
-    w.quelle_a === ERWARTET.quelleA &&
-    w.quelle_b === ERWARTET.quelleB &&
-    Number(w.wert_a_bp) === ERWARTET.wertA &&
-    Number(w.wert_b_bp) === ERWARTET.wertB
-  );
-  if (!passend) {
-    throw new Error(
-      'API enthält den erwarteten Widerspruch nicht: ' +
-      JSON.stringify(widersprueche)
-    );
-  }
-  if (Number(passend.sicherheit) !== ERWARTET.sicherheit) {
-    throw new Error(
-      `API-Widerspruchssicherheit ${passend.sicherheit} statt ${ERWARTET.sicherheit}`
-    );
-  }
-  const claim = (claims.top || []).find(c => Number(c.id) === Number(passend.claim_id));
-  if (!claim) {
-    throw new Error(`API-Claim ${passend.claim_id} fehlt in claims.top`);
-  }
-  if (claim.status !== 'widersprüchlich') {
-    throw new Error(`API-Claim ${claim.id} hat Status ${claim.status}`);
-  }
-  return { widerspruch: passend, claim };
 }
 
 async function leseWiderspruchKarte(page, claim) {
