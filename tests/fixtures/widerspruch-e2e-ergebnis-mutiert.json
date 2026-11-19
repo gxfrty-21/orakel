@@ -1,0 +1,34 @@
+{
+  "schema": "widerspruch-e2e-result.v1",
+  "erstellt": "2026-11-19T00:00:00.000Z",
+  "url": "http://127.0.0.1:3300",
+  "negativtest": true,
+  "faelle": [
+    {
+      "id": "widerspruch-e2e.positiv",
+      "status": "passed",
+      "details": ""
+    },
+    {
+      "id": "widerspruch-e2e.negativ.dom-falsch",
+      "status": "passed",
+      "details": ""
+    },
+    {
+      "id": "widerspruch-e2e.negativ.dom-fehlt",
+      "status": "failed",
+      "details": "Negativtest: erwarteter Fehler «Widerspruchsdetail fehlt» blieb aus"
+    },
+    {
+      "id": "widerspruch-e2e.negativ.api-fehlt",
+      "status": "passed",
+      "details": ""
+    }
+  ],
+  "zusammenfassung": {
+    "bestanden": 3,
+    "fehlgeschlagen": 1,
+    "negativBestanden": 2
+  },
+  "fehler": null
+}

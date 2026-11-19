@@ -1,0 +1,27 @@
+{
+  "schema": "widerspruch-e2e-check-manifest.v1",
+  "description": "Pflichtfälle des Widerspruch-E2E-Negativtests. Der Prüfer vergleicht das Ergebnis-JSON des Laufs mit diesem Manifest; jeder Fall muss mit Status «passed» vorliegen.",
+  "profiles": {
+    "voll": {
+      "description": "Die drei Negativfälle des 3/3-Nachweises; der Positivfall steht zusätzlich im Ergebnis, ist aber kein Pflichtfall.",
+      "counters": {
+        "negativ": 3
+      },
+      "checks": [
+        {
+          "id": "widerspruch-e2e.negativ.dom-falsch",
+          "description": "Im DOM verfälschter Widerspruchsgrund wird als Fehler erkannt."
+        },
+        {
+          "id": "widerspruch-e2e.negativ.dom-fehlt",
+          "description": "Entfernte Widerspruchszeile im DOM wird als Fehler erkannt."
+        },
+        {
+          "id": "widerspruch-e2e.negativ.api-fehlt",
+          "description": "Aus der API-Kopie entfernte Widerspruchszeile wird als Fehler erkannt."
+        }
+      ],
+      "allow_skips": []
+    }
+  }
+}

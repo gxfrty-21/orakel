@@ -10,14 +10,30 @@
  *
  * Aufruf:
  *   node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300
- *   node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300 --negativtest
+ *   node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300 --negativtest \
+ *     --ergebnis artifacts/widerspruch-e2e/negativtest-ergebnis.json
  *
  * ``--negativtest`` prüft zusätzlich, dass der Kartenprüfer eine im DOM
  * verfälschte und eine entfernte Widerspruchszeile als Fehler erkennt und
  * dass der API-Prüfer eine aus der API-Antwort entfernte Zeile ablehnt.
+ * ``--ergebnis`` schreibt jeden Fall mit stabiler ID und Status als JSON;
+ * der Prüfer ``pruefe-widerspruch-e2e-ergebnis.mjs`` vergleicht das Ergebnis
+ * mit dem Manifest der Pflichtfälle.
  */
 
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { chromium } from 'playwright';
+
+const FALL = {
+  positiv: 'widerspruch-e2e.positiv',
+  domFalsch: 'widerspruch-e2e.negativ.dom-falsch',
+  domFehlt: 'widerspruch-e2e.negativ.dom-fehlt',
+  apiFehlt: 'widerspruch-e2e.negativ.api-fehlt',
+};
+
+const FAELLE = [];
+let OPT = null;
 
 const ERWARTET = {
   grund: 'Richtung steigt gegen sinkt',
@@ -32,13 +48,16 @@ function argumente(argv) {
   const opts = {
     url: process.env.ORAKEL_URL || 'http://127.0.0.1:3200',
     negativtest: false,
+    ergebnis: '',
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--url') opts.url = argv[++i];
     else if (arg === '--negativtest') opts.negativtest = true;
+    else if (arg === '--ergebnis') opts.ergebnis = argv[++i];
     else if (arg === '--hilfe' || arg === '-h') {
-      console.log('Aufruf: node scripts/pruefe-widerspruch-e2e.mjs [--url URL] [--negativtest]');
+      console.log('Aufruf: node scripts/pruefe-widerspruch-e2e.mjs ' +
+        '[--url URL] [--negativtest] [--ergebnis PFAD]');
       process.exit(0);
     } else {
       console.error(`Unbekannte Option: ${arg}`);
@@ -47,6 +66,41 @@ function argumente(argv) {
   }
   opts.url = opts.url.replace(/\/$/, '');
   return opts;
+}
+
+function meldeFall(id, ok, details = '') {
+  FAELLE.push({ id, status: ok ? 'passed' : 'failed', details });
+}
+
+/** Führt eine Prüfung aus, hält ihr Ergebnis fest und reicht den Fehler weiter. */
+function fallPruefung(id, funktion) {
+  try {
+    funktion();
+    meldeFall(id, true);
+  } catch (fehler) {
+    meldeFall(id, false, fehler instanceof Error ? fehler.message : String(fehler));
+    throw fehler;
+  }
+}
+
+function schreibeErgebnis(fehlerText = null) {
+  if (!OPT || !OPT.ergebnis) return;
+  const negativ = FAELLE.filter(fall => fall.id.startsWith('widerspruch-e2e.negativ.'));
+  const ergebnis = {
+    schema: 'widerspruch-e2e-result.v1',
+    erstellt: new Date().toISOString(),
+    url: OPT.url,
+    negativtest: OPT.negativtest,
+    faelle: FAELLE,
+    zusammenfassung: {
+      bestanden: FAELLE.filter(fall => fall.status === 'passed').length,
+      fehlgeschlagen: FAELLE.filter(fall => fall.status === 'failed').length,
+      negativBestanden: negativ.filter(fall => fall.status === 'passed').length,
+    },
+    fehler: fehlerText,
+  };
+  mkdirSync(dirname(OPT.ergebnis), { recursive: true });
+  writeFileSync(OPT.ergebnis, JSON.stringify(ergebnis, null, 2) + '\n', 'utf8');
 }
 
 function apiBefund(status) {
@@ -159,7 +213,9 @@ async function pruefeNegativfaelle(page, widerspruch, claim, status) {
   }, { kernaussage: claim.kernaussage });
   if (!falscheZeile) throw new Error('Negativtest-Vorbereitung: Widerspruchszeile fehlt');
   const karteFalsch = await leseWiderspruchKarte(page, claim);
-  erwarteFehler(() => pruefeWiderspruchKarte(karteFalsch, widerspruch, claim), 'Karten-Grund');
+  fallPruefung(FALL.domFalsch,
+    () => erwarteFehler(() => pruefeWiderspruchKarte(karteFalsch, widerspruch, claim),
+      'Karten-Grund'));
 
   const entfernteZeile = await page.evaluate(({ kernaussage }) => {
     const karten = [...document.querySelectorAll('#bewertungClaims .li')];
@@ -173,8 +229,9 @@ async function pruefeNegativfaelle(page, widerspruch, claim, status) {
   }, { kernaussage: claim.kernaussage });
   if (!entfernteZeile) throw new Error('Negativtest-Vorbereitung: Widerspruchszeile fehlt');
   const karteFehlt = await leseWiderspruchKarte(page, claim);
-  erwarteFehler(() => pruefeWiderspruchKarte(karteFehlt, widerspruch, claim),
-    'Widerspruchsdetail fehlt');
+  fallPruefung(FALL.domFehlt,
+    () => erwarteFehler(() => pruefeWiderspruchKarte(karteFehlt, widerspruch, claim),
+      'Widerspruchsdetail fehlt'));
 
   const apiKopie = structuredClone(status);
   const apiClaims = apiKopie.claims || {};
@@ -189,8 +246,9 @@ async function pruefeNegativfaelle(page, widerspruch, claim, status) {
   if (apiClaims.widersprueche.length === apiZeilen.length) {
     throw new Error('Negativtest-Vorbereitung: API-Widerspruchszeile fehlt bereits');
   }
-  erwarteFehler(() => apiBefund(apiKopie),
-    'API enthält den erwarteten Widerspruch nicht');
+  fallPruefung(FALL.apiFehlt,
+    () => erwarteFehler(() => apiBefund(apiKopie),
+      'API enthält den erwarteten Widerspruch nicht'));
 
   console.log(
     'Widerspruch-E2E-Negativtest OK: 3/3 (falsche DOM-Zeile, fehlende DOM-Zeile ' +
@@ -200,6 +258,7 @@ async function pruefeNegativfaelle(page, widerspruch, claim, status) {
 
 async function main() {
   const opt = argumente(process.argv.slice(2));
+  OPT = opt;
   const browser = await chromium.launch({ headless: true });
   const seitenfehler = [];
   try {
@@ -246,13 +305,17 @@ async function main() {
       `${widerspruch.quelle_a} ↔ ${widerspruch.quelle_b}, ` +
       `${ERWARTET.wertA} bp ↔ ${ERWARTET.wertB} bp`
     );
+    meldeFall(FALL.positiv, true);
     if (opt.negativtest) await pruefeNegativfaelle(page, widerspruch, claim, status);
+    schreibeErgebnis();
   } finally {
     await browser.close();
   }
 }
 
 main().catch(fehler => {
-  console.error(fehler instanceof Error ? fehler.message : fehler);
+  const text = fehler instanceof Error ? fehler.message : String(fehler);
+  schreibeErgebnis(text);
+  console.error(text);
   process.exit(1);
 });

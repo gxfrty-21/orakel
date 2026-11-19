@@ -559,13 +559,22 @@ jobs:
           # die Detailzeile entfernt und einmal die Widerspruchszeile aus der
           # API-Kopie gelöscht. Alle drei Fälle müssen erkannt werden.
           if ! node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300 \
-               --negativtest | tee artifacts/widerspruch-e2e/negativtest.log; then
+               --negativtest \
+               --ergebnis artifacts/widerspruch-e2e/negativtest-ergebnis.json \
+               | tee artifacts/widerspruch-e2e/negativtest.log; then
             echo "--- Widerspruch-E2E-Negativtest fehlgeschlagen ---"
             tail -50 artifacts/widerspruch-e2e/server.log
             exit 1
           fi
           grep -q 'Widerspruch-E2E-Negativtest OK: 3/3' \
             artifacts/widerspruch-e2e/negativtest.log
+          # Verbindlich sind die drei Pflichtfälle im JSON, nicht die Summary-
+          # Zeile: Der Prüfer vergleicht Fall-IDs, Status und Zähler mit dem
+          # Manifest.
+          node scripts/pruefe-widerspruch-e2e-ergebnis.mjs \
+            --ergebnis artifacts/widerspruch-e2e/negativtest-ergebnis.json \
+            --pflicht scripts/widerspruch-e2e-required-checks.json \
+            --profil voll
           echo "Widerspruch-E2E-Negativtest: 3/3 bestanden"
           {
             echo "### Widerspruch-E2E-Negativtest"
@@ -582,6 +591,7 @@ jobs:
           path: |
             artifacts/widerspruch-e2e/lauf.log
             artifacts/widerspruch-e2e/negativtest.log
+            artifacts/widerspruch-e2e/negativtest-ergebnis.json
           if-no-files-found: error
           retention-days: 7
 
