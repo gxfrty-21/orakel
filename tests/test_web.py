@@ -86,6 +86,22 @@ def test_config_wird_nur_einmal_geladen(cfg, monkeypatch):
     assert len(aufrufe) == 1
 
 
+def test_bericht_endpunkt_nutzt_geladene_konfiguration(cfg, monkeypatch):
+    aufrufe: list[str] = []
+
+    def zaehle(pfad):
+        aufrufe.append(pfad)
+        return cfg
+
+    monkeypatch.setattr(web, "load_config", zaehle)
+    client = TestClient(web.create_app())
+
+    antwort = client.get("/api/report")
+
+    assert antwort.status_code == 200
+    assert len(aufrufe) == 1
+
+
 def test_paper_guard_http_hat_keine_schreibenden_seiteneffekte(cfg, monkeypatch):
     db = Facts(cfg.db_pfad)
     store = CompanyStore(db)

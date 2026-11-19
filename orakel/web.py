@@ -29,7 +29,7 @@ from .company.api import uebersicht as company_uebersicht
 from .company.memory import AgentMemory
 from .company.messaging import MessageRateLimitError, MessagingService
 from .company.store import CompanyStore
-from .config import load_config
+from .config import Config, load_config
 from .db import Facts, initialisiere
 from .globe import STANDARD_ZEITRAUM, baue_globe
 from .intel import IntelNetz, auftrag_aendern, weiterleitung_aendern
@@ -68,9 +68,8 @@ def _basic_ok(kopf: str, benutzer: str, passwort: str) -> bool:
             and secrets.compare_digest(pw.encode("utf-8"), passwort.encode("utf-8")))
 
 
-def _bericht(cfg_pfad: str) -> dict[str, Any]:
+def _bericht(cfg: Config) -> dict[str, Any]:
     """Baut den Bericht live aus der Fakten-Datenbank (Dashboard ist nur ein Spiegel)."""
-    cfg = konfig
     db = Facts(cfg.db_pfad)
     basis = db.zustand("bericht_basis") or {}
     bericht = baue_bericht(
@@ -163,7 +162,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
 
     @app.get("/api/report")
     def report() -> JSONResponse:
-        return JSONResponse(_bericht(cfg_pfad), headers={"Cache-Control": "no-store"})
+        return JSONResponse(_bericht(konfig), headers={"Cache-Control": "no-store"})
 
     @app.get("/api/company/overview")
     def company_overview() -> JSONResponse:
