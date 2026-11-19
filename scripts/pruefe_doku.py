@@ -24,6 +24,9 @@ ROOT = Path(__file__).resolve().parent.parent
 SKIP_DIRS = {
     ".git", ".venv", "node_modules", "artifacts", "__pycache__",
     ".pytest_cache", ".next", "dist", "build", "target",
+    # Entpackte Playwright-Systembibliotheken aus setup-playwright-local.sh;
+    # die Paket-Dokumentation enthält eigene relative Links.
+    ".playwright-local",
 }
 
 # Begriffe, die eine frühere Decks-Zählung oder Navigation beschreiben. Die
