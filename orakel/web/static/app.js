@@ -2075,7 +2075,10 @@ function fitShip(){
   if(!vp || !w || !vp.clientWidth || !w.offsetWidth) return;
   if(!w.querySelector('.px-room')) return;
   const faktor = Math.min((vp.clientWidth - 18) / w.offsetWidth, (vp.clientHeight - 18) / w.offsetHeight, 1);
-  shipZoom = Math.max(0.16, Math.min(2.5, faktor));
+  /* Bei 240 px ist der feste Mindestzoom 0,16 breiter als der Viewport.
+     Dort darf der Fit-Zoom bis auf den tatsächlichen Faktor sinken. */
+  const mindestZoom = vp.clientWidth <= 260 ? 0.1 : 0.16;
+  shipZoom = Math.max(mindestZoom, Math.min(2.5, faktor));
   shipX = (vp.clientWidth - w.offsetWidth * shipZoom) / 2;
   shipY = (vp.clientHeight - w.offsetHeight * shipZoom) / 2;
   shipZoomInit = true;
@@ -2776,9 +2779,19 @@ if (forecastBtn) forecastBtn.onclick = async () => {
 async function lade(){
   try{
     const r = await fetch('/api/report',{cache:'no-store'});
-    R = await r.json();
+    const neu = await r.json();
+    // Daten und Kopfzeile immer aktualisieren. Nur den Ansichts-Render
+    // pausieren, wenn der Fokus im sichtbaren Lab-Detail liegt; sonst würden
+    // Fokus, Tooltip und Live-Region zurückgesetzt.
+    R = neu;
+    // Nichtvisueller Datenstand für den Auto-Refresh-Test: Bei fokussiertem
+    // Lab-Detail wird nur der Ansichts-Render pausiert, R aber ersetzt. Das
+    // Attribut macht die übernommenen Berichtsdaten prüfbar, ohne die stabile
+    // Lab-Ansicht neu zu zeichnen.
+    const laborDaten = document.querySelector('#labList');
+    if (laborDaten) laborDaten.dataset.berichtKandidat = neu.validierungen?.[0]?.symbol || '';
     renderTop();
-    zeichne();
+    if (!document.activeElement?.closest('#v-lab:not([hidden]) #labDetail')) zeichne();
   }catch(e){
     $('#banner').className = 'banner b-sim';
     $('#banner').innerHTML = '<b>FEHLER</b>' + esc(e.message);

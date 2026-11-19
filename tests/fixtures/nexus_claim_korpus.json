@@ -1,7 +1,9 @@
 {
-  "version": 1,
-  "beschreibung": "Reale RSS-Meldungen aus seed/orakel-seed.db; Goldfelder manuell anhand von Titel und Zusammenfassung.",
-  "stand": "2026-11-13",
+  "version": 4,
+  "typ": "claim",
+  "beschreibung": "34 reale RSS-Meldungen aus seed/orakel-seed.db. Die fünf gezielten pp-Meldungen liegen getrennt in nexus_pp_probe_korpus.json; dadurch bleiben die Gesamtmetriken mit der 34-Meldungen-Basis vergleichbar.",
+  "stand": "2026-11-16",
+  "pp_probe": "tests/fixtures/nexus_pp_probe_korpus.json",
   "felder": [
     "claim",
     "thema",

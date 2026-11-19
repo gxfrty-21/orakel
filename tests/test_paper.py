@@ -12,7 +12,10 @@ from orakel.paper import tick
 
 
 def steigende_kerzen(n: int = 400, start: float = 100.0) -> pd.DataFrame:
-    ts = pd.date_range("2025-01-01", periods=n, freq="15min", tz="UTC")
+    # Aktuelle Zeitstempel: Der Takt bewertet nur Kurse innerhalb der
+    # Aktualitätsgrenze aus [daten] als belastbar.
+    ts = pd.date_range(end=pd.Timestamp.now(tz="UTC").floor("15min"),
+                       periods=n, freq="15min", tz="UTC")
     close = [start * (1.0008 ** i) for i in range(n)]
     return pd.DataFrame({
         "ts": ts,

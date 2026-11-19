@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -673,6 +674,15 @@ class Facts:
 
     def position_setzen(self, symbol: str, menge: float, einstieg: float, stop: float,
                         strategie: str, eroeffnet: str) -> None:
+        """Legt eine Long-Position an.
+
+        Der Paper-Takt und der Backtest sind Long-only. Eine Menge <= 0 würde
+        eine Short-Position ohne Richtungslogik erzeugen und wird deshalb
+        abgelehnt, statt sie stillschweigend als Long zu buchen.
+        """
+        if not math.isfinite(float(menge)) or float(menge) <= 0:
+            raise ValueError(f'Position {symbol}: Menge muss positiv und endlich sein, '
+                             f'ist aber {menge!r}')
         with self.conn() as c:
             c.execute(
                 "INSERT OR REPLACE INTO positionen(symbol,menge,einstieg,stop,strategie,eroeffnet)"
