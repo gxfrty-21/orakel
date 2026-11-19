@@ -194,7 +194,7 @@ jobs:
           cache-dependency-path: requirements.txt
 
       - name: Node einrichten
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -208,7 +208,7 @@ jobs:
       # Der Schlüssel hängt an der Playwright-Version im Lockfile: Ändert sie
       # sich, wird der Browser neu geladen statt einen alten Cache zu nutzen.
       - name: Playwright-Browser cachen
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('scripts/package-lock.json') }}
@@ -482,10 +482,23 @@ jobs:
           grep -q 'Widerspruch-E2E-Negativtest OK: 3/3' \
             artifacts/widerspruch-e2e/negativtest.log
 
+      # Kompakter Erfolgsnachweis: nur die beiden Protokolle des text250-Jobs,
+      # ohne Screenshots, HTML oder Serverlogs.
+      - name: Lauf- und Negativtest-Log bei Erfolg hochladen
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: text250-laufprotokoll
+          path: |
+            artifacts/text250/lauf.log
+            artifacts/text250/negativtest.log
+          if-no-files-found: error
+          retention-days: 7
+
       # Auch bei Abbruch oder Timeout: Der Job gilt dann als abgebrochen.
       - name: Screenshots, Befunde und HTML bei Fehlschlag hochladen
         if: failure() || cancelled()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: text250-diagnose
           path: |
@@ -500,7 +513,7 @@ jobs:
 
       - name: Serverprotokoll bei Fehlschlag hochladen
         if: failure() || cancelled()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: text250-serverlog
           path: |
@@ -534,7 +547,7 @@ jobs:
           cache-dependency-path: requirements.txt
 
       - name: Node einrichten
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -546,7 +559,7 @@ jobs:
           python -m pip install -r requirements.txt
 
       - name: Playwright-Browser cachen
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('scripts/package-lock.json') }}
@@ -602,7 +615,7 @@ jobs:
 
       - name: Touch-Artefakte bei Fehlschlag hochladen
         if: failure() || cancelled()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: touch-fehler
           path: artifacts/touch/*
