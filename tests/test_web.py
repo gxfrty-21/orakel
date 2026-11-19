@@ -147,3 +147,63 @@ def test_alle_post_routen_verlangen_anmeldung(cfg, monkeypatch):
     for pfad in post_pfade:
         antwort = client.post(pfad)
         assert antwort.status_code == 401, pfad
+
+
+def test_schreibende_anfrage_von_fremder_herkunft_wird_abgewiesen(cfg, monkeypatch):
+    monkeypatch.setenv("ORAKEL_AUTH_USER", "orakel")
+    monkeypatch.setenv("ORAKEL_AUTH_PASS", "geheim")
+    monkeypatch.delenv("ORAKEL_ERLAUBTE_ORIGINS", raising=False)
+    monkeypatch.setattr(web, "load_config", lambda _pfad: cfg)
+    client = TestClient(web.create_app())
+    auth = ("orakel", "geheim")
+
+    fremder_origin = client.post(
+        "/api/company/messages",
+        headers={"Origin": "https://boese.example"},
+        auth=auth,
+    )
+    assert fremder_origin.status_code == 403
+    assert fremder_origin.json()["code"] == "herkunft_abgelehnt"
+
+    fremder_referer = client.post(
+        "/api/company/messages",
+        headers={"Referer": "https://boese.example/formular"},
+        auth=auth,
+    )
+    assert fremder_referer.status_code == 403
+
+    eigene_herkunft = client.post(
+        "/api/company/messages",
+        headers={"Origin": "http://testserver"},
+        auth=auth,
+    )
+    assert eigene_herkunft.status_code != 403
+
+    lesend = client.get(
+        "/api/company/paper-guard",
+        headers={"Origin": "https://boese.example"},
+        auth=auth,
+    )
+    assert lesend.status_code == 200
+
+
+def test_erlaubte_herkuenfte_konfigurierbar(cfg, monkeypatch):
+    monkeypatch.setenv("ORAKEL_AUTH_USER", "orakel")
+    monkeypatch.setenv("ORAKEL_AUTH_PASS", "geheim")
+    monkeypatch.setenv("ORAKEL_ERLAUBTE_ORIGINS", "https://ui.example")
+    monkeypatch.setattr(web, "load_config", lambda _pfad: cfg)
+    client = TestClient(web.create_app())
+
+    antwort = client.post(
+        "/api/company/messages",
+        headers={"Origin": "https://ui.example"},
+        auth=("orakel", "geheim"),
+    )
+    assert antwort.status_code != 403
+
+    weiterhin_fremd = client.post(
+        "/api/company/messages",
+        headers={"Origin": "https://boese.example"},
+        auth=("orakel", "geheim"),
+    )
+    assert weiterhin_fremd.status_code == 403

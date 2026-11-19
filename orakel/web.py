@@ -171,6 +171,37 @@ def create_app(
                 )
             return await call_next(request)
 
+    # CSRF-Schutz: Browser senden bei schreibenden Anfragen Origin/Referer mit.
+    # Grundauthentifizierung wird automatisch angehängt, deshalb muss die
+    # Herkunft geprüft werden, bevor eine POST-Route wirkt.
+    erlaubte_herkuenfte = {
+        eintrag.strip().rstrip("/")
+        for eintrag in os.environ.get("ORAKEL_ERLAUBTE_ORIGINS", "").split(",")
+        if eintrag.strip()
+    }
+
+    @app.middleware("http")
+    async def _herkunft(request: Request, call_next):
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            herkunft = (
+                request.headers.get("origin")
+                or request.headers.get("referer")
+                or ""
+            ).rstrip("/")
+            if herkunft:
+                basis = f"{request.url.scheme}://{request.url.netloc}"
+                erlaubt = {basis} | erlaubte_herkuenfte
+                if not any(
+                    herkunft == eintrag or herkunft.startswith(eintrag + "/")
+                    for eintrag in erlaubt
+                ):
+                    return JSONResponse(
+                        {"ok": False, "fehler": "Ungueltige Herkunft",
+                         "code": "herkunft_abgelehnt"},
+                        status_code=403,
+                    )
+        return await call_next(request)
+
     @app.get("/")
     def index() -> FileResponse:
         return FileResponse(STATIC / "index.html")
