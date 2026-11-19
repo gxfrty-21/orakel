@@ -27,10 +27,9 @@ setzt der Aufrufer vor der Transaktion.
 `migrationen.anwenden()` auf. Der Ablauf:
 
 1. `schema_migrationen` anlegen (falls nötig) und den Stand lesen.
-2. Enthält die Datei bereits Tabellen, aber keine Historie, und ist
-   `PRAGMA user_version >= 1`, stammt sie aus der alten Initialisierung:
-   Die vorhandenen Nummern werden als angewendet vermerkt (Baseline), ohne die
-   Dateien erneut auszuführen.
+2. Eine Datenbank aus der Zeit vor dieser Tabelle wird normal durchmigriert:
+   `0001` und `0002` legen nur an, was fehlt, und `0003` ergänzt fehlende
+   Spalten. Bestehende Zeilen bleiben dabei erhalten.
 3. Vor jedem Lauf, der auf einer bestehenden Datenbank tatsächlich etwas
    ändert, entsteht per SQLite-Online-Backup eine Sicherung
    `<db>.vor-migration-JJJJMMTT-HHMMSS.bak` neben der Datenbank.
@@ -69,4 +68,5 @@ Betriebswege ab:
 - Sicherung vor der Migration enthält die vorhandenen Zeilen,
 - Downgrade entfernt Eintrag und Spalten, ohne die früheren Migrationen
   anzufassen,
-- Bestandsdatenbank ohne Historie wird übernommen statt erneut migriert.
+- Bestandsdatenbank ohne Historie wird durchmigriert: Zeilen bleiben,
+  fehlende Spalten kommen hinzu, und vorher entsteht eine Sicherung.

@@ -4,11 +4,10 @@ Jede Datei ``orakel/migrations/NNNN_name.sql`` wird genau einmal angewendet;
 die Tabelle ``schema_migrationen`` hält fest, welche Nummer wann lief. Ein
 Downgrade nutzt die gleichnamige Datei ``NNNN_name.down.sql``.
 
-Bestandsdatenbanken aus der Zeit vor dieser Tabelle werden übernommen
-(Baseline): Enthält die Datei bereits Tabellen und ist ``PRAGMA user_version``
-mindestens 1, hat die frühere Initialisierung Schema und Spalten vollständig
-angelegt. Die Nummern werden dann als angewendet vermerkt, ohne die Dateien
-erneut auszuführen.
+Bestandsdatenbanken aus der Zeit vor dieser Tabelle erhalten keine
+Sonderbehandlung: ``0001`` und ``0002`` sind idempotent, ``0003`` ergänzt
+fehlende Spalten. Ein alter Bestand wird deshalb beim ersten Start normal
+durchmigriert, ohne Daten zu verlieren.
 
 Vor jedem Lauf, der auf einer bestehenden Datenbank tatsächlich etwas ändert,
 entsteht eine Sicherung per SQLite-Online-Backup. Schlägt eine Migration fehl,
@@ -122,10 +121,6 @@ def _tabellen(c: sqlite3.Connection) -> list[str]:
         "AND name NOT LIKE 'sqlite_%' AND name != ?", (TABELLE,))]
 
 
-def _benutzer_version(c: sqlite3.Connection) -> int:
-    return int(c.execute("PRAGMA user_version").fetchone()[0])
-
-
 def angewendet(pfad: str | Path) -> list[int]:
     """Nummern der bereits angewendeten Migrationen (leer, wenn Tabelle fehlt)."""
     c = sqlite3.connect(pfad)
@@ -166,20 +161,11 @@ def anwenden(pfad: str | Path, *, ordner: Path | None = None, bis: int | None = 
         c.commit()
         stand = {int(r["nummer"]) for r in c.execute(f"SELECT nummer FROM {TABELLE}")}
         bestand = _tabellen(c)
-        basisuebernahme = False
-        if bestand and not stand and _benutzer_version(c) >= 1:
-            c.executemany(
-                f"INSERT INTO {TABELLE} (nummer, name, angewendet_am) VALUES (?, ?, ?)",
-                [(m.nummer, m.name, jetzt.isoformat(timespec="seconds")) for m in alle],
-            )
-            c.commit()
-            stand = {m.nummer for m in alle}
-            basisuebernahme = True
 
         offen = [m for m in alle
                  if m.nummer not in stand and (bis is None or m.nummer <= bis)]
         sicherung = None
-        if offen and bestand and not basisuebernahme:
+        if offen and bestand:
             sicherung = _sichere(datei, jetzt)
 
         angewendet_nummern: list[int] = []
@@ -201,7 +187,6 @@ def anwenden(pfad: str | Path, *, ordner: Path | None = None, bis: int | None = 
 
         return {
             "angewendet": angewendet_nummern,
-            "basisuebernahme": basisuebernahme,
             "backup": str(sicherung) if sicherung else None,
             "stand": neuer_stand,
         }

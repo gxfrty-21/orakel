@@ -25,7 +25,6 @@ def test_leere_datenbank_wendet_alle_migrationen_an(tmp_path):
 
     ergebnis = migrationen.anwenden(pfad)
 
-    assert ergebnis["basisuebernahme"] is False
     assert ergebnis["angewendet"] == ALLE
     assert migrationen.angewendet(pfad) == ALLE
     tabellen = _tabellen(pfad)
@@ -120,18 +119,33 @@ def test_downgrade_ohne_hinterlegte_datei_bricht_vorher_ab(tmp_path):
     assert "a" in _tabellen(pfad)
 
 
-def test_bestandsdatenbank_ohne_historie_wird_uebernommen(tmp_path):
-    """Eine DB aus der alten Initialisierung wird nicht erneut migriert."""
+def test_bestandsdatenbank_ohne_historie_wird_durchmigriert(tmp_path):
+    """Ein alter Bestand verliert keine Daten und erhält die fehlenden Spalten."""
+    from orakel.kern.db import Facts
+
     pfad = tmp_path / "alt.db"
     migrationen.anwenden(pfad)
+    Facts(pfad).artikel_speichern(
+        "Testquelle", "nachrichten", "Alter Artikel", "https://example.com/alt",
+        None, "Bestand", 0.9, ["EURUSD"], "hash-alt",
+    )
+
     c = sqlite3.connect(pfad)
     c.execute("DROP TABLE schema_migrationen")
+    for spalte in ("prioritaet", "prioritaet_grund", "erkannt"):
+        c.execute(f"ALTER TABLE artikel DROP COLUMN {spalte}")
     c.execute("PRAGMA user_version = 1")
     c.commit()
     c.close()
 
     ergebnis = migrationen.anwenden(pfad)
 
-    assert ergebnis["basisuebernahme"] is True
-    assert ergebnis["angewendet"] == []
-    assert migrationen.angewendet(pfad) == ALLE
+    assert ergebnis["angewendet"] == ALLE
+    assert ergebnis["backup"] is not None
+    c = sqlite3.connect(pfad)
+    try:
+        spalten = {r[1] for r in c.execute("PRAGMA table_info(artikel)")}
+        assert {"prioritaet", "prioritaet_grund", "erkannt"} <= spalten
+        assert c.execute("SELECT COUNT(*) FROM artikel").fetchone()[0] == 1
+    finally:
+        c.close()
