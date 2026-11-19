@@ -12,7 +12,8 @@ from pathlib import Path
 KERN = Path(__file__).resolve().parents[1] / "orakel" / "kern"
 
 ERWARTETE_MODULE = {
-    "backtest", "data", "db", "judge", "markt", "metrics", "paper", "risk", "strategies",
+    "backtest", "data", "db", "judge", "markt", "metrics", "migrationen", "paper",
+    "risk", "strategies",
 }
 
 # Module, die der Kern niemals importieren darf.

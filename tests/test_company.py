@@ -61,7 +61,8 @@ def test_migration_erhaelt_bestehende_daten(cfg):
     db.agenten_lauf("A1:Koordinator", "A", "Bestandsaufgabe", "altes Ergebnis", True)
 
     with db.conn() as c:
-        assert c.execute("PRAGMA user_version").fetchone()[0] == 1
+        # user_version spiegelt seit 4.3 die höchste angewendete Migration.
+        assert c.execute("PRAGMA user_version").fetchone()[0] >= 1
         tabellen = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"agent_profiles", "agent_tasks", "agent_events"} <= tabellen
 

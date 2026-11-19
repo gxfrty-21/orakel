@@ -25,13 +25,17 @@ erzwungen:
 | Kern | `orakel/kern/risk.py` | Positionsgrösse, Risikostopp |
 | Kern | `orakel/kern/paper.py` | Paper-Takt, Paper-Sperre |
 | Kern | `orakel/kern/metrics.py` | Kennzahlen, Drawdown |
-| Kern | `orakel/kern/db.py` | Schema, Migrationen, Fakten |
+| Kern | `orakel/kern/db.py` | Fakten, Abfragen, Startinitialisierung |
+| Kern | `orakel/kern/migrationen.py` | Nummerierte Migrationen, Backup, Downgrade |
 | Kern | `orakel/kern/markt.py` | Korrelation und Marktbreite für Risiko/Paper |
 | Basis | `orakel/config.py` | Konfiguration, Risikogrenzen |
 | Oberfläche | `orakel/web.py`, `orakel/web/` | HTTP-Endpunkte, Templates, Statik |
 | Oberfläche | `orakel/company/`, `orakel/nexus/` | Agenten, Räume, Sitzungen |
 | Betrieb | `orakel/betrieb.py`, `orakel/scheduler.py`, `orakel/watchdog.py` | Takt, Wartung, Wächter |
 | Zulieferung | `orakel/spider.py`, `orakel/pipeline.py`, `orakel/intel.py`, `orakel/seed.py` | Research und Datenbeschaffung |
+
+Die Migrationen selbst stehen in `orakel/migrations/` und sind in
+[MIGRATIONEN.md](MIGRATIONEN.md) beschrieben.
 
 `markt.py` liegt bewusst im Kern, weil `paper.py` die Korrelation für die
 Risikoprüfung braucht. Alles andere aus der Zulieferung bleibt draussen.
