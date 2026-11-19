@@ -1,0 +1,67 @@
+name: Branch-Smoke
+
+# Feature-Branch-Pushes laufen ohne offenen Pull Request. Ist bereits ein PR
+# offen, übernimmt der volle Lauf aus `tests.yml`; dieser Smoke-Job wird dann
+# übersprungen. Sein Check-Name ist eigenständig und kein Required Check.
+on:
+  push:
+    branches-ignore: [main]
+
+# Nur ältere Smoke-Läufe desselben Branches werden abgebrochen; die
+# Required-Check-Namen aus `tests.yml` sind davon nicht betroffen.
+concurrency:
+  group: branch-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  smoke:
+    name: Branch-Smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Offenen Pull Request ermitteln
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KOPF: ${{ github.repository_owner }}:${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          anzahl=$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&head=${KOPF}" --jq 'length')
+          echo "offen=${anzahl}" >> "$GITHUB_OUTPUT"
+          if [ "$anzahl" -gt 0 ]; then
+            echo "Offener Pull Request für ${GITHUB_REF_NAME}: voller Lauf übernimmt."
+          fi
+
+      - name: Python einrichten
+        if: steps.pr.outputs.offen == '0'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Doku und Python-Syntax prüfen
+        if: steps.pr.outputs.offen == '0'
+        run: |
+          python -m compileall -q orakel scripts
+          python scripts/pruefe_doku.py
+
+      - name: Node einrichten
+        if: steps.pr.outputs.offen == '0'
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Prüfskripte syntaktisch prüfen
+        if: steps.pr.outputs.offen == '0'
+        run: |
+          for datei in scripts/*.mjs; do
+            node --check "$datei"
+          done
+          echo "Branch-Smoke OK: Syntax, Doku und Prüfskripte geprüft"

@@ -1,18 +1,11 @@
 name: Tests
 
-# Feature-Branch-Pushes laufen auch ohne offenen Pull Request; main bleibt
-# enthalten, damit Railway sein "Wait for CI" erkennt.
+# Nur main löst nach einem Push aus; Railway erkennt daran sein "Wait for CI".
+# Feature-Branches laufen über pull_request.
 on:
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
-
-# Push und pull_request melden für denselben Commit dieselbe Gruppe: der
-# Head-Commit. `github.sha` allein genügt nicht, weil dort beim Pull Request
-# der Merge-Commit steht; dann liefen beide Läufe parallel.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
-  cancel-in-progress: true
 
 permissions:
   contents: read
