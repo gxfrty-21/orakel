@@ -119,7 +119,35 @@ def _bericht(cfg_pfad: str) -> dict[str, Any]:
     return bericht
 
 
-def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+WAHRE_WERTE = {"1", "true", "yes", "on"}
+
+
+def _startfreigabe(host: str | None) -> None:
+    """Ohne Zugangsdaten darf der Server nur auf Loopback lauschen (fail-closed).
+
+    Der Start auf einer externen Adresse ohne ``ORAKEL_AUTH_USER`` /
+    ``ORAKEL_AUTH_PASS`` würde alle Endpunkte offen ins Netz stellen. Eine
+    bewusste Ausnahme erlaubt ``ORAKEL_ALLOW_NO_AUTH=1``.
+    """
+    if os.environ.get("ORAKEL_AUTH_USER", "").strip():
+        return
+    if os.environ.get("ORAKEL_ALLOW_NO_AUTH", "").strip().lower() in WAHRE_WERTE:
+        return
+    if host is None:
+        return
+    if host.strip().lower() not in LOOPBACK_HOSTS:
+        raise RuntimeError(
+            "Ohne ORAKEL_AUTH_USER/ORAKEL_AUTH_PASS darf der Server nur auf "
+            "127.0.0.1, localhost oder ::1 lauschen. Fuer eine bewusste Ausnahme "
+            "ORAKEL_ALLOW_NO_AUTH=1 setzen."
+        )
+
+
+def create_app(
+    cfg_pfad: str = "config.toml", takt: bool = False, host: str | None = None
+) -> FastAPI:
+    _startfreigabe(host)
     app = FastAPI(title="Orakel Trading-Engine", version="0.2.0")
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 

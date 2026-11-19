@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import re
 
+import pytest
 from fastapi.testclient import TestClient
 
 from orakel import web
@@ -98,3 +100,50 @@ def test_paper_guard_http_hat_keine_schreibenden_seiteneffekte(cfg, monkeypatch)
     assert store.task_counts() == vorher_tasks
     assert len(store.events()) == vorher_events
     assert store.audit_chain_ok()
+
+
+def test_serve_ohne_zugangsdaten_nur_auf_loopback(monkeypatch):
+    monkeypatch.delenv("ORAKEL_AUTH_USER", raising=False)
+    monkeypatch.delenv("ORAKEL_AUTH_PASS", raising=False)
+    monkeypatch.delenv("ORAKEL_ALLOW_NO_AUTH", raising=False)
+
+    for host in ("127.0.0.1", "localhost", "::1"):
+        web.create_app(host=host)  # darf nicht werfen
+
+    for host in ("0.0.0.0", "192.168.0.10", "::"):
+        with pytest.raises(RuntimeError):
+            web.create_app(host=host)
+
+
+def test_serve_ohne_zugangsdaten_nur_mit_ausnahme_extern(monkeypatch):
+    monkeypatch.delenv("ORAKEL_AUTH_USER", raising=False)
+    monkeypatch.delenv("ORAKEL_AUTH_PASS", raising=False)
+    monkeypatch.setenv("ORAKEL_ALLOW_NO_AUTH", "1")
+
+    web.create_app(host="0.0.0.0")  # bewusste Ausnahme
+
+
+def test_serve_mit_zugangsdaten_auf_externer_adresse(monkeypatch):
+    monkeypatch.setenv("ORAKEL_AUTH_USER", "orakel")
+    monkeypatch.setenv("ORAKEL_AUTH_PASS", "geheim")
+
+    web.create_app(host="0.0.0.0")  # Login vorhanden: erlaubt
+
+
+def test_alle_post_routen_verlangen_anmeldung(cfg, monkeypatch):
+    monkeypatch.setenv("ORAKEL_AUTH_USER", "orakel")
+    monkeypatch.setenv("ORAKEL_AUTH_PASS", "geheim")
+    monkeypatch.setattr(web, "load_config", lambda _pfad: cfg)
+    app = web.create_app()
+    client = TestClient(app)
+
+    post_pfade = sorted(
+        re.sub(r"\{[^}]+\}", "x", route.path)
+        for route in app.routes
+        if "POST" in getattr(route, "methods", set()) or set()
+    )
+    assert len(post_pfade) >= 15
+
+    for pfad in post_pfade:
+        antwort = client.post(pfad)
+        assert antwort.status_code == 401, pfad
