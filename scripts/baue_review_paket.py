@@ -455,7 +455,8 @@ def _strategie_nachweis(ausgabe: str, commit: str) -> dict:
         'exit_code': lauf.returncode,
         'sha256': sha256_datei(log_pfad),
         'bytes': os.path.getsize(log_pfad),
-        'log': letzte_zeile(text),
+        'log': next((z.strip() for z in text.splitlines()
+                     if z.strip().startswith('Strategie-Bericht:')), letzte_zeile(text)),
     }
 
 
