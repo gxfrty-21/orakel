@@ -32,6 +32,13 @@ Pflichtprüfungen aus [AGENTS.md](../AGENTS.md) Abschnitt 3. Der
 Ermittlungsschritt ist zusätzlich erforderlich, damit die vorgelagerte
 Entscheidung über die Doku-Prüfung nicht unbemerkt ausfallen kann.
 
+Alle sechs Checks sind im Ruleset an die GitHub-Actions-App gebunden
+(`integration_id: 15368`, App-Slug `github-actions`). Ein fremder
+Commit-Status mit identischem Namen — aus einem anderen CI-System oder manuell
+gesetzt — erfüllt den Gate damit nicht: GitHub akzeptiert für diese Checks nur
+Statusmeldungen der Actions-App. Die Bindung wurde am 19. November 2026
+gesetzt; vorher genügte der reine Kontextname.
+
 Die Doku-Prüfung läuft nur bei doku-relevanten Änderungen
 (`if: needs.changes.outputs.doku == 'true'`). Ein übersprungener Job meldet
 laut GitHub-Dokumentation `Success` und blockiert den Merge auch als
