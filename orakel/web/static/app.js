@@ -2797,12 +2797,29 @@ async function lade(){
     $('#banner').innerHTML = '<b>FEHLER</b>' + esc(e.message);
   }
 }
+// Der Lauf läuft im Hintergrund. Der Knopf wartet auf den Status und lädt
+// erst danach den Bericht; die Anfrage selbst ist sofort beantwortet.
+async function warteAufLauf(id){
+  const grenze = Date.now() + 15 * 60 * 1000;
+  while(Date.now() < grenze){
+    const r = await fetch('/api/lauf/' + encodeURIComponent(id),{cache:'no-store'});
+    if(r.ok){
+      const s = await r.json();
+      if(s.status === 'fertig' || s.status === 'fehler') return s;
+    }
+    await new Promise(f => setTimeout(f, 2000));
+  }
+  throw new Error('Lauf-Status nicht rechtzeitig erhalten');
+}
+
 $('#runBtn').onclick = async () => {
   const b = $('#runBtn'); b.disabled = true; b.textContent = 'Lauf läuft …';
   try{
     const r = await fetch('/api/lauf?modus=backtest',{method:'POST'});
     if(!r.ok) throw new Error('Lauf konnte nicht gestartet werden');
-    await r.json();
+    const {id} = await r.json();
+    const stand = await warteAufLauf(id);
+    if(stand.status === 'fehler') throw new Error(stand.fehler || 'Lauf fehlgeschlagen');
     await lade();
   }catch(e){
     $('#banner').className = 'banner b-sim';

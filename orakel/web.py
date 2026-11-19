@@ -5,7 +5,6 @@ import base64
 import json
 import os
 import secrets
-import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -42,14 +41,13 @@ from .nexus.quellen import lade_register
 from .nexus.raum import raum_daten
 from .nexus.status import gesamt_status
 from .kern.paper import tick
-from .pipeline import lauf as engine_lauf
+from .lauf_queue import LaufWorker, anlegen as lauf_anlegen, stand as lauf_stand
 from .report import baue_bericht
 from .scheduler import Takt, _kontext
 from .spider import Spider
 
 STATIC = Path(__file__).parent / "web" / "static"
 BERICHT = Path("dashboard.json")
-_sperre = threading.Lock()
 
 
 def _basic_ok(kopf: str, benutzer: str, passwort: str) -> bool:
@@ -119,15 +117,25 @@ def _bericht(cfg: Config) -> dict[str, Any]:
     return bericht
 
 
-def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
+def create_app(cfg_pfad: str = "config.toml", takt: bool = False,
+               arbeiter: bool = True) -> FastAPI:
     # Konfiguration einmal je App laden; Endpunkte nutzen denselben Stand.
     konfig = load_config(cfg_pfad)
+    arbeiter_thread: LaufWorker | None = None
 
     @asynccontextmanager
     async def _lebenszyklus(_app: FastAPI):
+        nonlocal arbeiter_thread
         # Schema und Migration nur beim Start, nicht bei jeder Anfrage.
         initialisiere(konfig.db_pfad)
-        yield
+        if arbeiter:
+            arbeiter_thread = LaufWorker(cfg_pfad, Facts(konfig.db_pfad))
+            arbeiter_thread.start()
+        try:
+            yield
+        finally:
+            if arbeiter_thread is not None:
+                arbeiter_thread.stoppe()
 
     app = FastAPI(
         title="Orakel Trading-Engine",
@@ -717,17 +725,20 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                 # nach dem Deploy vergleicht ihn mit dem erwarteten Commit.
                 "commit": os.environ.get("RAILWAY_GIT_COMMIT_SHA") or None}
 
-    @app.post("/api/lauf")
+    @app.post("/api/lauf", status_code=202)
     def starte_lauf(modus: str = "backtest", spider: bool = False) -> JSONResponse:
-        if not _sperre.acquire(blocking=False):
-            return JSONResponse({"ok": False, "fehler": "Ein Lauf ist bereits aktiv"}, status_code=409)
-        try:
-            ergebnis = engine_lauf(cfg_pfad=cfg_pfad, modus=modus, mit_spider=spider)
-        finally:
-            _sperre.release()
-        return JSONResponse({"ok": True, "dauer": ergebnis.get("dauer_sekunden"),
-                             "validierungen": len(ergebnis.get("validierungen", [])),
-                             "plan": len(ergebnis.get("plan", []))})
+        """Legt nur einen Auftrag an; die Arbeit macht der Hintergrund-Arbeiter."""
+        lauf_id = lauf_anlegen(Facts(konfig.db_pfad), modus=modus, spider=spider)
+        return JSONResponse({"ok": True, "id": lauf_id, "status": "offen"},
+                            status_code=202)
+
+    @app.get("/api/lauf/{lauf_id}")
+    def lauf_status(lauf_id: int) -> JSONResponse:
+        daten = lauf_stand(Facts(konfig.db_pfad), lauf_id)
+        if daten is None:
+            return JSONResponse({"ok": False, "fehler": "Lauf unbekannt"},
+                                status_code=404)
+        return JSONResponse({"ok": True, **daten}, headers={"Cache-Control": "no-store"})
 
     @app.post("/api/paper")
     def paper_tick() -> JSONResponse:

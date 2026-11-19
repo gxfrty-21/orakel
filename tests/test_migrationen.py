@@ -91,7 +91,7 @@ def test_downgrade_entfernt_die_migration_und_ihre_tabellen(tmp_path):
 
     ergebnis = migrationen.zurueckrollen(pfad, bis=ALLE[1])
 
-    assert ergebnis["zurueckgerollt"] == ALLE[2:]
+    assert ergebnis["zurueckgerollt"] == sorted(ALLE[2:], reverse=True)
     assert migrationen.angewendet(pfad) == ALLE[:2]
     tabellen = _tabellen(pfad)
     assert "agent_profiles" in tabellen
