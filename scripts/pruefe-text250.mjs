@@ -3098,10 +3098,31 @@ async function main() {
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  if (langhost114Pruefungen) {
-    console.log(`Langhost 114 Zeichen: ${langhost114Pruefungen}× geprüft · ${LANGHOST_114.length} Zeichen · kein Überlauf`);
-  }
-  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${langhost114Pruefungen ? ` · Langhost 114 ${langhost114Pruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${refreshGesamt ? ` · Refresh ${refreshGesamt}× geprüft (HTTP 200, Kopf- und Datenmarker)` : ''}${refreshNegativGesamt ? ` · Refresh-Negativ ${refreshNegativGesamt}× geprüft` : ''}${labFokusGesamt ? ` · Lab-Fokus ${labFokusGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${geometrieGesamt ? ` · Geometrie ${geometrieGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  // Ergebniszeile aus Teilen bauen: gleiche Reihenfolge und Wortlaute wie
+  // bisher, aber ohne verschachtelte Bedingung je Zähler. Der Langhost-Zähler
+  // steht wie die übrigen in dieser Zeile; die Zeichenzahl gehört zum Fall.
+  const teile = ['OK: keine Überläufe'];
+  const zaehle = (anzahl, beschriftung, zusatz = '') => {
+    if (anzahl) teile.push(`${beschriftung} ${anzahl}× geprüft${zusatz}`);
+  };
+  if (kopfGeprueft) teile.push(`Kopfzeile ${kopfGeprueft}× geprüft`);
+  if (schmaleAnsichten) teile.push(`240px ${schmaleAnsichten} Ansichten geprüft`);
+  if (opt.tabellen) teile.push(`${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft`);
+  zaehle(inhaltGesamt, 'Inhalte');
+  zaehle(claimPruefungen, 'Claims');
+  zaehle(langhost114Pruefungen, `Langhost 114 (${LANGHOST_114.length} Zeichen)`);
+  zaehle(agentenPruefungen, 'Agenten');
+  zaehle(legendeGesamt, 'Legende');
+  zaehle(legendeDesktopGeprueft, 'Desktop-Legende');
+  zaehle(tooltipGesamt, 'Tooltip');
+  zaehle(tastaturGesamt, 'Tastatur');
+  zaehle(refreshGesamt, 'Refresh', ' (HTTP 200, Kopf- und Datenmarker)');
+  zaehle(refreshNegativGesamt, 'Refresh-Negativ');
+  zaehle(labFokusGesamt, 'Lab-Fokus');
+  zaehle(schreibwegeGesamt, 'Schreibwege');
+  zaehle(geometrieGesamt, 'Geometrie');
+  if (bilderGesamt) teile.push(`${bilderGesamt} Screenshots`);
+  console.log(teile.join(' · '));
 }
 
 main().catch(fehler => {

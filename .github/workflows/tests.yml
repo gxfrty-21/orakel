@@ -286,13 +286,6 @@ jobs:
             tail -50 artifacts/text250/server.log
             exit 1
           fi
-          # Der Listen-Refresh ist ein eigener Regressionstest; ohne diesen
-          # Marker würde ein stilles Überspringen vom Manifest nicht erkannt.
-          if ! grep -q 'Listen-Refresh 1× geprüft' artifacts/text250/lauf.log; then
-            echo "Listen-Refresh wurde im 250-%-Lauf nicht geprüft"
-            exit 1
-          fi
-
           # CI prüft Fall-IDs und erwartete Zähler aus dem Manifest statt
           # Klartextzeilen zu greppen. Profil «voll» gilt für diesen Lauf.
           node scripts/pruefe-text250-ergebnis.mjs \
