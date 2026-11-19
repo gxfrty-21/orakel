@@ -1,0 +1,7 @@
+# Orakel Trading-Engine — Laufzeit-Abhängigkeiten (lose)
+# Gepinnte Fassung: requirements.txt, erzeugt aus einer sauberen venv.
+fastapi
+uvicorn[standard]
+jinja2
+pandas
+numpy

@@ -1,0 +1,5 @@
+# Orakel Trading-Engine — Entwicklungs- und Testabhängigkeiten (lose)
+-r requirements.in
+pytest
+hypothesis
+httpx2
