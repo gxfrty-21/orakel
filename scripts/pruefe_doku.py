@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prüft relative Markdown-Links, Markdown- und HTML-Anker, alte Schiffsbegriffe und englische Altnamen der Agentenabteilungen.
+"""Prüft relative Markdown-Links, Pflichtverweise, Markdown- und HTML-Anker, alte Schiffsbegriffe und englische Altnamen der Agentenabteilungen.
 
 Der Lauf ist bewusst ohne Zusatzpakete nutzbar, damit er in der CI schnell
 bleibt. Relative Pfade werden vom jeweiligen Dokument aus aufgelöst. Bei
@@ -64,6 +64,11 @@ HISTORISCHE_DOKUMENTE = {
     Path("docs/raumschiff/MASTERPLAN.md"),
     Path("docs/raumschiff/RAUMBUCH.md"),
 }
+
+# Diese Dokumente müssen aus einem sichtbaren Einstieg verlinkt bleiben.
+PFLICHT_VERWEISE = (
+    (Path("README.md"), Path("docs/pr-schutz.md")),
+)
 
 INLINE_LINK = re.compile(
     r"!?\[[^\]]*\]\(\s*(<[^>]+>|[^)\s]+)(?:\s+[\"'][^\"']*[\"'])?\s*\)"
@@ -282,6 +287,38 @@ def _pruefe_link(
     return None
 
 
+def _pruefe_pflicht_verweise(root: Path) -> list[str]:
+    """Prüft, dass zentrale Dokumente aus ihrem Einstieg verlinkt bleiben."""
+    befunde: list[str] = []
+    for quelle, ziel in PFLICHT_VERWEISE:
+        datei = root / quelle
+        ziel_datei = root / ziel
+        if not ziel_datei.exists():
+            befunde.append(f"{quelle}: Pflichtziel «{ziel}» fehlt")
+            continue
+        try:
+            text = datei.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as fehler:
+            befunde.append(f"{quelle}: konnte für Pflichtverweis nicht gelesen werden ({fehler})")
+            continue
+        verlinkt = False
+        for _, link in _relative_ziele(text):
+            pfad = unquote(link.partition("#")[0].split("?", 1)[0])
+            if not pfad:
+                continue
+            try:
+                kandidat = root / pfad.lstrip("/") if pfad.startswith("/") else datei.parent / pfad
+                aufgeloest = kandidat.resolve()
+            except OSError:
+                continue
+            if aufgeloest == ziel_datei.resolve():
+                verlinkt = True
+                break
+        if not verlinkt:
+            befunde.append(f"{quelle}: Pflichtverweis auf «{ziel}» fehlt")
+    return befunde
+
+
 def _doku_dateien(root: Path) -> list[Path]:
     """Versionierte Markdown-Dateien; der Vault ist generiert und zählt nicht."""
     if (root / ".git").exists():
@@ -335,6 +372,7 @@ def pruefe(root: Path) -> tuple[list[Path], int, int, list[str]]:
                 for muster, name in ENGLISCHE_ALTNAMEN:
                     if muster.search(zeile):
                         befunde.append(f"{rel}:{nummer}: englischer Altname der Agentenabteilung «{name}»")
+    befunde.extend(_pruefe_pflicht_verweise(root))
     return dateien, link_anzahl, anker_anzahl, befunde
 
 
@@ -358,8 +396,13 @@ def negativtest() -> int:
             "```\n",
             encoding="utf-8",
         )
+        (root / "docs" / "pr-schutz.md").write_text(
+            "# Schutz von `main`\n",
+            encoding="utf-8",
+        )
         (root / "README.md").write_text(
             "# Haupt\n"
+            "[Schutz](docs/pr-schutz.md)\n"
             "[gültig](docs/ok.md)\n"
             "[gültiger Dateianker](docs/ok.md#gültiges-ziel)\n"
             "[gültiger kodierter Anker](docs/ok.md#g%C3%BCltiges-ziel)\n"
@@ -395,12 +438,28 @@ def negativtest() -> int:
             encoding="utf-8",
         )
         dateien, link_anzahl, anker_anzahl, befunde = pruefe(root)
+        pflicht_bei_vorhandenem_link = [
+            befund for befund in befunde if "Pflichtverweis" in befund
+        ]
+        readme = root / "README.md"
+        readme.write_text(
+            readme.read_text(encoding="utf-8").replace(
+                "[Schutz](docs/pr-schutz.md)\n", "", 1
+            ),
+            encoding="utf-8",
+        )
+        _, _, _, befunde_ohne_link = pruefe(root)
+        pflicht_fehler = [
+            befund for befund in befunde_ohne_link if "Pflichtverweis" in befund
+        ]
         link_fehler = any("fehlende Datei" in befund for befund in befunde)
         anker_fehler = [befund for befund in befunde if "Überschriften-Anker" in befund]
         begriff_fehler = [befund for befund in befunde if "veralteter Raumschiff- oder Navigationsbegriff" in befund]
         altnamen_fehler = [befund for befund in befunde if "englischer Altname der Agentenabteilung" in befund]
         if (
             not link_fehler
+            or pflicht_bei_vorhandenem_link
+            or len(pflicht_fehler) != 1
             or len(anker_fehler) != 4
             or len(begriff_fehler) != 7
             or len(altnamen_fehler) != 9
@@ -408,23 +467,24 @@ def negativtest() -> int:
         ):
             print(
                 "Dokutest FEHLGESCHLAGEN: erwartet wurden ein fehlender Link, "
-                "vier falsche Anker, sieben veraltete Begriffe, neun englische "
-                "Altnamen und mindestens ein gültiger Ankerlink, gefunden: "
-                f"{befunde or 'keine Befunde'} (gültige Ankerlinks: {anker_anzahl})",
+                "ein fehlender Pflichtverweis, vier falsche Anker, sieben "
+                "veraltete Begriffe, neun englische Altnamen und mindestens "
+                "ein gültiger Ankerlink, gefunden: "
+                f"{befunde_ohne_link or 'keine Befunde'} (gültige Ankerlinks: {anker_anzahl})",
                 file=sys.stderr,
             )
             return 1
         print(
             f"Dokutest OK: {len(dateien)} Dateien, {link_anzahl} relative Links, "
-            f"{anker_anzahl} gültige Ankerlinks, fehlender Link, vier falsche Anker, "
-            "sieben veraltete Raumschiff- und Navigationsbegriffe sowie neun "
-            "englische Altnamen erkannt"
+            f"{anker_anzahl} gültige Ankerlinks, fehlender Link, fehlender "
+            "Pflichtverweis, vier falsche Anker, sieben veraltete Raumschiff- "
+            "und Navigationsbegriffe sowie neun englische Altnamen erkannt"
         )
     return 0
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Prüft relative Doku-Links, Markdown- und HTML-Anker, veraltete Raumschiff- und Navigationsbegriffe sowie englische Altnamen der Agentenabteilungen.")
+    parser = argparse.ArgumentParser(description="Prüft relative Doku-Links, Pflichtverweise, Markdown- und HTML-Anker, veraltete Raumschiff- und Navigationsbegriffe sowie englische Altnamen der Agentenabteilungen.")
     parser.add_argument("--root", type=Path, default=ROOT, help="Repository-Wurzel (Standard: Projektordner)")
     parser.add_argument("--negativtest", action="store_true", help="Prüft die Prüfung mit absichtlich falschen Doku-Daten")
     args = parser.parse_args()
