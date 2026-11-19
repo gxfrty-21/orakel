@@ -430,12 +430,97 @@ jobs:
             exit 1
           fi
 
-      # Prüft den vollständigen Weg: Der Seed schreibt zwei gegenläufige
-      # Meldungen über den Nexus-Pfad, die Spider-Ansicht lädt den echten
-      # /api/nexus/status-Response und der Browser vergleicht ihn mit der
-      # gerenderten Widerspruchskarte. Die Seed-Datenbank ist eine Kopie.
-      - name: Widerspruch über API bis in die Karte prüfen
-        timeout-minutes: 3
+      # Kompakter Erfolgsnachweis: nur die beiden Protokolle des text250-Jobs,
+      # ohne Screenshots, HTML oder Serverlogs.
+      - name: Lauf- und Negativtest-Log bei Erfolg hochladen
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: text250-laufprotokoll
+          path: |
+            artifacts/text250/lauf.log
+            artifacts/text250/negativtest.log
+          if-no-files-found: error
+          retention-days: 7
+
+      # Auch bei Abbruch oder Timeout: Der Job gilt dann als abgebrochen.
+      - name: Screenshots, Befunde und HTML bei Fehlschlag hochladen
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v6
+        with:
+          name: text250-diagnose
+          path: |
+            artifacts/text250/*.png
+            artifacts/text250/*.html
+            artifacts/text250/*.txt
+            artifacts/text250/selbsttest/*.png
+            artifacts/text250/selbsttest/*.html
+            artifacts/text250/selbsttest/*.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Serverprotokoll bei Fehlschlag hochladen
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v6
+        with:
+          name: text250-serverlog
+          path: |
+            artifacts/text250/server.log
+            artifacts/text250/seed-tastatur-server.log
+            artifacts/text250/seed-tastatur.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Eigener Job mit stabilem Check-Namen. Er kann in der Branch-Regel
+  # «main: PR und gruene CI» als Required Check «Widerspruch-E2E 3/3»
+  # eingetragen werden, ohne vom text250-Job abhängig zu sein.
+  widerspruch_e2e:
+    name: Widerspruch-E2E 3/3
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Node einrichten
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: scripts/package-lock.json
+
+      - name: Python-Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Playwright-Browser cachen
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('scripts/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      - name: Playwright und Chromium installieren
+        timeout-minutes: 5
+        working-directory: scripts
+        run: |
+          npm ci
+          npx playwright install chromium
+
+      # Der Job nutzt eine eigene Seed-Kopie und einen eigenen Port. Damit
+      # bleibt der 3/3-Nachweis unabhängig vom text250-Lauf sichtbar.
+      - name: Widerspruch-E2E und Negativtest 3/3 ausführen
+        timeout-minutes: 4
         run: |
           set -euo pipefail
           mkdir -p artifacts/widerspruch-e2e
@@ -481,48 +566,31 @@ jobs:
           fi
           grep -q 'Widerspruch-E2E-Negativtest OK: 3/3' \
             artifacts/widerspruch-e2e/negativtest.log
+          echo "Widerspruch-E2E-Negativtest: 3/3 bestanden"
+          {
+            echo "### Widerspruch-E2E-Negativtest"
+            echo ""
+            echo "**3/3 bestanden:** falsche DOM-Zeile, fehlende DOM-Zeile "
+            echo "und fehlende API-Zeile wurden erkannt."
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      # Kompakter Erfolgsnachweis: nur die beiden Protokolle des text250-Jobs,
-      # ohne Screenshots, HTML oder Serverlogs.
-      - name: Lauf- und Negativtest-Log bei Erfolg hochladen
+      - name: Erfolgsartefakt Widerspruch-E2E 3/3 hochladen
         if: success()
         uses: actions/upload-artifact@v6
         with:
-          name: text250-laufprotokoll
+          name: widerspruch-e2e-3-3-erfolg
           path: |
-            artifacts/text250/lauf.log
-            artifacts/text250/negativtest.log
+            artifacts/widerspruch-e2e/lauf.log
+            artifacts/widerspruch-e2e/negativtest.log
           if-no-files-found: error
           retention-days: 7
 
-      # Auch bei Abbruch oder Timeout: Der Job gilt dann als abgebrochen.
-      - name: Screenshots, Befunde und HTML bei Fehlschlag hochladen
+      - name: Diagnose Widerspruch-E2E 3/3 bei Fehlschlag hochladen
         if: failure() || cancelled()
         uses: actions/upload-artifact@v6
         with:
-          name: text250-diagnose
-          path: |
-            artifacts/text250/*.png
-            artifacts/text250/*.html
-            artifacts/text250/*.txt
-            artifacts/text250/selbsttest/*.png
-            artifacts/text250/selbsttest/*.html
-            artifacts/text250/selbsttest/*.txt
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Serverprotokoll bei Fehlschlag hochladen
-        if: failure() || cancelled()
-        uses: actions/upload-artifact@v6
-        with:
-          name: text250-serverlog
-          path: |
-            artifacts/text250/server.log
-            artifacts/text250/seed-tastatur-server.log
-            artifacts/text250/seed-tastatur.log
-            artifacts/widerspruch-e2e/server.log
-            artifacts/widerspruch-e2e/lauf.log
-            artifacts/widerspruch-e2e/negativtest.log
+          name: widerspruch-e2e-3-3-diagnose
+          path: artifacts/widerspruch-e2e/*
           if-no-files-found: ignore
           retention-days: 7
 
