@@ -260,6 +260,45 @@ Spider-Ansicht lädt anschließend den echten `/api/nexus/status`-Response; der
 Browser vergleicht Grund, Widerspruchssicherheit, Quellen und normalisierte
 bp-Werte mit der gerenderten Widerspruchskarte.
 
+### Lokal reproduzierbar
+
+Voraussetzungen: Python-Umgebung aus `requirements.txt`, Node.js >= 20 und
+`curl`. Einmalig Playwright und die Chromium-Systembibliotheken bereitstellen –
+ohne diese Bibliotheken scheitert der Browserstart mit
+`libnspr4.so: cannot open shared object file`:
+
+```bash
+# Einmalig, ohne sudo (Ubuntu 24.04 amd64): Bibliotheken nach .playwright-local/
+bash scripts/setup-playwright-local.sh
+source .playwright-local/env.sh
+
+# Seed-Kopie, Dashboard auf Port 3300, Positivfall, 3/3-Negativtest und
+# Manifest-Prüfung in einem Lauf:
+bash scripts/e2e-widerspruch-lokal.sh
+```
+
+Das Skript legt eine Seed-Kopie in einem temporären Verzeichnis an, startet
+`python -m orakel serve` auf `127.0.0.1:3300`, wartet auf
+`/api/nexus/status`, führt beide Prüfläufe samt Manifest-Prüfung aus und beendet
+den Server wieder. Die eigene Datenbank bleibt unberührt; ein belegter Port
+lässt sich mit `ORAKEL_E2E_PORT=3310` umgehen, eine andere Python-Umgebung mit
+`PYTHON=.venv/bin/python`.
+
+Erwartete Ausgabe (Exit-Code 0):
+
+```text
+Widerspruch-E2E OK: Claim 1, «Richtung steigt gegen sinkt», e2e-a.example ↔ e2e-b.example, 450 bp ↔ 400 bp
+Widerspruch-E2E-Negativtest OK: 3/3 (falsche DOM-Zeile, fehlende DOM-Zeile und fehlende API-Zeile erkannt)
+Widerspruch-E2E-Ergebnis OK: 3/3 Pflichtfälle bestanden · negativ 3/3
+```
+
+Auf Systemen ohne das Ubuntu-24.04-Setup installiert
+`npx --prefix scripts playwright install --with-deps chromium` (mit sudo) die
+Bibliotheken systemweit; danach genügt ebenfalls
+`bash scripts/e2e-widerspruch-lokal.sh`.
+
+Manuell, wenn Server und Prüfung getrennt laufen sollen:
+
 ```bash
 cp seed/orakel-seed.db /tmp/orakel-widerspruch.db
 python scripts/seed_widerspruch.py /tmp/orakel-widerspruch.db
@@ -267,7 +306,7 @@ python scripts/seed_widerspruch.py /tmp/orakel-widerspruch.db
 # Dashboard in einem zweiten Terminal starten:
 ORAKEL_DB_PFAD=/tmp/orakel-widerspruch.db python -m orakel serve --host 127.0.0.1 --port 3300
 
-# Im ersten Terminal:
+# Im ersten Terminal, nach `source .playwright-local/env.sh`:
 node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300
 
 # Negativtest: verfälscht im DOM den Widerspruchsgrund, entfernt danach
@@ -279,8 +318,9 @@ node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300 --negativtes
 Der Negativtest verändert keine Datenbank und keine echte API-Antwort. Er prüft,
 dass derselbe Kartenprüfer eine falsche Widerspruchszeile und eine fehlende
 Widerspruchszeile zuverlässig ablehnt und dass der API-Prüfer eine aus der
-API-Antwort entfernte Widerspruchszeile erkennt. Der CI-Job `text250` führt den
-positiven Test und den Negativtest auf einer frischen Seed-Kopie aus. Das
+API-Antwort entfernte Widerspruchszeile erkennt. Der CI-Job
+`Widerspruch-E2E 3/3` führt den positiven Test und den Negativtest auf einer
+frischen Seed-Kopie aus. Das
 Seed-Skript verweigert eine fehlende Zieldatenbank, damit es nicht versehentlich
 eine neue Produktionsdatenbank anlegt.
 
