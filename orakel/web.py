@@ -6,6 +6,7 @@ import json
 import os
 import secrets
 import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +30,7 @@ from .company.memory import AgentMemory
 from .company.messaging import MessageRateLimitError, MessagingService
 from .company.store import CompanyStore
 from .config import load_config
-from .db import Facts
+from .db import Facts, initialisiere
 from .globe import STANDARD_ZEITRAUM, baue_globe
 from .intel import IntelNetz, auftrag_aendern, weiterleitung_aendern
 from .knowledge import Vault
@@ -69,7 +70,7 @@ def _basic_ok(kopf: str, benutzer: str, passwort: str) -> bool:
 
 def _bericht(cfg_pfad: str) -> dict[str, Any]:
     """Baut den Bericht live aus der Fakten-Datenbank (Dashboard ist nur ein Spiegel)."""
-    cfg = load_config(cfg_pfad)
+    cfg = konfig
     db = Facts(cfg.db_pfad)
     basis = db.zustand("bericht_basis") or {}
     bericht = baue_bericht(
@@ -120,7 +121,20 @@ def _bericht(cfg_pfad: str) -> dict[str, Any]:
 
 
 def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
-    app = FastAPI(title="Orakel Trading-Engine", version="0.2.0")
+    # Konfiguration einmal je App laden; Endpunkte nutzen denselben Stand.
+    konfig = load_config(cfg_pfad)
+
+    @asynccontextmanager
+    async def _lebenszyklus(_app: FastAPI):
+        # Schema und Migration nur beim Start, nicht bei jeder Anfrage.
+        initialisiere(konfig.db_pfad)
+        yield
+
+    app = FastAPI(
+        title="Orakel Trading-Engine",
+        version="0.2.0",
+        lifespan=_lebenszyklus,
+    )
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
     auth_benutzer = os.environ.get("ORAKEL_AUTH_USER", "").strip()
@@ -154,7 +168,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     @app.get("/api/company/overview")
     def company_overview() -> JSONResponse:
         """Kennzahlen, Agentenstatus und offene Aufgaben der Company-Schicht."""
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         store = CompanyStore(Facts(cfg.db_pfad))
         return JSONResponse(company_uebersicht(store),
                             headers={"Cache-Control": "no-store"})
@@ -162,14 +176,14 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     @app.get("/api/company/paper-guard")
     def company_paper_guard_status() -> JSONResponse:
         """Paper-only-Status aus der aktuellen Konfiguration."""
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         return JSONResponse(company_paper_guard(cfg),
                             headers={"Cache-Control": "no-store"})
 
     @app.get("/api/company/agents")
     def company_agents() -> JSONResponse:
         """Alle 103 Profile mit Status, offenen Aufgaben und letzter Aufgabe."""
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         store = CompanyStore(Facts(cfg.db_pfad))
         return JSONResponse(company_agenten(store),
                             headers={"Cache-Control": "no-store"})
@@ -182,7 +196,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         limit: int = Query(100, ge=1, le=500),
     ) -> JSONResponse:
         """Aufgabenqueue; ohne Statusfilter nur offene Aufgaben."""
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         store = CompanyStore(Facts(cfg.db_pfad))
         try:
             daten = company_aufgaben(store, dept=dept, state=state,
@@ -200,7 +214,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         limit: int = Query(200, ge=1, le=500),
     ) -> JSONResponse:
         """Persönliche Gedächtniseinträge eines Agenten."""
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         store = CompanyStore(Facts(cfg.db_pfad))
         daten = company_erinnerungen(store, agent_id, scope=scope, limit=limit)
         if daten is None:
@@ -211,7 +225,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     @app.post("/api/company/agents/{agent_id}/memories")
     async def company_agent_memory_set(agent_id: str, request: Request) -> JSONResponse:
         """Legt einen persönlichen Eintrag an oder aktualisiert ihn."""
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         try:
             daten = await request.json()
             if not isinstance(daten, dict):
@@ -231,7 +245,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     @app.get("/api/company/agents/{agent_id}")
     def company_agent(agent_id: str) -> JSONResponse:
         """Profil, Historie, aktuelle Aufgabe und Nachrichten eines Agenten."""
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         store = CompanyStore(Facts(cfg.db_pfad))
         daten = company_agent_detail(store, agent_id)
         if daten is None:
@@ -249,7 +263,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         limit: int = Query(100, ge=1, le=500),
     ) -> JSONResponse:
         """Nachrichten und Threads, filterbar nach Agent, Abteilung und Zeit."""
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         store = CompanyStore(Facts(cfg.db_pfad))
         try:
             daten = company_nachrichten(store, agent=agent, dept=dept,
@@ -263,7 +277,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     @app.get("/api/company/messages/{message_id}")
     def company_message(message_id: int) -> JSONResponse:
         """Eine einzelne Nachricht mit Evidence und Quittungsstatus."""
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         store = CompanyStore(Facts(cfg.db_pfad))
         daten = company_nachricht(store, message_id)
         if daten is None:
@@ -274,7 +288,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     @app.post("/api/company/messages")
     async def company_message_send(request: Request) -> JSONResponse:
         """Sendet eine direkte, Abteilungs- oder Broadcast-Nachricht."""
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         try:
             daten = await request.json()
             if not isinstance(daten, dict):
@@ -316,7 +330,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     @app.post("/api/company/messages/{message_id}/ack")
     async def company_message_ack(message_id: int, request: Request) -> JSONResponse:
         """Bestätigt eine Nachricht als ihr Empfänger."""
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         try:
             daten = await request.json()
             if not isinstance(daten, dict):
@@ -334,7 +348,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     @app.get("/api/company/rooms")
     def company_rooms() -> JSONResponse:
         """2D-Raumregister mit Abteilungen, Gemeinschafts- und Agentenräumen."""
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         store = CompanyStore(Facts(cfg.db_pfad))
         return JSONResponse(company_raeume(store),
                             headers={"Cache-Control": "no-store"})
@@ -342,7 +356,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     @app.get("/api/company/conference/latest")
     def company_conference_latest() -> JSONResponse:
         """Letzte Konferenz mit Teilnahme, Beiträgen, Abstimmungen und Massnahmen."""
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         store = CompanyStore(Facts(cfg.db_pfad))
         return JSONResponse(company_konferenz(store),
                             headers={"Cache-Control": "no-store"})
@@ -350,7 +364,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     @app.get("/api/company/stream")
     async def company_stream(request: Request) -> StreamingResponse:
         """SSE-Snapshots für Status, Aufgaben, Nachrichten und Konferenz."""
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
 
         async def snapshots():
             while True:
@@ -376,7 +390,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     def sekretariat() -> JSONResponse:
         from .sekretariat import SEKRETAERE, lage
 
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         db = Facts(cfg.db_pfad)
         return JSONResponse({
             "ok": True, "sekretaere": SEKRETAERE, "lage": lage(db),
@@ -388,7 +402,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     async def sekretariat_chat(request: Request) -> JSONResponse:
         from .sekretariat import chat
 
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         try:
             daten = await request.json()
         except Exception:
@@ -408,7 +422,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     def sekretariat_agenda() -> JSONResponse:
         from .sekretariat import agenda
 
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         return JSONResponse({"ok": True, **agenda(Facts(cfg.db_pfad))},
                             headers={"Cache-Control": "no-store"})
 
@@ -416,7 +430,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     def sitzung_stand() -> JSONResponse:
         from .sekretariat import sitzung_mit_status
 
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         return JSONResponse({"ok": True, **sitzung_mit_status(Facts(cfg.db_pfad))},
                             headers={"Cache-Control": "no-store"})
 
@@ -426,7 +440,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                            limit: int = 50) -> JSONResponse:
         from .sekretariat import protokolle
 
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         treffer, gesamt = protokolle(Vault(cfg.vault_ordner), limit=limit,
                                      suche=suche, entscheid=entscheid, von=von,
                                      bis=bis, sortierung=sortierung)
@@ -435,7 +449,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
 
     @app.get("/api/vault/graph")
     def vault_graph_route() -> JSONResponse:
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         return JSONResponse({"ok": True, **Vault(cfg.vault_ordner).graph()},
                             headers={"Cache-Control": "no-store"})
 
@@ -445,7 +459,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                           entscheid: str = "") -> JSONResponse:
         from .sekretariat import vault_suche
 
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         treffer, gesamt = vault_suche(Vault(cfg.vault_ordner), suche=suche,
                                       limit=limit, von=von, bis=bis,
                                       sortierung=sortierung, entscheid=entscheid)
@@ -456,7 +470,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     def sitzung_start_route() -> JSONResponse:
         from .sekretariat import sitzung_start
 
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         return JSONResponse({"ok": True, **sitzung_start(Facts(cfg.db_pfad))},
                             headers={"Cache-Control": "no-store"})
 
@@ -464,7 +478,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     async def sitzung_stimme(request: Request) -> JSONResponse:
         from .sekretariat import stimme
 
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         try:
             daten = await request.json()
             ergebnis = stimme(Facts(cfg.db_pfad), int(daten.get("index", -1)),
@@ -477,7 +491,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     def sitzung_weiter_route() -> JSONResponse:
         from .sekretariat import sitzung_weiter
 
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         try:
             ergebnis = sitzung_weiter(Facts(cfg.db_pfad), Vault(cfg.vault_ordner))
         except ValueError as exc:
@@ -488,7 +502,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     async def sitzung_ueberstimmen(request: Request) -> JSONResponse:
         from .sekretariat import ueberstimmen
 
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         try:
             daten = await request.json()
             ergebnis = ueberstimmen(Facts(cfg.db_pfad), int(daten.get("index", -1)),
@@ -502,7 +516,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     def sitzung_abschluss_route() -> JSONResponse:
         from .sekretariat import sitzung_abschluss
 
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         try:
             ergebnis = sitzung_abschluss(Facts(cfg.db_pfad), Vault(cfg.vault_ordner))
         except ValueError as exc:
@@ -513,19 +527,19 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     def sekretariat_bericht() -> JSONResponse:
         from .sekretariat import bericht
 
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         eintrag = bericht(Facts(cfg.db_pfad), cfg, Vault(cfg.vault_ordner))
         return JSONResponse({"ok": True, **eintrag}, headers={"Cache-Control": "no-store"})
 
     @app.get("/api/globe")
     def globe(zeitraum: str = STANDARD_ZEITRAUM) -> JSONResponse:
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         return JSONResponse(baue_globe(cfg, Facts(cfg.db_pfad), zeitraum=zeitraum),
                             headers={"Cache-Control": "no-store"})
 
     @app.get("/api/nexus/status")
     def nexus_status() -> JSONResponse:
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         db = Facts(cfg.db_pfad)
         daten = gesamt_status(HttpCache(cfg.db_pfad), lade_register(), db)
         # Letzter Nachtlauf samt Warnstatus; None, solange keiner lief.
@@ -534,7 +548,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
 
     @app.get("/api/nexus/claims")
     def nexus_claims(status: str | None = None, limit: int = 50) -> JSONResponse:
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         db = Facts(cfg.db_pfad)
         erlaubt = {"bestätigt", "teilweise", "unbestätigt", "widersprüchlich"}
         if status and status not in erlaubt:
@@ -550,7 +564,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
 
     @app.get("/api/nexus/missionen")
     def nexus_missionen(limit: int = 20) -> JSONResponse:
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         db = Facts(cfg.db_pfad)
         grenze = max(1, min(int(limit), 100))
         return JSONResponse({
@@ -560,7 +574,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
 
     @app.get("/api/nexus/mission/{kennung}")
     def nexus_mission(kennung: str) -> JSONResponse:
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         mission = Facts(cfg.db_pfad).nexus_mission(kennung)
         if mission is None:
             return JSONResponse({"ok": False, "fehler": f"Unbekannte Mission: {kennung}"},
@@ -570,7 +584,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
 
     @app.post("/api/nexus/mission")
     async def nexus_mission_anlegen(request: Request) -> JSONResponse:
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         try:
             daten = await request.json()
         except Exception:
@@ -594,7 +608,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
 
     @app.post("/api/nexus/mission/{kennung}/lauf")
     def nexus_mission_lauf(kennung: str, max_tasks: int = 10) -> JSONResponse:
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         db = Facts(cfg.db_pfad)
         if db.nexus_mission(kennung) is None:
             return JSONResponse({"ok": False, "fehler": f"Unbekannte Mission: {kennung}"},
@@ -613,7 +627,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
 
     @app.get("/api/nexus/graph")
     def nexus_graph(zeitraum: str = "7d") -> JSONResponse:
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         if zeitraum not in ZEITRAEUME:
             return JSONResponse(
                 {"ok": False, "fehler": f"Unbekannter Zeitraum: {zeitraum}"},
@@ -626,7 +640,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
 
     @app.get("/api/nexus/raum")
     def nexus_raum(zeitraum: str = "7d") -> JSONResponse:
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         if zeitraum not in ZEITRAEUME:
             return JSONResponse(
                 {"ok": False, "fehler": f"Unbekannter Zeitraum: {zeitraum}"},
@@ -639,7 +653,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
 
     @app.get("/api/nexus/kalibrierung")
     def nexus_kalibrierung() -> JSONResponse:
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         ergebnis = kalibrierung_auffrischen(Facts(cfg.db_pfad))
         return JSONResponse(
             {"ok": True, **ergebnis["statistik"],
@@ -650,7 +664,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
 
     @app.post("/api/nexus/prognose")
     async def nexus_prognose(request: Request) -> JSONResponse:
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         try:
             daten = await request.json()
         except Exception:
@@ -681,13 +695,13 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
 
     @app.get("/api/betrieb")
     def betrieb() -> JSONResponse:
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         return JSONResponse(betrieb_status(cfg, Facts(cfg.db_pfad)),
                             headers={"Cache-Control": "no-store"})
 
     @app.get("/api/health")
     def health() -> dict[str, Any]:
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         db = Facts(cfg.db_pfad)
         store = CompanyStore(db)
         return {"ok": True, "letzter_lauf": db.zustand("letzter_lauf"),
@@ -718,7 +732,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
 
     @app.post("/api/paper")
     def paper_tick() -> JSONResponse:
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         db = Facts(cfg.db_pfad)
         try:
             ergebnis = tick(cfg, db)
@@ -729,7 +743,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
 
     @app.post("/api/spider")
     def spider_lauf() -> JSONResponse:
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         db = Facts(cfg.db_pfad)
         try:
             ergebnis = Spider(cfg, db, Vault(cfg.vault_ordner)).lauf()
@@ -747,7 +761,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
 
     @app.post("/api/intel/auftrag")
     async def intel_auftrag(request: Request) -> JSONResponse:
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         db = Facts(cfg.db_pfad)
         try:
             daten = await request.json()
@@ -770,7 +784,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
 
     @app.post("/api/intel/weiterleitung")
     def intel_weiterleitung(kennung: str, abteilung: str, status: str) -> JSONResponse:
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         db = Facts(cfg.db_pfad)
         try:
             geaendert = weiterleitung_aendern(db, kennung, abteilung, status)
@@ -785,7 +799,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
 
     @app.post("/api/konferenz")
     def konferenz() -> JSONResponse:
-        cfg = load_config(cfg_pfad)
+        cfg = konfig
         db = Facts(cfg.db_pfad)
         try:
             protokoll = agents.konferenz(db, _kontext(cfg, db), erzwungen=True)
@@ -796,7 +810,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
     if takt:
         @app.on_event("startup")
         def _starte_takt() -> None:  # pragma: no cover - Zeitverhalten
-            cfg = load_config(cfg_pfad)
+            cfg = konfig
             Takt(cfg, Facts(cfg.db_pfad)).start()
 
     return app

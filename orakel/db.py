@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -456,20 +457,44 @@ def _company_schema_laden() -> str:
     return pfad.read_text(encoding="utf-8")
 
 
-class Facts:
-    """Fakten-Datenbank. Jede Zahl im Dashboard stammt von hier."""
+_INITIALISIERT: set[str] = set()
+_INIT_SPERRE = threading.Lock()
 
-    def __init__(self, pfad: str | Path) -> None:
-        self.pfad = Path(pfad)
-        self.pfad.parent.mkdir(parents=True, exist_ok=True)
-        with self.conn() as c:
+
+def initialisiere(pfad: str | Path) -> None:
+    """Legt Schema an und zieht Spalten nach – einmal pro Pfad und Prozess.
+
+    Vorher lief das bei jeder ``Facts``-Instanz und damit bei fast jeder
+    HTTP-Anfrage: 28-mal CREATE TABLE IF NOT EXISTS plus PRAGMA-Abfragen.
+    """
+    datei = Path(pfad)
+    schluessel = str(datei.resolve())
+    with _INIT_SPERRE:
+        if schluessel in _INITIALISIERT:
+            return
+        datei.parent.mkdir(parents=True, exist_ok=True)
+        c = sqlite3.connect(datei, timeout=30)
+        try:
+            c.row_factory = sqlite3.Row
             c.executescript(SCHEMA_SQL)
-            self._spalten_nachziehen(c)
+            Facts._spalten_nachziehen(c)
             version = int(c.execute("PRAGMA user_version").fetchone()[0])
             if version < COMPANY_SCHEMA_VERSION:
                 # Additive Migration: bestehende Tabellen und Zeilen bleiben unberührt.
                 c.executescript(_company_schema_laden())
                 c.execute(f"PRAGMA user_version = {COMPANY_SCHEMA_VERSION}")
+            c.commit()
+        finally:
+            c.close()
+        _INITIALISIERT.add(schluessel)
+
+
+class Facts:
+    """Fakten-Datenbank. Jede Zahl im Dashboard stammt von hier."""
+
+    def __init__(self, pfad: str | Path) -> None:
+        self.pfad = Path(pfad)
+        initialisiere(self.pfad)
 
     @staticmethod
     def _spalten_nachziehen(c: sqlite3.Connection) -> None:
@@ -523,6 +548,7 @@ class Facts:
     @contextmanager
     def conn(self) -> Iterator[sqlite3.Connection]:
         c = sqlite3.connect(self.pfad, timeout=30)
+        c.execute("PRAGMA busy_timeout = 5000")
         c.row_factory = sqlite3.Row
         try:
             yield c

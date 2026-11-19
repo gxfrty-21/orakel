@@ -70,6 +70,22 @@ def _dateien_hash(ordner) -> dict[str, str]:
     }
 
 
+def test_config_wird_nur_einmal_geladen(cfg, monkeypatch):
+    aufrufe: list[str] = []
+
+    def zaehle(pfad):
+        aufrufe.append(pfad)
+        return cfg
+
+    monkeypatch.setattr(web, "load_config", zaehle)
+    client = TestClient(web.create_app())
+
+    for _ in range(3):
+        assert client.get("/api/company/paper-guard").status_code == 200
+
+    assert len(aufrufe) == 1
+
+
 def test_paper_guard_http_hat_keine_schreibenden_seiteneffekte(cfg, monkeypatch):
     db = Facts(cfg.db_pfad)
     store = CompanyStore(db)
