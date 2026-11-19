@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from orakel.markt import korrelation_max, markt_uebersicht
+from orakel.kern.markt import korrelation_max, markt_uebersicht
 
 
 def kurse(n: int = 600, drift: float = 0.0, seed: int = 1) -> pd.DataFrame:

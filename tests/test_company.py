@@ -13,7 +13,7 @@ from orakel.company.policy import ERLAUBTE_TASK_TYPES, CompanyPolicy, PolicyErro
 from orakel.company.roster import PROFILES, profile_by_id, validate_roster
 from orakel.company.runtime import TASK_TYPES, CompanyRuntime
 from orakel.company.store import CompanyStore, StoreError
-from orakel.db import Facts
+from orakel.kern.db import Facts
 
 
 def _db(cfg) -> Facts:

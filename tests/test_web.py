@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from orakel import web
 from orakel.company.store import CompanyStore
-from orakel.db import Facts
+from orakel.kern.db import Facts
 from orakel.web import _basic_ok
 
 

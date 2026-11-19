@@ -24,11 +24,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .config import Config
-from .db import Facts
+from .kern.db import Facts
 from .intel import IntelNetz
 from .knowledge import Vault
 from .nexus.missionen import Missionen
-from .paper import tick
+from .kern.paper import tick
 from .spider import Spider
 
 STATUS_KEY = "betrieb_status"

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from orakel import db as db_mod
+from orakel.kern import db as db_mod
 
 
 def test_schema_wird_pro_pfad_nur_einmal_angelegt(tmp_path, monkeypatch):

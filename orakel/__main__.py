@@ -8,8 +8,8 @@ import time
 from pathlib import Path
 
 from .config import load_config
-from .data import lade_csv, synthetische_kerzen
-from .db import Facts
+from .kern.data import lade_csv, synthetische_kerzen
+from .kern.db import Facts
 from .knowledge import Vault
 
 
@@ -142,7 +142,7 @@ def cmd_spider(args: argparse.Namespace) -> int:
 
 
 def cmd_paper(args: argparse.Namespace) -> int:
-    from .paper import tick
+    from .kern.paper import tick
 
     cfg = _cfg(args.config)
     db = Facts(cfg.db_pfad)

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from orakel.db import Facts
+from orakel.kern.db import Facts
 from orakel.nexus.bewertung import (_aussage_aus_text, claims_auffrischen,
                                     extrahiere_aussage, quellen_reputation,
                                     wert_und_einheit)

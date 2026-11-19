@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from orakel.config import RisikoGrenzen
-from orakel.risk import KontoZustand, Order, Risikomanager, positionsgroesse
+from orakel.kern.risk import KontoZustand, Order, Risikomanager, positionsgroesse
 
 
 def konto(**kw) -> KontoZustand:

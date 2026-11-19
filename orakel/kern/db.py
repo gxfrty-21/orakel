@@ -447,7 +447,7 @@ def _forecast_aus_zeile(zeile: sqlite3.Row) -> dict[str, Any]:
 
 
 COMPANY_SCHEMA_VERSION = 1
-MIGRATIONS_ORDNER = Path(__file__).with_name("migrations")
+MIGRATIONS_ORDNER = Path(__file__).resolve().parents[1] / "migrations"
 
 
 def _company_schema_laden() -> str:

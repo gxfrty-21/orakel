@@ -30,7 +30,7 @@ from .company.memory import AgentMemory
 from .company.messaging import MessageRateLimitError, MessagingService
 from .company.store import CompanyStore
 from .config import Config, load_config
-from .db import Facts, initialisiere
+from .kern.db import Facts, initialisiere
 from .globe import STANDARD_ZEITRAUM, baue_globe
 from .intel import IntelNetz, auftrag_aendern, weiterleitung_aendern
 from .knowledge import Vault
@@ -41,7 +41,7 @@ from .nexus.missionen import Missionen
 from .nexus.quellen import lade_register
 from .nexus.raum import raum_daten
 from .nexus.status import gesamt_status
-from .paper import tick
+from .kern.paper import tick
 from .pipeline import lauf as engine_lauf
 from .report import baue_bericht
 from .scheduler import Takt, _kontext
