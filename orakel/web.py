@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 import os
 import secrets
 import threading
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +51,25 @@ from .spider import Spider
 STATIC = Path(__file__).parent / "web" / "static"
 BERICHT = Path("dashboard.json")
 _sperre = threading.Lock()
+LOGGER = logging.getLogger(__name__)
+
+
+class NutzerFehler(ValueError):
+    """Fehler mit bewusst formuliertem Text; dieser Text darf an den Client."""
+
+
+def _fehler_text(exc: Exception) -> str:
+    """Nur eigene Validierungsfehler im Klartext, alles andere anonym mit Fehler-ID.
+
+    Ausnahmetexte können Pfade, SQL, Konfigurationswerte oder Datenbankinhalte
+    enthalten. Sie bleiben deshalb im Log; der Client bekommt eine ID, mit der
+    sich der Vorfall dort wiederfinden lässt.
+    """
+    if isinstance(exc, (NutzerFehler, ValueError, TypeError)):
+        return str(exc)
+    fehler_id = uuid.uuid4().hex
+    LOGGER.exception("Interner Fehler %s (%s)", fehler_id, type(exc).__name__, exc_info=exc)
+    return f"Interner Fehler ({fehler_id})"
 
 
 def _basic_ok(kopf: str, benutzer: str, passwort: str) -> bool:
@@ -57,7 +78,7 @@ def _basic_ok(kopf: str, benutzer: str, passwort: str) -> bool:
         return False
     try:
         roh = base64.b64decode(kopf.split(" ", 1)[1], validate=True).decode("utf-8")
-    except Exception:
+    except ValueError:  # binascii.Error und UnicodeDecodeError sind ValueError
         return False
     name, trenner, pw = roh.partition(":")
     if not trenner:
@@ -101,7 +122,7 @@ def _bericht(cfg_pfad: str) -> dict[str, Any]:
             eintrag = dict(r)
             try:
                 eintrag["symbole"] = ", ".join(_json.loads(eintrag.get("symbole") or "[]"))
-            except Exception:
+            except (ValueError, TypeError):
                 eintrag["symbole"] = ""
             # Alte Zeilen kennen keine Erkennungszeit; dann gilt der Abrufzeitpunkt.
             eintrag["erkannt"] = eintrag.get("erkannt") or eintrag.get("geholt")
@@ -189,7 +210,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                                      mindestprioritaet=mindestprioritaet,
                                      limit=limit)
         except ValueError as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc),
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc),
                                  "code": "company_filter_invalid"}, status_code=400)
         return JSONResponse(daten, headers={"Cache-Control": "no-store"})
 
@@ -223,7 +244,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                 daten.get("value"),
             )
         except (ValueError, TypeError) as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc),
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc),
                                  "code": "company_memory_invalid"}, status_code=400)
         return JSONResponse({"ok": True, "erinnerung": eintrag},
                             headers={"Cache-Control": "no-store"})
@@ -256,7 +277,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                                         thread_id=thread_id, seit=seit,
                                         nur_offen=nur_offen, limit=limit)
         except ValueError as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc),
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc),
                                  "code": "company_filter_invalid"}, status_code=400)
         return JSONResponse(daten, headers={"Cache-Control": "no-store"})
 
@@ -293,7 +314,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
             )
         except MessageRateLimitError as exc:
             return JSONResponse(
-                {"ok": False, "fehler": str(exc),
+                {"ok": False, "fehler": _fehler_text(exc),
                  "code": "company_message_rate_limited",
                  "retry_after": exc.retry_after, "limit": exc.limit},
                 status_code=429,
@@ -301,7 +322,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                          "Cache-Control": "no-store"},
             )
         except (ValueError, TypeError) as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc),
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc),
                                  "code": "company_message_invalid"}, status_code=400)
         ids = list(ergebnis.get("message_ids") or [])
         ergebnis["messages"] = [
@@ -325,7 +346,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                 message_id, daten.get("agent_id"),
             )
         except (ValueError, TypeError) as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc),
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc),
                                  "code": "company_message_ack_invalid"}, status_code=400)
         formatiert = company_nachricht(CompanyStore(Facts(cfg.db_pfad)), message_id)
         return JSONResponse({"ok": True, **(formatiert or {})},
@@ -401,7 +422,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
             ergebnis = chat(Facts(cfg.db_pfad), str(daten.get("sekretaer") or ""),
                             str(daten.get("text") or ""))
         except ValueError as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc)}, status_code=400)
         return JSONResponse({"ok": True, **ergebnis}, headers={"Cache-Control": "no-store"})
 
     @app.post("/api/sekretariat/agenda")
@@ -470,7 +491,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
             ergebnis = stimme(Facts(cfg.db_pfad), int(daten.get("index", -1)),
                               str(daten.get("entscheid") or ""))
         except (ValueError, TypeError, AttributeError) as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc)}, status_code=400)
         return JSONResponse({"ok": True, **ergebnis}, headers={"Cache-Control": "no-store"})
 
     @app.post("/api/sitzung/weiter")
@@ -481,7 +502,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         try:
             ergebnis = sitzung_weiter(Facts(cfg.db_pfad), Vault(cfg.vault_ordner))
         except ValueError as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc)}, status_code=400)
         return JSONResponse({"ok": True, **ergebnis}, headers={"Cache-Control": "no-store"})
 
     @app.post("/api/sitzung/ueberstimmen")
@@ -495,7 +516,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                                     str(daten.get("entscheid") or ""),
                                     str(daten.get("begruendung") or ""))
         except (ValueError, TypeError, AttributeError) as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc)}, status_code=400)
         return JSONResponse({"ok": True, **ergebnis}, headers={"Cache-Control": "no-store"})
 
     @app.post("/api/sitzung/abschluss")
@@ -506,7 +527,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         try:
             ergebnis = sitzung_abschluss(Facts(cfg.db_pfad), Vault(cfg.vault_ordner))
         except ValueError as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc)}, status_code=400)
         return JSONResponse({"ok": True, **ergebnis}, headers={"Cache-Control": "no-store"})
 
     @app.post("/api/sekretariat/bericht")
@@ -586,7 +607,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                 str(daten.get("prioritaet") or "mittel"),
             )
         except ValueError as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc)}, status_code=400)
         except Exception as exc:
             return JSONResponse({"ok": False, "fehler": type(exc).__name__},
                                 status_code=500)
@@ -673,7 +694,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                           if daten.get("claim_id") is not None else None),
             )
         except ValueError as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc)}, status_code=400)
         except Exception as exc:
             return JSONResponse({"ok": False, "fehler": type(exc).__name__},
                                 status_code=500)
@@ -724,7 +745,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
             ergebnis = tick(cfg, db)
         except Exception as exc:
             db.ereignis("fehler", "Takt", f"Paper-Takt über API fehlgeschlagen: {exc}")
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=500)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc)}, status_code=500)
         return JSONResponse({"ok": True, **ergebnis})
 
     @app.post("/api/spider")
@@ -735,7 +756,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
             ergebnis = Spider(cfg, db, Vault(cfg.vault_ordner)).lauf()
         except Exception as exc:
             db.ereignis("fehler", "Spider", f"Recherche über API fehlgeschlagen: {exc}")
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=500)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc)}, status_code=500)
         db.zustand_setzen("spider_letzter_lauf", ergebnis)
         try:
             netz = IntelNetz(cfg, db, Vault(cfg.vault_ordner))
@@ -761,7 +782,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         try:
             geaendert = auftrag_aendern(db, kennung, status, ergebnis)
         except ValueError as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc)}, status_code=400)
         if not geaendert:
             return JSONResponse({"ok": False, "fehler": f"Unbekannter Auftrag: {kennung}"},
                                 status_code=404)
@@ -775,7 +796,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         try:
             geaendert = weiterleitung_aendern(db, kennung, abteilung, status)
         except ValueError as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc)}, status_code=400)
         if not geaendert:
             return JSONResponse({"ok": False, "fehler": f"Unbekannte Weiterleitung: {kennung}"},
                                 status_code=404)
@@ -790,7 +811,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         try:
             protokoll = agents.konferenz(db, _kontext(cfg, db), erzwungen=True)
         except Exception as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=500)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc)}, status_code=500)
         return JSONResponse({"ok": True, "beschluss": protokoll.get("beschluss")})
 
     if takt:

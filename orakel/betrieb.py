@@ -14,6 +14,7 @@ Es werden keine zusätzlichen Missionen, Artikel oder Kennzahlen erzeugt.
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import sys
@@ -28,6 +29,8 @@ from .db import Facts
 from .intel import IntelNetz
 from .knowledge import Vault
 from .nexus.missionen import Missionen
+
+LOGGER = logging.getLogger(__name__)
 from .paper import tick
 from .spider import Spider
 
@@ -361,9 +364,8 @@ class Betrieb:
                 job, status, dauer_ms=dauer_ms, fehler=fehler,
                 details=_kompakte_details(details or {}),
             )
-        except Exception:
-            # Das Protokoll darf den Betrieb nie anhalten.
-            pass
+        except Exception:  # noqa: BLE001 - das Protokoll darf den Betrieb nie anhalten
+            LOGGER.warning("Betriebsprotokoll für %s nicht gespeichert", job, exc_info=True)
 
     def takt(self, erzwungen: set[str] | None = None) -> dict[str, Any]:
         """Führt alle fälligen Jobs aus. Rückgabe behält die alten Schlüssel."""
@@ -441,8 +443,9 @@ class Betrieb:
                         "fehler", "Betrieb",
                         f"{job.titel}: {_job_fehler_text(exc)}; nächster Versuch "
                         f"in {status['backoff_sekunden']} s")
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001 - ein fehlendes Ereignis stoppt den Takt nicht
+                    LOGGER.warning("Betriebsereignis für %s nicht gespeichert", job.name,
+                                   exc_info=True)
             finally:
                 self._status_speichern()
 
@@ -453,8 +456,8 @@ class Betrieb:
         self._status_speichern()
         try:
             self.db.betrieb_laeufe_trim(self.grenzen.max_laeufe)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - Aufräumen ist nicht kritisch für den Takt
+            LOGGER.warning("Betriebsläufe konnten nicht gekürzt werden", exc_info=True)
         ergebnis["betrieb"]["status"] = self._status["letzter_takt_status"]
         ergebnis["betrieb"]["dauer_ms"] = self._status["letzter_takt_dauer_ms"]
         return ergebnis

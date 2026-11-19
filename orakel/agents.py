@@ -288,7 +288,7 @@ def _hdl_mehrdeutig(ctx: dict[str, Any]) -> tuple[bool, str]:
         try:
             if len(json.loads(r["symbole"] or "[]")) > 1:
                 mehr += 1
-        except Exception:
+        except (ValueError, TypeError):
             pass
     return True, f"{mehr} Artikel mit mehreren Symbolen"
 

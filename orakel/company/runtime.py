@@ -8,6 +8,7 @@ Audit-Event. Es gibt keinen LLM-Aufruf und keine Broker-Order.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -23,6 +24,8 @@ from .messaging import MessagingService
 from .policy import CompanyPolicy, PolicyError
 from .roster import Profile, PROFILES, profile_by_id
 from .store import CompanyStore
+
+LOGGER = logging.getLogger(__name__)
 
 # Spezielle Task-Typen. Alle anderen Rollen laufen als daily_check.
 TASK_TYPES = {
@@ -299,10 +302,9 @@ class CompanyRuntime:
                     "ref": f"task:{task['id']}",
                 },
             )
-        except Exception:
-            # Ein Gedächtnisfehler darf einen bereits abgeschlossenen Task nicht
-            # nachträglich als fehlgeschlagen erscheinen lassen.
-            pass
+        except Exception:  # noqa: BLE001 - ein Gedächtnisfehler darf den Task nicht kippen
+            LOGGER.warning("Gedächtnis für Task %s nicht geschrieben", task["id"],
+                           exc_info=True)
 
     def _worker(self, worker: str, max_tasks: int | None, ctx: dict[str, Any]) -> None:
         while True:
@@ -316,5 +318,6 @@ class CompanyRuntime:
                 # Ein einzelner kaputter Handler darf die anderen 102 nicht stoppen.
                 try:
                     self.store.fail(int(task["id"]), f"Runtime-Fehler: {exc}")
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001 - der Fehler steht bereits am Task
+                    LOGGER.warning("Task %s nicht als fehlgeschlagen markiert", task["id"],
+                                   exc_info=True)

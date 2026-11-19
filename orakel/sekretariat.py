@@ -8,6 +8,7 @@ im Browser.
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -15,6 +16,8 @@ from typing import Any
 from .config import Config
 from .db import Facts, jetzt
 from .knowledge import Vault
+
+LOGGER = logging.getLogger(__name__)
 
 SEKRETAERE: list[dict[str, str]] = [
     {"id": "S1", "name": "Mira", "rolle": "Empfang & Koordination",
@@ -699,8 +702,8 @@ def ueberstimmen(db: Facts, index: int, entscheid: str,
                     c.execute("UPDATE nexus_missionen SET status='storniert' WHERE kennung=?",
                               (e["mission"],))
                 e["mission_storniert"] = True
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - Storno ist Nebenwirkung, der Entscheid zählt
+                LOGGER.warning("Mission %s nicht storniert", e.get("mission"), exc_info=True)
         break
     db.zustand_setzen("sekretariat_sitzung", s)
     return s
@@ -732,8 +735,8 @@ def sitzung_abschluss(db: Facts, vault: Vault | None = None) -> dict[str, Any]:
         try:
             vault.notiz("konferenz", f"Sitzung {str(s['start'])[:16]}", text,
                         tags=["sitzung", "sekretariat"])
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - Sitzung ist gespeichert, die Notiz ist Beiwerk
+            LOGGER.warning("Sitzungsnotiz nicht geschrieben", exc_info=True)
     db.zustand_setzen("sekretariat_sitzung", s)
     return s
 
