@@ -45,7 +45,7 @@ MUSTER_COMMIT = re.compile(r'\b([0-9a-f]{7,40})\b')
 
 # Nachweise, die der Generator selbst ausführt. Reihenfolge = Reihenfolge im Bericht.
 PRUEFUNGEN = (
-    ('pytest', ('-m', 'pytest', '-q'), 'belege/evidenz-pytest.log'),
+    ('pytest', ('-m', 'pytest', '-q', 'tests'), 'belege/evidenz-pytest.log'),
     ('doku', ('scripts/pruefe_doku.py',), 'belege/evidenz-doku.log'),
 )
 
