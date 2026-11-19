@@ -40,32 +40,7 @@ jobs:
           PUSH_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-
-          geaendert=""
-          range=""
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            range="$BASE_SHA...$HEAD_SHA"
-          elif [ -z "${BEFORE_SHA:-}" ] || [ "${BEFORE_SHA//0/}" = "" ]; then
-            geaendert=$(git ls-tree -r --name-only "$PUSH_SHA")
-          elif git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
-            range="$BEFORE_SHA..$PUSH_SHA"
-          else
-            # Nach einem Force-Push kann der alte Commit nicht mehr im
-            # Checkout liegen; dann konservativ den ganzen Baum prüfen.
-            geaendert=$(git ls-tree -r --name-only "$PUSH_SHA")
-          fi
-
-          if [ -z "$geaendert" ] && [ -n "$range" ]; then
-            if ! geaendert=$(git diff --name-only "$range"); then
-              geaendert=$(git ls-tree -r --name-only "$PUSH_SHA")
-            fi
-          fi
-
-          if printf '%s\n' "$geaendert" | grep -Eq '\.md$|^scripts/pruefe_doku\.py$'; then
-            echo "doku=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "doku=false" >> "$GITHUB_OUTPUT"
-          fi
+          bash scripts/ermittle-doku-aenderungen.sh >> "$GITHUB_OUTPUT"
 
   pytest:
     runs-on: ubuntu-24.04
