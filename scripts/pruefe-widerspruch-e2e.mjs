@@ -13,7 +13,8 @@
  *   node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300 --negativtest
  *
  * ``--negativtest`` prüft zusätzlich, dass der Kartenprüfer eine im DOM
- * verfälschte und eine entfernte Widerspruchszeile als Fehler erkennt.
+ * verfälschte und eine entfernte Widerspruchszeile als Fehler erkennt und
+ * dass der API-Prüfer eine aus der API-Antwort entfernte Zeile ablehnt.
  */
 
 import { chromium } from 'playwright';
@@ -144,7 +145,7 @@ function erwarteFehler(funktion, teil) {
   throw new Error(`Negativtest: erwarteter Fehler «${teil}» blieb aus`);
 }
 
-async function pruefeNegativfaelle(page, widerspruch, claim) {
+async function pruefeNegativfaelle(page, widerspruch, claim, status) {
   const falscheZeile = await page.evaluate(({ kernaussage }) => {
     const karten = [...document.querySelectorAll('#bewertungClaims .li')];
     const card = karten.find(k =>
@@ -174,7 +175,27 @@ async function pruefeNegativfaelle(page, widerspruch, claim) {
   const karteFehlt = await leseWiderspruchKarte(page, claim);
   erwarteFehler(() => pruefeWiderspruchKarte(karteFehlt, widerspruch, claim),
     'Widerspruchsdetail fehlt');
-  console.log('Widerspruch-E2E-Negativtest OK: 2/2 (falsche und fehlende Widerspruchszeile erkannt)');
+
+  const apiKopie = structuredClone(status);
+  const apiClaims = apiKopie.claims || {};
+  const apiZeilen = Array.isArray(apiClaims.widersprueche)
+    ? apiClaims.widersprueche
+    : [];
+  apiClaims.widersprueche = apiZeilen.filter(w =>
+    !(Number(w.claim_id) === Number(widerspruch.claim_id) &&
+      w.grund === widerspruch.grund)
+  );
+  apiKopie.claims = apiClaims;
+  if (apiClaims.widersprueche.length === apiZeilen.length) {
+    throw new Error('Negativtest-Vorbereitung: API-Widerspruchszeile fehlt bereits');
+  }
+  erwarteFehler(() => apiBefund(apiKopie),
+    'API enthält den erwarteten Widerspruch nicht');
+
+  console.log(
+    'Widerspruch-E2E-Negativtest OK: 3/3 (falsche DOM-Zeile, fehlende DOM-Zeile ' +
+    'und fehlende API-Zeile erkannt)'
+  );
 }
 
 async function main() {
@@ -225,7 +246,7 @@ async function main() {
       `${widerspruch.quelle_a} ↔ ${widerspruch.quelle_b}, ` +
       `${ERWARTET.wertA} bp ↔ ${ERWARTET.wertB} bp`
     );
-    if (opt.negativtest) await pruefeNegativfaelle(page, widerspruch, claim);
+    if (opt.negativtest) await pruefeNegativfaelle(page, widerspruch, claim, status);
   } finally {
     await browser.close();
   }

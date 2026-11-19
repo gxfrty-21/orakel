@@ -154,7 +154,7 @@ der erzeugte Rohbericht liegt nach dem Lauf unter
 | Dashboard | Orakel-Design, 12 Ansichten, Live-Polling, 2D-Agenten-Querschnitt, «Lauf starten» |
 | Dauerbetrieb | persistenter Plan, Backoff, Ressourcenlimits, Jobprotokoll und Betriebsansicht |
 
-Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswahl einmal geöffnet; scheitert er, gibt es keinen Ersatzkandidaten. Im Lab zeigt ein Chart die aggregierte Kapitalkurve der Testfenster; beim Überfahren nennt ein Tooltip Kapitalstand, Veränderung seit dem Start in Prozent, Datum sowie den bisherigen Höchststand mit Abstand in Prozent; per Tastatur (Tab, Pfeiltasten, Home/Ende) ist dieselbe Anzeige erreichbar. Solange der Tastaturfokus im sichtbaren Lab-Detail liegt, pausiert der Auto-Refresh den Ansichts-Render, damit die Anzeige beim Ablesen nicht neu aufgebaut wird; Daten und Kopfzeile werden weiter aktualisiert. Dort und in der Strategien-Ansicht lässt sich zudem bei jedem Kandidaten die Liste der Walk-Forward-Fenster aufklappen: Trainings- und Testblock, gewählter Parameter, Trades, Profit Factor und Netto je Fenster.
+Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswahl einmal geöffnet; scheitert er, gibt es keinen Ersatzkandidaten. Im Lab zeigt ein Chart die aggregierte Kapitalkurve der Testfenster; beim Überfahren nennt ein Tooltip Kapitalstand, Veränderung seit dem Start in Prozent, Datum sowie den bisherigen Höchststand mit Abstand in Prozent; per Tastatur (Tab, Pfeiltasten, Home/Ende) ist dieselbe Anzeige erreichbar. dort und in der Strategien-Ansicht lässt sich zudem bei jedem Kandidaten die Liste der Walk-Forward-Fenster aufklappen: Trainings- und Testblock, gewählter Parameter, Trades, Profit Factor und Netto je Fenster.
 
 ## Risikogrenzen (deine Vorgaben)
 
@@ -270,15 +270,17 @@ ORAKEL_DB_PFAD=/tmp/orakel-widerspruch.db python -m orakel serve --host 127.0.0.
 # Im ersten Terminal:
 node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300
 
-# Negativtest: verfälscht im DOM den Widerspruchsgrund und entfernt danach
-# die Widerspruchszeile; beide Fälle müssen als Fehler erkannt werden.
+# Negativtest: verfälscht im DOM den Widerspruchsgrund, entfernt danach
+# die Widerspruchszeile und entfernt sie zusätzlich aus einer Kopie der
+# API-Antwort; alle drei Fälle müssen als Fehler erkannt werden.
 node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300 --negativtest
 ```
 
-Der Negativtest verändert keine Datenbank und keine API-Antwort. Er prüft, dass
-derselbe Kartenprüfer eine falsche Widerspruchszeile und eine fehlende
-Widerspruchszeile zuverlässig ablehnt. Der CI-Job `text250` verlangt `2/2` und
-führt den positiven Test und den Negativtest auf einer frischen Seed-Kopie aus. Das
+Der Negativtest verändert keine Datenbank und keine echte API-Antwort. Er prüft,
+dass derselbe Kartenprüfer eine falsche Widerspruchszeile und eine fehlende
+Widerspruchszeile zuverlässig ablehnt und dass der API-Prüfer eine aus der
+API-Antwort entfernte Widerspruchszeile erkennt. Der CI-Job `text250` führt den
+positiven Test und den Negativtest auf einer frischen Seed-Kopie aus. Das
 Seed-Skript verweigert eine fehlende Zieldatenbank, damit es nicht versehentlich
 eine neue Produktionsdatenbank anlegt.
 
@@ -287,14 +289,15 @@ eine neue Produktionsdatenbank anlegt.
 `scripts/pruefe-text250.mjs` skaliert die Schrift im Dashboard auf 250 %
 (Faktor 2,5 auf berechnete Schriftgrössen und Zeilenhöhen). Bei 360, 320 und
 280 px prüft es, ob Inhalte seitlich aus ihrem Kasten oder aus dem Viewport
-laufen. Zusätzlich prüft es alle zwölf Ansichten bei 240 px sowie die
-Kernaussagen-Karte und die Kopf- und Navigationsleiste. Die vier KPI-Kacheln
+laufen. Die Kernaussagen-Karte und die Kopf- und Navigationsleiste werden
+zusätzlich bei 240 px in normaler Darstellung geprüft. Die vier KPI-Kacheln
 und das Claim-Grid wechseln auf eine Spalte, die Quellenzeile bleibt im
 Panel. Kopf und Navigation brechen kompakt um; die Seite scrollt dort nicht
-horizontal. **240 px ist in normaler Schrift für alle zwölf Ansichten
-geprüft (12/12). Der volle 250-%-Lauf bei 240 px bleibt ausserhalb der
-Zusage; die CI prüft 250 % bei 360/320/280 px. 240 px ist die untere
-geprüfte Breite, darunter gibt es keine Layoutzusage.**
+horizontal. **240 px ist für die geprüfte Spider-Seite in normaler
+Darstellung unterstützt, aber keine allgemeine Mindestbreite aller Ansichten
+und nicht für den vollen 250-%-Lauf zugesagt.** Der separate 250-%-Lauf bei
+240 px scheitert an Panel-Kopf und KPI-Beschriftung; 260/270 px haben
+ebenfalls Befunde. Die kleinste geprüfte Breite mit vollständigem 250-%-Lauf ist 280 px.
 
 Die 240-px-Prüfung misst alle zwölf Ansichten in normaler Schrift bei
 240 × 900 px. Jede Zeile prüft Seiten-, Kopf- und Navigationsbreite:
@@ -314,45 +317,8 @@ Die 240-px-Prüfung misst alle zwölf Ansichten in normaler Schrift bei
 | Agentenraum | 240 px | OK |
 | Konferenz | 240 px | OK |
 
-Der erfolgreiche [text250-CI-Lauf](https://github.com/gxfrty-21/orakel/actions/runs/43811966526/job/133115401944)
-bestätigt diese 12/12-Prüfung. Der CI-Schritt verlangt dafür die Zusammenfassung
+Der CI-Schritt verlangt dafür die Zusammenfassung
 `240px: 12/12 Ansichten ohne horizontalen Überlauf`.
-
-Der spätere erfolgreiche [CI-Lauf 43939906217](https://github.com/gxfrty-21/orakel/actions/runs/43939906217)
-auf PR-Head `5f21361` bestätigt diese Prüfung ebenfalls; alle sechs Jobs waren
-erfolgreich.
-
-### Belastbarkeitsgrenze bei 240 px
-
-Die Kernaussagen-Karte ist bei 240 px in normaler Darstellung tragfähig:
-
-- `#bewertungPanel` ist 208 px breit (206 px Innenbreite) und bleibt zwischen
-  16 und 224 px im Viewport.
-- Die Quellenzeile ist 178 px breit, bricht zweizeilig um und bleibt mit
-  `scrollWidth === clientWidth === 178` im Panel.
-- KPI-Kacheln und Claim-Grid wechseln auf eine Spalte; die Claim-Liste bleibt
-  intern scrollbar.
-- Die Seite bleibt mit `scrollWidth === clientWidth === 240` ohne horizontalen
-  Überlauf. Kopf und Navigation umbrechen kompakt und bleiben jeweils innerhalb
-  ihrer 240-px-Container.
-
-Die 240-px-Prüfung umfasst alle zwölf Ansichten in normaler Schrift
-(`240px: 12/12`). Ein voller 250-%-Lauf bei 240 px ist nicht Teil der Zusage.
-Der gezielte Spider-Lauf prüft die Karte zusätzlich bei 240 px, auch wenn
-240 px nicht in `--breiten` steht:
-
-```bash
-node scripts/pruefe-text250.mjs --ansichten spider --breiten 240 \
-  --url http://127.0.0.1:3400
-```
-
-Erwartet werden Exit-Code 0, `240px/spider: OK · Seite 240px · Kopf 240/240 ·
-Navigation 240/240`, `240px: 1/1 Ansichten ohne horizontalen Überlauf` und
-`Claims 1× geprüft`. Der Standardlauf mit `--breiten 360,320,280` prüft die
-Karte zusätzlich bei 240 px und meldet `Claims 4× geprüft`.
-
-**240 px ist die untere geprüfte Breite.** Darunter gibt es keine Layoutzusage,
-weder für die Karte noch für die übrigen Ansichten.
 
 Die feste Pixel-Art des Raumschiffs ist von der Textskalierung
 ausgenommen; die Agentendetails in der rechten Spalte skalieren mit. Tabellen werden zusätzlich mit langen deutschen Komposita belastet und
@@ -384,8 +350,6 @@ die visuell verborgen bleibt, role=status sowie aria-live=polite trägt, nicht
 aria-hidden ist und in keinem display:none- oder visibility:hidden-Vorfahren
 liegt).
 Exit-Code 1 bei einem Befund.
-
-Die früheren 24 Lab-Befunde im 250-%-Lauf, ihre Zuordnung zu 360 px und die Ursache im Auto-Refresh sind in [PHASE-3](docs/spider/PHASE-3.md) dokumentiert.
 
 Der Standardlauf prüft bei 1440 px zusätzlich die kompakte
 Abteilungslegende: offen, elf Einträge, kompakter Kopf und kein horizontaler
@@ -430,7 +394,6 @@ node scripts/pruefe-text250.mjs --ansichten spider --breiten 360,320,280
 Der Aufruf prüft die vier Langhost-Fälle bei 360, 320 und 280 px sowie die
 zusätzliche 240-px-Claim-Prüfung. Erwartet werden Exit-Code 0, `Claims 4× geprüft`
 und die Zeile `240px/spider: OK · Seite 240px · Kopf 240/240 · Navigation 240/240`.
-Die Belastbarkeitsgrenze und der separate 240-px-Aufruf sind oben dokumentiert.
 
 Für Strategien, Research, das Raumschiff, Agentenraum und Konferenz gleicht der
 Lauf zusätzlich die Kerndaten mit `/api/report` ab: Zahl und Namen der
@@ -459,40 +422,6 @@ Widerspruchssicherheit. Jeder Fall muss einen Befund auslösen; die CI verlangt
 `Negativtest OK: 13/13`, damit die Inhaltsprüfung auch Strukturänderungen im
 Agentenraum, am Raumschiff und an den Widerspruchsdetails nicht
 stillschweigend übersieht.
-
-### Reproduktion des 13/13-Negativtests
-
-Der Lauf braucht eine frische Seed-Kopie, ein laufendes Dashboard und
-Playwright-Chromium. Er verändert nur das DOM; die Seed-Kopie und die
-API-Antworten werden nicht verändert. Im ersten Terminal:
-
-```bash
-cp seed/orakel-seed.db /tmp/orakel-negativtest.db
-ORAKEL_DB_PFAD=/tmp/orakel-negativtest.db \
-  python -m orakel serve --host 127.0.0.1 --port 3400
-```
-
-Im zweiten Terminal aus dem Repository-Wurzelverzeichnis:
-
-```bash
-npm ci --prefix scripts
-npm --prefix scripts exec playwright install chromium
-
-node scripts/pruefe-text250.mjs --negativtest \
-  --url http://127.0.0.1:3400
-```
-
-Der Lauf muss mit Exit-Code 0 enden und folgende Zeile ausgeben:
-
-```text
-Negativtest OK: 13/13 falsche Inhalte erkannt
-```
-
-Fehlen lokal die Chromium-Systembibliotheken, kann zuerst das
-[lokale Playwright-Setup](#lokales-playwright-setup-ohne-systemrechte)
-ausgeführt und die Umgebung mit `source .playwright-local/env.sh` aktiviert
-werden. Der Negativtest benötigt keine zusätzliche Testdatenbank und schreibt
-keine Daten in die Seed-Kopie.
 
 Der Standardlauf umfasst alle zwölf Ansichten inklusive der weiterhin geprüften
 Inhaltsansichten Agentenraum, Konferenz und Raumschiff. Der CI-Job
@@ -531,8 +460,7 @@ In einer frischen Ubuntu-24.04-Umgebung (amd64) fehlen Chromium oft die
 nötigen Laufzeitbibliotheken und Fonts. Das Setup-Skript lädt die Pakete als
 `.deb` herunter, entpackt sie in das ignorierte Verzeichnis `.playwright-local/`
 und richtet `LD_LIBRARY_PATH` sowie Fontconfig ein. Es installiert nichts
-systemweit, benötigt kein `sudo` und prüft am Ende den Chromium-Start und die
-geladenen Font-Metriken:
+systemweit, benötigt kein `sudo` und prüft am Ende den Chromium-Start:
 
 ```bash
 bash scripts/setup-playwright-local.sh

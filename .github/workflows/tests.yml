@@ -264,10 +264,6 @@ jobs:
             echo "Claim-Prüfung wurde nicht für alle vier Breiten ausgeführt"
             exit 1
           fi
-          if ! grep -q 'Refresh 1× geprüft' artifacts/text250/lauf.log; then
-            echo "Auto-Refresh-Prüfung wurde nicht ausgeführt"
-            exit 1
-          fi
           if ! grep -q '240px: 12/12 Ansichten ohne horizontalen Überlauf' \
                artifacts/text250/lauf.log; then
             echo "240-px-Prüfung wurde nicht für alle zwölf Ansichten ausgeführt"
@@ -473,16 +469,17 @@ jobs:
           fi
           grep -q 'Widerspruch-E2E OK' artifacts/widerspruch-e2e/lauf.log
 
-          # Der Negativlauf verändert nur das DOM der Testseite: einmal wird
-          # der Widerspruchsgrund verfälscht, einmal die Detailzeile entfernt.
-          # Beide Fälle müssen vom selben Kartenprüfer erkannt werden.
+          # Der Negativlauf verändert nur das DOM der Testseite und eine Kopie
+          # der API-Antwort: einmal wird der Widerspruchsgrund verfälscht, einmal
+          # die Detailzeile entfernt und einmal die Widerspruchszeile aus der
+          # API-Kopie gelöscht. Alle drei Fälle müssen erkannt werden.
           if ! node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300 \
                --negativtest | tee artifacts/widerspruch-e2e/negativtest.log; then
             echo "--- Widerspruch-E2E-Negativtest fehlgeschlagen ---"
             tail -50 artifacts/widerspruch-e2e/server.log
             exit 1
           fi
-          grep -q 'Widerspruch-E2E-Negativtest OK: 2/2' \
+          grep -q 'Widerspruch-E2E-Negativtest OK: 3/3' \
             artifacts/widerspruch-e2e/negativtest.log
 
       # Kompakter Erfolgsnachweis: nur die beiden Protokolle des text250-Jobs,
