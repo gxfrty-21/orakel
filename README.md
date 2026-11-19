@@ -228,14 +228,6 @@ sowie neun englische Altnamen; alles muss erkannt werden. Der eigene CI-Job
 `doku` führt beide Läufe aus, sobald Markdown-Dateien oder das Prüfskript
 geändert wurden; andernfalls wird er übersprungen.
 
-### Schutz von `main`
-
-`main` ist durch ein Repository-Ruleset geschützt: Änderungen laufen
-ausschliesslich über Pull Requests, und sechs Required Checks müssen grün sein.
-Die aktuelle Liste der Checks, das Skip-Verhalten der Doku-Prüfung und die
-Bypass-Regeln stehen in [docs/pr-schutz.md](docs/pr-schutz.md); diese Datei ist
-der verbindliche Stand und wird bei Änderungen am Ruleset mitgepflegt.
-
 ### Lokaler Pre-Commit-Hook
 
 Der versionierte Hook `.githooks/pre-commit` startet die Doku-Prüfung, sobald
@@ -492,12 +484,17 @@ zusätzlichen Agenten in einem zweiten Schiffscluster, eine doppelte Agenten-ID
 über Cluster hinweg, eine doppelte Agenten-ID im selben Cluster bei
 unveränderter Agentenzahl, einen falschen Konferenz-Testplan sowie in der
 Claim-Karte einen entfernten Widerspruchsgrund und eine entfernte
-Widerspruchssicherheit. Jeder Fall muss einen Befund auslösen; die CI verlangt
-`Negativtest OK: 13/13`, damit die Inhaltsprüfung auch Strukturänderungen im
-Agentenraum, am Raumschiff und an den Widerspruchsdetails nicht
-stillschweigend übersieht.
+Widerspruchssicherheit. Drei weitere Fälle prüfen die Geometrie am
+Agentenraum: abgeschnittener Inhalt, überlappende statische Steuerelemente und
+ein fehlender Fokusring müssen jeweils den passenden Befund auslösen. Jeder
+Fall läuft unter einer stabilen Fall-ID und muss einen Befund auslösen; der
+unveränderte Zustand davor muss dagegen ohne Befund bleiben. Die CI verlangt
+deshalb `Negativtest OK: 16/16` sowie die Zähler `negativtest: 16` und
+`negativFehler: 0` aus dem Manifest, damit weder ein
+übersprungener noch ein durch einen anderen ersetzter Fall und auch kein
+Prüfer, der unveränderte Zustände als Befund meldet, grün durchgeht.
 
-### Reproduktion des 13/13-Negativtests
+### Reproduktion des 16/16-Negativtests
 
 Der Lauf braucht eine frische Seed-Kopie, ein laufendes Dashboard und
 Playwright-Chromium. Er verändert nur das DOM; die Seed-Kopie und die
@@ -522,7 +519,7 @@ node scripts/pruefe-text250.mjs --negativtest \
 Der Lauf muss mit Exit-Code 0 enden und folgende Zeile ausgeben:
 
 ```text
-Negativtest OK: 13/13 falsche Inhalte erkannt
+Negativtest OK: 16/16 falsche Inhalte erkannt
 ```
 
 Fehlen lokal die Chromium-Systembibliotheken, kann zuerst das
@@ -625,10 +622,14 @@ vergleicht jeden erwarteten Zähler mit dem tatsächlichen Wert (zum Beispiel
 `refresh: 2` oder `langhost114: 4`) und scheitert ausserdem an fehlenden
 Pflichtfällen und an jedem unerwarteten Skip, also einem Fall mit
 `status: skipped`, den das Profil nicht ausdrücklich in `allow_skips` nennt.
+Der Checker sichert diese Logik mit `--selbsttest` selbst ab: Ein Skip aus
+`allow_skips` muss akzeptiert, ein Skip ausserhalb der Liste muss als
+unerwartet erkannt werden; der text250-CI-Job führt den Selbsttest vor der
+Manifestprüfung aus.
 Zu den Pflichtfällen des Profils `voll` gehören die zwölf 240-px-Ansichten,
 die vier Claim-Breiten, der 114-Zeichen-Langhost ohne Punkt oder Bindestrich,
-der Lab-Auto-Refresh bei 360 und 280 px mit HTTP 200, sichtbarem Datenmarker,
-getrennten Kopf- und Datenmarkern und erneutem Rendern nach Fokusverlust sowie
+der Lab-Auto-Refresh bei 360 und 280 px mit HTTP 200, sichtbarem Kopfmarker,
+unverändert gezeichneter Lab-Liste und erneutem Rendern nach Fokusverlust sowie
 die beiden Lab-Fokus-Varianten. Die Klartextzeilen im Laufprotokoll wie
 `Claims 4×` oder `Refresh 2×` sind nur für Menschen lesbar und kein Gate.
 

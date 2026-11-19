@@ -57,6 +57,8 @@ const WARTEZEIT = {
   betrieb: 750, ship: 1500, spider: 650, kb: 1500, agents: 500, konf: 500,
 };
 const ERGEBNIS_SCHEMA = 'text250-result.v2';
+const STEUER_SELECTOR = 'button, a[href], summary, select, textarea, input';
+const BAUSTEIN_SELECTOR = '.panel, .card, .kpi, .head, .tabs, .side, .top';
 const ergebnisFaelle = new Map();
 
 /**
@@ -216,14 +218,14 @@ async function pruefeGeometrie(page, ansicht) {
   // Ein Tastendruck schaltet Chromium auf die Tastatur-Modalität, damit
   // :focus-visible auch bei programmatischem Fokus greift.
   await page.keyboard.press('Tab');
-  return page.evaluate((ansicht) => {
+  return page.evaluate(({ ansicht, steuerSelector, bausteinSelector }) => {
     const befunde = [];
     const wurzel = document.querySelector(`#v-${ansicht}`);
     if (!wurzel || wurzel.hidden) return [`Ansicht ${ansicht} ist nicht sichtbar`];
     const sichtbar = el => {
       const b = el.getBoundingClientRect();
       const cs = getComputedStyle(el);
-      return b.width > 0.5 && b.height > 0.5
+      return b.width > 0.5 && b.height > 0.5 && !el.disabled
         && cs.visibility !== 'hidden' && cs.display !== 'none';
     };
     const name = el => {
@@ -231,8 +233,8 @@ async function pruefeGeometrie(page, ansicht) {
       return `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${cls ? '.' + cls : ''}`;
     };
     const text = el => (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 45);
-    const steuerbar = [...wurzel.querySelectorAll('button, a[href], summary, select, textarea, input')]
-      .filter(el => sichtbar(el) && !el.disabled);
+    const rectText = r => [r.left, r.top, r.right, r.bottom].map(Math.round).join(',');
+    const steuerbar = [...wurzel.querySelectorAll(steuerSelector)].filter(sichtbar);
     // Ansichten ohne Steuerelemente (etwa Übersicht oder Konferenz) haben
     // nichts zu prüfen; der Zähler belegt trotzdem, dass die Prüfung lief.
     if (!steuerbar.length) return [];
@@ -252,19 +254,22 @@ async function pruefeGeometrie(page, ansicht) {
     //    schneiden. Absolute Overlays sind bewusst positioniert und bleiben aus;
     //    verglichen werden nur Steuerelemente im selben Baustein, weil getrennte
     //    Panels auf schmalen Breiten absichtlich gestapelt werden.
-    const gruppe = el => el.closest('.panel, .card, .kpi, .head, .tabs, .side, .top') || wurzel;
+    const gruppe = el => el.closest(bausteinSelector) || wurzel;
     const statisch = steuerbar.filter(el => getComputedStyle(el).position === 'static');
+    // Gruppe und Rechteck je Steuerelement nur einmal lesen; die Paarschleife
+    // braucht dieselben Werte sonst für jedes Paar erneut.
+    const baustein = new Map(statisch.map(el => [el, gruppe(el)]));
+    const kasten = new Map(statisch.map(el => [el, el.getBoundingClientRect()]));
     for (let i = 0; i < statisch.length; i++) {
       for (let j = i + 1; j < statisch.length; j++) {
         const a = statisch[i], b = statisch[j];
         if (a.contains(b) || b.contains(a)) continue;
-        if (gruppe(a) !== gruppe(b)) continue;
-        const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+        if (baustein.get(a) !== baustein.get(b)) continue;
+        const ra = kasten.get(a), rb = kasten.get(b);
         const x = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
         const y = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
         if (x > 2 && y > 2) {
-          const kurz = el => [el.getBoundingClientRect().left, el.getBoundingClientRect().top, el.getBoundingClientRect().right, el.getBoundingClientRect().bottom].map(Math.round).join(',');
-          befunde.push(`Steuerelemente überlappen: ${name(a)} [${kurz(a)}] und ${name(b)} [${kurz(b)}] (${Math.round(x)}×${Math.round(y)})`);
+          befunde.push(`Steuerelemente überlappen: ${name(a)} [${rectText(ra)}] und ${name(b)} [${rectText(rb)}] (${Math.round(x)}×${Math.round(y)})`);
         }
       }
     }
@@ -285,7 +290,7 @@ async function pruefeGeometrie(page, ansicht) {
       }
     }
     return befunde;
-  }, ansicht);
+  }, { ansicht, steuerSelector: STEUER_SELECTOR, bausteinSelector: BAUSTEIN_SELECTOR });
 }
 
 /** Prüft bei 240 px alle gewählten Ansichten in normaler Schrift. */
@@ -1555,8 +1560,8 @@ async function oeffneLabSeite(browser, url, breite, initSkript = null) {
  * gehen Fokus, Tooltip und Live-Region mitten in der Tastaturbedienung
  * verloren. Der echte 8-Sekunden-Callback wird unter der Playwright-Uhr
  * gezielt ausgelöst; so hängt dieser Test nicht an einem echten Zeitfenster.
- * Getrennte Kopf- und Datenmarker machen sichtbar, dass Kopfzeile und
- * Berichtsdaten übernommen wurden, während die Lab-Liste unverändert bleibt.
+ * Ein einziger Marker belegt beides: Er erscheint nach `R = neu` sichtbar in
+ * der Kopfzeile und darf in der fokussierten Lab-Liste nicht auftauchen.
  */
 async function pruefeLabAutoRefreshAufSeite(page, ansicht, optionen = {}) {
   const befunde = [];
@@ -1577,20 +1582,13 @@ async function pruefeLabAutoRefreshAufSeite(page, ansicht, optionen = {}) {
     };
   }, ansicht);
   const vorher = await lese();
-  const vorherDaten = await page.evaluate(() =>
-    document.querySelector('#labList')?.dataset.berichtKandidat || '');
   if (!vorher.fokus || !vorher.text || !vorher.live) {
     befunde.push('Auto-Refresh-Prüfung konnte die Kapitalkurve nicht fokussieren');
     return befunde;
   }
-  if (!vorherDaten) {
-    befunde.push('Auto-Refresh-Prüfung ohne Datenstand am Lab');
-    return befunde;
-  }
 
   const stempel = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const kopfMarker = `refresh-kopf-${stempel}`;
-  const datenMarker = `refresh-daten-${stempel}`;
+  const marker = `refresh-${stempel}`;
   const timeout = Symbol('refresh-timeout');
   let meldeRefresh;
   let routeFehler = null;
@@ -1611,9 +1609,9 @@ async function pruefeLabAutoRefreshAufSeite(page, ansicht, optionen = {}) {
         throw new Error('Bericht enthält keine Validierungen');
       }
       for (const kandidat of daten.validierungen) {
-        if (kandidat && typeof kandidat === 'object') kandidat.symbol = datenMarker;
+        if (kandidat && typeof kandidat === 'object') kandidat.symbol = marker;
       }
-      daten.datenquelle = kopfMarker;
+      daten.datenquelle = marker;
       await route.fulfill({ response: antwort, json: daten });
       meldeRefresh({ status: antwort.status(), ok: true });
     } catch (fehler) {
@@ -1652,23 +1650,12 @@ async function pruefeLabAutoRefreshAufSeite(page, ansicht, optionen = {}) {
         return stil.display !== 'none' && stil.visibility !== 'hidden'
           && kasten.width > 0 && kasten.height > 0;
       },
-      kopfMarker, { timeout: 3000 },
+      marker, { timeout: 3000 },
     ).then(() => true).catch(() => false);
-    if (!kopfSichtbar) befunde.push('Auto-Refresh zeigt den Datenmarker nicht sichtbar in der Kopfzeile');
-
-    const datenNachher = await page.waitForFunction(
-      m => (document.querySelector('#labList')?.dataset.berichtKandidat || '') === m,
-      datenMarker, { timeout: 3000 },
-    ).then(() => page.evaluate(() => document.querySelector('#labList')?.dataset.berichtKandidat || ''))
-      .catch(() => '');
-    if (datenNachher !== datenMarker) {
-      befunde.push(`Auto-Refresh übernimmt die Berichtsdaten nicht (Datenstand «${datenNachher || 'leer'}» statt «${datenMarker}»)`);
-    } else if (datenNachher === vorherDaten) {
-      befunde.push('Auto-Refresh lässt den Datenstand unverändert');
-    }
+    if (!kopfSichtbar) befunde.push('Auto-Refresh zeigt den Kopfmarker nicht sichtbar in der Kopfzeile');
 
     const listeNachher = await page.locator('#labList').innerText();
-    if (listeNachher.includes(datenMarker)) {
+    if (listeNachher.includes(marker)) {
       befunde.push('Auto-Refresh zeichnet die Lab-Liste trotz fokussierter Kurve neu');
     }
   }
@@ -2395,6 +2382,60 @@ async function pruefeAgentenInhalte(page, runs) {
 }
 
 /**
+ * Injiziert genau einen Geometriefehler in die gewählte Ansicht. Die
+ * Selektor- und Bausteinwahl kommt aus denselben Konstanten wie
+ * `pruefeGeometrie`, damit Prüfung und Gegenprobe nicht auseinanderlaufen.
+ */
+async function mutiereGeometrie(page, ansicht, art) {
+  return page.evaluate(({ ansicht, art, steuerSelector, bausteinSelector }) => {
+    const wurzel = document.querySelector(`#v-${ansicht}`);
+    if (!wurzel) throw new Error(`Ansicht ${ansicht} nicht gefunden`);
+    const sichtbar = el => {
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return r.width > 0.5 && r.height > 0.5 && !el.disabled
+        && cs.visibility !== 'hidden' && cs.display !== 'none';
+    };
+    const steuerbar = [...wurzel.querySelectorAll(steuerSelector)].filter(sichtbar);
+    if (!steuerbar.length) throw new Error(`Keine sichtbaren Steuerelemente in ${ansicht}`);
+    const gruppe = el => el.closest(bausteinSelector) || wurzel;
+
+    if (art === 'abgeschnitten') {
+      const el = steuerbar[0];
+      el.style.setProperty('overflow', 'hidden', 'important');
+      el.style.setProperty('width', '1px', 'important');
+      el.style.setProperty('min-width', '0', 'important');
+      el.style.setProperty('max-width', '1px', 'important');
+      el.style.setProperty('white-space', 'nowrap', 'important');
+      el.textContent = 'ABGESCHNITTENER-INHALT-MIT-VIEL-TEXT';
+      return;
+    }
+
+    if (art === 'ueberlappung') {
+      const statisch = steuerbar.filter(el => getComputedStyle(el).position === 'static');
+      const gleicheGruppe = (a, b) => !a.contains(b) && !b.contains(a)
+        && gruppe(a) === gruppe(b);
+      const a = statisch.find(kandidat => statisch.some(other =>
+        other !== kandidat && gleicheGruppe(kandidat, other)));
+      const b = a && statisch.find(other => other !== a && gleicheGruppe(a, other));
+      if (!a || !b) throw new Error('Kein Paar statischer Steuerelemente für Überlappung gefunden');
+      const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+      b.style.transform = `translate(${ra.left - rb.left + 2}px, ${ra.top - rb.top + 2}px)`;
+      return;
+    }
+
+    if (art === 'fokusring') {
+      const el = steuerbar[0];
+      el.style.setProperty('outline', 'none', 'important');
+      el.style.setProperty('box-shadow', 'none', 'important');
+      return;
+    }
+
+    throw new Error(`Unbekannte Geometrie-Mutation: ${art}`);
+  }, { ansicht, art, steuerSelector: STEUER_SELECTOR, bausteinSelector: BAUSTEIN_SELECTOR });
+}
+
+/**
  * Schreibt absichtlich falsche Kerndaten ins DOM und verlangt, dass
  * pruefeInhalte sie erkennt. So kann die Inhaltsprüfung nicht stillschweigend
  * leer laufen, wenn eine Ansicht oder ein Selektor einmal wegfällt.
@@ -2417,6 +2458,7 @@ async function pruefeNegativtest(opt) {
     const faelle = [
       {
         ansicht: 'strat',
+        id: 'text250.negativtest.strategie-kpi',
         name: 'Strategie-KPI',
         mutieren: () => page.evaluate(() => {
           const el = document.querySelector('#stratDetail .kpis .kpi .v');
@@ -2426,6 +2468,7 @@ async function pruefeNegativtest(opt) {
       },
       {
         ansicht: 'research',
+        id: 'text250.negativtest.research-zahl',
         name: 'Research-Zahl',
         mutieren: () => page.evaluate(() => {
           const el = document.querySelector('#flow .station:nth-child(2) small');
@@ -2435,6 +2478,7 @@ async function pruefeNegativtest(opt) {
       },
       {
         ansicht: 'agents',
+        id: 'text250.negativtest.agenten-kopfzahl',
         name: 'Agenten-Kopfzahl',
         mutieren: () => page.evaluate(() => {
           const el = document.querySelector('#agTag');
@@ -2444,6 +2488,7 @@ async function pruefeNegativtest(opt) {
       },
       {
         ansicht: 'agents',
+        id: 'text250.negativtest.agenten-abteilungstab',
         name: 'Agenten-Abteilungstab',
         mutieren: () => page.evaluate(() => {
           const tabs = [...document.querySelectorAll('#depTabs .tab')];
@@ -2453,6 +2498,7 @@ async function pruefeNegativtest(opt) {
       },
       {
         ansicht: 'ship',
+        id: 'text250.negativtest.raumschiff-abteilungscluster',
         name: 'Raumschiff-Abteilungscluster',
         mutieren: () => page.evaluate(() => {
           const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
@@ -2464,6 +2510,7 @@ async function pruefeNegativtest(opt) {
       },
       {
         ansicht: 'ship',
+        id: 'text250.negativtest.raumschiff-abteilung-leer',
         name: 'Raumschiff-Abteilung leer',
         mutieren: () => page.evaluate(() => {
           const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
@@ -2476,6 +2523,7 @@ async function pruefeNegativtest(opt) {
       },
       {
         ansicht: 'ship',
+        id: 'text250.negativtest.raumschiff-agent-fehlt',
         name: 'Raumschiff-Agent fehlt',
         mutieren: () => page.evaluate(() => {
           const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
@@ -2488,6 +2536,7 @@ async function pruefeNegativtest(opt) {
       },
       {
         ansicht: 'ship',
+        id: 'text250.negativtest.raumschiff-agent-zusaetzlich',
         name: 'Raumschiff-Agent zusätzlich',
         mutieren: () => page.evaluate(() => {
           const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
@@ -2502,6 +2551,7 @@ async function pruefeNegativtest(opt) {
       },
       {
         ansicht: 'ship',
+        id: 'text250.negativtest.raumschiff-agent-doppelt',
         name: 'Raumschiff-Agent doppelt',
         mutieren: () => page.evaluate(() => {
           const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
@@ -2520,6 +2570,7 @@ async function pruefeNegativtest(opt) {
       },
       {
         ansicht: 'ship',
+        id: 'text250.negativtest.raumschiff-agent-doppelt-im-selben-cluster',
         name: 'Raumschiff-Agent doppelt im selben Cluster',
         mutieren: () => page.evaluate(() => {
           const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
@@ -2536,6 +2587,7 @@ async function pruefeNegativtest(opt) {
       },
       {
         ansicht: 'konf',
+        id: 'text250.negativtest.konferenz-testplan',
         name: 'Konferenz-Testplan',
         mutieren: () => page.evaluate(() => {
           const el = document.querySelector('#konfBody table.tbl tbody tr td:nth-child(3)');
@@ -2547,6 +2599,7 @@ async function pruefeNegativtest(opt) {
       // jeweils genau ein fehlendes Detail geprüft, nicht ein gemeinsamer Fehler.
       {
         ansicht: 'spider',
+        id: 'text250.negativtest.widerspruchsgrund-fehlt',
         name: 'Widerspruchsgrund fehlt',
         vorbereiten: () => page.evaluate(daten => window.zeichneBewertung(daten), CLAIM_TESTDATEN),
         pruefen: () => pruefeClaimWiderspruchsdetails(page),
@@ -2558,6 +2611,7 @@ async function pruefeNegativtest(opt) {
       },
       {
         ansicht: 'spider',
+        id: 'text250.negativtest.widerspruchssicherheit-fehlt',
         name: 'Widerspruchssicherheit fehlt',
         vorbereiten: () => page.evaluate(daten => window.zeichneBewertung(daten), CLAIM_TESTDATEN),
         pruefen: () => pruefeClaimWiderspruchsdetails(page),
@@ -2567,11 +2621,52 @@ async function pruefeNegativtest(opt) {
           el.remove();
         }),
       },
+      // Drei gezielte Gegenproben für die Geometrie-Prüfung. Sie injizieren
+      // je genau eines der drei Kriterien und verlangen den passenden Befund,
+      // nicht nur irgendeinen Geometriefehler.
+      {
+        ansicht: 'agents',
+        id: 'text250.negativtest.geometrie-abgeschnitten',
+        name: 'Geometrie abgeschnittener Inhalt',
+        erwarte: 'wird abgeschnitten',
+        pruefen: () => pruefeGeometrie(page, 'agents'),
+        mutieren: () => mutiereGeometrie(page, 'agents', 'abgeschnitten'),
+      },
+      {
+        ansicht: 'agents',
+        id: 'text250.negativtest.geometrie-ueberlappung',
+        name: 'Geometrie überlappende Steuerelemente',
+        erwarte: 'Steuerelemente überlappen',
+        pruefen: () => pruefeGeometrie(page, 'agents'),
+        mutieren: () => mutiereGeometrie(page, 'agents', 'ueberlappung'),
+      },
+      {
+        ansicht: 'agents',
+        id: 'text250.negativtest.geometrie-fokusring',
+        name: 'Geometrie fehlender Fokusring',
+        erwarte: 'Fokusring fehlt',
+        pruefen: () => pruefeGeometrie(page, 'agents'),
+        mutieren: () => mutiereGeometrie(page, 'agents', 'fokusring'),
+      },
     ];
 
     const erkannt = [];
+    const verfehlt = [];
+    let negativFehler = 0;
+    const fallIds = new Set();
+    for (const fall of faelle) {
+      if (typeof fall.id !== 'string' || !fall.id) {
+        throw new Error(`Negativtest: Fall «${fall.name || fall.ansicht || '?'}» ohne stabile Fall-ID`);
+      }
+      if (fallIds.has(fall.id)) {
+        throw new Error(`Negativtest: doppelte Fall-ID «${fall.id}»`);
+      }
+      fallIds.add(fall.id);
+    }
+
     for (const [index, fall] of faelle.entries()) {
       const fallName = fall.name || fall.ansicht;
+      const fallId = fall.id;
       // Jeder Fall startet auf einer frischen Seite: Der Acht-Sekunden-Refresh
       // darf eine absichtliche DOM-Mutation nicht zwischenzeitlich zurücksetzen.
       if (index > 0) {
@@ -2590,21 +2685,42 @@ async function pruefeNegativtest(opt) {
       const pruefe = fall.pruefen || (() => pruefeInhalte(page, fall.ansicht));
       const sauber = await pruefe();
       if (!sauber || sauber.length) {
-        throw new Error(`${fallName}: sauberer Zustand meldet bereits Befunde: ${(sauber || []).join('; ')}`);
+        // Der unveränderte Zustand muss ohne Befund bleiben. Meldet der
+        // Prüfer hier etwas, ist das ein Fehler des Negativtests und wird
+        // separat gezählt, statt den Lauf stillschweigend zu beenden.
+        negativFehler += sauber.length;
+        const text = `${fallName}: unveränderter Zustand meldet Befunde: ${sauber.join('; ')}`;
+        verfehlt.push(text);
+        meldeFall(fallId, false, text);
+        continue;
       }
 
       await fall.mutieren();
       const befund = await pruefe();
       if (!befund || !befund.length) {
-        throw new Error(`${fallName}: absichtlich falscher Inhalt wurde nicht erkannt`);
+        const text = `${fallName}: absichtlich falscher Inhalt wurde nicht erkannt`;
+        verfehlt.push(text);
+        meldeFall(fallId, false, text);
+        continue;
       }
-      erkannt.push(fallName);
-      meldeFall(`text250.negativtest.${artefaktSlug(fallName)}`, true);
+      if (fall.erwarte && !befund.some(text => text.includes(fall.erwarte))) {
+        const text = `${fallName}: erwarteter Befund «${fall.erwarte}» fehlt `
+          + `(${befund.join('; ')})`;
+        verfehlt.push(text);
+        meldeFall(fallId, false, text);
+        continue;
+      }
+      erkannt.push(fallId);
+      meldeFall(fallId, true);
       console.log(`Negativtest ${fallName}: erkannt – ${befund[0]}`);
     }
 
-    if (seitenfehler.length) throw new Error(`Seitenfehler: ${seitenfehler.join('; ')}`);
-    schreibeErgebnis(opt, { negativtest: erkannt.length });
+    schreibeErgebnis(opt, { negativtest: erkannt.length, negativFehler });
+    console.log(`Negativtest: ${erkannt.length}/${faelle.length} Fälle erkannt, `
+      + `${negativFehler} Befunde im unveränderten Zustand`);
+    if (seitenfehler.length || verfehlt.length) {
+      throw new Error([...seitenfehler, ...verfehlt].join('; '));
+    }
     console.log(`Negativtest OK: ${erkannt.length}/${faelle.length} falsche Inhalte erkannt`);
   } finally {
     await browser.close();

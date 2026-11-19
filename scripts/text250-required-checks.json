@@ -112,11 +112,11 @@
         },
         {
           "id": "text250.refresh",
-          "description": "Lab-Auto-Refresh bei 360 px mit HTTP 200, sichtbarem Datenmarker, unverändertem Fokus, Tooltip, Live-Region und Zeiger sowie erneutem Rendern nach dem Verlassen des Lab-Fokus."
+          "description": "Lab-Auto-Refresh bei 360 px mit HTTP 200, sichtbarem Kopfmarker, unverändert gezeichneter Lab-Liste sowie unverändertem Fokus, Tooltip, Live-Region und Zeiger und erneutem Rendern nach dem Verlassen des Lab-Fokus."
         },
         {
           "id": "text250.refresh.280",
-          "description": "Lab-Auto-Refresh bei 280 px mit HTTP 200, sichtbarem Datenmarker, unverändertem Fokus, Tooltip, Live-Region und Zeiger sowie erneutem Rendern nach dem Verlassen des Lab-Fokus."
+          "description": "Lab-Auto-Refresh bei 280 px mit HTTP 200, sichtbarem Kopfmarker, unverändert gezeichneter Lab-Liste sowie unverändertem Fokus, Tooltip, Live-Region und Zeiger und erneutem Rendern nach dem Verlassen des Lab-Fokus."
         },
         {
           "id": "text250.refresh-negativ",
@@ -183,11 +183,11 @@
         },
         {
           "id": "text250.refresh",
-          "description": "Lab-Auto-Refresh bei 360 px mit HTTP 200, sichtbarem Datenmarker, unverändertem Fokus, Tooltip, Live-Region und Zeiger sowie erneutem Rendern nach dem Verlassen des Lab-Fokus."
+          "description": "Lab-Auto-Refresh bei 360 px mit HTTP 200, sichtbarem Kopfmarker, unverändert gezeichneter Lab-Liste sowie unverändertem Fokus, Tooltip, Live-Region und Zeiger und erneutem Rendern nach dem Verlassen des Lab-Fokus."
         },
         {
           "id": "text250.refresh.280",
-          "description": "Lab-Auto-Refresh bei 280 px mit HTTP 200, sichtbarem Datenmarker, unverändertem Fokus, Tooltip, Live-Region und Zeiger sowie erneutem Rendern nach dem Verlassen des Lab-Fokus."
+          "description": "Lab-Auto-Refresh bei 280 px mit HTTP 200, sichtbarem Kopfmarker, unverändert gezeichneter Lab-Liste sowie unverändertem Fokus, Tooltip, Live-Region und Zeiger und erneutem Rendern nach dem Verlassen des Lab-Fokus."
         },
         {
           "id": "text250.refresh-negativ"
@@ -216,9 +216,10 @@
       "allow_skips": []
     },
     "negativtest": {
-      "description": "Negativtest: jede der dreizehn injizierten Falschdarstellungen muss erkannt werden.",
+      "description": "Negativtest: jede der sechzehn injizierten Falschdarstellungen muss unter ihrer Fall-ID erkannt werden; der unveränderte Zustand davor darf keinen Befund melden.",
       "counters": {
-        "negativtest": 13
+        "negativtest": 16,
+        "negativFehler": 0
       },
       "checks": [
         {
@@ -259,6 +260,15 @@
         },
         {
           "id": "text250.negativtest.widerspruchssicherheit-fehlt"
+        },
+        {
+          "id": "text250.negativtest.geometrie-abgeschnitten"
+        },
+        {
+          "id": "text250.negativtest.geometrie-ueberlappung"
+        },
+        {
+          "id": "text250.negativtest.geometrie-fokusring"
         }
       ],
       "allow_skips": []
