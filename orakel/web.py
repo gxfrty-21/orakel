@@ -813,6 +813,3 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
             Takt(cfg, Facts(cfg.db_pfad)).start()
 
     return app
-
-
-app = create_app()
