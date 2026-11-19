@@ -26,6 +26,9 @@ max_korrelation = 0.85            # Sperre: Kauf wird abgelehnt über diesem Wer
 # Kerzen für die Korrelationsrechnung (M15: 500 ≈ 5 Handelstage) — gleiche Basis wie die Weltkugel
 correlation_lookback = 500
 atr_stop_multiple = 2.0
+# Ein Risikostopp wird erst nach so vielen Takten mit vollständig
+# belastbaren Kursen freigegeben (kein Einzelkurs-Freigabe).
+risiko_stopp_freigabe_takte = 2
 
 [kosten]
 commission_per_share = 0.005
@@ -37,6 +40,14 @@ min_kerzen = 1200
 max_luecke_pct = 5.0
 max_sprung_pct = 25.0
 max_alter_tage = 5
+# Paper-Takt: Kurse, die älter sind, gelten als nicht belastbar. Neue
+# Einstiege sind dann gesperrt; offene Positionen werden konservativ bewertet.
+# Der Takt liest M15-Kerzen; 4 h sind für Daytrading die relevante Grenze.
+# Die übrigen Zeitrahmen sind vorbereitet und einzeln überschreibbar.
+max_kurs_alter_stunden_m1 = 0.5
+max_kurs_alter_stunden_m5 = 2
+max_kurs_alter_stunden_m15 = 4
+max_kurs_alter_stunden_h1 = 24
 
 [validierung]
 # Rollierend: festes Trainingsfenster, mehrere nicht überlappende Testfenster.
