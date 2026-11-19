@@ -19,6 +19,19 @@ def _lade_pruefer():
     return modul
 
 
+def _pflicht_fehler(tmp_path: Path, markup: str) -> list[str]:
+    """Prüft ein Minimalprojekt und liefert nur die Pflichtverweis-Befunde."""
+    pruefer = _lade_pruefer()
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "pr-schutz.md").write_text("# Schutz\n", encoding="utf-8")
+    (tmp_path / "docs" / "anderes.md").write_text("# Anderes\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text(f"# Haupt\n{markup}\n", encoding="utf-8")
+
+    _, _, _, befunde = pruefer.pruefe(tmp_path)
+
+    return [befund for befund in befunde if "Pflichtverweis" in befund]
+
+
 @pytest.mark.parametrize(
     ("markup", "erwartete_fehler"),
     [
@@ -36,12 +49,31 @@ def _lade_pruefer():
 def test_pflichtverweis_akzeptiert_nur_sichtbare_links(
     tmp_path: Path, markup: str, erwartete_fehler: int
 ) -> None:
-    pruefer = _lade_pruefer()
-    (tmp_path / "docs").mkdir()
-    (tmp_path / "docs" / "pr-schutz.md").write_text("# Schutz\n", encoding="utf-8")
-    (tmp_path / "README.md").write_text(f"# Haupt\n{markup}\n", encoding="utf-8")
+    assert len(_pflicht_fehler(tmp_path, markup)) == erwartete_fehler
 
-    _, _, _, befunde = pruefer.pruefe(tmp_path)
 
-    pflicht_fehler = [befund for befund in befunde if "Pflichtverweis" in befund]
-    assert len(pflicht_fehler) == erwartete_fehler
+@pytest.mark.parametrize(
+    ("markup", "erwartete_fehler"),
+    [
+        # Genutzte Referenz auf das Pflichtziel, zusätzlich eine ungenutzte
+        # Definition auf dasselbe Ziel: gültig, kein Pflichtverweis-Fehler.
+        (
+            "[Schutz][schutz]\n"
+            "[schutz]: docs/pr-schutz.md\n"
+            "[ungenutzt]: docs/pr-schutz.md",
+            0,
+        ),
+        # Nur eine fremde Referenz genutzt, die Pflichtdefinition bleibt
+        # ungenutzt: der Pflichtverweis fehlt trotz vorhandener Definition.
+        (
+            "[Andere][anderes]\n"
+            "[anderes]: docs/anderes.md\n"
+            "[schutz]: docs/pr-schutz.md",
+            1,
+        ),
+    ],
+)
+def test_pflichtverweis_trennt_genutzte_von_ungenutzten_definitionen(
+    tmp_path: Path, markup: str, erwartete_fehler: int
+) -> None:
+    assert len(_pflicht_fehler(tmp_path, markup)) == erwartete_fehler
