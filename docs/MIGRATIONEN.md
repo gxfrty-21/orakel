@@ -62,7 +62,8 @@ und nennt die Nummern. Vor dem ersten Rückrollschritt entsteht eine Sicherung.
 Betriebswege ab:
 
 - leere Datenbank: alle Migrationen laufen, Historie ist vollständig,
-- Teilststand: nur neuere Migrationen laufen, ältere bleiben unangetastet,
+- Teilststand auf 0003: nur die danach hinzugekommene Migration läuft, die
+  Stände 0001 bis 0003 bleiben unangetastet,
 - fehlerhafte Migration: Rollback, Tabelle aus der kaputten Datei fehlt,
   vorherige Migration und ihre Historie bleiben,
 - Sicherung vor der Migration enthält die vorhandenen Zeilen,

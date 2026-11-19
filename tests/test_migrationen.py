@@ -31,19 +31,29 @@ def test_leere_datenbank_wendet_alle_migrationen_an(tmp_path):
     assert {"kerzen", "artikel", "agent_profiles", "schema_migrationen"} <= tabellen
 
 
-def test_teilstand_wendet_nur_die_neueren_migrationen_an(tmp_path):
-    pfad = tmp_path / "teil.db"
-    teilstand = ALLE[1]
+def test_teilstand_auf_0003_wendet_nur_die_neuere_migration_an(tmp_path):
+    """Eine DB auf Stand 0003 bekommt nur die danach hinzugekommene Migration."""
+    ordner = tmp_path / "migrationen"
+    ordner.mkdir()
+    for quelle in migrationen.dateien():
+        for datei in (quelle.hoch, quelle.runter):
+            if datei is not None:
+                (ordner / datei.name).write_bytes(datei.read_bytes())
+    (ordner / "0004_nachtrag.sql").write_text(
+        "CREATE TABLE nachtrag (id INTEGER);\n", encoding="utf-8")
+    pfad = tmp_path / "stand3.db"
 
-    erster = migrationen.anwenden(pfad, bis=teilstand)
+    erster = migrationen.anwenden(pfad, ordner=ordner, bis=3)
 
-    assert erster["angewendet"] == ALLE[:2]
-    assert migrationen.angewendet(pfad) == ALLE[:2]
+    assert erster["angewendet"] == [1, 2, 3]
+    assert migrationen.angewendet(pfad) == [1, 2, 3]
+    assert "nachtrag" not in _tabellen(pfad)
 
-    zweiter = migrationen.anwenden(pfad)
+    zweiter = migrationen.anwenden(pfad, ordner=ordner)
 
-    assert zweiter["angewendet"] == ALLE[2:]
-    assert migrationen.angewendet(pfad) == ALLE
+    assert zweiter["angewendet"] == [4]
+    assert migrationen.angewendet(pfad) == [1, 2, 3, 4]
+    assert "nachtrag" in _tabellen(pfad)
     assert "agent_profiles" in _tabellen(pfad)
 
 
