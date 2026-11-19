@@ -628,11 +628,26 @@ die beiden Lab-Fokus-Varianten. Die Klartextzeilen im Laufprotokoll wie
 
 Ein Push auf einen Branch startet den Workflow `Tests` direkt; ein offener Pull
 Request ist dafür nicht nötig. `main` bleibt eingeschlossen, damit Railway sein
-"Wait for CI" weiterhin erkennt. Bei Branches mit offenem Pull Request entsteht
-dadurch zusätzlich zum PR-Lauf ein Push-Lauf; die Concurrency-Gruppe je Commit
-bricht den doppelten Lauf ab. Zusätzlich ist der Workflow
-manuell startbar, sobald diese Fassung auf `main` und im gewählten Branch
-liegt:
+"Wait for CI" weiterhin erkennt.
+
+Bei einem Branch mit offenem Pull Request lösen Push und `pull_request`
+denselben Commit aus. Beide Läufe teilen deshalb die Concurrency-Gruppe des
+Head-Commits (`github.event.pull_request.head.sha`, sonst `github.sha`); der
+zuerst gestartete Lauf wird abgebrochen, der volle Satz Jobs läuft genau einmal.
+`github.sha` allein genügt nicht: Bei `pull_request` ist das der Merge-Commit,
+beim Push der Head-Commit, sodass beide Läufe verschiedene Gruppen belegen und
+doppelt liefen.
+
+Die Required Checks bleiben unverändert: Job-Namen, `needs`-Ketten und
+`if`-Bedingungen sind unangetastet, es wird kein Job übersprungen und keine
+Prüfung abgeschaltet. Der überlebende Lauf meldet alle Pflicht-Jobs für den
+Head-Commit; ein abgebrochener Doppel-Lauf hinterlässt keine Lücke, weil der
+zweite Lauf dieselben Checks neu erzeugt. Bei Forks startet nur der
+`pull_request`-Lauf, weil Pushes in Fremd-Repositories den Workflow des
+Basis-Repositories nicht auslösen.
+
+Zusätzlich ist der Workflow manuell startbar, sobald diese Fassung auf `main`
+und im gewählten Branch liegt:
 
 ```bash
 gh workflow run tests.yml --ref ci/negativtest-13

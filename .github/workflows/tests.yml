@@ -9,10 +9,13 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Ein Commit löst auf einem PR-Branch Push- und pull_request-Lauf aus. Die
-# Gruppe je Commit bricht den doppelten Lauf ab, ohne neuere Commits zu treffen.
+# Ein Commit löst auf einem PR-Branch Push- und pull_request-Lauf aus. Beide
+# melden denselben Head-Commit und teilen sich deshalb die Gruppe; der ältere
+# Lauf wird abgebrochen, der volle Satz Jobs läuft genau einmal. `github.sha`
+# allein genügt nicht: Bei pull_request ist das der Merge-Commit, beim Push der
+# Head-Commit – die Gruppen wären verschieden und beide Läufe blieben stehen.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.sha }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: true
 
 permissions:
