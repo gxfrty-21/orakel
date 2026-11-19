@@ -1,7 +1,7 @@
 """Handelskern des Orakels: Daten, Strategien, Backtest, Richter, Risiko, Paper.
 
-Der Kern darf ausschliesslich Module aus diesem Paket sowie die gemeinsame
-Basis (``orakel.config``, ``orakel.seed``) importieren. Alles, was Web, Agenten,
-Nexus oder Raumschiff betrifft, bleibt draussen; die Grenze prüft
-``import-linter`` in der CI (Vertrag in ``.importlinter``).
+Der Kern darf ausschliesslich Module aus diesem Paket und die gemeinsame Basis
+``orakel.config`` importieren. Alles andere bleibt draussen, auch die
+Zulieferung wie ``orakel.seed``, ``orakel.spider`` oder ``orakel.pipeline``;
+die Grenze prüft ``import-linter`` in der CI (Vertrag in ``.importlinter``).
 """
