@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import os
 import re
+import subprocess
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -140,7 +143,7 @@ def test_alle_post_routen_verlangen_anmeldung(cfg, monkeypatch):
     post_pfade = sorted(
         re.sub(r"\{[^}]+\}", "x", route.path)
         for route in app.routes
-        if "POST" in getattr(route, "methods", set()) or set()
+        if "POST" in getattr(route, "methods", set())
     )
     assert len(post_pfade) >= 15
 
@@ -185,6 +188,25 @@ def test_schreibende_anfrage_von_fremder_herkunft_wird_abgewiesen(cfg, monkeypat
         auth=auth,
     )
     assert lesend.status_code == 200
+
+
+def test_container_entrypoint_bricht_ohne_zugangsdaten_ab():
+    skript = Path(__file__).resolve().parents[1] / "docker-entrypoint.sh"
+    umgebung = {
+        schluessel: wert
+        for schluessel, wert in os.environ.items()
+        if schluessel not in {
+            "ORAKEL_AUTH_USER", "ORAKEL_AUTH_PASS", "ORAKEL_ALLOW_NO_AUTH",
+        }
+    }
+
+    lauf = subprocess.run(
+        ["sh", str(skript)], env=umgebung, capture_output=True, text=True,
+    )
+
+    assert lauf.returncode == 1
+    assert "ORAKEL_AUTH_USER" in lauf.stderr
+    assert "fail-closed" in lauf.stderr
 
 
 def test_erlaubte_herkuenfte_konfigurierbar(cfg, monkeypatch):

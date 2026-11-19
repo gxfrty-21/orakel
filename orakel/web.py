@@ -138,9 +138,12 @@ def _startfreigabe(host: str | None) -> None:
         return
     if host.strip().lower() not in LOOPBACK_HOSTS:
         raise RuntimeError(
-            "Ohne ORAKEL_AUTH_USER/ORAKEL_AUTH_PASS darf der Server nur auf "
-            "127.0.0.1, localhost oder ::1 lauschen. Fuer eine bewusste Ausnahme "
-            "ORAKEL_ALLOW_NO_AUTH=1 setzen."
+            f"Start abgebrochen: Binde {host} ohne Login waere oeffentlich "
+            "erreichbar.\n"
+            "ORAKEL_AUTH_USER und ORAKEL_AUTH_PASS setzen (Docker: .env, "
+            "Railway: Service-Variablen), oder nur lokal auf 127.0.0.1 "
+            "starten.\n"
+            "Bewusste Ausnahme fuer die Entwicklung: ORAKEL_ALLOW_NO_AUTH=1."
         )
 
 

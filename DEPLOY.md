@@ -147,6 +147,11 @@ docker compose up -d --force-recreate orakel
 
 ## Sicherheit
 
+- Der Container bindet `0.0.0.0`. `ORAKEL_AUTH_USER` und `ORAKEL_AUTH_PASS`
+  sind deshalb Pflicht: `docker compose` bricht ohne sie schon beim Auflösen
+  der `.env` ab (`:?` in `docker-compose.yml`), der Entrypoint meldet es
+  zusätzlich und beendet sich mit Exit 1. Nur für die lokale Entwicklung
+  erlaubt `ORAKEL_ALLOW_NO_AUTH=1` einen Start ohne Login.
 - Basic-Auth nur über HTTPS. Port 3000 wird nicht nach außen veröffentlicht;
   erreichbar sind ausschließlich Caddy auf 80/443.
 - Es gibt genau ein Login, keine Rollen und keine Zwei-Faktor-Anmeldung. Für

@@ -66,6 +66,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
         "1", "true", "yes", "on",
     }
     app = create_app(args.config, takt=takt, host=args.host)
+    login = "aktiv" if os.environ.get("ORAKEL_AUTH_USER", "").strip() else "aus (nur Loopback)"
+    print(f"orakel: Dashboard auf {args.host}:{args.port}, Login {login}", flush=True)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     return 0
 
