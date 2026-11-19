@@ -1,6 +1,6 @@
 {
   "schema": "review-paket-freigabe.v1",
-  "beschreibung": "Freigegebene Pfade für das Review-Paket. Nur diese Einträge nimmt scripts/baue_review_paket.py auf; alles andere lehnt der Builder ab.",
+  "beschreibung": "Freigegebene Pfade für das Review-Paket. Nur diese Einträge nimmt scripts/baue_review_paket.py auf; alles andere lehnt der Builder ab. Enthalten sind der vollständige Trading-Kern unter orakel/, die vollständige Testsuite inklusive Fixtures und die Konfiguration ohne Zugangsdaten.",
   "quellen": [
     {
       "quelle": "AGENTS.md",
@@ -261,6 +261,250 @@
     {
       "quelle": "orakel/web/static/vaultgraph.js",
       "ziel": "dateien/web/static/vaultgraph.js"
+    },
+    {
+      "quelle": "orakel/__init__.py",
+      "ziel": "dateien/code/__init__.py"
+    },
+    {
+      "quelle": "orakel/__main__.py",
+      "ziel": "dateien/code/__main__.py"
+    },
+    {
+      "quelle": "orakel/backtest.py",
+      "ziel": "dateien/code/backtest.py"
+    },
+    {
+      "quelle": "orakel/data.py",
+      "ziel": "dateien/code/data.py"
+    },
+    {
+      "quelle": "orakel/globe.py",
+      "ziel": "dateien/code/globe.py"
+    },
+    {
+      "quelle": "orakel/intel.py",
+      "ziel": "dateien/code/intel.py"
+    },
+    {
+      "quelle": "orakel/judge.py",
+      "ziel": "dateien/code/judge.py"
+    },
+    {
+      "quelle": "orakel/knowledge.py",
+      "ziel": "dateien/code/knowledge.py"
+    },
+    {
+      "quelle": "orakel/markt.py",
+      "ziel": "dateien/code/markt.py"
+    },
+    {
+      "quelle": "orakel/metrics.py",
+      "ziel": "dateien/code/metrics.py"
+    },
+    {
+      "quelle": "orakel/pipeline.py",
+      "ziel": "dateien/code/pipeline.py"
+    },
+    {
+      "quelle": "orakel/report.py",
+      "ziel": "dateien/code/report.py"
+    },
+    {
+      "quelle": "orakel/risk.py",
+      "ziel": "dateien/code/risk.py"
+    },
+    {
+      "quelle": "orakel/scheduler.py",
+      "ziel": "dateien/code/scheduler.py"
+    },
+    {
+      "quelle": "orakel/seed.py",
+      "ziel": "dateien/code/seed.py"
+    },
+    {
+      "quelle": "orakel/sekretariat.py",
+      "ziel": "dateien/code/sekretariat.py"
+    },
+    {
+      "quelle": "orakel/spider.py",
+      "ziel": "dateien/code/spider.py"
+    },
+    {
+      "quelle": "orakel/strategies.py",
+      "ziel": "dateien/code/strategies.py"
+    },
+    {
+      "quelle": "orakel/watchdog.py",
+      "ziel": "dateien/code/watchdog.py"
+    },
+    {
+      "quelle": "tests/conftest.py",
+      "ziel": "dateien/tests/conftest.py"
+    },
+    {
+      "quelle": "tests/paper_strategies.py",
+      "ziel": "dateien/tests/paper_strategies.py"
+    },
+    {
+      "quelle": "tests/test_backtest.py",
+      "ziel": "dateien/tests/test_backtest.py"
+    },
+    {
+      "quelle": "tests/test_betrieb.py",
+      "ziel": "dateien/tests/test_betrieb.py"
+    },
+    {
+      "quelle": "tests/test_company.py",
+      "ziel": "dateien/tests/test_company.py"
+    },
+    {
+      "quelle": "tests/test_company_api.py",
+      "ziel": "dateien/tests/test_company_api.py"
+    },
+    {
+      "quelle": "tests/test_company_communication.py",
+      "ziel": "dateien/tests/test_company_communication.py"
+    },
+    {
+      "quelle": "tests/test_config.py",
+      "ziel": "dateien/tests/test_config.py"
+    },
+    {
+      "quelle": "tests/test_data.py",
+      "ziel": "dateien/tests/test_data.py"
+    },
+    {
+      "quelle": "tests/test_githooks.py",
+      "ziel": "dateien/tests/test_githooks.py"
+    },
+    {
+      "quelle": "tests/test_globe.py",
+      "ziel": "dateien/tests/test_globe.py"
+    },
+    {
+      "quelle": "tests/test_intel.py",
+      "ziel": "dateien/tests/test_intel.py"
+    },
+    {
+      "quelle": "tests/test_judge.py",
+      "ziel": "dateien/tests/test_judge.py"
+    },
+    {
+      "quelle": "tests/test_knowledge.py",
+      "ziel": "dateien/tests/test_knowledge.py"
+    },
+    {
+      "quelle": "tests/test_markt.py",
+      "ziel": "dateien/tests/test_markt.py"
+    },
+    {
+      "quelle": "tests/test_nexus_abruf.py",
+      "ziel": "dateien/tests/test_nexus_abruf.py"
+    },
+    {
+      "quelle": "tests/test_nexus_bewertung.py",
+      "ziel": "dateien/tests/test_nexus_bewertung.py"
+    },
+    {
+      "quelle": "tests/test_nexus_claim_baseline.py",
+      "ziel": "dateien/tests/test_nexus_claim_baseline.py"
+    },
+    {
+      "quelle": "tests/test_nexus_dedup.py",
+      "ziel": "dateien/tests/test_nexus_dedup.py"
+    },
+    {
+      "quelle": "tests/test_nexus_feeds.py",
+      "ziel": "dateien/tests/test_nexus_feeds.py"
+    },
+    {
+      "quelle": "tests/test_nexus_graph.py",
+      "ziel": "dateien/tests/test_nexus_graph.py"
+    },
+    {
+      "quelle": "tests/test_nexus_hn.py",
+      "ziel": "dateien/tests/test_nexus_hn.py"
+    },
+    {
+      "quelle": "tests/test_nexus_kalibrierung.py",
+      "ziel": "dateien/tests/test_nexus_kalibrierung.py"
+    },
+    {
+      "quelle": "tests/test_nexus_missionen.py",
+      "ziel": "dateien/tests/test_nexus_missionen.py"
+    },
+    {
+      "quelle": "tests/test_nexus_nacht.py",
+      "ziel": "dateien/tests/test_nexus_nacht.py"
+    },
+    {
+      "quelle": "tests/test_nexus_quellen.py",
+      "ziel": "dateien/tests/test_nexus_quellen.py"
+    },
+    {
+      "quelle": "tests/test_nexus_raum.py",
+      "ziel": "dateien/tests/test_nexus_raum.py"
+    },
+    {
+      "quelle": "tests/test_nexus_speicher.py",
+      "ziel": "dateien/tests/test_nexus_speicher.py"
+    },
+    {
+      "quelle": "tests/test_nexus_sprache.py",
+      "ziel": "dateien/tests/test_nexus_sprache.py"
+    },
+    {
+      "quelle": "tests/test_paper.py",
+      "ziel": "dateien/tests/test_paper.py"
+    },
+    {
+      "quelle": "tests/test_paper_datenqualitaet.py",
+      "ziel": "dateien/tests/test_paper_datenqualitaet.py"
+    },
+    {
+      "quelle": "tests/test_paper_strategies.py",
+      "ziel": "dateien/tests/test_paper_strategies.py"
+    },
+    {
+      "quelle": "tests/test_report.py",
+      "ziel": "dateien/tests/test_report.py"
+    },
+    {
+      "quelle": "tests/test_risk.py",
+      "ziel": "dateien/tests/test_risk.py"
+    },
+    {
+      "quelle": "tests/test_seed.py",
+      "ziel": "dateien/tests/test_seed.py"
+    },
+    {
+      "quelle": "tests/test_sekretariat.py",
+      "ziel": "dateien/tests/test_sekretariat.py"
+    },
+    {
+      "quelle": "tests/test_soak_abnahme.py",
+      "ziel": "dateien/tests/test_soak_abnahme.py"
+    },
+    {
+      "quelle": "tests/test_soak_auto_abnahme.py",
+      "ziel": "dateien/tests/test_soak_auto_abnahme.py"
+    },
+    {
+      "quelle": "tests/test_spider.py",
+      "ziel": "dateien/tests/test_spider.py"
+    },
+    {
+      "quelle": "tests/test_watchdog.py",
+      "ziel": "dateien/tests/test_watchdog.py"
+    },
+    {
+      "quelle": "tests/test_web.py",
+      "ziel": "dateien/tests/test_web.py"
+    },
+    {
+      "quelle": "config.toml",
+      "ziel": "dateien/config.toml"
     }
   ],
   "dokumente": [

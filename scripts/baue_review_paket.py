@@ -189,11 +189,17 @@ def pruefe_unerlaubte_dateien(freigabe: dict, ausgabe: str) -> None:
 
 def schreibe_manifest(eintraege: list[dict], ausgabe: str, commit: str, branch: str,
                       freigabe: dict) -> None:
+    status = {
+        'commit': 'geprüfte Quelle aus dem Commit',
+        'beleg': 'Belegprotokoll im Paket',
+        'paketdokument': 'Paketdokument im Paket',
+    }
     liste = [{
         'target': e['target'],
         'sha256': e['sha256'],
         'bytes': e['bytes'],
         'herkunft': e['herkunft'],
+        'status': status.get(e['herkunft'], e['herkunft']),
         **({'source': e['source'], 'commit': commit} if e['herkunft'] == 'commit' else {}),
     } for e in sorted(eintraege, key=lambda x: x['target'])]
     pruefungen = []
@@ -236,9 +242,35 @@ def schreibe_manifest(eintraege: list[dict], ausgabe: str, commit: str, branch: 
         f.write('\n')
 
 
-def schreibe_provenienz(eintraege: list[dict], ausgabe: str, commit: str, branch: str, zip_sha: str) -> None:
+def umgebung() -> dict:
+    """Python- und Node-Fassung des Baus; nur zur Nachvollziehbarkeit."""
+    node = 'nicht verfügbar'
+    try:
+        r = subprocess.run(['node', '--version'], capture_output=True, text=True, timeout=10)
+        if r.returncode == 0:
+            node = r.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return {'python': sys.version.split()[0], 'node': node}
+
+
+def datei_eintrag(ausgabe: str, name: str) -> dict:
+    """Manifest-Eintrag für eine Datei, die im Paketordner liegt."""
+    pfad = os.path.join(ausgabe, name)
+    return {'target': name, 'sha256': sha256_datei(pfad),
+            'bytes': os.path.getsize(pfad), 'herkunft': 'paketdokument'}
+
+
+def schreibe_provenienz(eintraege: list[dict], ausgabe: str, commit: str,
+                        branch: str, eintraege_im_zip: int) -> None:
+    """Schreibt PROVENIENZ.json in das Paket.
+
+    Der ZIP-Hash kann nicht in der Datei stehen, die im ZIP liegt (Zirkel).
+    Er steht deshalb ausschliesslich in ``ORAKEL-REVIEW-PAKET.zip.sha256``;
+    ``zip.sha256`` verweist darauf.
+    """
     provenienz = {
-        'schema': 'review-paket-provenienz.v3',
+        'schema': 'review-paket-provenienz.v4',
         'commit': commit,
         'branch': branch,
         'dirty': False,
@@ -246,23 +278,59 @@ def schreibe_provenienz(eintraege: list[dict], ausgabe: str, commit: str, branch
         'builder': 'scripts/baue_review_paket.py',
         'freigabe': 'scripts/review-paket-freigabe.json',
         'generated_at': '2026-11-18T00:00:00Z',
+        'umgebung': umgebung(),
         'zip': {
             'name': ZIP_NAME,
-            'sha256': zip_sha,
-            'bytes': os.path.getsize(os.path.join(ausgabe, ZIP_NAME)),
-            'eintraege': len(eintraege),
+            'sha256': None,
+            'sha256_datei': ZIP_NAME + '.sha256',
+            'eintraege': eintraege_im_zip,
             'deterministisch': True,
         },
         'reproduktion': {
             'bau': 'python scripts/baue_review_paket.py --commit %s' % commit,
             'pruefung': 'python scripts/baue_review_paket.py --pruefen',
         },
+        'quellen': [{'source': e['source'], 'target': e['target'], 'commit': commit}
+                    for e in sorted(eintraege, key=lambda x: x['target'])
+                    if e['herkunft'] == 'commit'],
+        'belege': [{'target': e['target'], 'sha256': e['sha256'], 'herkunft': e['herkunft']}
+                   for e in sorted(eintraege, key=lambda x: x['target'])
+                   if e['herkunft'] == 'beleg'],
         'dateien': [{'target': e['target'], 'sha256': e['sha256'], 'bytes': e['bytes'],
-                     'herkunft': e['herkunft']} for e in sorted(eintraege, key=lambda x: x['target'])],
+                     'herkunft': e['herkunft']}
+                    for e in sorted(eintraege, key=lambda x: x['target'])],
     }
     with open(os.path.join(ausgabe, PROVENIENZ_NAME), 'w', encoding='utf-8') as f:
         json.dump(provenienz, f, ensure_ascii=False, indent=2)
         f.write('\n')
+
+
+VERBOTEN = ('.env', '.db', '.sqlite', '.sqlite3', '.pem', '.key', 'id_rsa')
+
+
+def pruefe_evidenz(ausgabe: str, commit: str) -> None:
+    """EVIDENZ.json muss denselben Commit nennen wie das Paket."""
+    pfad = os.path.join(ausgabe, 'EVIDENZ.json')
+    if not os.path.exists(pfad):
+        raise Abweichung('EVIDENZ.json fehlt im Paketordner.')
+    daten = json.load(open(pfad, encoding='utf-8'))
+    quelle = (daten.get('quelle') or {})
+    genannt = str(quelle.get('commit', ''))
+    if not genannt:
+        raise Abweichung('EVIDENZ.json nennt keinen Quellcommit.')
+    if not commit.startswith(genannt) and genannt != commit:
+        raise Abweichung(f'EVIDENZ.json nennt Commit {genannt[:7]} statt {commit[:7]}.')
+    if quelle.get('dirty') is not False:
+        raise Abweichung('EVIDENZ.json weist den Arbeitsbaum nicht als sauber aus.')
+
+
+def pruefe_verbotene_inhalte(zip_pfad: str) -> None:
+    """Keine Zugangsdaten, Datenbanken oder Schlüssel im ZIP."""
+    with zipfile.ZipFile(zip_pfad) as z:
+        treffer = [n for n in z.namelist()
+                   if os.path.basename(n).lower().endswith(VERBOTEN)]
+        if treffer:
+            raise Abweichung('ZIP enthält verbotene Dateien: ' + ', '.join(sorted(treffer)[:8]))
 
 
 def baue_zip(eintraege: list[dict], ausgabe: str) -> str:
@@ -307,13 +375,18 @@ def baue(freigabe: dict, commit: str, branch: str, ausgabe: str,
     eintraege = quellen + weitere
     pruefe_kopien(quellen, ausgabe)
     pruefe_unerlaubte_dateien(freigabe, ausgabe)
+    if pflicht or os.path.exists(os.path.join(ausgabe, 'EVIDENZ.json')):
+        pruefe_evidenz(ausgabe, commit)
+    schreibe_provenienz(eintraege, ausgabe, commit, branch, len(eintraege) + 2)
+    eintraege.append(datei_eintrag(ausgabe, PROVENIENZ_NAME))
     schreibe_manifest(eintraege, ausgabe, commit, branch, freigabe)
-    baue_zip(eintraege, ausgabe)
+    manifest_eintrag = datei_eintrag(ausgabe, MANIFEST_NAME)
+    baue_zip(eintraege + [manifest_eintrag], ausgabe)
+    pruefe_verbotene_inhalte(os.path.join(ausgabe, ZIP_NAME))
     zip_sha = sha256_datei(os.path.join(ausgabe, ZIP_NAME))
     with open(os.path.join(ausgabe, ZIP_NAME + '.sha256'), 'w', encoding='utf-8') as f:
         f.write(f'{zip_sha}  {ZIP_NAME}\n')
-    schreibe_provenienz(eintraege, ausgabe, commit, branch, zip_sha)
-    pruefe_zip(eintraege, ausgabe)
+    pruefe_zip(eintraege + [manifest_eintrag], ausgabe)
     return eintraege, zip_sha
 
 
@@ -325,18 +398,36 @@ def pruefe(freigabe: dict, commit: str, ausgabe: str) -> tuple[list[dict], str]:
     weitere = beleg_eintraege(freigabe, ausgabe, pflicht=False)
     eintraege = quellen + weitere
     pruefe_unerlaubte_dateien(freigabe, ausgabe)
+    pruefe_evidenz(ausgabe, commit)
     manifest_pfad = os.path.join(ausgabe, MANIFEST_NAME)
-    if os.path.exists(manifest_pfad):
-        manifest = json.load(open(manifest_pfad, encoding='utf-8'))
-        if manifest.get('commit') != commit:
-            raise Abweichung(f'Manifest nennt Commit {str(manifest.get("commit"))[:7]} statt {commit[:7]}.')
-        if manifest.get('dirty') is not False:
-            raise Abweichung('Manifest ist nicht als sauber (dirty: false) ausgewiesen.')
-        laut_manifest = {e['target']: e['sha256'] for e in manifest.get('files', [])}
-        for e in eintraege:
-            if laut_manifest.get(e['target']) != e['sha256']:
-                raise Abweichung(f'Manifest-Hash für {e["target"]} weicht ab.')
-    zip_sha = pruefe_zip(eintraege, ausgabe) if os.path.exists(os.path.join(ausgabe, ZIP_NAME)) else 'ohne ZIP'
+    if not os.path.exists(manifest_pfad):
+        raise Abweichung('MANIFEST.json fehlt im Paketordner.')
+    manifest = json.load(open(manifest_pfad, encoding='utf-8'))
+    if manifest.get('commit') != commit:
+        raise Abweichung(f'Manifest nennt Commit {str(manifest.get("commit"))[:7]} statt {commit[:7]}.')
+    if manifest.get('dirty') is not False:
+        raise Abweichung('Manifest ist nicht als sauber (dirty: false) ausgewiesen.')
+    laut_manifest = {e['target']: e['sha256'] for e in manifest.get('files', [])}
+    for e in eintraege:
+        if laut_manifest.get(e['target']) != e['sha256']:
+            raise Abweichung(f'Manifest-Hash für {e["target"]} weicht ab.')
+    if PROVENIENZ_NAME not in laut_manifest:
+        raise Abweichung('Manifest führt PROVENIENZ.json nicht auf.')
+    prov = json.load(open(os.path.join(ausgabe, PROVENIENZ_NAME), encoding='utf-8'))
+    if prov.get('commit') != commit:
+        raise Abweichung('PROVENIENZ.json nennt einen anderen Commit.')
+    zip_pfad = os.path.join(ausgabe, ZIP_NAME)
+    if not os.path.exists(zip_pfad):
+        raise Abweichung(f'{ZIP_NAME} fehlt in {ausgabe}.')
+    manifest_eintrag = datei_eintrag(ausgabe, MANIFEST_NAME)
+    eintraege = eintraege + [datei_eintrag(ausgabe, PROVENIENZ_NAME)]
+    zip_sha = pruefe_zip(eintraege + [manifest_eintrag], ausgabe)
+    pruefe_verbotene_inhalte(zip_pfad)
+    sidecar = os.path.join(ausgabe, ZIP_NAME + '.sha256')
+    if not os.path.exists(sidecar):
+        raise Abweichung('ZIP-Prüfsummendatei fehlt.')
+    if open(sidecar, encoding='utf-8').read().split()[0] != zip_sha:
+        raise Abweichung('ZIP-Prüfsummendatei passt nicht zum ZIP.')
     return eintraege, zip_sha
 
 

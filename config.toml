@@ -37,6 +37,9 @@ min_kerzen = 1200
 max_luecke_pct = 5.0
 max_sprung_pct = 25.0
 max_alter_tage = 5
+# Paper-Takt: Kurse, die älter sind, gelten als nicht belastbar. Neue
+# Einstiege sind dann gesperrt; offene Positionen werden konservativ bewertet.
+max_kurs_alter_stunden = 24
 
 [validierung]
 # Rollierend: festes Trainingsfenster, mehrere nicht überlappende Testfenster.
