@@ -245,11 +245,14 @@ Google-News-RSS-Suchen: zwei deutschsprachige Treffer nach „Prozentpunkte“
 „percentage points“ (CBS News, ERR und Tax Foundation). Die Originalseiten
 wurden am 15. bzw. 16. November 2026 geprüft; alle fünf RSS-Titel enthalten
 einen konkreten pp-Wert. Die Extraktion erkennt alle fünf Einheiten. Für die
-strengen pp-Metriken ist die Einheit Voraussetzung; zusätzlich müssen Subjekt,
-Metrik, Wert und Richtung übereinstimmen. Ein nicht vollständig passender
-vorhergesagter pp-Claim zählt als FP, ein nicht vollständig passender
+strengen pp-Metriken ist die erkannte Einheit `pp` die Zulassungsbedingung;
+zusätzlich werden Subjekt, Metrik, Richtung, Wert und Negation einzeln
+verglichen. Die Einheit steht als eigene Zeile in der Feldtabelle, die strikte
+Quote hängt aber auch von den fünf weiteren Feldern ab. Ein nicht vollständig
+passender vorhergesagter pp-Claim zählt als FP, ein nicht vollständig passender
 erwarteter pp-Claim als FN; bei Feldfehlern kann derselbe Fall als FP und FN
-zählen.
+zählen. Der Bericht weist TP, FP und FN für jeden Fall einzeln aus
+(`tp`/`fp`/`fn` in `messwerte.json`).
 
 | Messwert | Ergebnis |
 |---|---:|
@@ -268,10 +271,12 @@ Strikte Feldtreffer (jeweils 5 geprüft):
 
 | Feld | Treffer | Geprüft |
 |---|---:|---:|
+| `einheit` | 5 | 5 |
 | `subjekt` | 5 | 5 |
 | `metrik` | 5 | 5 |
-| `wert` | 5 | 5 |
 | `richtung` | 5 | 5 |
+| `wert` | 5 | 5 |
+| `negiert` | 5 | 5 |
 
 Die pp-Fälle sind `rss-pp-001` („US-Notenbank Fed erhöht den Leitzins um 0,25
 Prozentpunkte“), `rss-pp-002` („USA: Notenbank Fed senkt Leitzins um 0,25
@@ -291,6 +296,19 @@ python scripts/nexus_claim_baseline.py \
   --korpus tests/fixtures/nexus_pp_probe_korpus.json \
   --output-dir artifacts/nexus-pp-probe
 ```
+
+**Optional: gemischte Ansicht.** Wer die fünf pp-Meldungen bewusst zusammen
+mit den 34 Claim-Meldungen sehen will, schaltet die Diagnoseansicht explizit
+ein. Sie ist kein Standardlauf und ersetzt keine der beiden Baselines:
+
+```bash
+python scripts/nexus_claim_baseline.py --gemischt \
+  --output-dir artifacts/nexus-gemischt
+```
+
+Die Auswertung umfasst dann 39 Meldungen; die pp-Fälle beeinflussen
+Claim-Precision, Claim-Recall und Claim-Yield. Der Bericht kennzeichnet die
+Ansicht als `gemischt` und als „Nur Diagnose“.
 
 Die tatsächliche Abdeckung der 32 englischen Registerfeeds — Abruferfolg,
 Aktualität und pp-Ausbeute — steht als [Matrix in FEED-ABDECKUNG.md](FEED-ABDECKUNG.md).
