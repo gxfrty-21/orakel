@@ -240,10 +240,28 @@ button.li:hover{background:var(--panel2)}
   /* Bei 240 px bleiben sonst keine zwei lesbaren KPI-Spalten und die
      Claim-Karte wird durch die Mindestbreite ihrer Grid-Kinder breiter. */
   #v-spider{max-width:calc(100vw - 32px)}
+  /* Bei 240 px und 250 % Textskalierung bleiben zwei KPI-Spalten zu schmal
+     für lange Beschriftungen; einspaltig bleibt jede Beschriftung im Kasten. */
+  .kpis{grid-template-columns:minmax(0,1fr);gap:6px}
   #bewertungPanel .nacht-kpis{padding-left:6px;padding-right:6px}
-  #bewertungPanel .kpis{grid-template-columns:minmax(0,1fr);gap:6px}
   #bewertungPanel .kpi{padding:8px 6px}
   #bewertungPanel .kpi .l{overflow-wrap:anywhere}
+  /* Der Panel-Kopf ist bei 240 px breiter als der Innenraum und muss
+     an beliebigen Zeichen umbrechen. */
+  #bewertungPanel .ph{overflow-wrap:anywhere;hyphens:auto}
+
+  /* Restliche 240-px-Fälle: Die schmalen Panels und Schiffslabels dürfen
+     ihre langen Beschriftungen nicht in einer Zeile festhalten. */
+  .globe-dock,.globe-meta{min-width:0;max-width:100%}
+  .ship-head,.ship-head>div,.ship-mode,.ship-stage,.ship-viewport{min-width:0;max-width:100%}
+  .ship-kicker,.ship-mode b,.ship-mode small{white-space:normal;overflow-wrap:anywhere}
+  .sd-dept b,.sd-kpi small,.sd-kpi b{white-space:normal;overflow-wrap:anywhere}
+  #mtgPanel,#sekPanel{min-width:0;max-width:100%}
+  .mtgLogKopf>span{min-width:0;overflow-wrap:anywhere}
+  #mtgProto,.protoTools,.mtgProto{min-width:0;max-width:100%}
+  .mtgProto summary,.protoTools>*{min-width:0;max-width:100%;overflow-wrap:anywhere}
+  .sekAgendaHead{flex-wrap:wrap;min-width:0}
+  .sekAgendaHead>span{min-width:0;overflow-wrap:anywhere}
   #bewertungPanel .grid2{grid-template-columns:minmax(0,1fr);gap:10px}
   #bewertungPanel .grid2>*{min-width:0}
   #bewertungClaims .li{min-width:0}
@@ -915,7 +933,7 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
 .wfoKurveLive{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 .wfoKurveZeiger{stroke:var(--fg);stroke-opacity:.4;stroke-width:1;stroke-dasharray:3 3;vector-effect:non-scaling-stroke;opacity:0}
 .wfoKurvePunkt{position:absolute;width:7px;height:7px;margin:-3.5px 0 0 -3.5px;border-radius:50%;background:var(--fg);border:1px solid #0a0e13;pointer-events:none;opacity:0}
-.wfoKurveTipp{position:absolute;left:0;top:0;z-index:3;display:flex;flex-direction:column;gap:1px;max-width:100%;padding:4px 8px;border:1px solid var(--line2);border-radius:6px;background:#0a0e13;color:var(--fg);font-size:11.5px;line-height:1.35;pointer-events:none;opacity:0;visibility:hidden;box-shadow:0 4px 12px #0008}
+.wfoKurveTipp{position:absolute;left:0;top:0;z-index:3;display:flex;flex-direction:column;gap:1px;max-width:calc(100% - 8px);padding:4px 8px;border:1px solid var(--line2);border-radius:6px;background:#0a0e13;color:var(--fg);font-size:11.5px;line-height:1.35;pointer-events:none;opacity:0;visibility:hidden;box-shadow:0 4px 12px #0008}
 .wfoKurveTipp b{font-family:var(--mono);font-weight:400;white-space:nowrap}
 .wfoKurveTipp span{color:var(--muted)}
 .wfoKurveWert{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 8px}
@@ -1523,4 +1541,15 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
      above verhindert, dass der Paint-Container die feste Leiste abschneidet. */
   .ship-zoom{position:fixed;right:max(10px,env(safe-area-inset-right));
     bottom:max(10px,env(safe-area-inset-bottom));z-index:30}
+}
+
+/* Letzte 240-px-Korrekturen: Diese Regeln stehen nach den Basis- und
+   Touch-Regeln, damit sie deren spätere Deklarationen sicher überschreiben. */
+@media (max-width:260px){
+  .globe-legend{display:block}
+  .globe-legend>span,.g-legend-item{display:block;width:100%;min-width:0;max-width:100%;
+    white-space:normal;overflow-wrap:anywhere}
+  #mtgPanel .mtgTakt{grid-template-columns:minmax(0,1fr)}
+  #mtgPanel .mtgTakt label{white-space:normal;overflow-wrap:anywhere}
+  #shipViewport{overflow:clip}
 }
