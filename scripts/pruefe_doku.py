@@ -76,6 +76,11 @@ INLINE_LINK = re.compile(
 REFERENCE_LINK = re.compile(
     r"^[ \t]{0,3}\[[^\]]+\]:[ \t]*(<[^>]+>|\S+)", re.MULTILINE
 )
+REFERENZ_DEFINITION = re.compile(
+    r"^[ \t]{0,3}\[([^\]]+)\]:[ \t]*(<[^>]+>|\S+)", re.MULTILINE
+)
+REFERENZ_VERWENDUNG = re.compile(r"(?<!!)\[([^\]]*)\]\[([^\]]*)\]")
+REFERENZ_KURZ = re.compile(r"(?<![!\]])\[([^\]]+)\](?!\s*:)(?![\[(])")
 HTML_LINK = re.compile(
     r"\b(?:href|src)\s*=\s*[\"']([^\"']+)[\"']", re.IGNORECASE
 )
@@ -242,11 +247,24 @@ def _pruefe_anker(
     return None
 
 
-def _relative_ziele(text: str):
-    """Liefert (Zeilennummer, Ziel) für alle lokalen Linkziele."""
+def _relative_ziele(
+    text: str, *, ohne_bilder: bool = False, ohne_definitionen: bool = False
+):
+    """Liefert (Zeilennummer, Ziel) für alle lokalen Linkziele.
+
+    Mit ``ohne_bilder`` bleiben Bildreferenzen (``![]()`` und ``<img src>``)
+    außen vor; mit ``ohne_definitionen`` werden Referenzdefinitionen
+    ausgelassen. Für den Pflichtverweis zählt nur ein sichtbarer Link.
+    """
     maskiert = _maskiere_code(text)
     for muster in (INLINE_LINK, REFERENCE_LINK, HTML_LINK):
         for treffer in muster.finditer(maskiert):
+            if ohne_bilder:
+                roh = treffer.group(0).lstrip()
+                if roh.startswith("!") or roh.lower().startswith("src"):
+                    continue
+            if ohne_definitionen and muster is REFERENCE_LINK:
+                continue
             ziel = treffer.group(1).strip()
             if ziel.startswith("<") and ziel.endswith(">"):
                 ziel = ziel[1:-1].strip()
@@ -287,13 +305,54 @@ def _pruefe_link(
     return None
 
 
+def _normalisiere_referenz(label: str) -> str:
+    return " ".join(label.split()).casefold()
+
+
+def _referenzziele(text: str) -> list[str]:
+    """Liefert Ziele tatsächlich verwendeter Referenzlinks."""
+    sichtbar = _maskiere_code(text)
+    definitionen: dict[str, str] = {}
+    for treffer in REFERENZ_DEFINITION.finditer(sichtbar):
+        label = _normalisiere_referenz(treffer.group(1))
+        ziel = treffer.group(2).strip()
+        if ziel.startswith("<") and ziel.endswith(">"):
+            ziel = ziel[1:-1].strip()
+        if label and ziel:
+            definitionen.setdefault(label, ziel)
+
+    ziele: list[str] = []
+    for treffer in REFERENZ_VERWENDUNG.finditer(sichtbar):
+        label = treffer.group(2).strip() or treffer.group(1)
+        ziel = definitionen.get(_normalisiere_referenz(label))
+        if ziel:
+            ziele.append(ziel)
+    for treffer in REFERENZ_KURZ.finditer(sichtbar):
+        ziel = definitionen.get(_normalisiere_referenz(treffer.group(1)))
+        if ziel:
+            ziele.append(ziel)
+    return ziele
+
+
+def _lokales_linkziel(root: Path, datei: Path, ziel: str) -> Path | None:
+    """Löst ein lokales Linkziel für den Pflichtverweis auf."""
+    pfad = unquote(ziel.partition("#")[0].split("?", 1)[0])
+    if not pfad:
+        return None
+    try:
+        kandidat = (root / pfad.lstrip("/")) if pfad.startswith("/") else (datei.parent / pfad)
+        return kandidat.resolve()
+    except OSError:
+        return None
+
+
 def _pruefe_pflicht_verweise(root: Path) -> list[str]:
     """Prüft, dass zentrale Dokumente aus ihrem Einstieg verlinkt bleiben."""
     befunde: list[str] = []
     for quelle, ziel in PFLICHT_VERWEISE:
         datei = root / quelle
         ziel_datei = root / ziel
-        if not ziel_datei.exists():
+        if not ziel_datei.is_file():
             befunde.append(f"{quelle}: Pflichtziel «{ziel}» fehlt")
             continue
         try:
@@ -301,19 +360,15 @@ def _pruefe_pflicht_verweise(root: Path) -> list[str]:
         except (OSError, UnicodeDecodeError) as fehler:
             befunde.append(f"{quelle}: konnte für Pflichtverweis nicht gelesen werden ({fehler})")
             continue
-        verlinkt = False
-        for _, link in _relative_ziele(text):
-            pfad = unquote(link.partition("#")[0].split("?", 1)[0])
-            if not pfad:
-                continue
-            try:
-                kandidat = root / pfad.lstrip("/") if pfad.startswith("/") else datei.parent / pfad
-                aufgeloest = kandidat.resolve()
-            except OSError:
-                continue
-            if aufgeloest == ziel_datei.resolve():
-                verlinkt = True
-                break
+        erwartet = ziel_datei.resolve()
+        ziele = [
+            link
+            for _, link in _relative_ziele(
+                text, ohne_bilder=True, ohne_definitionen=True
+            )
+        ]
+        ziele.extend(_referenzziele(text))
+        verlinkt = any(_lokales_linkziel(root, datei, ziel) == erwartet for ziel in ziele)
         if not verlinkt:
             befunde.append(f"{quelle}: Pflichtverweis auf «{ziel}» fehlt")
     return befunde
