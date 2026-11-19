@@ -1,15 +1,19 @@
 name: Tests
 
-# Jeder Branch-Push testet den Branch auch ohne offenen Pull Request; main
-# bleibt enthalten, damit Railway sein "Wait for CI" daran erkennt.
-# Zusätzlich lässt sich der Workflow manuell starten. GitHub registriert
-# dispatchbare Workflows erst, wenn diese Fassung auf dem Default-Branch und
-# im gewählten Branch liegt.
+# main bleibt enthalten, damit Railway sein "Wait for CI" erkennt; weitere
+# Branches laufen schon vor einem Pull Request. Manuell startbar, sobald
+# diese Fassung auf main liegt.
 on:
   push:
     branches: ['**']
   pull_request:
   workflow_dispatch:
+
+# Ein Commit löst auf einem PR-Branch Push- und pull_request-Lauf aus. Die
+# Gruppe je Commit bricht den doppelten Lauf ab, ohne neuere Commits zu treffen.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

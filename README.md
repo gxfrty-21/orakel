@@ -629,7 +629,8 @@ die beiden Lab-Fokus-Varianten. Die Klartextzeilen im Laufprotokoll wie
 Ein Push auf einen Branch startet den Workflow `Tests` direkt; ein offener Pull
 Request ist dafür nicht nötig. `main` bleibt eingeschlossen, damit Railway sein
 "Wait for CI" weiterhin erkennt. Bei Branches mit offenem Pull Request entsteht
-dadurch zusätzlich zum PR-Lauf ein Push-Lauf. Zusätzlich ist der Workflow
+dadurch zusätzlich zum PR-Lauf ein Push-Lauf; die Concurrency-Gruppe je Commit
+bricht den doppelten Lauf ab. Zusätzlich ist der Workflow
 manuell startbar, sobald diese Fassung auf `main` und im gewählten Branch
 liegt:
 
