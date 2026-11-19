@@ -287,17 +287,17 @@ eine neue Produktionsdatenbank anlegt.
 ## Browser-Prüfung bei grosser Schrift
 
 `scripts/pruefe-text250.mjs` skaliert die Schrift im Dashboard auf 250 %
-(Faktor 2,5 auf berechnete Schriftgrössen und Zeilenhöhen). Bei 360, 320 und
-280 px prüft es, ob Inhalte seitlich aus ihrem Kasten oder aus dem Viewport
-laufen. Die Kernaussagen-Karte und die Kopf- und Navigationsleiste werden
-zusätzlich bei 240 px in normaler Darstellung geprüft. Die vier KPI-Kacheln
+(Faktor 2,5 auf berechnete Schriftgrössen und Zeilenhöhen). Der 250-%-Lauf
+prüft ausschliesslich 360, 320 und 280 px und misst dort, ob Inhalte seitlich
+aus ihrem Kasten oder aus dem Viewport laufen. Davon getrennt prüft der Lauf
+alle zwölf Ansichten bei 240 px ausschliesslich in normaler Schrift sowie die
+Kernaussagen-Karte und die Kopf- und Navigationsleiste. Die vier KPI-Kacheln
 und das Claim-Grid wechseln auf eine Spalte, die Quellenzeile bleibt im
 Panel. Kopf und Navigation brechen kompakt um; die Seite scrollt dort nicht
-horizontal. **240 px ist für die geprüfte Spider-Seite in normaler
-Darstellung unterstützt, aber keine allgemeine Mindestbreite aller Ansichten
-und nicht für den vollen 250-%-Lauf zugesagt.** Der separate 250-%-Lauf bei
-240 px scheitert an Panel-Kopf und KPI-Beschriftung; 260/270 px haben
-ebenfalls Befunde. Die kleinste geprüfte Breite mit vollständigem 250-%-Lauf ist 280 px.
+horizontal. **240 px wird ausschliesslich in normaler Schrift geprüft; der
+12/12-Nachweis gilt nur dafür. Der 250-%-Lauf läuft ausschliesslich bei 360,
+320 und 280 px. Ein voller 250-%-Lauf bei 240 px ist nicht Teil der Zusage.
+240 px ist die untere geprüfte Breite, darunter gibt es keine Layoutzusage.**
 
 Die 240-px-Prüfung misst alle zwölf Ansichten in normaler Schrift bei
 240 × 900 px. Jede Zeile prüft Seiten-, Kopf- und Navigationsbreite:

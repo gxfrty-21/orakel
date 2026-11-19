@@ -162,8 +162,10 @@ python -m orakel.nexus bewertung --db orakel.db
 - **Untere Darstellungsgrenze.** Die Kernaussagen-Karte wird bei 240 px
   unterstützt. Dort wechseln ihre KPI-Kacheln und das Claim-Grid auf eine
   Spalte; die Karte bleibt im sichtbaren Bereich. Kopf- und Navigationsleiste
-  bleiben separat scrollbar. 240 px ist keine allgemeine Mindestbreite für alle
-  anderen Ansichten.
+  bleiben separat scrollbar. Die zwölf Ansichten werden bei 240 px in normaler
+  Schrift geprüft (`240px: 12/12`); der volle 250-%-Lauf bei 240 px bleibt
+  ausserhalb der Zusage, die CI prüft 250 % bei 360/320/280 px. 240 px ist
+  keine allgemeine Mindestbreite für alle anderen Ansichten.
 - **Quellenreputation ist keine Trefferquote.** Sie startet mit einem Prior
   und wird nur durch echte Auftrags-Ergebnisse belastbar. Im breiten Lauf gab
   es noch keine abgeschlossenen Aufträge; alle Quellen waren `vorläufig`.
