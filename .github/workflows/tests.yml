@@ -292,6 +292,9 @@ jobs:
             tail -50 artifacts/text250/server.log
             exit 1
           fi
+          # Skip-Logik dauerhaft absichern: erwarteter Skip muss erlaubt,
+          # unerwarteter Skip muss erkannt werden.
+          node scripts/pruefe-text250-ergebnis.mjs --selbsttest
           # CI prüft Fall-IDs und erwartete Zähler aus dem Manifest statt
           # Klartextzeilen zu greppen. Profil «voll» gilt für diesen Lauf.
           node scripts/pruefe-text250-ergebnis.mjs \
@@ -306,7 +309,9 @@ jobs:
           # Cluster, doppelte Agenten-IDs über Cluster hinweg und im selben
           # Cluster bei gleicher Agentenzahl sowie einen fehlenden
           # Widerspruchsgrund und eine fehlende Widerspruchssicherheit einen
-          # Befund erzeugen.
+          # Befund erzeugen. Drei weitere Fälle injizieren abgeschnittenen
+          # Inhalt, überlappende statische Steuerelemente und einen fehlenden
+          # Fokusring.
           if ! node scripts/pruefe-text250.mjs --negativtest \
                --ergebnis artifacts/text250/negativtest-ergebnis.json \
                > artifacts/text250/negativtest.log 2>&1; then
@@ -571,25 +576,29 @@ jobs:
           fi
 
           if ! node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300 \
+               --ergebnis artifacts/widerspruch-e2e/lauf.json \
                | tee artifacts/widerspruch-e2e/lauf.log; then
             echo "--- Widerspruch-E2E fehlgeschlagen ---"
             tail -50 artifacts/widerspruch-e2e/server.log
             exit 1
           fi
-          grep -q 'Widerspruch-E2E OK' artifacts/widerspruch-e2e/lauf.log
+          node scripts/pruefe-json-erwartung.mjs \
+            artifacts/widerspruch-e2e/lauf.json ok=true positiv.geprueft=1
 
           # Der Negativlauf verändert nur das DOM der Testseite und eine Kopie
           # der API-Antwort: einmal wird der Widerspruchsgrund verfälscht, einmal
           # die Detailzeile entfernt und einmal die Widerspruchszeile aus der
           # API-Kopie gelöscht. Alle drei Fälle müssen erkannt werden.
           if ! node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300 \
-               --negativtest | tee artifacts/widerspruch-e2e/negativtest.log; then
+               --negativtest --ergebnis artifacts/widerspruch-e2e/negativtest.json \
+               | tee artifacts/widerspruch-e2e/negativtest.log; then
             echo "--- Widerspruch-E2E-Negativtest fehlgeschlagen ---"
             tail -50 artifacts/widerspruch-e2e/server.log
             exit 1
           fi
-          grep -q 'Widerspruch-E2E-Negativtest OK: 3/3' \
-            artifacts/widerspruch-e2e/negativtest.log
+          node scripts/pruefe-json-erwartung.mjs \
+            artifacts/widerspruch-e2e/negativtest.json \
+            ok=true negativ.faelle=3 negativ.erkannt=3
           echo "Widerspruch-E2E-Negativtest: 3/3 bestanden"
           {
             echo "### Widerspruch-E2E-Negativtest"
@@ -606,6 +615,8 @@ jobs:
           path: |
             artifacts/widerspruch-e2e/lauf.log
             artifacts/widerspruch-e2e/negativtest.log
+            artifacts/widerspruch-e2e/lauf.json
+            artifacts/widerspruch-e2e/negativtest.json
           if-no-files-found: error
           retention-days: 7
 
@@ -692,7 +703,8 @@ jobs:
           fi
 
           if ! node scripts/pruefe-touch.mjs --url http://127.0.0.1:3200 \
-               --bilder artifacts/touch > artifacts/touch/touch.log 2>&1; then
+               --bilder artifacts/touch --ergebnis artifacts/touch/touch.json \
+               > artifacts/touch/touch.log 2>&1; then
             echo "--- Touch-Test fehlgeschlagen ---"
             cat artifacts/touch/touch.log
             echo "--- Serverprotokoll ---"
@@ -700,10 +712,9 @@ jobs:
             exit 1
           fi
           cat artifacts/touch/touch.log
-          if ! grep -q 'Touch OK:' artifacts/touch/touch.log; then
-            echo "Touch-Test hat keine Erfolgsmeldung erzeugt"
-            exit 1
-          fi
+          node scripts/pruefe-json-erwartung.mjs artifacts/touch/touch.json \
+            ok=true fehler=0 pan=true pinch=true tippen=true legende=true \
+            filter=true fit390=true fit320=true viewports=6
 
       - name: Touch-Artefakte bei Fehlschlag hochladen
         if: failure() || cancelled()

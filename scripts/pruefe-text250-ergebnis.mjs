@@ -9,6 +9,10 @@
  *     --ergebnis artifacts/text250/ergebnis.json \
  *     --pflicht scripts/text250-required-checks.json \
  *     --profil voll
+ *
+ * `--selbsttest` prüft die Skip-Logik ohne Dateien: Ein Skip, der in
+ * `allow_skips` steht, muss akzeptiert werden; ein Skip ausserhalb der
+ * Erlaubnisliste muss als unerwartet erkannt werden.
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -18,15 +22,17 @@ function leseArgumente(argv) {
     ergebnis: 'artifacts/text250/ergebnis.json',
     pflicht: 'scripts/text250-required-checks.json',
     profil: 'voll',
+    selbsttest: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--ergebnis') opts.ergebnis = argv[++i];
     else if (arg === '--pflicht') opts.pflicht = argv[++i];
     else if (arg === '--profil') opts.profil = argv[++i];
+    else if (arg === '--selbsttest') opts.selbsttest = true;
     else if (arg === '--hilfe' || arg === '-h') {
       console.log('Aufruf: node scripts/pruefe-text250-ergebnis.mjs '
-        + '[--ergebnis <json>] [--pflicht <json>] [--profil <name>]');
+        + '[--ergebnis <json>] [--pflicht <json>] [--profil <name>] [--selbsttest]');
       process.exit(0);
     } else {
       console.error(`Unbekannte Option: ${arg}`);
@@ -69,11 +75,13 @@ function pruefeZaehler(erwartet, tatsaechlich) {
   return abweichungen;
 }
 
-function main() {
-  const opts = leseArgumente(process.argv.slice(2));
-  const ergebnis = leseJson(opts.ergebnis, 'Text250-Ergebnis');
-  const manifest = leseJson(opts.pflicht, 'Text250-Check-Manifest');
-
+/**
+ * Vergleicht ein Ergebnisobjekt mit einem Manifest-Profil und liefert die
+ * Abweichungen zurück. Schema- und Strukturfehler werfen; inhaltliche
+ * Abweichungen bleiben als Listen beim Aufrufer, damit auch der Selbsttest
+ * sie auswerten kann.
+ */
+function pruefeErgebnis(ergebnis, manifest, opts) {
   if (ergebnis.schema !== 'text250-result.v2') {
     throw new Error(`Unerwartetes Ergebnis-Schema: ${ergebnis.schema || 'fehlt'}`);
   }
@@ -91,10 +99,10 @@ function main() {
   if (!Array.isArray(profile.checks) || profile.checks.length === 0) {
     throw new Error(`Manifest-Profil «${opts.profil}» enthält keine checks`);
   }
-  const erlaubteSkips = new Set(profile.allow_skips || []);
-  if (!Array.isArray(profile.allow_skips || [])) {
+  if (profile.allow_skips !== undefined && !Array.isArray(profile.allow_skips)) {
     throw new Error(`Manifest-Profil «${opts.profil}» hat kein gültiges allow_skips`);
   }
+  const erlaubteSkips = new Set(profile.allow_skips || []);
 
   const nachId = new Map();
   const doppelt = [];
@@ -126,7 +134,9 @@ function main() {
     if (!fall) {
       fehlend.push(`${id} (nicht ausgeführt)`);
     } else if (fall.status === 'skipped') {
-      unerwarteteSkips.push(`${id}${fall.details ? `: ${fall.details}` : ''}`);
+      if (!erlaubteSkips.has(id)) {
+        unerwarteteSkips.push(`${id}${fall.details ? `: ${fall.details}` : ''}`);
+      }
     } else if (fall.status !== 'passed') {
       fehlgeschlagen.push(`${id} (${fall.status || 'ohne Status'}${fall.details ? `: ${fall.details}` : ''})`);
     }
@@ -141,6 +151,82 @@ function main() {
   }
 
   const zaehlerAbweichungen = pruefeZaehler(profile.counters, ergebnis.counters);
+  return { profile, fehlend, fehlgeschlagen, unerwarteteSkips, zaehlerAbweichungen };
+}
+
+function manifestFuerProfil(profil) {
+  return {
+    schema: 'text250-check-manifest.v2',
+    profiles: { test: profil },
+  };
+}
+
+function selbsttest() {
+  const opts = { profil: 'test' };
+
+  const erwartet = pruefeErgebnis(
+    {
+      schema: 'text250-result.v2',
+      cases: [{ id: 'text250.erwartet', status: 'skipped' }],
+      counters: {},
+    },
+    manifestFuerProfil({
+      checks: [{ id: 'text250.erwartet' }],
+      allow_skips: ['text250.erwartet'],
+      counters: {},
+    }),
+    opts,
+  );
+  const erwartetFehler = [
+    ...erwartet.fehlend,
+    ...erwartet.fehlgeschlagen,
+    ...erwartet.unerwarteteSkips,
+    ...erwartet.zaehlerAbweichungen,
+  ];
+  if (erwartetFehler.length) {
+    throw new Error(`Selbsttest: erwarteter Skip wurde nicht akzeptiert: ${erwartetFehler.join('; ')}`);
+  }
+
+  const unerwartet = pruefeErgebnis(
+    {
+      schema: 'text250-result.v2',
+      cases: [
+        { id: 'text250.pflicht', status: 'passed' },
+        { id: 'text250.unerwartet', status: 'skipped' },
+      ],
+      counters: {},
+    },
+    manifestFuerProfil({
+      checks: [{ id: 'text250.pflicht' }],
+      allow_skips: [],
+      counters: {},
+    }),
+    opts,
+  );
+  if (unerwartet.unerwarteteSkips.length !== 1
+      || !unerwartet.unerwarteteSkips[0].startsWith('text250.unerwartet')) {
+    throw new Error('Selbsttest: unerwarteter Skip wurde nicht erkannt '
+      + `(${unerwartet.unerwarteteSkips.join('; ') || 'keine Meldung'})`);
+  }
+  if (unerwartet.fehlend.length || unerwartet.fehlgeschlagen.length
+      || unerwartet.zaehlerAbweichungen.length) {
+    throw new Error('Selbsttest: unerwarteter Skip erzeugte zusätzliche Abweichungen');
+  }
+
+  console.log('Selbsttest OK: erwarteter Skip erlaubt, unerwarteter Skip erkannt');
+}
+
+function main() {
+  const opts = leseArgumente(process.argv.slice(2));
+  if (opts.selbsttest) {
+    selbsttest();
+    return;
+  }
+
+  const ergebnis = leseJson(opts.ergebnis, 'Text250-Ergebnis');
+  const manifest = leseJson(opts.pflicht, 'Text250-Check-Manifest');
+  const { profile, fehlend, fehlgeschlagen, unerwarteteSkips, zaehlerAbweichungen } =
+    pruefeErgebnis(ergebnis, manifest, opts);
 
   if (fehlend.length || fehlgeschlagen.length || unerwarteteSkips.length || zaehlerAbweichungen.length) {
     if (fehlend.length) {

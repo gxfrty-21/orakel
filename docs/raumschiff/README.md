@@ -200,11 +200,12 @@ Werte bleiben leer. Agentenstatus und offene Aufgaben aktualisieren sich alle
 keine neue Datenquelle und keine Automation.
 
 Geprüft wird der Querschnitt mit 302 pytest-Tests, dem 250-%-Lauf über zwölf
-Ansichten und drei Breiten sowie dem Negativtest, der dreizehn absichtliche
+Ansichten und drei Breiten sowie dem Negativtest, der sechzehn absichtliche
 Fehler — darunter ein fehlender Abteilungstab, ein fehlender und ein
-zusätzlicher Agent, eine doppelte Agenten-ID bei gleicher Agentenzahl sowie ein
-fehlender Widerspruchsgrund und eine fehlende Widerspruchssicherheit — erkennen
-muss. Der sichtbare
+zusätzlicher Agent, eine doppelte Agenten-ID bei gleicher Agentenzahl, ein
+fehlender Widerspruchsgrund, eine fehlende Widerspruchssicherheit sowie
+abgeschnittener Inhalt, überlappende statische Steuerelemente und ein
+fehlender Fokusring — erkennen muss. Der sichtbare
 Agenten-Querschnitt und die Detailspalte werden zusätzlich im Browser auf 103
 Räume, elf Abteilungen, zwei Gemeinschaftsräume und Zoom ohne Seitenfehler geprüft.
 
