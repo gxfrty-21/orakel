@@ -74,6 +74,42 @@ def test_fehlerhafte_migration_rollt_zurueck_und_laesst_die_db_unveraendert(tmp_
     assert "b" not in tabellen, "Teil der fehlerhaften Migration blieb zurück"
 
 
+def test_index_auf_fehlende_spalte_meldet_altes_schema_mit_export_hinweis(tmp_path):
+    """Ein uralter Bestand ohne ``titel_hash`` scheitert klar, nicht kryptisch."""
+    pfad = tmp_path / "uralt.db"
+    c = sqlite3.connect(pfad)
+    c.executescript("CREATE TABLE artikel (id INTEGER PRIMARY KEY, titel TEXT NOT NULL);")
+    c.execute("INSERT INTO artikel (titel) VALUES ('Alter Artikel')")
+    c.commit()
+    c.close()
+
+    with pytest.raises(migrationen.AltesSchemaFehler) as fehler:
+        migrationen.anwenden(pfad)
+
+    text = str(fehler.value)
+    assert isinstance(fehler.value, migrationen.MigrationsFehler)
+    assert "0001_basis.sql" in text
+    assert "ix_artikel_hash" in text
+    assert "artikel.titel_hash" in text
+    assert "exportieren" in text and "importieren" in text
+    assert "docs/MIGRATIONEN.md" in text
+    assert "no such column: titel_hash" not in text
+
+    assert migrationen.angewendet(pfad) == []
+    c = sqlite3.connect(pfad)
+    try:
+        indizes = {r[0] for r in c.execute(
+            "SELECT name FROM sqlite_master WHERE type='index'")}
+        spalten = {r[1] for r in c.execute("PRAGMA table_info(artikel)")}
+        zeilen = c.execute("SELECT COUNT(*) FROM artikel").fetchone()[0]
+    finally:
+        c.close()
+    assert "ix_artikel_hash" not in indizes
+    assert "titel_hash" not in spalten
+    assert zeilen == 1
+    assert list(tmp_path.glob("uralt.db.vor-migration-*.bak"))
+
+
 def test_bestehende_datenbank_wird_vor_der_migration_gesichert(tmp_path):
     pfad = tmp_path / "bestand.db"
     migrationen.anwenden(pfad, bis=ALLE[1])

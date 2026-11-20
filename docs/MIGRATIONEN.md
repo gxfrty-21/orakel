@@ -42,6 +42,40 @@ SQLite kennt kein `ADD COLUMN IF NOT EXISTS`, und auf einer frischen Datenbank
 sind die Spalten aus `0003` bereits in `0001`/`0002` enthalten. Alle anderen
 Fehler brechen ab und rollen zurück.
 
+## Sehr alte Bestände
+
+Reicht das Nachziehen nicht, weil eine Tabelle schon existiert, aber anders
+aufgebaut ist, hilft kein weiteres `ALTER TABLE`: `CREATE TABLE IF NOT EXISTS`
+lässt die vorhandene Tabelle unverändert, und ein `CREATE INDEX` auf eine
+fehlende Spalte scheitert. `anwenden()` bricht dann mit `AltesSchemaFehler`
+(einer Unterklasse von `MigrationsFehler`) ab und nennt Datei, Index, Tabelle
+und Spalte — statt eines nackten `no such column`. Die Transaktion ist
+zurückgerollt, die Datenbank bleibt unverändert, die Sicherung von Schritt 3
+liegt daneben.
+
+Der Weg führt über Export und Import in ein frisches Schema:
+
+```bash
+# 1. Datei sichern (die Migration legt zusätzlich eine .bak an)
+cp orakel.db orakel.db.vor-umbau
+
+# 2. Daten exportieren (vollständiger, lesbarer SQL-Export)
+sqlite3 orakel.db '.dump' > orakel-export.sql
+
+# 3. Alte Datei weglegen und die Anwendung einmal starten;
+#    sie legt das neue Schema vollständig an
+mv orakel.db orakel.db.alt
+
+# 4. Daten der Tabellen übernehmen, deren Spalten beide Stände teilen
+```
+
+Für Schritt 4 zählt man die gemeinsamen Spalten beider Stände aus
+(`PRAGMA table_info`) und kopiert sie mit `ATTACH` und
+`INSERT INTO neu.tabelle (spalten) SELECT spalten FROM alt.tabelle`. Spalten,
+die es nur im neuen Schema gibt, bleiben auf ihrem Default; Zeilen ohne
+Pflichtspalte werden nicht erfunden, sondern bleiben weg. Fehlt eine Tabelle
+im Bestand, entsteht sie beim Start leer.
+
 ## Stand und Rückweg
 
 ```bash
@@ -66,6 +100,9 @@ Betriebswege ab:
   Stände 0001 bis 0003 bleiben unangetastet,
 - fehlerhafte Migration: Rollback, Tabelle aus der kaputten Datei fehlt,
   vorherige Migration und ihre Historie bleiben,
+- uralter Bestand, dessen `artikel`-Tabelle die Spalte `titel_hash` nicht hat:
+  `AltesSchemaFehler` mit Datei, Index, Tabelle, Spalte und Export/Import-Weg,
+  Datenbank unverändert, Sicherung vorhanden,
 - Sicherung vor der Migration enthält die vorhandenen Zeilen,
 - Downgrade entfernt Eintrag und Spalten, ohne die früheren Migrationen
   anzufassen,
