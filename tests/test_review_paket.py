@@ -190,6 +190,62 @@ def test_konsistenzprobe_meldet_erfolg():
     assert modul.konsistenzprobe() == 0
 
 
+def test_pruefbericht_enthaelt_nur_gemessene_werte(tmp_path):
+    """Der CI-Bericht zitiert nur Hashes und Testzahl aus EVIDENZ/MANIFEST."""
+    modul = _modul()
+    evidenz = _evidenz(tmp_path)
+    quelle = tmp_path / "dateien" / "README.md"
+    quelle.parent.mkdir(parents=True)
+    quelle.write_text("inhalt\n", encoding="utf-8")
+    echt = hashlib.sha256(quelle.read_bytes()).hexdigest()
+    eintraege = [
+        {"target": "dateien/README.md", "sha256": echt, "herkunft": "commit"},
+        {"target": "belege/evidenz-pytest.log", "sha256": evidenz["dateien"][0]["sha256"],
+         "herkunft": "beleg"},
+    ]
+
+    pfad = modul.schreibe_pruefbericht(str(tmp_path), "a" * 40, "main", eintraege, evidenz,
+                                       {"run_id": 123456789, "conclusion": "success",
+                                        "head_sha": "a" * 40})
+
+    text = Path(pfad).read_text(encoding="utf-8")
+    assert "402 passed" in text and echt[:16] in text
+    assert "actions/runs/123456789" in text
+    modul.pruefe_hauptdokument(str(tmp_path))
+    modul.pruefe_konsistenz(str(tmp_path), "a" * 40, evidenz,
+                            {"dateien/README.md": echt},
+                            lauf=lambda run_id: {"run_id": int(run_id), "head_sha": "a" * 40})
+
+    evidenz["testzahl"] = 999
+    with pytest.raises(modul.Abweichung, match="999"):
+        modul.pruefe_konsistenz(str(tmp_path), "a" * 40, evidenz,
+                                {"dateien/README.md": echt})
+
+
+def test_pruefen_ohne_paket_erzeugt_und_prueft_den_bericht(tmp_path, monkeypatch):
+    """--pruefen im CI prüft einen Bericht aus dem frisch gemessenen Lauf."""
+    modul = _modul()
+    gerufen: list[str] = []
+
+    def bau(freigabe, commit, branch, ausgabe, **_kwargs):
+        Path(ausgabe).mkdir(parents=True, exist_ok=True)
+        (Path(ausgabe) / "EVIDENZ.json").write_text(
+            json.dumps({"testzahl": 7, "dateien": []}), encoding="utf-8")
+        return [{"target": "dateien/README.md", "sha256": "a" * 64, "herkunft": "commit"}], "0" * 64
+
+    monkeypatch.setattr(modul, "lade_freigabe", lambda: {
+        "quellen": [{"quelle": "README.md", "ziel": "dateien/README.md"}]})
+    monkeypatch.setattr(modul, "pruefe_commit", lambda _commit: ("a" * 40, "main"))
+    monkeypatch.setattr(modul, "baue", bau)
+    monkeypatch.setattr(modul, "schreibe_pruefbericht",
+                        lambda ausgabe, *_a, **_k: gerufen.append(ausgabe))
+    monkeypatch.setattr(sys, "argv", ["baue_review_paket.py", "--pruefen",
+                                      "--ausgabe", str(tmp_path / "paket")])
+
+    assert modul.main() == 0
+    assert len(gerufen) == 1 and Path(gerufen[0]).name
+
+
 def test_hauptdokument_hoechstens_200_zeilen(tmp_path):
     modul = _modul()
     dokument = tmp_path / "ORAKEL-REVIEW-PAKET.md"
@@ -219,6 +275,9 @@ def test_pruefen_erzwingt_evidenz_im_tempbau(tmp_path, monkeypatch):
 
     def bau_merken(freigabe, commit, branch, ausgabe, **kwargs):
         aufrufe.append(kwargs)
+        Path(ausgabe).mkdir(parents=True, exist_ok=True)
+        (Path(ausgabe) / "EVIDENZ.json").write_text(
+            json.dumps({"testzahl": 7, "dateien": []}), encoding="utf-8")
         return [], "0" * 64
 
     monkeypatch.setattr(modul, "lade_freigabe", lambda: {

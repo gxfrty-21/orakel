@@ -14,8 +14,9 @@ Aufrufe:
     python scripts/baue_review_paket.py --konsistenzprobe  # Prüfung selbst prüfen
 
 ``--pruefen`` prüft ein vorhandenes Paket gegen den Commit. Existiert noch kein
-Paket (CI ohne ``artifacts/``), baut der Builder in ein temporäres Verzeichnis
-und prüft dort Quellen, Hashes und ZIP. ``--konsistenzprobe`` führt die
+Paket (CI ohne ``artifacts/``), baut der Builder in ein temporäres Verzeichnis,
+schreibt dort einen Bericht aus den gemessenen Werten und prüft Quellen, Hashes,
+ZIP und diesen Bericht. ``--konsistenzprobe`` führt die
 Konsistenzprüfung gegen ein synthetisches Paket aus, damit sie im CI ohne
 tracked Paketdokumente erreichbar bleibt.
 """
@@ -588,6 +589,42 @@ def pruefe_konsistenz(ausgabe: str, commit: str, evidenz: dict | None,
                                  f'{ergebnis["head_sha"][:7]}, Paket-Commit ist {commit[:7]}.')
 
 
+def schreibe_pruefbericht(ausgabe: str, commit: str, branch: str,
+                          eintraege: list[dict], evidenz: dict | None,
+                          ci: dict | None = None) -> str:
+    """Schreibt einen kurzen Bericht ausschliesslich aus gemessenen Werten.
+
+    Im CI gibt es kein ``artifacts/``-Verzeichnis mit Paketdokumenten; ohne
+    Dokument hätte ``pruefe_konsistenz`` nichts zu prüfen. Der Bericht nennt
+    nur Werte aus MANIFEST/EVIDENZ und dem geprüften CI-Lauf, damit die
+    Konsistenzprüfung auch dort echte Angaben prüft. Gibt den Pfad zurück.
+    """
+    quellen = [e for e in eintraege if e.get('herkunft') == 'commit']
+    belege = [e for e in eintraege if e.get('herkunft') == 'beleg']
+    zeilen = [
+        '# Prüfbericht des Review-Pakets', '',
+        f'Commit: `{commit}` (Branch `{branch}`), Paketdateien: {len(eintraege)} '
+        f'({len(quellen)} Quellen, {len(belege)} Belege).', '',
+        '## Gemessene Nachweise', '',
+    ]
+    if evidenz:
+        zeilen.append(f'- Testzahl: {evidenz["testzahl"]} passed.')
+        for eintrag in evidenz.get('dateien', []):
+            zeilen.append(f'- Beleg `{eintrag["target"]}` (`{eintrag["sha256"][:16]}`).')
+    if ci:
+        zeilen.append(f'- CI: https://github.com/{repo_slug()}/actions/runs/'
+                      f'{ci["run_id"]} ({ci.get("conclusion") or "offen"}).')
+    zeilen += ['', '## Quellen (Auszug)', '']
+    for eintrag in sorted(quellen, key=lambda e: e['target'])[:10]:
+        zeilen.append(f'- `{eintrag["target"]}` (`{eintrag["sha256"][:16]}`).')
+    zeilen += ['', 'Alle Angaben stammen aus MANIFEST.json und EVIDENZ.json; '
+               'der Bericht enthält keine Schätzungen.', '']
+    pfad = os.path.join(ausgabe, HAUPTDOKUMENT)
+    with open(pfad, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(zeilen))
+    return pfad
+
+
 def pruefe_hauptdokument(ausgabe: str) -> None:
     """Das Hauptdokument bleibt lesbar: höchstens 200 Zeilen."""
     pfad = os.path.join(ausgabe, HAUPTDOKUMENT)
@@ -872,6 +909,16 @@ def main() -> int:
                 # echten pytest-Protokoll stammen, nicht aus einer alten Datei.
                 eintraege, zip_sha = baue(freigabe, commit, branch, temp, pflicht=False,
                                           evidenz_bauen=True, junit=args.junit, ci=ci)
+                # Ohne Paketdokumente hätte ``pruefe_konsistenz`` nichts zu prüfen.
+                # Der Bericht entsteht aus den gerade gemessenen Werten und wird
+                # anschliessend mit denselben Prüfungen wie ein echtes Paket geprüft.
+                evidenz = json.load(open(os.path.join(temp, 'EVIDENZ.json'),
+                                         encoding='utf-8'))
+                schreibe_pruefbericht(temp, commit, branch, eintraege, evidenz, ci)
+                pruefe_hauptdokument(temp)
+                pruefe_konsistenz(temp, commit, evidenz,
+                                  {e['target']: e['sha256'] for e in eintraege
+                                   if e.get('herkunft') == 'commit'})
         else:
             os.makedirs(ausgabe, exist_ok=True)
             eintraege, zip_sha = baue(freigabe, commit, branch, ausgabe,
