@@ -11,7 +11,7 @@ from orakel.company.messaging import (
 )
 from orakel.company.runtime import CompanyRuntime
 from orakel.company.store import CompanyStore
-from orakel.db import Facts
+from orakel.kern.db import Facts
 
 
 def _store(cfg) -> tuple[Facts, CompanyStore]:

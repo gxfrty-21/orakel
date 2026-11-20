@@ -8,8 +8,8 @@ import time
 from pathlib import Path
 
 from .config import load_config
-from .data import lade_csv, synthetische_kerzen
-from .db import Facts
+from .kern.data import lade_csv, synthetische_kerzen
+from .kern.db import Facts
 from .knowledge import Vault
 
 
@@ -17,8 +17,30 @@ def _cfg(pfad: str):
     return load_config(pfad)
 
 
+def _schema_pruefen(konfig) -> int | None:
+    """Prüft das Schema vor dem Lauf; bei altem Bestand Meldung und Exit 2.
+
+    Gilt für jeden Befehl, der die Datenbank anfasst, nicht nur für ``serve``:
+    Auch ``pruefen``, ``konferenz``, ``unternehmen`` und ``daten`` würden sonst
+    mit einem ``no such column`` aus dem Traceback abbrechen.
+    """
+    from .kern.db import initialisiere
+    from .kern.migrationen import AltesSchemaFehler, startmeldung
+
+    try:
+        # Schema und Migrationen vor dem Lauf prüfen: Ein alter Bestand endet so
+        # als eigene Meldung statt als Traceback mitten im Ablauf.
+        initialisiere(konfig.db_pfad)
+    except AltesSchemaFehler as fehler:
+        print(startmeldung(fehler, konfig.db_pfad), file=sys.stderr)
+        return 2
+    return None
+
+
 def cmd_daten(args: argparse.Namespace) -> int:
     cfg = _cfg(args.config)
+    if (code := _schema_pruefen(cfg)) is not None:
+        return code
     db = Facts(cfg.db_pfad)
     cfg.daten_ordner.mkdir(parents=True, exist_ok=True)
 
@@ -44,6 +66,8 @@ def cmd_daten(args: argparse.Namespace) -> int:
 def cmd_pruefen(args: argparse.Namespace) -> int:
     from .pipeline import lauf
 
+    if (code := _schema_pruefen(_cfg(args.config))) is not None:
+        return code
     bericht = lauf(cfg_pfad=args.config, modus=args.modus, quelle=args.quelle,
                    bericht_pfad=args.bericht, mit_konferenz=not args.ohne_konferenz,
                    mit_spider=args.mit_spider)
@@ -62,6 +86,12 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
     from .web import create_app
 
+    konfig = _cfg(args.config)
+    # Vor dem Serverstart, damit ein alter Bestand nicht als Lifespan-Traceback
+    # von uvicorn endet.
+    if (code := _schema_pruefen(konfig)) is not None:
+        return code
+
     takt = bool(args.takt) or os.environ.get("ORAKEL_TAKT", "").strip().lower() in {
         "1", "true", "yes", "on",
     }
@@ -76,6 +106,8 @@ def cmd_konferenz(args: argparse.Namespace) -> int:
     from . import agents
     from .pipeline import lauf
 
+    if (code := _schema_pruefen(_cfg(args.config))) is not None:
+        return code
     bericht = lauf(cfg_pfad=args.config, modus="backtest", mit_konferenz=True)
     protokoll = bericht.get("konferenz") or {}
     print(protokoll.get("beschluss", "Keine Konferenz erzeugt"))
@@ -89,6 +121,8 @@ def cmd_unternehmen(args: argparse.Namespace) -> int:
     from .company.store import CompanyStore
 
     cfg = _cfg(args.config)
+    if (code := _schema_pruefen(cfg)) is not None:
+        return code
     db = Facts(cfg.db_pfad)
     store = CompanyStore(db)
     store.sync_roster()
@@ -144,7 +178,7 @@ def cmd_spider(args: argparse.Namespace) -> int:
 
 
 def cmd_paper(args: argparse.Namespace) -> int:
-    from .paper import tick
+    from .kern.paper import tick
 
     cfg = _cfg(args.config)
     db = Facts(cfg.db_pfad)

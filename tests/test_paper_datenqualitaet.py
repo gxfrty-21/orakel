@@ -13,8 +13,8 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
-from orakel.db import Facts
-from orakel.paper import handelstag, tick
+from orakel.kern.db import Facts
+from orakel.kern.paper import handelstag, tick
 
 
 def ende_jetzt() -> pd.Timestamp:

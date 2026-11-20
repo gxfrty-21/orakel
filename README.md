@@ -13,6 +13,10 @@ Broker-Order. `[paper] order_freigabe` bleibt als harte Policy-Sperre auf
 **Raumschiff-Doku:** [docs/raumschiff/README.md](docs/raumschiff/README.md)
 — Planung und aktueller 2D-Agenten-Querschnitt (103 Räume, elf Abteilungen, Zoom/Pan, Detailspalte).
 
+**Architektur:** [docs/ARCHITEKTUR-KERN.md](docs/ARCHITEKTUR-KERN.md)
+— Grenze zwischen Handelskern (`orakel/kern/`) und Oberfläche, Prüfung in der
+CI und Feature-Stopp für Agenten und Raumschiff.
+
 ## Schnellstart
 
 ```bash
@@ -34,6 +38,46 @@ python -m venv .venv
 .venv/bin/python -m orakel unternehmen --status
 .venv/bin/python -m orakel unternehmen
 ```
+
+### Lange Läufe
+
+«Lauf starten» blockiert nicht mehr. `POST /api/lauf` legt nur einen Auftrag an
+und antwortet sofort mit `202` und `{"id": …}`; der Hintergrund-Loop (der
+Takt-Scheduler aus `orakel/scheduler.py`) führt ihn aus. `GET /api/lauf/{id}` liefert `status` (`offen`, `aktiv`, `fertig`,
+`fehler`) sowie bei Erfolg die Zusammenfassung aus Dauer, Validierungen, Plan
+und Fehlern. Das Dashboard fragt alle zwei Sekunden nach und lädt den Bericht
+erst danach neu.
+
+Solange ein Auftrag offen oder aktiv ist, legt ein weiteres `POST /api/lauf`
+keinen zweiten an: Die Antwort ist `409` mit `{"id": …}` des laufenden Laufs
+und seinem `status`. Mehrfaches Klicken reiht deshalb keine Backtests
+hintereinander ein; das Dashboard hängt sich an die bestehende ID und wartet
+auf deren Ergebnis. Erst nach `fertig` oder `fehler` startet ein neuer Klick
+einen neuen Auftrag.
+
+Bleibt ein Auftrag nach einem Absturz auf `aktiv` stehen, setzt ihn der
+Hintergrund-Loop beim nächsten Start wieder auf `offen` (`zuruecksetzen` in
+`orakel/lauf_queue.py`): Beim Start hält kein Prozess mehr einen Auftrag, der
+Rest kann also gefahrlos erneut laufen. `gestartet` wird geleert, ein Ereignis
+protokolliert jeden Reset; erst danach beginnt die Schleife. Ein Auftrag, der
+einen Absturz auslöst, läuft beim nächsten Start deshalb erneut. Hängt ein
+Auftrag dagegen im laufenden Betrieb länger als 60 Minuten (`HAENGE_GRENZE`),
+verbucht ihn die Schleife als `fehler`; der Fehlertext nennt die Grenze.
+Danach ist die Warteschlange in beiden Fällen wieder frei für einen neuen
+Start.
+
+Ein Auftrag, der den Prozess beim Laufen mitnimmt, würde sonst bei jedem Start
+wieder laufen. Jeder Startversuch zählt (`versuche`, Migration
+`0005_laeufe_versuche.sql`); nach drei Versuchen (`MAX_VERSUCHE`) verbucht der
+Start ihn als `fehler` mit Hinweis auf die Absturzschleife. Unterhalb der
+Grenze wird er wie bisher wieder auf `offen` gesetzt.
+
+Abgeschlossene Aufträge (`fertig`, `fehler`) bleiben 30 Tage (`AUFBEWAHRUNG`)
+und werden dann gelöscht; die Aufbewahrung läuft beim Start und im
+Dauerbetrieb höchstens stündlich (`AUFBEWAHRUNG_TAKT`). Offene und laufende
+Aufträge bleiben unberührt, ebenso Einträge ohne Endzeit. Die Frist hängt an
+`beendet`, nicht an `erstellt` — ein langer Lauf behält seine Frist nach dem
+Ende.
 
 Die Company-Schicht ist additiv und standardmäßig **nicht** in den laufenden
 Paper-Takt eingebunden (`[unternehmen] aktiv = false`). Sie enthält noch keine
@@ -98,6 +142,15 @@ quittungspflichtig und werden über eigene
 `message_reminder`-Audit-Events genau einmal gezählt. Sie laufen im Company-Lauf
 und im Hintergrund-Takt; ein Lauf ohne offene Quittungen schreibt nichts.
 
+### Fehlerantworten
+
+Jede Fehlerantwort trägt `ok: false`, einen Text in `fehler` und einen stabilen
+`code`. Eingabefehler (`eingabe`) nennen den Grund im Klartext, weil der Text
+bewusst formuliert ist. Interne Fehler (`interner_fehler`) zeigen nur eine
+Fehler-ID im Text; der vollständige Ausnahmetext – samt Pfaden, SQL oder
+Konfigurationswerten – bleibt im Log und lässt sich über die ID dort
+wiederfinden. Clients prüfen deshalb `code`, nicht den Text.
+
 ## Dauerbetrieb mit Login und HTTPS
 
 Fertige Docker-Konfiguration mit Caddy (automatisches TLS), HTTP-Basic-Login und
@@ -119,6 +172,12 @@ Der Hintergrund-Takt ist bewusst **opt-in** (`serve --takt` oder
 sechs Stunden), Intelligence, Missionen und optional die Company-Schicht. Im
 laufenden Takt werden zusätzlich offene Quittungen nach Frist erinnert
 (`[unternehmen] erinnerungen_intervall_minuten`).
+
+Takt und Lauf-Warteschlange teilen sich denselben Thread (`Takt` in
+`orakel/scheduler.py`): Je Runde läuft erst der Betriebstakt, dann genau ein
+Auftrag aus der Warteschlange. Ohne `--takt` läuft derselbe Loop im
+Sekundentakt nur für die Warteschlange, damit ein gestarteter Lauf auch ohne
+Dauerbetrieb abgearbeitet wird.
 Fehler erhalten einen persistenten exponentiellen Backoff; DB-, RSS- und
 Speichergrenzen pausieren schreibintensive Jobs, statt den Prozess volllaufen
 zu lassen. Jeder Lauf wird in `betrieb_laeufe` protokolliert.
@@ -212,6 +271,15 @@ tests/           Risiko, Backtest, Daten, Bericht
 - Kosten und Slippage in jedem Backtest.
 - Der Richter ist fest verdrahtet; keine KI ändert seine Regeln.
 - Jede Zahl im Dashboard stammt aus SQLite — nichts wird geschätzt oder erfunden.
+
+## Qualitätstor
+
+Drei eigene CI-Jobs prüfen den Code: `ruff` (blinde Fänge `BLE001`, stille
+Fehlerschlucker `S110`, Sicherheitsregeln `S`), `mypy` für den Handelskern
+(`paper`, `risk`, `backtest`, `judge`) und `Coverage Handelskern` mit einer
+Untergrenze von 85 % für dieselben vier Module. Regeln, Ausnahmen für den
+Altbestand und die lokalen Befehle stehen in
+[docs/QUALITAET.md](docs/QUALITAET.md).
 
 ## Doku-Prüfung
 

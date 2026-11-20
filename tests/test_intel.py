@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from orakel.db import Facts
+from orakel.kern.db import Facts
 from orakel.intel import (IntelNetz, _thema, auftrag_aendern, lage, relevanz,
                           weiterleitung_aendern)
 from orakel.knowledge import Vault
