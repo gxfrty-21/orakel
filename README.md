@@ -326,6 +326,22 @@ git config core.hooksPath .githooks
 
 Ohne relevante Änderungen beendet sich der Hook sofort.
 
+## CI-Trigger für Feature-Branches
+
+Ein Pull Request führt den vollen Workflow `Tests` aus (`pull_request`); ein
+Push auf `main` ebenfalls, damit Railway sein "Wait for CI" erkennt.
+Feature-Branch-Pushes ohne offenen Pull Request starten den schlanken Workflow
+`Branch-Smoke`: Er prüft Python-Syntax, Doku-Links und die Syntax der
+Prüfskripte. Sobald ein Pull Request offen ist, überspringt `Branch-Smoke` seine
+Prüfschritte, weil der volle PR-Lauf übernimmt – pro Commit läuft damit genau
+ein vollständiger Satz Jobs.
+
+Bewusst keine Concurrency-Cancellation zwischen Push- und PR-Lauf: Ein
+abgebrochener Lauf hinterlässt `cancelled`-Check-Kontexte auf demselben
+Head-Commit, die als nicht erfolgreich gelten und den Pull Request blockieren.
+`Branch-Smoke` hat einen eigenen Check-Namen und ist kein Required Check; die
+Job-Namen und `needs`-Ketten aus `tests.yml` bleiben unverändert.
+
 ## Manuelle iPhone-Safari-Prüfung
 
 Für die Abnahme der Schiffsansicht auf echter Safari-Hardware:
