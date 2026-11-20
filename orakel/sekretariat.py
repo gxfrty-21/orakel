@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .config import Config
-from .db import Facts, jetzt
+from .kern.db import Facts, jetzt
 from .knowledge import Vault
 
 LOGGER = logging.getLogger(__name__)

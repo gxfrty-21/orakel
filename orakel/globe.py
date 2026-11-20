@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import Config
-from .db import Facts, jetzt
+from .kern.db import Facts, jetzt
 from .intel import ABTEILUNG, THEMEN
 
 SOURCE_CHANNELS = [

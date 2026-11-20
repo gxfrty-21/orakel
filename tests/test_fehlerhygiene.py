@@ -60,6 +60,24 @@ def test_interne_fehlertexte_gehen_nicht_an_den_client(cfg, monkeypatch):
     assert re.search(r"Interner Fehler \([0-9a-f]{32}\)", antwort.text)
 
 
+def test_fehlerantworten_tragen_einen_stabilen_code(cfg, monkeypatch):
+    """Clients reagieren auf ``code``, nicht auf den flüchtigen Text."""
+
+    def kaputt(*_args, **_kwargs):
+        raise RuntimeError("geheimer/pfad/zur/datenbank.sqlite")
+
+    monkeypatch.setattr(web, "load_config", lambda _pfad: cfg)
+    monkeypatch.setattr(web, "tick", kaputt)
+    client = TestClient(web.create_app())
+
+    daten = client.post("/api/paper").json()
+
+    assert daten["ok"] is False
+    assert daten["code"] == "interner_fehler"
+    assert web._fehler_code(ValueError("Betrag fehlt")) == "eingabe"
+    assert web._fehler_code(web.NutzerFehler("Betrag fehlt")) == "eingabe"
+
+
 def test_eigene_validierungsfehler_bleiben_lesbar(cfg, monkeypatch):
     def ungueltig(*_args, **_kwargs):
         raise ValueError("Zeitrahmen muss M15 oder H1 sein")

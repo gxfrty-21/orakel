@@ -17,7 +17,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from ..config import Config, RisikoGrenzen
-from ..db import Facts
+from ..kern.db import Facts
 from .handlers import HandlerResult, run_handler
 from .memory import AgentMemory
 from .messaging import MessagingService

@@ -145,7 +145,7 @@ steht nicht im Bericht.
 Im root-Crontab (`sudo crontab -e`):
 
 ```cron
-30 2 * * * cd /srv/orakel && /usr/bin/docker compose exec -T orakel python -m orakel.nexus nacht --db /data/orakel.db --backup-ordner /data/backups >> /var/log/orakel-nacht.log 2>&1
+30 2 * * * cd /srv/orakel && /usr/bin/docker compose exec -T orakel python -m orakel.nexus nacht --backup-ordner /data/backups >> /var/log/orakel-nacht.log 2>&1
 ```
 
 Der Container bringt `ORAKEL_DOMAIN` und `ORAKEL_PING_URL` aus der `.env` mit.
@@ -159,11 +159,14 @@ deshalb der bessere Weg.
 
 ```bash
 # im Container
-sudo docker compose exec -T orakel python -m orakel.nexus status --db /data/orakel.db
-sudo docker compose exec -T orakel python -m orakel.nexus nacht --db /data/orakel.db \
+sudo docker compose exec -T orakel python -m orakel.nexus status
+sudo docker compose exec -T orakel python -m orakel.nexus nacht \
   --backup-ordner /data/backups --limit 5 --ping-url ""
-sudo docker compose exec -T orakel python -m orakel.nexus bewertung --db /data/orakel.db
+sudo docker compose exec -T orakel python -m orakel.nexus bewertung
 ```
+
+Den Datenbankpfad nimmt der Befehl aus `config.toml` (`[basis] db_pfad`);
+`ORAKEL_DB_PFAD` sticht ihn. `--db` ist nur für einen anderen Bestand nötig.
 
 Die Ausgabe ist JSON und nennt `faellig`, `abgerufen`, `unveraendert`,
 `fehler`, `meldungen`, den Backup-Pfad mit `integrity` und — falls gesetzt —
