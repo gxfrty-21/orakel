@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -68,6 +72,53 @@ def _dateien_hash(ordner) -> dict[str, str]:
         for datei in sorted(ordner.iterdir())
         if datei.is_file()
     }
+
+
+def test_import_der_web_app_braucht_keine_konfigurationsdatei(tmp_path):
+    umgebung = dict(os.environ)
+    umgebung["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+
+    lauf = subprocess.run(
+        [sys.executable, "-c", "from orakel.web import create_app"],
+        cwd=tmp_path,
+        env=umgebung,
+        capture_output=True,
+        text=True,
+    )
+
+    assert lauf.returncode == 0, lauf.stderr
+
+
+def test_config_wird_nur_einmal_geladen(cfg, monkeypatch):
+    aufrufe: list[str] = []
+
+    def zaehle(pfad):
+        aufrufe.append(pfad)
+        return cfg
+
+    monkeypatch.setattr(web, "load_config", zaehle)
+    client = TestClient(web.create_app())
+
+    for _ in range(3):
+        assert client.get("/api/company/paper-guard").status_code == 200
+
+    assert len(aufrufe) == 1
+
+
+def test_bericht_endpunkt_nutzt_geladene_konfiguration(cfg, monkeypatch):
+    aufrufe: list[str] = []
+
+    def zaehle(pfad):
+        aufrufe.append(pfad)
+        return cfg
+
+    monkeypatch.setattr(web, "load_config", zaehle)
+    client = TestClient(web.create_app())
+
+    antwort = client.get("/api/report")
+
+    assert antwort.status_code == 200
+    assert len(aufrufe) == 1
 
 
 def test_paper_guard_http_hat_keine_schreibenden_seiteneffekte(cfg, monkeypatch):
