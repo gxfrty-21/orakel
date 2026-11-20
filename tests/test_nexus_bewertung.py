@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import json
 import sqlite3
+from pathlib import Path
 
 import pytest
 
-from orakel.db import Facts
+from orakel.kern.db import Facts
 from orakel.nexus.bewertung import (_aussage_aus_text, claims_auffrischen,
-                                    extrahiere_aussage, quellen_reputation)
+                                    extrahiere_aussage, quellen_reputation,
+                                    wert_und_einheit)
 from orakel.nexus.dedup import titel_hash
 from orakel.nexus.quellen import Quelle
 
@@ -365,6 +368,7 @@ def test_bps_wird_als_basispunkt_erkannt():
 
 @pytest.mark.parametrize("text", [
     "EZB hebt den Leitzins auf 4,5 pp",
+    "EZB hebt den Leitzins auf 4,5pp",
     "EZB hebt den Leitzins auf 4,5 Prozentpunkte",
 ])
 def test_prozentpunkte_werden_als_pp_erkannt(text):
@@ -372,6 +376,58 @@ def test_prozentpunkte_werden_als_pp_erkannt(text):
     assert a is not None
     assert a["wert"] == 4.5
     assert a["einheit"] == "pp"
+
+
+@pytest.mark.parametrize("text", [
+    "The Federal Reserve cuts rates by 0.25 percentage points",
+    "The Federal Reserve cuts rates by 0.25 percentage point",
+])
+def test_englische_percentage_points_werden_als_pp_erkannt(text):
+    a = _aussage_aus_text(text)
+    assert a is not None
+    assert a["wert"] == 0.25
+    assert a["einheit"] == "pp"
+
+
+@pytest.mark.parametrize("text", [
+    "The Federal Reserve cuts rates by 0.25 Percentage Points",
+    "The Federal Reserve cuts rates by 0.25 PERCENTAGE POINT",
+    "The Federal Reserve cuts rates by 0.25 percentage-points",
+    "The Federal Reserve cuts rates by 0.25 PERCENTAGE-POINT",
+])
+def test_englische_percentage_points_schreibvarianten_sind_pp(text):
+    assert wert_und_einheit(text) == (0.25, "pp")
+
+
+@pytest.mark.parametrize("text", [
+    "Die Gruppe meldet 5 Apps",
+    "Die Kipppunkte liegen bei 5 Kipppunkten",
+    "Die Grappa-Flasche kostet 5 Grappas",
+])
+def test_pp_in_fremdwoertern_ist_keine_einheit(text):
+    assert wert_und_einheit(text) == (None, "")
+
+
+def test_prozentzeichen_in_fremdwort_ist_keine_einheit():
+    assert wert_und_einheit("Die Gruppe meldet 5 %Zahl") == (None, "")
+
+
+def test_pp_fremdwoerter_in_echten_rss_schlagzeilen_sind_keine_einheit():
+    """Reale RSS-Titel mit pp-Fremdwörtern dürfen keine pp-Einheit ergeben."""
+    pfad = Path(__file__).parent / "fixtures" / "nexus_pp_fremdwoerter_rss.json"
+    daten = json.loads(pfad.read_text(encoding="utf-8"))
+
+    assert daten["version"] == 1
+    assert daten["abgerufen"] == "2026-11-16"
+    meldungen = daten["meldungen"]
+    assert len(meldungen) == 7
+    assert len({m["id"] for m in meldungen}) == len(meldungen)
+
+    for eintrag in meldungen:
+        titel = eintrag["titel"]
+        assert eintrag["fremdwort"].casefold() in titel.casefold()
+        aussage = _aussage_aus_text(titel)
+        assert aussage is None or aussage["einheit"] != "pp"
 
 
 def test_prozentzeichen_wird_erkannt():

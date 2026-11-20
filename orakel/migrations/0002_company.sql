@@ -1,6 +1,6 @@
--- Orakel Company-Schicht, Migration 1.
+-- Orakel Company-Schicht, Migration 2.
 -- Additiv: bestehende Tabellen werden weder umbenannt noch gelöscht.
--- Ausgeführt von Facts.__init__ nach dem bestehenden SCHEMA_SQL.
+-- Alle Anweisungen sind idempotent (IF NOT EXISTS).
 
 PRAGMA foreign_keys=ON;
 

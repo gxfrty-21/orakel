@@ -34,7 +34,7 @@ from itertools import combinations
 from typing import Any, Iterable
 from urllib.parse import urlparse
 
-from ..db import Facts, jetzt
+from ..kern.db import Facts, jetzt
 from .graph import graph_auffrischen
 from .quellen import Quelle, lade_register
 
@@ -301,7 +301,7 @@ def wert_und_einheit(text: str) -> tuple[float | None, str]:
     normal = _normalisiere(text)
     treffer = re.search(
         r"(?<![\w.])(\d{1,3}(?:[.,]\d+)?)\s*"
-        r"(%|(?:prozentpunkte|prozent|basispunkte|bps|bp|pp|mrd|mio|milliarden|millionen|eur|usd|chf|"
+        r"(%(?!\w)|(?:percentage\s+points?|prozentpunkte|prozent|basispunkte|bps|bp|pp|mrd|mio|milliarden|millionen|eur|usd|chf|"
         r"gbp|jpy|euro|dollar)\b)",
         normal,
     )
@@ -313,7 +313,8 @@ def wert_und_einheit(text: str) -> tuple[float | None, str]:
         return None, ""
     einheit = treffer.group(2)
     einheit = {
-        "prozent": "%", "prozentpunkte": "pp", "basispunkte": "bp", "bps": "bp",
+        "prozent": "%", "prozentpunkte": "pp", "percentage point": "pp",
+        "percentage points": "pp", "basispunkte": "bp", "bps": "bp",
         "milliarden": "mrd", "millionen": "mio", "euro": "eur", "dollar": "usd",
     }.get(einheit, einheit)
     return zahl, einheit

@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from orakel import web
 from orakel.company.store import CompanyStore
-from orakel.db import Facts
+from orakel.kern.db import Facts
 from orakel.web import _basic_ok
 
 
@@ -70,6 +76,53 @@ def _dateien_hash(ordner) -> dict[str, str]:
     }
 
 
+def test_import_der_web_app_braucht_keine_konfigurationsdatei(tmp_path):
+    umgebung = dict(os.environ)
+    umgebung["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+
+    lauf = subprocess.run(
+        [sys.executable, "-c", "from orakel.web import create_app"],
+        cwd=tmp_path,
+        env=umgebung,
+        capture_output=True,
+        text=True,
+    )
+
+    assert lauf.returncode == 0, lauf.stderr
+
+
+def test_config_wird_nur_einmal_geladen(cfg, monkeypatch):
+    aufrufe: list[str] = []
+
+    def zaehle(pfad):
+        aufrufe.append(pfad)
+        return cfg
+
+    monkeypatch.setattr(web, "load_config", zaehle)
+    client = TestClient(web.create_app())
+
+    for _ in range(3):
+        assert client.get("/api/company/paper-guard").status_code == 200
+
+    assert len(aufrufe) == 1
+
+
+def test_bericht_endpunkt_nutzt_geladene_konfiguration(cfg, monkeypatch):
+    aufrufe: list[str] = []
+
+    def zaehle(pfad):
+        aufrufe.append(pfad)
+        return cfg
+
+    monkeypatch.setattr(web, "load_config", zaehle)
+    client = TestClient(web.create_app())
+
+    antwort = client.get("/api/report")
+
+    assert antwort.status_code == 200
+    assert len(aufrufe) == 1
+
+
 def test_paper_guard_http_hat_keine_schreibenden_seiteneffekte(cfg, monkeypatch):
     db = Facts(cfg.db_pfad)
     store = CompanyStore(db)
@@ -98,3 +151,129 @@ def test_paper_guard_http_hat_keine_schreibenden_seiteneffekte(cfg, monkeypatch)
     assert store.task_counts() == vorher_tasks
     assert len(store.events()) == vorher_events
     assert store.audit_chain_ok()
+
+
+def test_serve_ohne_zugangsdaten_nur_auf_loopback(monkeypatch):
+    monkeypatch.delenv("ORAKEL_AUTH_USER", raising=False)
+    monkeypatch.delenv("ORAKEL_AUTH_PASS", raising=False)
+    monkeypatch.delenv("ORAKEL_ALLOW_NO_AUTH", raising=False)
+
+    for host in ("127.0.0.1", "localhost", "::1"):
+        web.create_app(host=host)  # darf nicht werfen
+
+    for host in ("0.0.0.0", "192.168.0.10", "::"):
+        with pytest.raises(RuntimeError):
+            web.create_app(host=host)
+
+
+def test_serve_ohne_zugangsdaten_nur_mit_ausnahme_extern(monkeypatch):
+    monkeypatch.delenv("ORAKEL_AUTH_USER", raising=False)
+    monkeypatch.delenv("ORAKEL_AUTH_PASS", raising=False)
+    monkeypatch.setenv("ORAKEL_ALLOW_NO_AUTH", "1")
+
+    web.create_app(host="0.0.0.0")  # bewusste Ausnahme
+
+
+def test_serve_mit_zugangsdaten_auf_externer_adresse(monkeypatch):
+    monkeypatch.setenv("ORAKEL_AUTH_USER", "orakel")
+    monkeypatch.setenv("ORAKEL_AUTH_PASS", "geheim")
+
+    web.create_app(host="0.0.0.0")  # Login vorhanden: erlaubt
+
+
+def test_alle_post_routen_verlangen_anmeldung(cfg, monkeypatch):
+    monkeypatch.setenv("ORAKEL_AUTH_USER", "orakel")
+    monkeypatch.setenv("ORAKEL_AUTH_PASS", "geheim")
+    monkeypatch.setattr(web, "load_config", lambda _pfad: cfg)
+    app = web.create_app()
+    client = TestClient(app)
+
+    post_pfade = sorted(
+        re.sub(r"\{[^}]+\}", "x", route.path)
+        for route in app.routes
+        if "POST" in getattr(route, "methods", set())
+    )
+    assert len(post_pfade) >= 15
+
+    for pfad in post_pfade:
+        antwort = client.post(pfad)
+        assert antwort.status_code == 401, pfad
+
+
+def test_schreibende_anfrage_von_fremder_herkunft_wird_abgewiesen(cfg, monkeypatch):
+    monkeypatch.setenv("ORAKEL_AUTH_USER", "orakel")
+    monkeypatch.setenv("ORAKEL_AUTH_PASS", "geheim")
+    monkeypatch.delenv("ORAKEL_ERLAUBTE_ORIGINS", raising=False)
+    monkeypatch.setattr(web, "load_config", lambda _pfad: cfg)
+    client = TestClient(web.create_app())
+    auth = ("orakel", "geheim")
+
+    fremder_origin = client.post(
+        "/api/company/messages",
+        headers={"Origin": "https://boese.example"},
+        auth=auth,
+    )
+    assert fremder_origin.status_code == 403
+    assert fremder_origin.json()["code"] == "herkunft_abgelehnt"
+
+    fremder_referer = client.post(
+        "/api/company/messages",
+        headers={"Referer": "https://boese.example/formular"},
+        auth=auth,
+    )
+    assert fremder_referer.status_code == 403
+
+    eigene_herkunft = client.post(
+        "/api/company/messages",
+        headers={"Origin": "http://testserver"},
+        auth=auth,
+    )
+    assert eigene_herkunft.status_code != 403
+
+    lesend = client.get(
+        "/api/company/paper-guard",
+        headers={"Origin": "https://boese.example"},
+        auth=auth,
+    )
+    assert lesend.status_code == 200
+
+
+def test_container_entrypoint_bricht_ohne_zugangsdaten_ab():
+    skript = Path(__file__).resolve().parents[1] / "docker-entrypoint.sh"
+    umgebung = {
+        schluessel: wert
+        for schluessel, wert in os.environ.items()
+        if schluessel not in {
+            "ORAKEL_AUTH_USER", "ORAKEL_AUTH_PASS", "ORAKEL_ALLOW_NO_AUTH",
+        }
+    }
+
+    lauf = subprocess.run(
+        ["sh", str(skript)], env=umgebung, capture_output=True, text=True,
+    )
+
+    assert lauf.returncode == 1
+    assert "ORAKEL_AUTH_USER" in lauf.stderr
+    assert "fail-closed" in lauf.stderr
+
+
+def test_erlaubte_herkuenfte_konfigurierbar(cfg, monkeypatch):
+    monkeypatch.setenv("ORAKEL_AUTH_USER", "orakel")
+    monkeypatch.setenv("ORAKEL_AUTH_PASS", "geheim")
+    monkeypatch.setenv("ORAKEL_ERLAUBTE_ORIGINS", "https://ui.example")
+    monkeypatch.setattr(web, "load_config", lambda _pfad: cfg)
+    client = TestClient(web.create_app())
+
+    antwort = client.post(
+        "/api/company/messages",
+        headers={"Origin": "https://ui.example"},
+        auth=("orakel", "geheim"),
+    )
+    assert antwort.status_code != 403
+
+    weiterhin_fremd = client.post(
+        "/api/company/messages",
+        headers={"Origin": "https://boese.example"},
+        auth=("orakel", "geheim"),
+    )
+    assert weiterhin_fremd.status_code == 403

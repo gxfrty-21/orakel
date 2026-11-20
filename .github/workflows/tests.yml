@@ -1,14 +1,19 @@
 name: Tests
 
-# Nur main löst nach einem Push aus; Railway erkennt daran sein "Wait for CI".
-# Feature-Branches laufen über pull_request.
+# Jeder Branch-Push testet den Branch auch ohne offenen Pull Request; main
+# bleibt enthalten, damit Railway sein "Wait for CI" daran erkennt.
+# Zusätzlich lässt sich der Workflow manuell starten. GitHub registriert
+# dispatchbare Workflows erst, wenn diese Fassung auf dem Default-Branch und
+# im gewählten Branch liegt.
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   # Der Doku-Job wird nur bei Markdown- oder Prüfskript-Änderungen gestartet.
@@ -36,26 +41,7 @@ jobs:
           PUSH_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-
-          geaendert=""
-          range=""
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            range="$BASE_SHA...$HEAD_SHA"
-          elif [ -z "${BEFORE_SHA:-}" ] || [ "${BEFORE_SHA//0/}" = "" ]; then
-            geaendert=$(git ls-tree -r --name-only "$PUSH_SHA")
-          else
-            range="$BEFORE_SHA..$PUSH_SHA"
-          fi
-
-          if [ -z "$geaendert" ] && [ -n "$range" ]; then
-            geaendert=$(git diff --name-only "$range")
-          fi
-
-          if printf '%s\n' "$geaendert" | grep -Eq '\.md$|^scripts/pruefe_doku\.py$'; then
-            echo "doku=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "doku=false" >> "$GITHUB_OUTPUT"
-          fi
+          bash scripts/ermittle-doku-aenderungen.sh >> "$GITHUB_OUTPUT"
 
   pytest:
     runs-on: ubuntu-24.04
@@ -78,8 +64,54 @@ jobs:
           python -m pip install -r requirements-dev.txt
 
       # Als Modul aufrufen, damit das Repo-Root für "import orakel" im Pfad liegt.
+      # Protokoll und JUnit-XML werden als Artefakt an den Review-Job gegeben,
+      # damit die Suite nur einmal läuft.
       - name: Tests ausführen
-        run: python -m pytest -q
+        run: |
+          mkdir -p artifacts/pytest
+          set +e
+          python -m pytest -q tests --junitxml=artifacts/pytest/junit.xml 2>&1 \
+            | tee artifacts/pytest/pytest.log
+          code=${PIPESTATUS[0]}
+          echo "$code" > artifacts/pytest/exit_code
+          exit "$code"
+
+      - name: pytest-Evidenz hochladen
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pytest-evidenz
+          path: |
+            artifacts/pytest/pytest.log
+            artifacts/pytest/junit.xml
+            artifacts/pytest/exit_code
+          if-no-files-found: error
+          retention-days: 7
+
+  # Hält die Grenze aus Bereich 4.1: Der Handelskern (orakel/kern) darf
+  # nichts aus Web, Agenten, Nexus oder Betrieb importieren. Der Vertrag steht
+  # in .importlinter; zusätzlich prüft tests/test_architektur.py dasselbe ohne
+  # Zusatzpaket im normalen pytest-Lauf.
+  architektur:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Import-Linter installieren
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install import-linter==2.17
+
+      - name: Architekturverträge prüfen
+        run: lint-imports --verbose
 
   # Eigener sichtbarer Job: Prüft die versionierten Markdown-Dateien auf
   # relative Links, Markdown- und HTML-Anker, alte Raumschiff- und
@@ -106,6 +138,44 @@ jobs:
         run: |
           python scripts/pruefe_doku.py --negativtest
           python scripts/pruefe_doku.py
+
+  # Prüft, dass das Review-Paket ausschliesslich freigegebene Quellen aus HEAD
+  # enthält und jede Kopie byteweise zum Commit passt. Läuft ohne artifacts/,
+  # weil aus dem Commit in ein temporäres Verzeichnis gebaut wird.
+  review_paket:
+    name: Review-Paket
+    needs: pytest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # Das Protokoll kommt aus dem pytest-Job: eine Testzahl aus einem echten
+      # Lauf, ohne die Suite ein zweites Mal zu starten. Skript und Doku-Prüfung
+      # sind stdlib-only, deshalb hier kein pip install.
+      - name: pytest-Evidenz übernehmen
+        uses: actions/download-artifact@v6
+        with:
+          name: pytest-evidenz
+          path: artifacts/pytest
+
+      # Fehlende Evidenz, ein fremder Exit-Code oder ein Widerspruch zwischen
+      # Protokoll und JUnit-Bericht ist ein Fehler.
+      - name: Freigabe, Kopien, Hashes, Testzahl und ZIP prüfen
+        run: |
+          python scripts/baue_review_paket.py --pruefen --evidenz \
+            --pytest-log artifacts/pytest/pytest.log \
+            --pytest-exit-code artifacts/pytest/exit_code \
+            --junit artifacts/pytest/junit.xml
 
   # Stellt sicher, dass das Dockerfile inklusive Seed-DB weiterhin baut.
   docker:
@@ -255,20 +325,21 @@ jobs:
             exit 1
           fi
 
-          if ! node scripts/pruefe-text250.mjs --bilder artifacts/text250 | tee artifacts/text250/lauf.log; then
+          if ! node scripts/pruefe-text250.mjs --bilder artifacts/text250 \
+               --ergebnis artifacts/text250/ergebnis.json | tee artifacts/text250/lauf.log; then
             echo "--- Serverprotokoll ---"
             tail -50 artifacts/text250/server.log
             exit 1
           fi
-          if ! grep -q 'Claims 4× geprüft' artifacts/text250/lauf.log; then
-            echo "Claim-Prüfung wurde nicht für alle vier Breiten ausgeführt"
-            exit 1
-          fi
-          if ! grep -q '240px: 12/12 Ansichten ohne horizontalen Überlauf' \
-               artifacts/text250/lauf.log; then
-            echo "240-px-Prüfung wurde nicht für alle zwölf Ansichten ausgeführt"
-            exit 1
-          fi
+          # Skip-Logik dauerhaft absichern: erwarteter Skip muss erlaubt,
+          # unerwarteter Skip muss erkannt werden.
+          node scripts/pruefe-text250-ergebnis.mjs --selbsttest
+          # CI prüft Fall-IDs und erwartete Zähler aus dem Manifest statt
+          # Klartextzeilen zu greppen. Profil «voll» gilt für diesen Lauf.
+          node scripts/pruefe-text250-ergebnis.mjs \
+            --ergebnis artifacts/text250/ergebnis.json \
+            --pflicht scripts/text250-required-checks.json \
+            --profil voll
 
           # Der Negativtest schreibt absichtlich falsche Kerndaten ins DOM und
           # muss für jede der sechs Inhaltsansichten, den fehlenden Abteilungstab,
@@ -277,23 +348,28 @@ jobs:
           # Cluster, doppelte Agenten-IDs über Cluster hinweg und im selben
           # Cluster bei gleicher Agentenzahl sowie einen fehlenden
           # Widerspruchsgrund und eine fehlende Widerspruchssicherheit einen
-          # Befund erzeugen.
-          if ! node scripts/pruefe-text250.mjs --negativtest > artifacts/text250/negativtest.log 2>&1; then
+          # Befund erzeugen. Drei weitere Fälle injizieren abgeschnittenen
+          # Inhalt, überlappende statische Steuerelemente und einen fehlenden
+          # Fokusring.
+          if ! node scripts/pruefe-text250.mjs --negativtest \
+               --ergebnis artifacts/text250/negativtest-ergebnis.json \
+               > artifacts/text250/negativtest.log 2>&1; then
             echo "--- Negativtest fehlgeschlagen ---"
             cat artifacts/text250/negativtest.log
             exit 1
           fi
           cat artifacts/text250/negativtest.log
-          if ! grep -q 'Negativtest OK: 13/13' artifacts/text250/negativtest.log; then
-            echo "Negativtest hat nicht alle dreizehn Fälle geprüft"
-            exit 1
-          fi
+          node scripts/pruefe-text250-ergebnis.mjs \
+            --ergebnis artifacts/text250/negativtest-ergebnis.json \
+            --pflicht scripts/text250-required-checks.json \
+            --profil negativtest
 
           # Die Selbsttests brauchen denselben noch laufenden Seed-Server.
           mkdir -p artifacts/text250/selbsttest
           if ! node scripts/pruefe-text250.mjs --url http://127.0.0.1:3000 \
                --selbsttest-cluster --bilder artifacts/text250/selbsttest \
                --bild-praefix selbsttest \
+               --ergebnis artifacts/text250/selbsttest-ergebnis.json \
                > artifacts/text250/selbsttest.log 2>&1; then
             echo "--- Selbsttest fehlgeschlagen ---"
             cat artifacts/text250/selbsttest.log
@@ -302,7 +378,10 @@ jobs:
             exit 1
           fi
           cat artifacts/text250/selbsttest.log
-          grep -q 'Selbsttest OK: fehlender Schiffscluster S' artifacts/text250/selbsttest.log
+          node scripts/pruefe-text250-ergebnis.mjs \
+            --ergebnis artifacts/text250/selbsttest-ergebnis.json \
+            --pflicht scripts/text250-required-checks.json \
+            --profil selbsttest-cluster
           s_bild=$(find artifacts/text250/selbsttest -maxdepth 1 \
             -name 'selbsttest-360px-ship-cluster-*-abteilung-s-fehlt.png' \
             -size +0c -print -quit)
@@ -315,6 +394,7 @@ jobs:
           if ! node scripts/pruefe-text250.mjs --url http://127.0.0.1:3000 \
                --selbsttest-agent --bilder artifacts/text250/selbsttest \
                --bild-praefix selbsttest-agent \
+               --ergebnis artifacts/text250/selbsttest-agent-ergebnis.json \
                > artifacts/text250/selbsttest-agent.log 2>&1; then
             echo "--- Agent-Selbsttest fehlgeschlagen ---"
             cat artifacts/text250/selbsttest-agent.log
@@ -323,7 +403,10 @@ jobs:
             exit 1
           fi
           cat artifacts/text250/selbsttest-agent.log
-          grep -q 'Selbsttest OK: fehlender Agent in Cluster A' artifacts/text250/selbsttest-agent.log
+          node scripts/pruefe-text250-ergebnis.mjs \
+            --ergebnis artifacts/text250/selbsttest-agent-ergebnis.json \
+            --pflicht scripts/text250-required-checks.json \
+            --profil selbsttest-agent
           test -s artifacts/text250/selbsttest/selbsttest-agent-360px-ship-cluster-01-abteilung-a-hat-9-statt-10-agenten.png
           test -s artifacts/text250/selbsttest/selbsttest-agent-360px-ship.html
           test -s artifacts/text250/selbsttest/selbsttest-agent-text250-befunde.txt
@@ -398,6 +481,7 @@ jobs:
           if ! node scripts/pruefe-text250.mjs --url http://127.0.0.1:3100 \
                --ansichten lab,ship --breiten 360,320,280 --ohne-tabellen \
                --bilder artifacts/text250 --bild-praefix seed-tastatur \
+               --ergebnis artifacts/text250/seed-tastatur-ergebnis.json \
                > artifacts/text250/seed-tastatur.log 2>&1; then
             echo "--- Seed-Tastaturlauf fehlgeschlagen ---"
             cat artifacts/text250/seed-tastatur.log
@@ -405,37 +489,106 @@ jobs:
             exit 1
           fi
           cat artifacts/text250/seed-tastatur.log
-          if ! grep -q 'Tastatur 3× geprüft' artifacts/text250/seed-tastatur.log; then
-            echo "Seed-Tastaturlauf hat die Tastaturprüfung nicht ausgeführt"
-            exit 1
-          fi
-          if ! grep -q 'Inhalte 3× geprüft' artifacts/text250/seed-tastatur.log; then
-            echo "Seed-Tastaturlauf hat die Schiffscluster-Prüfung nicht ausgeführt"
-            exit 1
-          fi
-          if ! grep -q 'Agenten 3× geprüft' artifacts/text250/seed-tastatur.log; then
-            echo "Seed-Tastaturlauf hat die Agentenzahl und Agenten-IDs nicht geprüft"
-            exit 1
-          fi
-          if ! grep -q 'Legende 3× geprüft' artifacts/text250/seed-tastatur.log; then
-            echo "Seed-Tastaturlauf hat die Ops-Abteilungslegende nicht geprüft"
-            exit 1
-          fi
-          if ! grep -q 'Desktop-Legende 1× geprüft' artifacts/text250/seed-tastatur.log; then
-            echo "Seed-Tastaturlauf hat die Desktop-Abteilungslegende nicht geprüft"
-            exit 1
-          fi
-          if ! grep -q 'Schreibwege 3× geprüft' artifacts/text250/seed-tastatur.log; then
-            echo "Seed-Tastaturlauf hat die Company-Schreibwege nicht geprüft"
-            exit 1
-          fi
+          node scripts/pruefe-text250-ergebnis.mjs \
+            --ergebnis artifacts/text250/seed-tastatur-ergebnis.json \
+            --pflicht scripts/text250-required-checks.json \
+            --profil seed-tastatur
 
-      # Prüft den vollständigen Weg: Der Seed schreibt zwei gegenläufige
-      # Meldungen über den Nexus-Pfad, die Spider-Ansicht lädt den echten
-      # /api/nexus/status-Response und der Browser vergleicht ihn mit der
-      # gerenderten Widerspruchskarte. Die Seed-Datenbank ist eine Kopie.
-      - name: Widerspruch über API bis in die Karte prüfen
-        timeout-minutes: 3
+      # Kompakter Erfolgsnachweis: nur die beiden Protokolle des text250-Jobs,
+      # ohne Screenshots, HTML oder Serverlogs.
+      - name: Lauf- und Negativtest-Log bei Erfolg hochladen
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: text250-laufprotokoll
+          path: |
+            artifacts/text250/lauf.log
+            artifacts/text250/negativtest.log
+            artifacts/text250/ergebnis.json
+            artifacts/text250/*-ergebnis.json
+          if-no-files-found: error
+          retention-days: 7
+
+      # Auch bei Abbruch oder Timeout: Der Job gilt dann als abgebrochen.
+      - name: Screenshots, Befunde und HTML bei Fehlschlag hochladen
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v6
+        with:
+          name: text250-diagnose
+          path: |
+            artifacts/text250/*.png
+            artifacts/text250/*.html
+            artifacts/text250/*.txt
+            artifacts/text250/ergebnis.json
+            artifacts/text250/*-ergebnis.json
+            artifacts/text250/selbsttest/*.png
+            artifacts/text250/selbsttest/*.html
+            artifacts/text250/selbsttest/*.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Serverprotokoll bei Fehlschlag hochladen
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v6
+        with:
+          name: text250-serverlog
+          path: |
+            artifacts/text250/server.log
+            artifacts/text250/seed-tastatur-server.log
+            artifacts/text250/seed-tastatur.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Eigener Job mit stabilem Check-Namen. Er kann in der Branch-Regel
+  # «main: PR und gruene CI» als Required Check «Widerspruch-E2E 3/3»
+  # eingetragen werden, ohne vom text250-Job abhängig zu sein.
+  widerspruch_e2e:
+    name: Widerspruch-E2E 3/3
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Node einrichten
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: scripts/package-lock.json
+
+      - name: Python-Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Playwright-Browser cachen
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('scripts/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      - name: Playwright und Chromium installieren
+        timeout-minutes: 5
+        working-directory: scripts
+        run: |
+          npm ci
+          npx playwright install chromium
+
+      # Der Job nutzt eine eigene Seed-Kopie und einen eigenen Port. Damit
+      # bleibt der 3/3-Nachweis unabhängig vom text250-Lauf sichtbar.
+      - name: Widerspruch-E2E und Negativtest 3/3 ausführen
+        timeout-minutes: 4
         run: |
           set -euo pipefail
           mkdir -p artifacts/widerspruch-e2e
@@ -462,67 +615,56 @@ jobs:
           fi
 
           if ! node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300 \
+               --ergebnis artifacts/widerspruch-e2e/lauf.json \
                | tee artifacts/widerspruch-e2e/lauf.log; then
             echo "--- Widerspruch-E2E fehlgeschlagen ---"
             tail -50 artifacts/widerspruch-e2e/server.log
             exit 1
           fi
-          grep -q 'Widerspruch-E2E OK' artifacts/widerspruch-e2e/lauf.log
+          node scripts/pruefe-json-erwartung.mjs \
+            artifacts/widerspruch-e2e/lauf.json ok=true positiv.geprueft=1
 
           # Der Negativlauf verändert nur das DOM der Testseite und eine Kopie
           # der API-Antwort: einmal wird der Widerspruchsgrund verfälscht, einmal
           # die Detailzeile entfernt und einmal die Widerspruchszeile aus der
           # API-Kopie gelöscht. Alle drei Fälle müssen erkannt werden.
           if ! node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300 \
-               --negativtest | tee artifacts/widerspruch-e2e/negativtest.log; then
+               --negativtest --ergebnis artifacts/widerspruch-e2e/negativtest.json \
+               | tee artifacts/widerspruch-e2e/negativtest.log; then
             echo "--- Widerspruch-E2E-Negativtest fehlgeschlagen ---"
             tail -50 artifacts/widerspruch-e2e/server.log
             exit 1
           fi
-          grep -q 'Widerspruch-E2E-Negativtest OK: 3/3' \
-            artifacts/widerspruch-e2e/negativtest.log
+          node scripts/pruefe-json-erwartung.mjs \
+            artifacts/widerspruch-e2e/negativtest.json \
+            ok=true negativ.faelle=3 negativ.erkannt=3
+          echo "Widerspruch-E2E-Negativtest: 3/3 bestanden"
+          {
+            echo "### Widerspruch-E2E-Negativtest"
+            echo ""
+            echo "**3/3 bestanden:** falsche DOM-Zeile, fehlende DOM-Zeile "
+            echo "und fehlende API-Zeile wurden erkannt."
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      # Kompakter Erfolgsnachweis: nur die beiden Protokolle des text250-Jobs,
-      # ohne Screenshots, HTML oder Serverlogs.
-      - name: Lauf- und Negativtest-Log bei Erfolg hochladen
+      - name: Erfolgsartefakt Widerspruch-E2E 3/3 hochladen
         if: success()
         uses: actions/upload-artifact@v6
         with:
-          name: text250-laufprotokoll
+          name: widerspruch-e2e-3-3-erfolg
           path: |
-            artifacts/text250/lauf.log
-            artifacts/text250/negativtest.log
+            artifacts/widerspruch-e2e/lauf.log
+            artifacts/widerspruch-e2e/negativtest.log
+            artifacts/widerspruch-e2e/lauf.json
+            artifacts/widerspruch-e2e/negativtest.json
           if-no-files-found: error
           retention-days: 7
 
-      # Auch bei Abbruch oder Timeout: Der Job gilt dann als abgebrochen.
-      - name: Screenshots, Befunde und HTML bei Fehlschlag hochladen
+      - name: Diagnose Widerspruch-E2E 3/3 bei Fehlschlag hochladen
         if: failure() || cancelled()
         uses: actions/upload-artifact@v6
         with:
-          name: text250-diagnose
-          path: |
-            artifacts/text250/*.png
-            artifacts/text250/*.html
-            artifacts/text250/*.txt
-            artifacts/text250/selbsttest/*.png
-            artifacts/text250/selbsttest/*.html
-            artifacts/text250/selbsttest/*.txt
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Serverprotokoll bei Fehlschlag hochladen
-        if: failure() || cancelled()
-        uses: actions/upload-artifact@v6
-        with:
-          name: text250-serverlog
-          path: |
-            artifacts/text250/server.log
-            artifacts/text250/seed-tastatur-server.log
-            artifacts/text250/seed-tastatur.log
-            artifacts/widerspruch-e2e/server.log
-            artifacts/widerspruch-e2e/lauf.log
-            artifacts/widerspruch-e2e/negativtest.log
+          name: widerspruch-e2e-3-3-diagnose
+          path: artifacts/widerspruch-e2e/*
           if-no-files-found: ignore
           retention-days: 7
 
@@ -600,7 +742,8 @@ jobs:
           fi
 
           if ! node scripts/pruefe-touch.mjs --url http://127.0.0.1:3200 \
-               --bilder artifacts/touch > artifacts/touch/touch.log 2>&1; then
+               --bilder artifacts/touch --ergebnis artifacts/touch/touch.json \
+               > artifacts/touch/touch.log 2>&1; then
             echo "--- Touch-Test fehlgeschlagen ---"
             cat artifacts/touch/touch.log
             echo "--- Serverprotokoll ---"
@@ -608,10 +751,9 @@ jobs:
             exit 1
           fi
           cat artifacts/touch/touch.log
-          if ! grep -q 'Touch OK:' artifacts/touch/touch.log; then
-            echo "Touch-Test hat keine Erfolgsmeldung erzeugt"
-            exit 1
-          fi
+          node scripts/pruefe-json-erwartung.mjs artifacts/touch/touch.json \
+            ok=true fehler=0 pan=true pinch=true tippen=true legende=true \
+            filter=true fit390=true fit320=true viewports=6
 
       - name: Touch-Artefakte bei Fehlschlag hochladen
         if: failure() || cancelled()
@@ -621,3 +763,87 @@ jobs:
           path: artifacts/touch/*
           if-no-files-found: ignore
           retention-days: 7
+
+  # Qualitätstor aus Bereich 6.4: blinde Fänge (BLE001), stille
+  # Fehlerschlucker (S110) und die Sicherheitsregeln aus flake8-bandit (S).
+  # Die Regeln und die Schuldenliste des Altbestands stehen in ruff.toml;
+  # orakel/kern/, alle Tests und jedes neue Modul sind nicht ausgenommen.
+  ruff:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Lint-Regeln prüfen
+        run: python -m ruff check . --output-format=github
+
+  # Typprüfung des Handelskerns nach mypy.ini: paper, risk, backtest und judge
+  # samt der von ihnen importierten Kernmodule. Web, Agenten und Nexus bleiben
+  # bewusst aussen vor.
+  mypy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Handelskern typisieren
+        run: python -m mypy
+
+  # Untergrenze für die vier Module, die über Geld und Urteil entscheiden.
+  # Der Stand bei Einführung liegt bei 89 %; die Grenze von 85 % lässt kleinen
+  # Umbauten Luft, meldet aber jedes Absinken. Die Tests bleiben unverändert.
+  coverage:
+    name: Coverage Handelskern
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Coverage der vier Kernmodule messen
+        run: |
+          python -m pytest -q \
+            --cov=orakel.kern.paper --cov=orakel.kern.risk \
+            --cov=orakel.kern.backtest --cov=orakel.kern.judge \
+            --cov-report=term-missing --cov-fail-under=85

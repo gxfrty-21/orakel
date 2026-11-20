@@ -1,0 +1,301 @@
+{
+  "schema": "review-paket-freigabe.v1",
+  "beschreibung": "Freigegebene Pfade für das Review-Paket. Nur diese Einträge nimmt scripts/baue_review_paket.py auf; alles andere lehnt der Builder ab.",
+  "quellen": [
+    {
+      "quelle": "AGENTS.md",
+      "ziel": "dateien/AGENTS.md"
+    },
+    {
+      "quelle": "README.md",
+      "ziel": "dateien/README.md"
+    },
+    {
+      "quelle": ".github/workflows/tests.yml",
+      "ziel": "dateien/ci-tests.yml"
+    },
+    {
+      "quelle": "orakel/agents.py",
+      "ziel": "dateien/code/agents.py"
+    },
+    {
+      "quelle": "orakel/betrieb.py",
+      "ziel": "dateien/code/betrieb.py"
+    },
+    {
+      "quelle": "orakel/company/__init__.py",
+      "ziel": "dateien/code/company/__init__.py"
+    },
+    {
+      "quelle": "orakel/company/api.py",
+      "ziel": "dateien/code/company/api.py"
+    },
+    {
+      "quelle": "orakel/company/handlers.py",
+      "ziel": "dateien/code/company/handlers.py"
+    },
+    {
+      "quelle": "orakel/company/memory.py",
+      "ziel": "dateien/code/company/memory.py"
+    },
+    {
+      "quelle": "orakel/company/messaging.py",
+      "ziel": "dateien/code/company/messaging.py"
+    },
+    {
+      "quelle": "orakel/company/policy.py",
+      "ziel": "dateien/code/company/policy.py"
+    },
+    {
+      "quelle": "orakel/company/roster.py",
+      "ziel": "dateien/code/company/roster.py"
+    },
+    {
+      "quelle": "orakel/company/runtime.py",
+      "ziel": "dateien/code/company/runtime.py"
+    },
+    {
+      "quelle": "orakel/company/store.py",
+      "ziel": "dateien/code/company/store.py"
+    },
+    {
+      "quelle": "orakel/config.py",
+      "ziel": "dateien/code/config.py"
+    },
+    {
+      "quelle": "orakel/kern/db.py",
+      "ziel": "dateien/code/db.py"
+    },
+    {
+      "quelle": "orakel/nexus/__init__.py",
+      "ziel": "dateien/code/nexus/__init__.py"
+    },
+    {
+      "quelle": "orakel/nexus/__main__.py",
+      "ziel": "dateien/code/nexus/__main__.py"
+    },
+    {
+      "quelle": "orakel/nexus/abruf.py",
+      "ziel": "dateien/code/nexus/abruf.py"
+    },
+    {
+      "quelle": "orakel/nexus/bewertung.py",
+      "ziel": "dateien/code/nexus/bewertung.py"
+    },
+    {
+      "quelle": "orakel/nexus/dedup.py",
+      "ziel": "dateien/code/nexus/dedup.py"
+    },
+    {
+      "quelle": "orakel/nexus/feeds.py",
+      "ziel": "dateien/code/nexus/feeds.py"
+    },
+    {
+      "quelle": "orakel/nexus/gegenargument.py",
+      "ziel": "dateien/code/nexus/gegenargument.py"
+    },
+    {
+      "quelle": "orakel/nexus/graph.py",
+      "ziel": "dateien/code/nexus/graph.py"
+    },
+    {
+      "quelle": "orakel/nexus/hackernews.py",
+      "ziel": "dateien/code/nexus/hackernews.py"
+    },
+    {
+      "quelle": "orakel/nexus/kalibrierung.py",
+      "ziel": "dateien/code/nexus/kalibrierung.py"
+    },
+    {
+      "quelle": "orakel/nexus/missionen.py",
+      "ziel": "dateien/code/nexus/missionen.py"
+    },
+    {
+      "quelle": "orakel/nexus/nacht.py",
+      "ziel": "dateien/code/nexus/nacht.py"
+    },
+    {
+      "quelle": "orakel/nexus/quellen.py",
+      "ziel": "dateien/code/nexus/quellen.py"
+    },
+    {
+      "quelle": "orakel/nexus/raum.py",
+      "ziel": "dateien/code/nexus/raum.py"
+    },
+    {
+      "quelle": "orakel/nexus/register.toml",
+      "ziel": "dateien/code/nexus/register.toml"
+    },
+    {
+      "quelle": "orakel/nexus/rollen.py",
+      "ziel": "dateien/code/nexus/rollen.py"
+    },
+    {
+      "quelle": "orakel/nexus/speicher.py",
+      "ziel": "dateien/code/nexus/speicher.py"
+    },
+    {
+      "quelle": "orakel/nexus/sprache.py",
+      "ziel": "dateien/code/nexus/sprache.py"
+    },
+    {
+      "quelle": "orakel/nexus/status.py",
+      "ziel": "dateien/code/nexus/status.py"
+    },
+    {
+      "quelle": "orakel/kern/paper.py",
+      "ziel": "dateien/code/paper.py"
+    },
+    {
+      "quelle": "orakel/web.py",
+      "ziel": "dateien/code/web.py"
+    },
+    {
+      "quelle": "docs/raumschiff/AGENTEN.md",
+      "ziel": "dateien/docs/raumschiff/AGENTEN.md"
+    },
+    {
+      "quelle": "docs/raumschiff/IPHONE-SAFARI-CHECKLISTE.md",
+      "ziel": "dateien/docs/raumschiff/IPHONE-SAFARI-CHECKLISTE.md"
+    },
+    {
+      "quelle": "docs/raumschiff/README.md",
+      "ziel": "dateien/docs/raumschiff/README.md"
+    },
+    {
+      "quelle": "docs/raumschiff/TOUCH-EMULATION.md",
+      "ziel": "dateien/docs/raumschiff/TOUCH-EMULATION.md"
+    },
+    {
+      "quelle": "docs/spider/NACHTBETRIEB.md",
+      "ziel": "dateien/docs/spider/NACHTBETRIEB.md"
+    },
+    {
+      "quelle": "docs/spider/PHASE-3.md",
+      "ziel": "dateien/docs/spider/PHASE-3.md"
+    },
+    {
+      "quelle": "docs/spider/PHASE-8.md",
+      "ziel": "dateien/docs/spider/PHASE-8.md"
+    },
+    {
+      "quelle": "docs/spider/SOAK-ABNAHME.md",
+      "ziel": "dateien/docs/spider/SOAK-ABNAHME.md"
+    },
+    {
+      "quelle": "requirements-dev.txt",
+      "ziel": "dateien/requirements-dev.txt"
+    },
+    {
+      "quelle": "requirements.txt",
+      "ziel": "dateien/requirements.txt"
+    },
+    {
+      "quelle": "scripts/backoff_fehlerfall.py",
+      "ziel": "dateien/scripts/backoff_fehlerfall.py"
+    },
+    {
+      "quelle": "scripts/nexus_claim_baseline.py",
+      "ziel": "dateien/scripts/nexus_claim_baseline.py"
+    },
+    {
+      "quelle": "scripts/pruefe-text250.mjs",
+      "ziel": "dateien/scripts/pruefe-text250.mjs"
+    },
+    {
+      "quelle": "scripts/pruefe-widerspruch-e2e.mjs",
+      "ziel": "dateien/scripts/pruefe-widerspruch-e2e.mjs"
+    },
+    {
+      "quelle": "scripts/setup-playwright-local.sh",
+      "ziel": "dateien/scripts/setup-playwright-local.sh"
+    },
+    {
+      "quelle": "scripts/soak_abnahme.py",
+      "ziel": "dateien/scripts/soak_abnahme.py"
+    },
+    {
+      "quelle": "scripts/soak_auto_abnahme.py",
+      "ziel": "dateien/scripts/soak_auto_abnahme.py"
+    },
+    {
+      "quelle": "scripts/soak_monitor.py",
+      "ziel": "dateien/scripts/soak_monitor.py"
+    },
+    {
+      "quelle": "scripts/soak_probe.py",
+      "ziel": "dateien/scripts/soak_probe.py"
+    },
+    {
+      "quelle": "tests/fixtures/nexus_claim_korpus.json",
+      "ziel": "dateien/tests/fixtures/nexus_claim_korpus.json"
+    },
+    {
+      "quelle": "tests/fixtures/nexus_pp_fremdwoerter_rss.json",
+      "ziel": "dateien/tests/fixtures/nexus_pp_fremdwoerter_rss.json"
+    },
+    {
+      "quelle": "tests/fixtures/nexus_pp_probe_korpus.json",
+      "ziel": "dateien/tests/fixtures/nexus_pp_probe_korpus.json"
+    },
+    {
+      "quelle": "orakel/web/static/app.js",
+      "ziel": "dateien/web/static/app.js"
+    },
+    {
+      "quelle": "orakel/web/static/globe2d.js",
+      "ziel": "dateien/web/static/globe2d.js"
+    },
+    {
+      "quelle": "orakel/web/static/index.html",
+      "ziel": "dateien/web/static/index.html"
+    },
+    {
+      "quelle": "orakel/web/static/ship-gross.js",
+      "ziel": "dateien/web/static/ship-gross.js"
+    },
+    {
+      "quelle": "orakel/web/static/style.css",
+      "ziel": "dateien/web/static/style.css"
+    },
+    {
+      "quelle": "orakel/web/static/vaultgraph.js",
+      "ziel": "dateien/web/static/vaultgraph.js"
+    }
+  ],
+  "dokumente": [
+    "DELTA-CHANGELOG.md",
+    "EVIDENZ.json",
+    "EVIDENZ.md",
+    "ORAKEL-REVIEW-PAKET.md",
+    "QUELLEN-DECKUNG.md",
+    "QUICKSTART.md"
+  ],
+  "belege": [
+    "belege/240px-kernaussagen-karte.png",
+    "belege/240px-test.log",
+    "belege/280px-langhost-quellenzeile.png",
+    "belege/320px-langhost-quellenzeile-ohne-punkt.png",
+    "belege/evidenz-240-360.log",
+    "belege/evidenz-360-lab.log",
+    "belege/evidenz-baseline.log",
+    "belege/evidenz-doku.log",
+    "belege/evidenz-pp-probe.log",
+    "belege/evidenz-pytest.log",
+    "belege/evidenz-text250-2026-11-17.log",
+    "belege/text250-ci-0481025-lauf.log",
+    "belege/text250-ci-0481025-negativtest.log"
+  ],
+  "gruppen": [
+    {
+      "name": "orakel/nexus",
+      "praefix": "dateien/code/nexus/",
+      "zweck": "Claim-Erkennung, pp-Metriken, Widerspruchslogik, Feed- und Nachtbetrieb; Import in scripts/nexus_claim_baseline.py"
+    },
+    {
+      "name": "orakel/web/static",
+      "praefix": "dateien/web/static/",
+      "zweck": "Dashboard, Tooltip, Tastaturbedienung, Lab-Fokus und 240/360-Layout"
+    }
+  ]
+}

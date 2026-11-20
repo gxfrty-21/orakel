@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tomllib
 from dataclasses import dataclass
+import math
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +66,87 @@ def _umgebung(daten: dict[str, Any]) -> dict[str, Any]:
     return daten
 
 
+def _zahl(daten: dict[str, Any], abschnitt: str, schluessel: str, *,
+          minimum: float | None = None, maximum: float | None = None,
+          ganzzahl: bool = False, standard: float | None = None) -> float:
+    """Liest eine Zahl und prüft Typ und Wertebereich.
+
+    Fehlt der Schlüssel, wird ``standard`` verwendet (nur für optionale Werte).
+    """
+    werte = daten.get(abschnitt) or {}
+    if schluessel not in werte:
+        if standard is None:
+            raise ValueError(f'config.toml: [{abschnitt}] {schluessel} fehlt')
+        return standard
+    wert = werte[schluessel]
+    if isinstance(wert, bool) or not isinstance(wert, (int, float)):
+        raise ValueError(f'config.toml: [{abschnitt}] {schluessel} muss eine Zahl sein, '
+                         f'ist aber {wert!r}')
+    if ganzzahl:
+        if int(wert) != wert:
+            raise ValueError(f'config.toml: [{abschnitt}] {schluessel} muss eine Ganzzahl sein, '
+                             f'ist aber {wert!r}')
+    zahl = float(wert)
+    if not math.isfinite(zahl):
+        raise ValueError(f'config.toml: [{abschnitt}] {schluessel} muss endlich sein')
+    if minimum is not None and zahl < minimum:
+        raise ValueError(f'config.toml: [{abschnitt}] {schluessel} muss >= {minimum} sein, '
+                         f'ist aber {zahl}')
+    if maximum is not None and zahl > maximum:
+        raise ValueError(f'config.toml: [{abschnitt}] {schluessel} muss <= {maximum} sein, '
+                         f'ist aber {zahl}')
+    return zahl
+
+
+def validiere_config(daten: dict[str, Any]) -> None:
+    """Lehnt unbrauchbare Konfigurationen beim Laden ab.
+
+    Die Grenzen sind bewusst dieselben, die der Paper-Takt und der Backtest
+    voraussetzen. Negative Kosten, Null-Risikogrenzen oder ein Kapital von null
+    dürfen nicht erst im laufenden Takt auffallen.
+    """
+    basis = daten.get('basis') or {}
+    kapital = _zahl(daten, 'basis', 'start_kapital', minimum=0.000001)
+    if not isinstance(basis.get('db_pfad'), str) or not basis['db_pfad'].strip():
+        raise ValueError('config.toml: [basis] db_pfad muss ein nicht-leerer Pfad sein')
+    _zahl(daten, 'basis', 'bars_pro_jahr', minimum=1, ganzzahl=True, standard=24960)
+
+    _zahl(daten, 'risiko', 'risk_per_trade_pct', minimum=0.000001, maximum=100.0)
+    _zahl(daten, 'risiko', 'max_drawdown_pct', minimum=0.000001, maximum=100.0)
+    _zahl(daten, 'risiko', 'max_open_positions', minimum=1, ganzzahl=True)
+    _zahl(daten, 'risiko', 'max_daily_loss_pct', minimum=0.000001, maximum=100.0)
+    _zahl(daten, 'risiko', 'max_gross_exposure_pct', minimum=0.000001, maximum=1000.0)
+    _zahl(daten, 'risiko', 'max_position_pct', minimum=0.000001, maximum=100.0)
+    _zahl(daten, 'risiko', 'min_cash_pct', minimum=0.0, maximum=99.999999)
+    risiko = daten.get('risiko') or {}
+    if not any(k in risiko for k in ('max_korrelation', 'max_correlation')):
+        raise ValueError('config.toml: [risiko] max_korrelation fehlt')
+    for schluessel in ('max_korrelation', 'max_correlation'):
+        if schluessel in risiko:
+            _zahl(daten, 'risiko', schluessel, minimum=0.0, maximum=1.0)
+    _zahl(daten, 'risiko', 'correlation_lookback', minimum=2, ganzzahl=True)
+    _zahl(daten, 'risiko', 'atr_stop_multiple', minimum=0.000001)
+    _zahl(daten, 'risiko', 'risiko_stopp_freigabe_takte', minimum=1, ganzzahl=True,
+          standard=2.0)
+
+    _zahl(daten, 'kosten', 'commission_per_share', minimum=0.0)
+    _zahl(daten, 'kosten', 'min_commission', minimum=0.0)
+    _zahl(daten, 'kosten', 'slippage_bps', minimum=0.0, maximum=9999.999999)
+
+    if 'daten' in daten:
+        _zahl(daten, 'daten', 'min_kerzen', minimum=1, ganzzahl=True, standard=1.0)
+        _zahl(daten, 'daten', 'max_luecke_pct', minimum=0.0, maximum=100.0, standard=5.0)
+        _zahl(daten, 'daten', 'max_sprung_pct', minimum=0.0, standard=25.0)
+        _zahl(daten, 'daten', 'max_alter_tage', minimum=0.000001, standard=5.0)
+        for schluessel in ('max_kurs_alter_stunden', 'max_kurs_alter_stunden_m1',
+                           'max_kurs_alter_stunden_m5', 'max_kurs_alter_stunden_m15',
+                           'max_kurs_alter_stunden_h1'):
+            if schluessel in (daten.get('daten') or {}):
+                _zahl(daten, 'daten', schluessel, minimum=0.000001)
+    if kapital <= 0:  # pragma: no cover - von _zahl bereits abgelehnt
+        raise ValueError('config.toml: [basis] start_kapital muss positiv sein')
+
+
 def load_config(pfad: str | Path = STANDARD_PFAD) -> Config:
     p = Path(pfad)
     if not p.exists():
@@ -72,9 +154,10 @@ def load_config(pfad: str | Path = STANDARD_PFAD) -> Config:
     with p.open("rb") as fh:
         daten = tomllib.load(fh)
     daten = _umgebung(daten)
-    for pflicht in ("basis", "risiko", "kosten", "daten", "validierung", "research"):
+    for pflicht in ("basis", "risiko", "kosten", "validierung", "research"):
         if pflicht not in daten:
             raise ValueError(f"config.toml: Abschnitt [{pflicht}] fehlt")
+    validiere_config(daten)
     return Config(daten, p)
 
 

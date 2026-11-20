@@ -13,6 +13,10 @@ Broker-Order. `[paper] order_freigabe` bleibt als harte Policy-Sperre auf
 **Raumschiff-Doku:** [docs/raumschiff/README.md](docs/raumschiff/README.md)
 — Planung und aktueller 2D-Agenten-Querschnitt (103 Räume, elf Abteilungen, Zoom/Pan, Detailspalte).
 
+**Architektur:** [docs/ARCHITEKTUR-KERN.md](docs/ARCHITEKTUR-KERN.md)
+— Grenze zwischen Handelskern (`orakel/kern/`) und Oberfläche, Prüfung in der
+CI und Feature-Stopp für Agenten und Raumschiff.
+
 ## Schnellstart
 
 ```bash
@@ -34,6 +38,46 @@ python -m venv .venv
 .venv/bin/python -m orakel unternehmen --status
 .venv/bin/python -m orakel unternehmen
 ```
+
+### Lange Läufe
+
+«Lauf starten» blockiert nicht mehr. `POST /api/lauf` legt nur einen Auftrag an
+und antwortet sofort mit `202` und `{"id": …}`; der Hintergrund-Loop (der
+Takt-Scheduler aus `orakel/scheduler.py`) führt ihn aus. `GET /api/lauf/{id}` liefert `status` (`offen`, `aktiv`, `fertig`,
+`fehler`) sowie bei Erfolg die Zusammenfassung aus Dauer, Validierungen, Plan
+und Fehlern. Das Dashboard fragt alle zwei Sekunden nach und lädt den Bericht
+erst danach neu.
+
+Solange ein Auftrag offen oder aktiv ist, legt ein weiteres `POST /api/lauf`
+keinen zweiten an: Die Antwort ist `409` mit `{"id": …}` des laufenden Laufs
+und seinem `status`. Mehrfaches Klicken reiht deshalb keine Backtests
+hintereinander ein; das Dashboard hängt sich an die bestehende ID und wartet
+auf deren Ergebnis. Erst nach `fertig` oder `fehler` startet ein neuer Klick
+einen neuen Auftrag.
+
+Bleibt ein Auftrag nach einem Absturz auf `aktiv` stehen, setzt ihn der
+Hintergrund-Loop beim nächsten Start wieder auf `offen` (`zuruecksetzen` in
+`orakel/lauf_queue.py`): Beim Start hält kein Prozess mehr einen Auftrag, der
+Rest kann also gefahrlos erneut laufen. `gestartet` wird geleert, ein Ereignis
+protokolliert jeden Reset; erst danach beginnt die Schleife. Ein Auftrag, der
+einen Absturz auslöst, läuft beim nächsten Start deshalb erneut. Hängt ein
+Auftrag dagegen im laufenden Betrieb länger als 60 Minuten (`HAENGE_GRENZE`),
+verbucht ihn die Schleife als `fehler`; der Fehlertext nennt die Grenze.
+Danach ist die Warteschlange in beiden Fällen wieder frei für einen neuen
+Start.
+
+Ein Auftrag, der den Prozess beim Laufen mitnimmt, würde sonst bei jedem Start
+wieder laufen. Jeder Startversuch zählt (`versuche`, Migration
+`0005_laeufe_versuche.sql`); nach drei Versuchen (`MAX_VERSUCHE`) verbucht der
+Start ihn als `fehler` mit Hinweis auf die Absturzschleife. Unterhalb der
+Grenze wird er wie bisher wieder auf `offen` gesetzt.
+
+Abgeschlossene Aufträge (`fertig`, `fehler`) bleiben 30 Tage (`AUFBEWAHRUNG`)
+und werden dann gelöscht; die Aufbewahrung läuft beim Start und im
+Dauerbetrieb höchstens stündlich (`AUFBEWAHRUNG_TAKT`). Offene und laufende
+Aufträge bleiben unberührt, ebenso Einträge ohne Endzeit. Die Frist hängt an
+`beendet`, nicht an `erstellt` — ein langer Lauf behält seine Frist nach dem
+Ende.
 
 Die Company-Schicht ist additiv und standardmäßig **nicht** in den laufenden
 Paper-Takt eingebunden (`[unternehmen] aktiv = false`). Sie enthält noch keine
@@ -98,10 +142,25 @@ quittungspflichtig und werden über eigene
 `message_reminder`-Audit-Events genau einmal gezählt. Sie laufen im Company-Lauf
 und im Hintergrund-Takt; ein Lauf ohne offene Quittungen schreibt nichts.
 
+### Fehlerantworten
+
+Jede Fehlerantwort trägt `ok: false`, einen Text in `fehler` und einen stabilen
+`code`. Eingabefehler (`eingabe`) nennen den Grund im Klartext, weil der Text
+bewusst formuliert ist. Interne Fehler (`interner_fehler`) zeigen nur eine
+Fehler-ID im Text; der vollständige Ausnahmetext – samt Pfaden, SQL oder
+Konfigurationswerten – bleibt im Log und lässt sich über die ID dort
+wiederfinden. Clients prüfen deshalb `code`, nicht den Text.
+
 ## Dauerbetrieb mit Login und HTTPS
 
 Fertige Docker-Konfiguration mit Caddy (automatisches TLS), HTTP-Basic-Login und
 persistentem SQLite-Speicher im `/data`-Volume: siehe [DEPLOY.md](DEPLOY.md).
+
+Der Container bindet `0.0.0.0`; `ORAKEL_AUTH_USER` und `ORAKEL_AUTH_PASS`
+sind deshalb **Pflicht**. Fehlen sie, bricht der Start mit
+`Start abgebrochen: Binde 0.0.0.0 ohne Login …` ab. Ohne Login läuft der
+Server nur lokal: `python -m orakel serve` (Standard `127.0.0.1`) oder
+bewusst mit `ORAKEL_ALLOW_NO_AUTH=1`.
 
 Für Railway ohne eigenen Server, Caddy oder eigene Domain: siehe
 [RAILWAY.md](RAILWAY.md).
@@ -113,6 +172,12 @@ Der Hintergrund-Takt ist bewusst **opt-in** (`serve --takt` oder
 sechs Stunden), Intelligence, Missionen und optional die Company-Schicht. Im
 laufenden Takt werden zusätzlich offene Quittungen nach Frist erinnert
 (`[unternehmen] erinnerungen_intervall_minuten`).
+
+Takt und Lauf-Warteschlange teilen sich denselben Thread (`Takt` in
+`orakel/scheduler.py`): Je Runde läuft erst der Betriebstakt, dann genau ein
+Auftrag aus der Warteschlange. Ohne `--takt` läuft derselbe Loop im
+Sekundentakt nur für die Warteschlange, damit ein gestarteter Lauf auch ohne
+Dauerbetrieb abgearbeitet wird.
 Fehler erhalten einen persistenten exponentiellen Backoff; DB-, RSS- und
 Speichergrenzen pausieren schreibintensive Jobs, statt den Prozess volllaufen
 zu lassen. Jeder Lauf wird in `betrieb_laeufe` protokolliert.
@@ -154,7 +219,7 @@ der erzeugte Rohbericht liegt nach dem Lauf unter
 | Dashboard | Orakel-Design, 12 Ansichten, Live-Polling, 2D-Agenten-Querschnitt, «Lauf starten» |
 | Dauerbetrieb | persistenter Plan, Backoff, Ressourcenlimits, Jobprotokoll und Betriebsansicht |
 
-Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswahl einmal geöffnet; scheitert er, gibt es keinen Ersatzkandidaten. Im Lab zeigt ein Chart die aggregierte Kapitalkurve der Testfenster; beim Überfahren nennt ein Tooltip Kapitalstand, Veränderung seit dem Start in Prozent, Datum sowie den bisherigen Höchststand mit Abstand in Prozent; per Tastatur (Tab, Pfeiltasten, Home/Ende) ist dieselbe Anzeige erreichbar. dort und in der Strategien-Ansicht lässt sich zudem bei jedem Kandidaten die Liste der Walk-Forward-Fenster aufklappen: Trainings- und Testblock, gewählter Parameter, Trades, Profit Factor und Netto je Fenster.
+Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswahl einmal geöffnet; scheitert er, gibt es keinen Ersatzkandidaten. Im Lab zeigt ein Chart die aggregierte Kapitalkurve der Testfenster; beim Überfahren nennt ein Tooltip Kapitalstand, Veränderung seit dem Start in Prozent, Datum sowie den bisherigen Höchststand mit Abstand in Prozent; per Tastatur (Tab, Pfeiltasten, Home/Ende) ist dieselbe Anzeige erreichbar. Solange der Tastaturfokus im sichtbaren Lab-Detail liegt, pausiert der Auto-Refresh nur den Ansichts-Render, damit die Anzeige beim Ablesen nicht neu aufgebaut wird; Daten und Kopfzeile werden weiter aktualisiert. Ein Fokus auf der Lab-Liste oder einem anderen Lab-Element blockiert den Render nicht; ein ausgeblendetes Lab ebenfalls nicht. Dort und in der Strategien-Ansicht lässt sich zudem bei jedem Kandidaten die Liste der Walk-Forward-Fenster aufklappen: Trainings- und Testblock, gewählter Parameter, Trades, Profit Factor und Netto je Fenster.
 
 ## Risikogrenzen (deine Vorgaben)
 
@@ -207,6 +272,15 @@ tests/           Risiko, Backtest, Daten, Bericht
 - Der Richter ist fest verdrahtet; keine KI ändert seine Regeln.
 - Jede Zahl im Dashboard stammt aus SQLite — nichts wird geschätzt oder erfunden.
 
+## Qualitätstor
+
+Drei eigene CI-Jobs prüfen den Code: `ruff` (blinde Fänge `BLE001`, stille
+Fehlerschlucker `S110`, Sicherheitsregeln `S`), `mypy` für den Handelskern
+(`paper`, `risk`, `backtest`, `judge`) und `Coverage Handelskern` mit einer
+Untergrenze von 85 % für dieselben vier Module. Regeln, Ausnahmen für den
+Altbestand und die lokalen Befehle stehen in
+[docs/QUALITAET.md](docs/QUALITAET.md).
+
 ## Doku-Prüfung
 
 `python scripts/pruefe_doku.py` prüft die versionierten Markdown-Dateien auf
@@ -226,7 +300,18 @@ damaligen Raumnamen dokumentieren. `--negativtest` erzeugt absichtlich einen
 kaputten Link, vier falsche Anker, mehrere alte Deck- und Navigationsangaben
 sowie neun englische Altnamen; alles muss erkannt werden. Der eigene CI-Job
 `doku` führt beide Läufe aus, sobald Markdown-Dateien oder das Prüfskript
-geändert wurden; andernfalls wird er übersprungen.
+geändert wurden; andernfalls wird er übersprungen. Zusätzlich verlangt der
+Lauf, dass `README.md` die Schutz-Dokumentation
+[docs/pr-schutz.md](docs/pr-schutz.md) verlinkt; sonst schlägt er fehl, damit
+die Datei nicht unbemerkt verwaist.
+
+### Schutz von `main`
+
+`main` ist durch ein Repository-Ruleset geschützt: Änderungen laufen
+ausschliesslich über Pull Requests, und sechs Required Checks müssen grün sein.
+Die aktuelle Liste der Checks, das Skip-Verhalten der Doku-Prüfung und die
+Bypass-Regeln stehen in [docs/pr-schutz.md](docs/pr-schutz.md); diese Datei ist
+der verbindliche Stand und wird bei Änderungen am Ruleset mitgepflegt.
 
 ### Lokaler Pre-Commit-Hook
 
@@ -295,25 +380,30 @@ node scripts/pruefe-widerspruch-e2e.mjs --url http://127.0.0.1:3300 --negativtes
 Der Negativtest verändert keine Datenbank und keine echte API-Antwort. Er prüft,
 dass derselbe Kartenprüfer eine falsche Widerspruchszeile und eine fehlende
 Widerspruchszeile zuverlässig ablehnt und dass der API-Prüfer eine aus der
-API-Antwort entfernte Widerspruchszeile erkennt. Der CI-Job `text250` führt den
-positiven Test und den Negativtest auf einer frischen Seed-Kopie aus. Das
-Seed-Skript verweigert eine fehlende Zieldatenbank, damit es nicht versehentlich
-eine neue Produktionsdatenbank anlegt.
+API-Antwort entfernte Widerspruchszeile erkennt. Der eigene CI-Job
+`Widerspruch-E2E 3/3` führt den positiven Test und den Negativtest auf einer
+frischen Seed-Kopie aus. Sein stabiler Check-Name ist `Widerspruch-E2E 3/3`;
+bei Erfolg lädt er `lauf.log` und `negativtest.log` als Artefakt
+`widerspruch-e2e-3-3-erfolg` hoch; zusätzlich erscheint
+`Widerspruch-E2E-Negativtest: 3/3 bestanden` im Job-Log und in der
+Job-Zusammenfassung. Das Seed-Skript verweigert eine fehlende
+Zieldatenbank, damit es nicht versehentlich eine neue Produktionsdatenbank
+anlegt.
 
 ## Browser-Prüfung bei grosser Schrift
 
 `scripts/pruefe-text250.mjs` skaliert die Schrift im Dashboard auf 250 %
-(Faktor 2,5 auf berechnete Schriftgrössen und Zeilenhöhen). Bei 360, 320 und
-280 px prüft es, ob Inhalte seitlich aus ihrem Kasten oder aus dem Viewport
-laufen. Die Kernaussagen-Karte und die Kopf- und Navigationsleiste werden
-zusätzlich bei 240 px in normaler Darstellung geprüft. Die vier KPI-Kacheln
+(Faktor 2,5 auf berechnete Schriftgrössen und Zeilenhöhen). Der 250-%-Lauf
+prüft ausschliesslich 360, 320 und 280 px und misst dort, ob Inhalte seitlich
+aus ihrem Kasten oder aus dem Viewport laufen. Davon getrennt prüft der Lauf
+alle zwölf Ansichten bei 240 px ausschliesslich in normaler Schrift sowie die
+Kernaussagen-Karte und die Kopf- und Navigationsleiste. Die vier KPI-Kacheln
 und das Claim-Grid wechseln auf eine Spalte, die Quellenzeile bleibt im
 Panel. Kopf und Navigation brechen kompakt um; die Seite scrollt dort nicht
-horizontal. **240 px ist für die geprüfte Spider-Seite in normaler
-Darstellung unterstützt, aber keine allgemeine Mindestbreite aller Ansichten
-und nicht für den vollen 250-%-Lauf zugesagt.** Der separate 250-%-Lauf bei
-240 px scheitert an Panel-Kopf und KPI-Beschriftung; 260/270 px haben
-ebenfalls Befunde. Die kleinste geprüfte Breite mit vollständigem 250-%-Lauf ist 280 px.
+horizontal. **240 px wird ausschliesslich in normaler Schrift geprüft; der
+12/12-Nachweis gilt nur dafür. Der 250-%-Lauf läuft ausschliesslich bei 360,
+320 und 280 px. Ein voller 250-%-Lauf bei 240 px ist nicht Teil der Zusage.
+240 px ist die untere geprüfte Breite, darunter gibt es keine Layoutzusage.**
 
 Die 240-px-Prüfung misst alle zwölf Ansichten in normaler Schrift bei
 240 × 900 px. Jede Zeile prüft Seiten-, Kopf- und Navigationsbreite:
@@ -333,8 +423,47 @@ Die 240-px-Prüfung misst alle zwölf Ansichten in normaler Schrift bei
 | Agentenraum | 240 px | OK |
 | Konferenz | 240 px | OK |
 
-Der CI-Schritt verlangt dafür die Zusammenfassung
-`240px: 12/12 Ansichten ohne horizontalen Überlauf`.
+Der erfolgreiche [text250-CI-Lauf](https://github.com/gxfrty-21/orakel/actions/runs/43811966526/job/133115401944)
+bestätigt diesen 12/12-Nachweis für normale Schrift bei 240 px. Der CI-Schritt
+prüft dafür die expliziten Fall-IDs `text250.240.<ansicht>` aus dem
+maschinenlesbaren Ergebnis.
+
+Der spätere erfolgreiche [CI-Lauf 43939906217](https://github.com/gxfrty-21/orakel/actions/runs/43939906217)
+auf PR-Head `5f21361` bestätigt diese Prüfung ebenfalls; alle sechs Jobs waren
+erfolgreich.
+
+### Belastbarkeitsgrenze bei 240 px
+
+Die Kernaussagen-Karte ist bei 240 px in normaler Darstellung tragfähig:
+
+- `#bewertungPanel` ist 208 px breit (206 px Innenbreite) und bleibt zwischen
+  16 und 224 px im Viewport.
+- Die Quellenzeile ist 178 px breit, bricht zweizeilig um und bleibt mit
+  `scrollWidth === clientWidth === 178` im Panel.
+- KPI-Kacheln und Claim-Grid wechseln auf eine Spalte; die Claim-Liste bleibt
+  intern scrollbar.
+- Die Seite bleibt mit `scrollWidth === clientWidth === 240` ohne horizontalen
+  Überlauf. Kopf und Navigation umbrechen kompakt und bleiben jeweils innerhalb
+  ihrer 240-px-Container.
+
+Die 240-px-Prüfung umfasst alle zwölf Ansichten in normaler Schrift
+(`240px: 12/12`). Der 250-%-Lauf läuft ausschliesslich bei 360, 320 und
+280 px; 240 px ist nicht Teil davon.
+Der gezielte Spider-Lauf prüft die Karte zusätzlich bei 240 px, auch wenn
+240 px nicht in `--breiten` steht:
+
+```bash
+node scripts/pruefe-text250.mjs --ansichten spider --breiten 240 \
+  --url http://127.0.0.1:3400
+```
+
+Erwartet werden Exit-Code 0, `240px/spider: OK · Seite 240px · Kopf 240/240 ·
+Navigation 240/240`, `240px: 1/1 Ansichten ohne horizontalen Überlauf` und
+`Claims 1× geprüft`. Der Standardlauf mit `--breiten 360,320,280` prüft die
+Karte zusätzlich bei 240 px in normaler Schrift und meldet `Claims 4× geprüft`.
+
+**240 px ist die untere geprüfte Breite.** Darunter gibt es keine Layoutzusage,
+weder für die Karte noch für die übrigen Ansichten.
 
 Die feste Pixel-Art des Raumschiffs ist von der Textskalierung
 ausgenommen; die Agentendetails in der rechten Spalte skalieren mit. Tabellen werden zusätzlich mit langen deutschen Komposita belastet und
@@ -367,6 +496,8 @@ aria-hidden ist und in keinem display:none- oder visibility:hidden-Vorfahren
 liegt).
 Exit-Code 1 bei einem Befund.
 
+Die früheren 24 Lab-Befunde im 250-%-Lauf, ihre Zuordnung zu 360 px und die Ursache im Auto-Refresh sind in [PHASE-3](docs/spider/PHASE-3.md) dokumentiert.
+
 Der Standardlauf prüft bei 1440 px zusätzlich die kompakte
 Abteilungslegende: offen, elf Einträge, kompakter Kopf und kein horizontaler
 Überlauf. Die Zusammenfassung meldet `Desktop-Legende 1× geprüft`.
@@ -398,8 +529,16 @@ Punkt oder Bindestrich bleiben die Quellenzeilen in normaler Darstellung ohne
 `scrollWidth` und `clientWidth` der Quellenzeile stimmen in allen vier Breiten
 überein; der Trenner `↔` bleibt jeweils in der Quellenzeile.
 Die Testdaten werden nur ins DOM injiziert und nicht in SQLite geschrieben. Die
-Zusammenfassung meldet `Claims 4× geprüft` (360, 320, 280 und zusätzlich
-240 px).
+Zusammenfassung meldet `Claims 4× geprüft` (250 % bei 360, 320 und 280 px
+sowie zusätzlich 240 px in normaler Schrift) sowie
+`Langhost 114 (114 Zeichen) 4× geprüft`. Beide Klartextzähler stehen in
+derselben Zusammenfassungszeile, sind nur für Menschen lesbar und kein
+CI-Gate.
+Verbindlich sind die Zähler `claims: 4` und `langhost114: 4` im Check-Manifest
+sowie die expliziten IDs `text250.claims.<breite>` und
+`text250.langhost114.<breite>` im maschinenlesbaren Ergebnis. Damit ist der
+Extremfall ohne Punkt oder Bindestrich unabhängig von der Claim-Zusammenfassung
+im Ergebnis nachweisbar.
 
 Gezielt nur die Spider-Quellenzeile prüfen:
 
@@ -408,8 +547,20 @@ node scripts/pruefe-text250.mjs --ansichten spider --breiten 360,320,280
 ```
 
 Der Aufruf prüft die vier Langhost-Fälle bei 360, 320 und 280 px sowie die
-zusätzliche 240-px-Claim-Prüfung. Erwartet werden Exit-Code 0, `Claims 4× geprüft`
-und die Zeile `240px/spider: OK · Seite 240px · Kopf 240/240 · Navigation 240/240`.
+zusätzliche 240-px-Claim-Prüfung in normaler Schrift. Erwartet werden Exit-Code 0,
+`Claims 4× geprüft`, `Langhost 114 (114 Zeichen) 4× geprüft` und die Zeile
+`240px/spider: OK · Seite 240px · Kopf 240/240 · Navigation 240/240`.
+Die Belastbarkeitsgrenze und der separate 240-px-Aufruf sind oben dokumentiert.
+
+Zusätzlich prüft der Lauf bei 240, 280 und 360 px in jeder Ansicht die
+Geometrie: Steuerelemente mit verstecktem Überlauf dürfen ihren Inhalt nicht
+abschneiden, statisch positionierte Steuerelemente innerhalb desselben
+Bausteins dürfen sich nicht überlappen, und der Tastaturfokus muss einen
+sichtbaren Ring zeigen. Gemessen werden DOM-Rechtecke
+und berechnete Stile; Screenshot-Goldens werden dafür nicht verwendet. Die
+Fälle `text250.geometrie.<breite>` und der Manifest-Zähler `geometrie`
+(36 im Profil `voll`, 6 im Seed-Profil) belegen, dass die Prüfung tatsächlich
+lief.
 
 Für Strategien, Research, das Raumschiff, Agentenraum und Konferenz gleicht der
 Lauf zusätzlich die Kerndaten mit `/api/report` ab: Zahl und Namen der
@@ -434,10 +585,49 @@ zusätzlichen Agenten in einem zweiten Schiffscluster, eine doppelte Agenten-ID
 über Cluster hinweg, eine doppelte Agenten-ID im selben Cluster bei
 unveränderter Agentenzahl, einen falschen Konferenz-Testplan sowie in der
 Claim-Karte einen entfernten Widerspruchsgrund und eine entfernte
-Widerspruchssicherheit. Jeder Fall muss einen Befund auslösen; die CI verlangt
-`Negativtest OK: 13/13`, damit die Inhaltsprüfung auch Strukturänderungen im
-Agentenraum, am Raumschiff und an den Widerspruchsdetails nicht
-stillschweigend übersieht.
+Widerspruchssicherheit. Drei weitere Fälle prüfen die Geometrie am
+Agentenraum: abgeschnittener Inhalt, überlappende statische Steuerelemente und
+ein fehlender Fokusring müssen jeweils den passenden Befund auslösen. Jeder
+Fall läuft unter einer stabilen Fall-ID und muss einen Befund auslösen; der
+unveränderte Zustand davor muss dagegen ohne Befund bleiben. Die CI verlangt
+deshalb `Negativtest OK: 16/16` sowie die Zähler `negativtest: 16` und
+`negativFehler: 0` aus dem Manifest, damit weder ein
+übersprungener noch ein durch einen anderen ersetzter Fall und auch kein
+Prüfer, der unveränderte Zustände als Befund meldet, grün durchgeht.
+
+### Reproduktion des 16/16-Negativtests
+
+Der Lauf braucht eine frische Seed-Kopie, ein laufendes Dashboard und
+Playwright-Chromium. Er verändert nur das DOM; die Seed-Kopie und die
+API-Antworten werden nicht verändert. Im ersten Terminal:
+
+```bash
+cp seed/orakel-seed.db /tmp/orakel-negativtest.db
+ORAKEL_DB_PFAD=/tmp/orakel-negativtest.db \
+  python -m orakel serve --host 127.0.0.1 --port 3400
+```
+
+Im zweiten Terminal aus dem Repository-Wurzelverzeichnis:
+
+```bash
+npm ci --prefix scripts
+npm --prefix scripts exec playwright install chromium
+
+node scripts/pruefe-text250.mjs --negativtest \
+  --url http://127.0.0.1:3400
+```
+
+Der Lauf muss mit Exit-Code 0 enden und folgende Zeile ausgeben:
+
+```text
+Negativtest OK: 16/16 falsche Inhalte erkannt
+```
+
+Fehlen lokal die Chromium-Systembibliotheken, kann zuerst das
+[lokale Playwright-Setup](#lokales-playwright-setup-ohne-systemrechte)
+ausgeführt und die Umgebung mit `source .playwright-local/env.sh` aktiviert
+werden. Der Negativtest benötigt keine zusätzliche Testdatenbank und schreibt
+keine Daten in die Seed-Kopie.
 
 Der Standardlauf umfasst alle zwölf Ansichten inklusive der weiterhin geprüften
 Inhaltsansichten Agentenraum, Konferenz und Raumschiff. Der CI-Job
@@ -476,7 +666,8 @@ In einer frischen Ubuntu-24.04-Umgebung (amd64) fehlen Chromium oft die
 nötigen Laufzeitbibliotheken und Fonts. Das Setup-Skript lädt die Pakete als
 `.deb` herunter, entpackt sie in das ignorierte Verzeichnis `.playwright-local/`
 und richtet `LD_LIBRARY_PATH` sowie Fontconfig ein. Es installiert nichts
-systemweit, benötigt kein `sudo` und prüft am Ende den Chromium-Start:
+systemweit, benötigt kein `sudo` und prüft am Ende den Chromium-Start und die
+geladenen Font-Metriken:
 
 ```bash
 bash scripts/setup-playwright-local.sh
@@ -514,10 +705,52 @@ entfernt gezielt einen Agenten aus Cluster A und verlangt den Befund samt Screen
 `selbsttest-agent-...-abteilung-a-hat-9-statt-10-agenten.png`. In GitHub Actions
 läuft derselbe Prüflauf als eigener
 Job `text250` der Workflow-Datei `.github/workflows/tests.yml`; bei Erfolg lädt
-er `lauf.log` und `negativtest.log` kompakt als Artefakt
-`text250-laufprotokoll` hoch. Schlägt er fehl, lädt er Bilder, Befundtexte und
-HTML als Artefakt `text250-diagnose` und das Serverprotokoll als
-`text250-serverlog` hoch (je 7 Tage).
+er `lauf.log`, `negativtest.log` und das maschinenlesbare `ergebnis.json`
+kompakt als Artefakt `text250-laufprotokoll` hoch. Schlägt er fehl, lädt er
+Bilder, Befundtexte und HTML als Artefakt `text250-diagnose` und das
+Serverprotokoll als `text250-serverlog` hoch (je 7 Tage).
+
+Der Lauf schreibt mit `--ergebnis artifacts/text250/ergebnis.json` ein
+JSON-Ergebnis mit stabilen Fall-IDs und den tatsächlichen Zählern im Feld
+`counters`. Enthält der Seed-Bericht keine Validierungen, bricht der Lauf vor
+der Inhaltsprüfung mit Exit-Code 1 ab, statt leer zu bestehen; die Meldung nennt
+`ORAKEL_DB_PFAD` und die Seed-Datenbank als Prüfpunkte. CI prüft es mit `scripts/pruefe-text250-ergebnis.mjs` gegen das
+Check-Manifest `scripts/text250-required-checks.json` (Schema
+`text250-check-manifest.v2`). Das Manifest nennt je Profil – `voll`,
+`seed-tastatur`, `negativtest`, `selbsttest-cluster` und `selbsttest-agent` –
+die erwarteten Zähler, die Pflichtfall-IDs und optional erlaubte Skips. CI
+vergleicht jeden erwarteten Zähler mit dem tatsächlichen Wert (zum Beispiel
+`refresh: 2` oder `langhost114: 4`) und scheitert ausserdem an fehlenden
+Pflichtfällen und an jedem unerwarteten Skip, also einem Fall mit
+`status: skipped`, den das Profil nicht ausdrücklich in `allow_skips` nennt.
+Der Checker sichert diese Logik mit `--selbsttest` selbst ab: Ein Skip aus
+`allow_skips` muss akzeptiert, ein Skip ausserhalb der Liste muss als
+unerwartet erkannt werden; der text250-CI-Job führt den Selbsttest vor der
+Manifestprüfung aus.
+Zu den Pflichtfällen des Profils `voll` gehören die zwölf 240-px-Ansichten,
+die vier Claim-Breiten, der 114-Zeichen-Langhost ohne Punkt oder Bindestrich,
+der Lab-Auto-Refresh bei 360 und 280 px mit HTTP 200, sichtbarem Kopfmarker,
+unverändert gezeichneter Lab-Liste und erneutem Rendern nach Fokusverlust sowie
+die beiden Lab-Fokus-Varianten. Die Klartextzeilen im Laufprotokoll wie
+`Claims 4×` oder `Refresh 2×` sind nur für Menschen lesbar und kein Gate.
+
+### CI auf Feature-Branches ohne Pull Request
+
+Ein Push auf einen Branch startet den Workflow `Tests` direkt; ein offener Pull
+Request ist dafür nicht nötig. `main` bleibt eingeschlossen, damit Railway sein
+"Wait for CI" weiterhin erkennt. Bei Branches mit offenem Pull Request entsteht
+dadurch zusätzlich zum PR-Lauf ein Push-Lauf. Zusätzlich ist der Workflow
+manuell startbar, sobald diese Fassung auf `main` und im gewählten Branch
+liegt:
+
+```bash
+gh workflow run tests.yml --ref ci/negativtest-13
+```
+
+GitHub bietet `workflow_dispatch` erst an, wenn die Workflow-Datei auf dem
+Default-Branch existiert; auch der gewählte Branch muss den Trigger enthalten.
+Für bereits gepushte Commits löst der neue Push-Trigger nicht rückwirkend aus.
+Der manuelle Lauf testet die Spitze des angegebenen Branches.
 
 Nach einem fehlgeschlagenen, abgebrochenen oder abgelaufenen Lauf. Die Befehle
 setzen eine angemeldete GitHub CLI voraus (`gh auth login`):

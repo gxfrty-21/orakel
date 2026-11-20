@@ -1,0 +1,303 @@
+{
+  "schema": "text250-check-manifest.v2",
+  "description": "Maschinenlesbares Check-Manifest für den Text250-Lauf: erwartete Zähler, Pflichtfälle und erlaubte Skips je Profil. CI prüft das Ergebnis-JSON mit scripts/pruefe-text250-ergebnis.mjs; Klartext-Logzeilen sind kein Gate.",
+  "profiles": {
+    "voll": {
+      "description": "Vollständiger Lauf über alle zwölf Ansichten und drei Breiten samt 240-px-Lauf.",
+      "counters": {
+        "kopf": 1,
+        "schmaleAnsichten": 12,
+        "claims": 4,
+        "langhost114": 4,
+        "refresh": 2,
+        "refreshNegativ": 1,
+        "labFokus": 2,
+        "tooltip": 3,
+        "tastatur": 3,
+        "inhalte": 15,
+        "agenten": 3,
+        "legende": 3,
+        "legendeDesktop": 1,
+        "schreibwege": 3,
+        "geometrie": 36
+      },
+      "checks": [
+        {
+          "id": "text250.header.1024",
+          "description": "Kopfzeile bei 1024 px ohne horizontalen Überlauf und mit sichtbarem Lauf-starten-Knopf."
+        },
+        {
+          "id": "text250.240.overview",
+          "description": "Übersicht bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+        },
+        {
+          "id": "text250.240.risk",
+          "description": "Risiko & Daten bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+        },
+        {
+          "id": "text250.240.lab",
+          "description": "Lab bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+        },
+        {
+          "id": "text250.240.strat",
+          "description": "Strategien bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+        },
+        {
+          "id": "text250.240.research",
+          "description": "Research bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+        },
+        {
+          "id": "text250.240.globe",
+          "description": "Weltkugel bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+        },
+        {
+          "id": "text250.240.betrieb",
+          "description": "Betrieb bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+        },
+        {
+          "id": "text250.240.ship",
+          "description": "Raumschiff bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+        },
+        {
+          "id": "text250.240.spider",
+          "description": "Spider bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+        },
+        {
+          "id": "text250.240.kb",
+          "description": "Wissensbank bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+        },
+        {
+          "id": "text250.240.agents",
+          "description": "Agentenraum bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+        },
+        {
+          "id": "text250.240.konf",
+          "description": "Konferenz bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+        },
+        {
+          "id": "text250.legend.1440",
+          "description": "Kompakte Abteilungslegende bei 1440 px vollständig und ohne horizontalen Überlauf."
+        },
+        {
+          "id": "text250.claims.360",
+          "description": "Claim-Karte samt Widerspruchsdetails bei 360 px in 250 % ohne Überlauf."
+        },
+        {
+          "id": "text250.claims.320",
+          "description": "Claim-Karte samt Widerspruchsdetails bei 320 px in 250 % ohne Überlauf."
+        },
+        {
+          "id": "text250.claims.280",
+          "description": "Claim-Karte samt Widerspruchsdetails bei 280 px in 250 % ohne Überlauf."
+        },
+        {
+          "id": "text250.claims.240",
+          "description": "Claim-Karte samt Widerspruchsdetails bei 240 px in normaler Schrift ohne Überlauf."
+        },
+        {
+          "id": "text250.langhost114.360",
+          "description": "114-Zeichen-Langhost ohne Punkt oder Bindestrich bei 360 px in 250 % ohne Überlauf."
+        },
+        {
+          "id": "text250.langhost114.320",
+          "description": "114-Zeichen-Langhost ohne Punkt oder Bindestrich bei 320 px in 250 % ohne Überlauf."
+        },
+        {
+          "id": "text250.langhost114.280",
+          "description": "114-Zeichen-Langhost ohne Punkt oder Bindestrich bei 280 px in 250 % ohne Überlauf."
+        },
+        {
+          "id": "text250.langhost114.240",
+          "description": "114-Zeichen-Langhost ohne Punkt oder Bindestrich bei 240 px in normaler Schrift ohne Überlauf."
+        },
+        {
+          "id": "text250.refresh",
+          "description": "Lab-Auto-Refresh bei 360 px mit HTTP 200, sichtbarem Kopfmarker, unverändert gezeichneter Lab-Liste sowie unverändertem Fokus, Tooltip, Live-Region und Zeiger und erneutem Rendern nach dem Verlassen des Lab-Fokus."
+        },
+        {
+          "id": "text250.refresh.280",
+          "description": "Lab-Auto-Refresh bei 280 px mit HTTP 200, sichtbarem Kopfmarker, unverändert gezeichneter Lab-Liste sowie unverändertem Fokus, Tooltip, Live-Region und Zeiger und erneutem Rendern nach dem Verlassen des Lab-Fokus."
+        },
+        {
+          "id": "text250.refresh-negativ",
+          "description": "Refresh-Negativtest: ausbleibender Refresh und erzwungenes Re-Render werden als Fehlerbild erkannt."
+        },
+        {
+          "id": "text250.lab-focus.knopf",
+          "description": "Lab-Fokus auf einem Knopf ausserhalb des Details blockiert den Auto-Refresh nicht."
+        },
+        {
+          "id": "text250.lab-focus.ausgeblendet",
+          "description": "Fokus im ausgeblendeten Lab blockiert den Auto-Refresh nicht."
+        },
+        {
+          "id": "text250.geometrie.240",
+          "description": "Geometrie bei 240 px: keine abgeschnittenen Beschriftungen, keine überlappenden statischen Steuerelemente, sichtbarer Fokusring."
+        },
+        {
+          "id": "text250.geometrie.280",
+          "description": "Geometrie bei 280 px: keine abgeschnittenen Beschriftungen, keine überlappenden statischen Steuerelemente, sichtbarer Fokusring."
+        },
+        {
+          "id": "text250.geometrie.360",
+          "description": "Geometrie bei 360 px: keine abgeschnittenen Beschriftungen, keine überlappenden statischen Steuerelemente, sichtbarer Fokusring."
+        }
+      ],
+      "allow_skips": []
+    },
+    "seed-tastatur": {
+      "description": "Fokussierter Seed-Lauf: Lab und Raumschiff bei 360, 320 und 280 px.",
+      "counters": {
+        "kopf": 1,
+        "schmaleAnsichten": 2,
+        "claims": 0,
+        "langhost114": 0,
+        "refresh": 2,
+        "refreshNegativ": 1,
+        "labFokus": 2,
+        "tooltip": 3,
+        "tastatur": 3,
+        "inhalte": 3,
+        "agenten": 3,
+        "legende": 3,
+        "legendeDesktop": 1,
+        "schreibwege": 3,
+        "geometrie": 6
+      },
+      "checks": [
+        {
+          "id": "text250.header.1024",
+          "description": "Kopfzeile bei 1024 px ohne horizontalen Überlauf und mit sichtbarem Lauf-starten-Knopf."
+        },
+        {
+          "id": "text250.240.lab",
+          "description": "Lab bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+        },
+        {
+          "id": "text250.240.ship",
+          "description": "Raumschiff bei 240 px in normaler Schrift ohne horizontalen Überlauf."
+        },
+        {
+          "id": "text250.legend.1440",
+          "description": "Kompakte Abteilungslegende bei 1440 px vollständig und ohne horizontalen Überlauf."
+        },
+        {
+          "id": "text250.refresh",
+          "description": "Lab-Auto-Refresh bei 360 px mit HTTP 200, sichtbarem Kopfmarker, unverändert gezeichneter Lab-Liste sowie unverändertem Fokus, Tooltip, Live-Region und Zeiger und erneutem Rendern nach dem Verlassen des Lab-Fokus."
+        },
+        {
+          "id": "text250.refresh.280",
+          "description": "Lab-Auto-Refresh bei 280 px mit HTTP 200, sichtbarem Kopfmarker, unverändert gezeichneter Lab-Liste sowie unverändertem Fokus, Tooltip, Live-Region und Zeiger und erneutem Rendern nach dem Verlassen des Lab-Fokus."
+        },
+        {
+          "id": "text250.refresh-negativ"
+        },
+        {
+          "id": "text250.lab-focus.knopf",
+          "description": "Lab-Fokus auf einem Knopf ausserhalb des Details blockiert den Auto-Refresh nicht."
+        },
+        {
+          "id": "text250.lab-focus.ausgeblendet",
+          "description": "Fokus im ausgeblendeten Lab blockiert den Auto-Refresh nicht."
+        },
+        {
+          "id": "text250.geometrie.240",
+          "description": "Geometrie bei 240 px: keine abgeschnittenen Beschriftungen, keine überlappenden statischen Steuerelemente, sichtbarer Fokusring."
+        },
+        {
+          "id": "text250.geometrie.280",
+          "description": "Geometrie bei 280 px: keine abgeschnittenen Beschriftungen, keine überlappenden statischen Steuerelemente, sichtbarer Fokusring."
+        },
+        {
+          "id": "text250.geometrie.360",
+          "description": "Geometrie bei 360 px: keine abgeschnittenen Beschriftungen, keine überlappenden statischen Steuerelemente, sichtbarer Fokusring."
+        }
+      ],
+      "allow_skips": []
+    },
+    "negativtest": {
+      "description": "Negativtest: jede der sechzehn injizierten Falschdarstellungen muss unter ihrer Fall-ID erkannt werden; der unveränderte Zustand davor darf keinen Befund melden.",
+      "counters": {
+        "negativtest": 16,
+        "negativFehler": 0
+      },
+      "checks": [
+        {
+          "id": "text250.negativtest.strategie-kpi"
+        },
+        {
+          "id": "text250.negativtest.research-zahl"
+        },
+        {
+          "id": "text250.negativtest.agenten-kopfzahl"
+        },
+        {
+          "id": "text250.negativtest.agenten-abteilungstab"
+        },
+        {
+          "id": "text250.negativtest.raumschiff-abteilungscluster"
+        },
+        {
+          "id": "text250.negativtest.raumschiff-abteilung-leer"
+        },
+        {
+          "id": "text250.negativtest.raumschiff-agent-fehlt"
+        },
+        {
+          "id": "text250.negativtest.raumschiff-agent-zusaetzlich"
+        },
+        {
+          "id": "text250.negativtest.raumschiff-agent-doppelt"
+        },
+        {
+          "id": "text250.negativtest.raumschiff-agent-doppelt-im-selben-cluster"
+        },
+        {
+          "id": "text250.negativtest.konferenz-testplan"
+        },
+        {
+          "id": "text250.negativtest.widerspruchsgrund-fehlt"
+        },
+        {
+          "id": "text250.negativtest.widerspruchssicherheit-fehlt"
+        },
+        {
+          "id": "text250.negativtest.geometrie-abgeschnitten"
+        },
+        {
+          "id": "text250.negativtest.geometrie-ueberlappung"
+        },
+        {
+          "id": "text250.negativtest.geometrie-fokusring"
+        }
+      ],
+      "allow_skips": []
+    },
+    "selbsttest-cluster": {
+      "description": "Selbsttest für mehrere gleichzeitige Clusterbefunde samt Screenshots.",
+      "counters": {
+        "selbsttestBefunde": 6,
+        "selbsttestScreenshots": 6
+      },
+      "checks": [
+        {
+          "id": "text250.selbsttest.cluster"
+        }
+      ],
+      "allow_skips": []
+    },
+    "selbsttest-agent": {
+      "description": "Selbsttest für einen fehlenden Agenten samt Screenshot und Befunddatei.",
+      "counters": {
+        "selbsttestAgentBefunde": 3,
+        "selbsttestAgentScreenshots": 1
+      },
+      "checks": [
+        {
+          "id": "text250.selbsttest.agent"
+        }
+      ],
+      "allow_skips": []
+    }
+  }
+}
