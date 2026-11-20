@@ -5,7 +5,6 @@ import base64
 import json
 import os
 import secrets
-import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -42,14 +41,13 @@ from .nexus.quellen import lade_register
 from .nexus.raum import raum_daten
 from .nexus.status import gesamt_status
 from .kern.paper import tick
-from .pipeline import lauf as engine_lauf
+from .lauf_queue import OFFEN, anlegen_wenn_frei as lauf_anlegen, stand as lauf_stand
 from .report import baue_bericht
 from .scheduler import Takt, _kontext
 from .spider import Spider
 
 STATIC = Path(__file__).parent / "web" / "static"
 BERICHT = Path("dashboard.json")
-_sperre = threading.Lock()
 
 
 def _basic_ok(kopf: str, benutzer: str, passwort: str) -> bool:
@@ -119,15 +117,28 @@ def _bericht(cfg: Config) -> dict[str, Any]:
     return bericht
 
 
-def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
+def create_app(cfg_pfad: str = "config.toml", takt: bool = False,
+               hintergrund: bool = True) -> FastAPI:
     # Konfiguration einmal je App laden; Endpunkte nutzen denselben Stand.
     konfig = load_config(cfg_pfad)
+    takt_thread: Takt | None = None
 
     @asynccontextmanager
     async def _lebenszyklus(_app: FastAPI):
+        nonlocal takt_thread
         # Schema und Migration nur beim Start, nicht bei jeder Anfrage.
         initialisiere(konfig.db_pfad)
-        yield
+        if hintergrund:
+            # Ein einziger Hintergrund-Loop: Der Takt-Scheduler arbeitet auch
+            # die Lauf-Warteschlange ab. Der Paper-Takt selbst bleibt opt-in.
+            takt_thread = Takt(konfig, Facts(konfig.db_pfad), cfg_pfad=cfg_pfad,
+                               takt_aktiv=takt)
+            takt_thread.start()
+        try:
+            yield
+        finally:
+            if takt_thread is not None:
+                takt_thread.stoppe()
 
     app = FastAPI(
         title="Orakel Trading-Engine",
@@ -717,17 +728,31 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                 # nach dem Deploy vergleicht ihn mit dem erwarteten Commit.
                 "commit": os.environ.get("RAILWAY_GIT_COMMIT_SHA") or None}
 
-    @app.post("/api/lauf")
+    @app.post("/api/lauf", status_code=202)
     def starte_lauf(modus: str = "backtest", spider: bool = False) -> JSONResponse:
-        if not _sperre.acquire(blocking=False):
-            return JSONResponse({"ok": False, "fehler": "Ein Lauf ist bereits aktiv"}, status_code=409)
-        try:
-            ergebnis = engine_lauf(cfg_pfad=cfg_pfad, modus=modus, mit_spider=spider)
-        finally:
-            _sperre.release()
-        return JSONResponse({"ok": True, "dauer": ergebnis.get("dauer_sekunden"),
-                             "validierungen": len(ergebnis.get("validierungen", [])),
-                             "plan": len(ergebnis.get("plan", []))})
+        """Legt nur einen Auftrag an; die Arbeit macht der Hintergrund-Arbeiter.
+
+        Läuft bereits ein Auftrag, wird kein zweiter eingereiht: Die Antwort
+        ist dann ``409`` und enthält die ID des offenen oder aktiven Laufs,
+        damit die Oberfläche an ihn anknüpfen kann.
+        """
+        lauf_id, blockiert = lauf_anlegen(Facts(konfig.db_pfad), modus=modus, spider=spider)
+        if blockiert is not None:
+            return JSONResponse(
+                {"ok": False, "id": lauf_id, "status": blockiert,
+                 "fehler": "Ein Lauf ist bereits offen oder aktiv"},
+                status_code=409,
+            )
+        return JSONResponse({"ok": True, "id": lauf_id, "status": OFFEN},
+                            status_code=202)
+
+    @app.get("/api/lauf/{lauf_id}")
+    def lauf_status(lauf_id: int) -> JSONResponse:
+        daten = lauf_stand(Facts(konfig.db_pfad), lauf_id)
+        if daten is None:
+            return JSONResponse({"ok": False, "fehler": "Lauf unbekannt"},
+                                status_code=404)
+        return JSONResponse({"ok": True, **daten}, headers={"Cache-Control": "no-store"})
 
     @app.post("/api/paper")
     def paper_tick() -> JSONResponse:
@@ -805,11 +830,5 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         except Exception as exc:
             return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=500)
         return JSONResponse({"ok": True, "beschluss": protokoll.get("beschluss")})
-
-    if takt:
-        @app.on_event("startup")
-        def _starte_takt() -> None:  # pragma: no cover - Zeitverhalten
-            cfg = konfig
-            Takt(cfg, Facts(cfg.db_pfad)).start()
 
     return app
