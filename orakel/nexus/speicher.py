@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from ..db import Facts
+from ..kern.db import Facts
 from .dedup import (DedupIndex, MIN_GRAMME, STANDARD_SCHWELLE, STANDARD_SHINGLE,
                      shingles, simhash, titel_hash)
 from .feeds import Meldung

@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from ..db import Facts
+from ..kern.db import Facts
 from .graph import ZEITRAEUME, graph_auffrischen, graph_daten
 from .kalibrierung import kalibrierung_statistik
 

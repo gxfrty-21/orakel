@@ -21,7 +21,7 @@ from typing import Any
 from orakel.betrieb import betrieb_status
 from orakel.company.store import CompanyStore
 from orakel.config import load_config
-from orakel.db import Facts
+from orakel.kern.db import Facts
 
 OFFENE_STATES = ("proposed", "queued", "accepted", "running", "review", "blocked")
 QUEUE_MESS_TABELLEN = ("artikel", "trades", "agent_events", "agent_tasks")

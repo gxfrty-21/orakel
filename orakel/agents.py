@@ -11,7 +11,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from .db import Facts
+from .kern.db import Facts
 
 ABTEILUNGEN = {
     "A": "Hauptzentrale",
