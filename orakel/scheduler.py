@@ -12,7 +12,8 @@ from . import agents
 from .betrieb import Betrieb
 from .config import Config, RisikoGrenzen
 from .kern.db import Facts
-from .lauf_queue import verarbeite_einen, verwerfe_haengende, zuruecksetzen
+from .lauf_queue import (AUFBEWAHRUNG_TAKT, raeume_auf, verarbeite_einen,
+                         verwerfe_haengende, zuruecksetzen)
 
 
 def _validierungen_als_dicts(db: Facts) -> list[dict[str, Any]]:
@@ -139,6 +140,8 @@ class Takt(threading.Thread):
             erinnerungs_minuten = 5
         erinnerungs_intervall = erinnerungs_minuten * 60
         letzte_erinnerung = 0.0
+        # 0.0 macht die Aufbewahrung in der ersten Runde fällig.
+        letzte_aufbewahrung = 0.0
         erzwungen = {"spider"} if self.mit_spider else None
         # Einmal beim Start: Was ein Absturz auf «aktiv» liess, wird wieder
         # eingereiht. Nicht in der Schleife, sonst reiht sich ein laufender
@@ -165,6 +168,11 @@ class Takt(threading.Thread):
             # Genau ein Auftrag je Runde; ein langer Lauf verlängert den Abstand
             # genauso wenig wie ein langer Takt.
             try:
+                # Aufbewahrung vor dem Lauf, damit ein langer Auftrag sie nicht
+                # um Stunden verschiebt; im Dauerbetrieb höchstens stündlich.
+                if time.monotonic() - letzte_aufbewahrung >= AUFBEWAHRUNG_TAKT:
+                    letzte_aufbewahrung = time.monotonic()
+                    raeume_auf(self.db)
                 verwerfe_haengende(self.db)
                 verarbeite_einen(self.db, self.cfg_pfad)
             except Exception as exc:

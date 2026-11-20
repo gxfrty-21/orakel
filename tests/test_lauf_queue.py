@@ -305,3 +305,59 @@ def test_ein_versuch_weniger_wird_noch_eingereiht(cfg):
     stand = lauf_queue.stand(db, lauf_id)
     assert stand["status"] == lauf_queue.OFFEN
     assert stand["gestartet"] is None
+
+
+def test_aufbewahrung_loescht_nur_alte_abgeschlossene(cfg):
+    """Nach der Frist verschwinden fertige und fehlerhafte Aufträge, mehr nicht."""
+    db = Facts(cfg.db_pfad)
+    vor_frist = "2020-01-01T00:00:00+01:00"
+    alt_fertig = lauf_queue.anlegen(db)
+    alt_fehler = lauf_queue.anlegen(db)
+    neu_fertig = lauf_queue.anlegen(db)
+    offen = lauf_queue.anlegen(db)
+    aktiv = lauf_queue.anlegen(db)
+    with db.conn() as c:
+        c.execute("UPDATE laeufe SET status = ?, beendet = ? WHERE id = ?",
+                  (lauf_queue.FERTIG, vor_frist, alt_fertig))
+        c.execute("UPDATE laeufe SET status = ?, beendet = ? WHERE id = ?",
+                  (lauf_queue.FEHLER, vor_frist, alt_fehler))
+        c.execute("UPDATE laeufe SET status = ?, beendet = ? WHERE id = ?",
+                  (lauf_queue.FERTIG, jetzt(), neu_fertig))
+        c.execute("UPDATE laeufe SET status = ?, gestartet = ? WHERE id = ?",
+                  (lauf_queue.AKTIV, jetzt(), aktiv))
+
+    assert lauf_queue.raeume_auf(db) == [alt_fertig, alt_fehler]
+
+    assert lauf_queue.stand(db, alt_fertig) is None
+    assert lauf_queue.stand(db, alt_fehler) is None
+    assert lauf_queue.stand(db, neu_fertig)["status"] == lauf_queue.FERTIG
+    assert lauf_queue.stand(db, offen)["status"] == lauf_queue.OFFEN
+    assert lauf_queue.stand(db, aktiv)["status"] == lauf_queue.AKTIV
+    assert any("Aufbewahrung" in zeile["text"] for zeile in db.ereignisse())
+
+
+def test_takt_raeumt_in_der_ersten_runde_auf(cfg, monkeypatch):
+    """Der eine Hintergrund-Loop ruft die Aufbewahrung ohne eigenen Takt auf."""
+    db = Facts(cfg.db_pfad)
+    aufgerufen: list[int] = []
+
+    def merken(db, **_k):
+        aufgerufen.append(1)
+        return []
+
+    monkeypatch.setattr(scheduler, "raeume_auf", merken)
+    monkeypatch.setattr(scheduler, "verarbeite_einen",
+                        lambda db, cfg_pfad="unbenutzt.toml", engine=None: None)
+    loop = scheduler.Takt(cfg, db, cfg_pfad="unbenutzt.toml", takt_aktiv=False)
+    loop.start()
+    grenze = time.monotonic() + 5
+    try:
+        while time.monotonic() < grenze:
+            if aufgerufen:
+                break
+            time.sleep(0.05)
+    finally:
+        loop.stoppe()
+        loop.join(timeout=2)
+
+    assert aufgerufen                       # erste Runde räumt auf

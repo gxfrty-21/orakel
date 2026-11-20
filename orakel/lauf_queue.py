@@ -38,6 +38,13 @@ HAENGE_GRENZE = timedelta(minutes=60)
 # Lauf, der den Prozess mitnimmt, wird danach nicht mehr eingereiht.
 MAX_VERSUCHE = 3
 
+# Abgeschlossene Aufträge (fertig oder fehler) bleiben so lange in der Tabelle.
+# Danach löscht sie die Aufbewahrung; laufende und offene Aufträge bleiben.
+AUFBEWAHRUNG = timedelta(days=30)
+
+# Höchstens so oft läuft die Aufbewahrung im Dauerbetrieb.
+AUFBEWAHRUNG_TAKT = 3600.0
+
 Engine = Callable[..., dict[str, Any]]
 
 
@@ -153,6 +160,34 @@ def verwerfe_haengende(db: Facts, *, grenze: timedelta = HAENGE_GRENZE,
         )
         db.ereignis("fehler", "Lauf",
                     f"Auftrag {lauf_id} hing auf «aktiv» und wurde als Fehler verbucht")
+    return ids
+
+
+def raeume_auf(db: Facts, *, frist: timedelta = AUFBEWAHRUNG,
+               jetzt_wert: datetime | None = None) -> list[int]:
+    """Löscht abgeschlossene Aufträge, die älter als ``frist`` sind.
+
+    Gelöscht wird nur, was fertig oder fehlerhaft ist **und** ein ``beendet``
+    vor der Grenze hat: offene und laufende Aufträge bleiben unberührt, ebenso
+    Einträge ohne Endzeit (die wären kein abgeschlossener Lauf). Die Frist ist
+    fest; sie hängt an ``beendet``, nicht an ``erstellt``, damit ein langer Lauf
+    nach seinem Ende noch seine Frist behält.
+    """
+    bezug = (jetzt_wert or datetime.now(timezone.utc)).astimezone()
+    grenz_zeit = (bezug - frist).replace(microsecond=0).isoformat()
+    with db.conn() as c:
+        ids = [int(zeile["id"]) for zeile in c.execute(
+            "SELECT id FROM laeufe WHERE status IN (?, ?) AND beendet IS NOT NULL "
+            "AND beendet <= ? ORDER BY id",
+            (FERTIG, FEHLER, grenz_zeit),
+        )]
+        if ids:
+            c.executemany("DELETE FROM laeufe WHERE id = ?",
+                          [(lauf_id,) for lauf_id in ids])
+    if ids:
+        db.ereignis("info", "Lauf",
+                    f"Aufbewahrung: {len(ids)} abgeschlossene Aufträge älter als "
+                    f"{int(frist.total_seconds() // 86400)} Tage gelöscht")
     return ids
 
 

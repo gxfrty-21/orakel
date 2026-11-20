@@ -72,6 +72,13 @@ wieder laufen. Jeder Startversuch zählt (`versuche`, Migration
 Start ihn als `fehler` mit Hinweis auf die Absturzschleife. Unterhalb der
 Grenze wird er wie bisher wieder auf `offen` gesetzt.
 
+Abgeschlossene Aufträge (`fertig`, `fehler`) bleiben 30 Tage (`AUFBEWAHRUNG`)
+und werden dann gelöscht; die Aufbewahrung läuft beim Start und im
+Dauerbetrieb höchstens stündlich (`AUFBEWAHRUNG_TAKT`). Offene und laufende
+Aufträge bleiben unberührt, ebenso Einträge ohne Endzeit. Die Frist hängt an
+`beendet`, nicht an `erstellt` — ein langer Lauf behält seine Frist nach dem
+Ende.
+
 Die Company-Schicht ist additiv und standardmäßig **nicht** in den laufenden
 Paper-Takt eingebunden (`[unternehmen] aktiv = false`). Sie enthält noch keine
 3D-Welt, keine LLM-Anbindung und keine echten Orders.
