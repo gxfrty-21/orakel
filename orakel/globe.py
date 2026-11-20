@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import Config
-from .db import Facts, jetzt
+from .kern.db import Facts, jetzt
 from .intel import ABTEILUNG, THEMEN
 
 SOURCE_CHANNELS = [
@@ -172,7 +172,7 @@ def _vault_knoten(cfg: Config, orders: list[dict[str, Any]], jetzt_utc: datetime
     for datei in dateien:
         try:
             text = datei.read_text(encoding="utf-8")[:12000]
-        except Exception:
+        except OSError:
             continue
         titel = datei.stem.replace("-", " ")
         erstellt = datetime.fromtimestamp(datei.stat().st_mtime, tz=timezone.utc).isoformat()

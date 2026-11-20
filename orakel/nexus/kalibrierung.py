@@ -17,7 +17,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from ..db import Facts
+from ..kern.db import Facts
 
 ERWARTUNGEN = ("steigt", "sinkt", "unveraendert")
 MAX_PROGNOSEN = 2000

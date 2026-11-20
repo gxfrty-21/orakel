@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from orakel.config import RisikoGrenzen
-from orakel.data import synthetische_kerzen
+from orakel.kern.data import synthetische_kerzen
 from orakel.strategiebericht import (
     erstelle_bericht,
     kaufen_halten_pct,

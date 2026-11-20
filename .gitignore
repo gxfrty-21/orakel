@@ -19,3 +19,7 @@ seed/*.db-shm
 
 node_modules/
 .playwright-local/
+
+# Coverage-Messung (pytest-cov)
+.coverage
+.coverage.*

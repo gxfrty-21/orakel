@@ -8,8 +8,8 @@ import time
 from pathlib import Path
 
 from .config import RisikoGrenzen, load_config
-from .data import df_aus_db, lade_csv, synthetische_kerzen
-from .db import Facts
+from .kern.data import df_aus_db, lade_csv, synthetische_kerzen
+from .kern.db import Facts
 from .knowledge import Vault
 
 
@@ -17,8 +17,30 @@ def _cfg(pfad: str):
     return load_config(pfad)
 
 
+def _schema_pruefen(konfig) -> int | None:
+    """Prüft das Schema vor dem Lauf; bei altem Bestand Meldung und Exit 2.
+
+    Gilt für jeden Befehl, der die Datenbank anfasst, nicht nur für ``serve``:
+    Auch ``pruefen``, ``konferenz``, ``unternehmen`` und ``daten`` würden sonst
+    mit einem ``no such column`` aus dem Traceback abbrechen.
+    """
+    from .kern.db import initialisiere
+    from .kern.migrationen import AltesSchemaFehler, startmeldung
+
+    try:
+        # Schema und Migrationen vor dem Lauf prüfen: Ein alter Bestand endet so
+        # als eigene Meldung statt als Traceback mitten im Ablauf.
+        initialisiere(konfig.db_pfad)
+    except AltesSchemaFehler as fehler:
+        print(startmeldung(fehler, konfig.db_pfad), file=sys.stderr)
+        return 2
+    return None
+
+
 def cmd_daten(args: argparse.Namespace) -> int:
     cfg = _cfg(args.config)
+    if (code := _schema_pruefen(cfg)) is not None:
+        return code
     db = Facts(cfg.db_pfad)
     cfg.daten_ordner.mkdir(parents=True, exist_ok=True)
 
@@ -44,6 +66,8 @@ def cmd_daten(args: argparse.Namespace) -> int:
 def cmd_pruefen(args: argparse.Namespace) -> int:
     from .pipeline import lauf
 
+    if (code := _schema_pruefen(_cfg(args.config))) is not None:
+        return code
     bericht = lauf(cfg_pfad=args.config, modus=args.modus, quelle=args.quelle,
                    bericht_pfad=args.bericht, mit_konferenz=not args.ohne_konferenz,
                    mit_spider=args.mit_spider)
@@ -62,7 +86,7 @@ def _commit() -> str:
     import subprocess
 
     try:
-        r = subprocess.run(['git', '-c', 'safe.directory=*', 'rev-parse', 'HEAD'],
+        r = subprocess.run(['git', '-c', 'safe.directory=*', 'rev-parse', 'HEAD'],  # noqa: S607
                            capture_output=True, text=True, timeout=10)
         return r.stdout.strip() if r.returncode == 0 else ''
     except (OSError, subprocess.SubprocessError):
@@ -98,10 +122,18 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
     from .web import create_app
 
+    konfig = _cfg(args.config)
+    # Vor dem Serverstart, damit ein alter Bestand nicht als Lifespan-Traceback
+    # von uvicorn endet.
+    if (code := _schema_pruefen(konfig)) is not None:
+        return code
+
     takt = bool(args.takt) or os.environ.get("ORAKEL_TAKT", "").strip().lower() in {
         "1", "true", "yes", "on",
     }
-    app = create_app(args.config, takt=takt)
+    app = create_app(args.config, takt=takt, host=args.host)
+    login = "aktiv" if os.environ.get("ORAKEL_AUTH_USER", "").strip() else "aus (nur Loopback)"
+    print(f"orakel: Dashboard auf {args.host}:{args.port}, Login {login}", flush=True)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     return 0
 
@@ -110,6 +142,8 @@ def cmd_konferenz(args: argparse.Namespace) -> int:
     from . import agents
     from .pipeline import lauf
 
+    if (code := _schema_pruefen(_cfg(args.config))) is not None:
+        return code
     bericht = lauf(cfg_pfad=args.config, modus="backtest", mit_konferenz=True)
     protokoll = bericht.get("konferenz") or {}
     print(protokoll.get("beschluss", "Keine Konferenz erzeugt"))
@@ -123,6 +157,8 @@ def cmd_unternehmen(args: argparse.Namespace) -> int:
     from .company.store import CompanyStore
 
     cfg = _cfg(args.config)
+    if (code := _schema_pruefen(cfg)) is not None:
+        return code
     db = Facts(cfg.db_pfad)
     store = CompanyStore(db)
     store.sync_roster()
@@ -178,7 +214,7 @@ def cmd_spider(args: argparse.Namespace) -> int:
 
 
 def cmd_paper(args: argparse.Namespace) -> int:
-    from .paper import tick
+    from .kern.paper import tick
 
     cfg = _cfg(args.config)
     db = Facts(cfg.db_pfad)
@@ -291,7 +327,10 @@ def main(argv: list[str] | None = None) -> int:
     sb.set_defaults(func=cmd_strategie_bericht)
 
     s = sub.add_parser("serve", help="Dashboard im Browser starten")
-    s.add_argument("--host", default="0.0.0.0")
+    # Ohne Zugangsdaten nur Loopback; Container setzen 0.0.0.0 ausdruecklich
+    # (docker-entrypoint.sh) und brauchen dafuer ORAKEL_AUTH_USER/PASS.
+    s.add_argument("--host", default="127.0.0.1",
+                   help="Bindeadresse (Standard 127.0.0.1; Container: 0.0.0.0)")
     s.add_argument("--port", type=int, default=8000)
     s.add_argument("--takt", action="store_true", help="Paper-Takt im Hintergrund starten")
     s.set_defaults(func=cmd_serve)

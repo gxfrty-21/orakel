@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 
 from .backtest import BacktestErgebnis, backtest
-from .config import Config, RisikoGrenzen
+from ..config import Config, RisikoGrenzen
 from .metrics import kennzahlen, max_drawdown_pct
 from .strategies import Strategie, nachbarn
 

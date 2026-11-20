@@ -92,7 +92,10 @@ Der Entrypoint setzt dafür `ORAKEL_DB_PFAD`, `ORAKEL_DATEN_ORDNER` und
 Die Quelle vorher stoppen, damit SQLite keine offene WAL-Datei hat.
 
 ```bash
-# im bisherigen Projektordner
+# im bisherigen Projektordner: Pfad aus config.toml ([basis] db_pfad),
+# ORAKEL_DB_PFAD sticht ihn. Im Archiv heisst die Datei wie im Container.
+DB=$(python3 -c "from orakel.config import load_config; print(load_config('config.toml').db_pfad)")
+[ "$DB" = orakel.db ] || cp "$DB" orakel.db
 tar czf orakel-umzug.tar.gz orakel.db vault daten
 ```
 
@@ -109,10 +112,37 @@ sind.
 
 ## Backup und Wiederherstellung
 
-Backup bei gestoppter App, damit die Datenbank konsistent ist:
+Die Datenbank läuft im WAL-Modus. Eine einfache Dateikopie kann deshalb
+unvollständig sein; das Skript nutzt den Online-Backup von SQLite, der auch
+bei laufender App konsistent ist:
 
 ```bash
-mkdir -p backups
+docker compose run --rm -T --entrypoint python orakel \
+  /app/scripts/pruefe_backup.py --db /data/orakel.db --ordner /data/backups
+```
+
+Aufbewahrung: 7 Tagesstände, sonntags zusätzlich ein Wochenstand, davon die
+letzten 4. Ältere Dateien entfernt das Skript. Als täglicher Cronjob:
+
+```cron
+15 3 * * * cd /srv/orakel && docker compose run --rm -T --entrypoint python \
+  orakel /app/scripts/pruefe_backup.py --db /data/orakel.db --ordner /data/backups
+```
+
+Nach jeder Sicherung prüft `PRAGMA integrity_check` die Datei. Die
+Wiederherstellung wird gegen die laufende Datenbank verglichen (Zeilenzahlen
+aller Tabellen):
+
+```bash
+docker compose run --rm -T --entrypoint python orakel \
+  /app/scripts/pruefe_backup.py --db /data/orakel.db --ordner /data/backups --pruefen
+```
+
+Exit 0 heisst: Integrität `ok` und alle Zeilenzahlen stimmen überein. Für den
+Umzug auf einen anderen Server weiterhin das komplette Volume archivieren
+(bei gestoppter App):
+
+```bash
 docker compose stop orakel
 docker compose run --rm --no-deps -T --entrypoint sh orakel \
   -c "tar czf - -C /data ." > "backups/orakel-$(date +%F-%H%M).tar.gz"
@@ -138,6 +168,10 @@ git pull
 docker compose up -d --build
 ```
 
+Das Basis-Image im `Dockerfile` ist auf einen Digest gepinnt. Ein
+Python-Update ist damit eine bewusste Änderung im `Dockerfile`, kein
+Zufallsergebnis des nächsten Builds.
+
 Das Daten-Volume bleibt erhalten. Nach Änderungen an der `.env` den App-Container
 neu erzeugen:
 
@@ -147,6 +181,11 @@ docker compose up -d --force-recreate orakel
 
 ## Sicherheit
 
+- Der Container bindet `0.0.0.0`. `ORAKEL_AUTH_USER` und `ORAKEL_AUTH_PASS`
+  sind deshalb Pflicht: `docker compose` bricht ohne sie schon beim Auflösen
+  der `.env` ab (`:?` in `docker-compose.yml`), der Entrypoint meldet es
+  zusätzlich und beendet sich mit Exit 1. Nur für die lokale Entwicklung
+  erlaubt `ORAKEL_ALLOW_NO_AUTH=1` einen Start ohne Login.
 - Basic-Auth nur über HTTPS. Port 3000 wird nicht nach außen veröffentlicht;
   erreichbar sind ausschließlich Caddy auf 80/443.
 - Es gibt genau ein Login, keine Rollen und keine Zwei-Faktor-Anmeldung. Für

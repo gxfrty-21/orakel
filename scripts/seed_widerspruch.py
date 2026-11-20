@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from orakel.db import Facts
+from orakel.kern.db import Facts
 from orakel.nexus.bewertung import claims_auffrischen
 from orakel.nexus.dedup import titel_hash
 from orakel.nexus.quellen import Quelle

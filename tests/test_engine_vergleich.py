@@ -14,9 +14,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from orakel.backtest import backtest
+from orakel.kern.backtest import backtest
 from orakel.config import RisikoGrenzen
-from orakel.paper import _fill, _kosten
+from orakel.kern.paper import _fill, _kosten
 
 
 def kerzen() -> pd.DataFrame:
@@ -60,8 +60,8 @@ def test_backtest_und_paper_nutzen_dieselben_fill_preise(cfg):
 
 
 def test_mehrere_positionen_loesen_gleichzeitig_aus(cfg):
-    from orakel.db import Facts
-    from orakel.paper import tick
+    from orakel.kern.db import Facts
+    from orakel.kern.paper import tick
     from test_paper_datenqualitaet import baue_df
 
     db = Facts(cfg.db_pfad)

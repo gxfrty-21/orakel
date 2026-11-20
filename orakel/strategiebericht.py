@@ -21,8 +21,8 @@ from typing import Any
 import pandas as pd
 
 from .config import Config, RisikoGrenzen
-from .judge import aufteilung, beurteile_walk_forward, pruefe_holdout
-from .strategies import Strategie, strategien
+from .kern.judge import aufteilung, beurteile_walk_forward, pruefe_holdout
+from .kern.strategies import Strategie, strategien
 
 SCHEMA = "strategie-bericht.v1"
 

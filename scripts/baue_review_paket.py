@@ -12,9 +12,14 @@ Aufrufe:
     python scripts/baue_review_paket.py            # Paket bauen und prüfen
     python scripts/baue_review_paket.py --pruefen  # nur prüfen (CI)
 
+``--pytest-log PFAD`` übernimmt ein vorhandenes pytest-Protokoll (CI-Artefakt)
+statt die Suite erneut zu starten; ``--pytest-exit-code PFAD`` nennt dazu die
+Datei mit dem Exit-Code des Laufs, ``--junit PFAD`` bleibt die zweite Quelle.
+
 ``--pruefen`` prüft ein vorhandenes Paket gegen den Commit. Existiert noch kein
-Paket (CI ohne ``artifacts/``), baut der Builder in ein temporäres Verzeichnis
-und prüft dort Quellen, Hashes und ZIP.
+Paket (CI ohne ``artifacts/``), baut der Builder in ein temporäres Verzeichnis,
+schreibt dort einen Bericht aus den gemessenen Werten und prüft Quellen, Hashes,
+ZIP und diesen Bericht.
 """
 from __future__ import annotations
 
@@ -27,6 +32,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 import zipfile
 
 WURZEL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -39,10 +46,16 @@ FESTE_ZEIT = (2026, 11, 18, 0, 0, 0)
 NEBEN_DATEIEN = {MANIFEST_NAME, PROVENIENZ_NAME, ZIP_NAME, ZIP_NAME + '.sha256'}
 EVIDENZ_MD = 'EVIDENZ.md'
 MUSTER_TESTZAHL = re.compile(r'(\d+)\s+passed')
+MUSTER_ERGEBNIS = re.compile(r'(\d+)\s+(passed|failed|errors?|skipped|xfailed|xpassed)\b')
 MUSTER_JUNIT = re.compile(r'<testsuite\b[^>]*\btests="(\d+)"')
-MUSTER_EVIDENZ_HASH = re.compile(r'`(belege/[^`]+)`\s*\(`([0-9a-f]{8,64})')
+MUSTER_EVIDENZ_HASH = re.compile(r'`((?:belege|dateien)/[^`]+)`\s*\(`([0-9a-f]{8,64})')
 MUSTER_RUN = re.compile(r'/actions/runs/(\d+)')
-MUSTER_COMMIT = re.compile(r'\b([0-9a-f]{7,40})\b')
+# Lauf-IDs stehen in Berichten auch als Zahl ("CI-Lauf 123456789"), nicht nur
+# als URL. Ab sechs Ziffern, damit Jahreszahlen und kurze Nummern auffallen.
+MUSTER_RUN_NUMMER = re.compile(r'\b(?:CI-Lauf|Lauf(?:-ID)?|Run(?:-ID)?)[ \t:#]*(\d{6,})\b')
+HAUPTDOKUMENT = 'ORAKEL-REVIEW-PAKET.md'
+MAX_HAUPTDOKUMENT_ZEILEN = 200
+API_BASIS = 'https://api.github.com'
 
 # Nachweise, die der Generator selbst ausführt. Reihenfolge = Reihenfolge im Bericht.
 PRUEFUNGEN = (
@@ -56,7 +69,7 @@ class Abweichung(Exception):
 
 
 def git(*args: str) -> bytes:
-    r = subprocess.run(['git', '-c', 'safe.directory=*', '-C', WURZEL, *args], capture_output=True)
+    r = subprocess.run(['git', '-c', 'safe.directory=*', '-C', WURZEL, *args], capture_output=True)  # noqa: S603, S607 - Programmaufruf mit fester Argumentliste, ohne Shell; Programmname und Argumente sind fest verdrahtet
     if r.returncode != 0:
         raise Abweichung(f'git {" ".join(args)} fehlgeschlagen: {r.stderr.decode(errors="replace").strip()}')
     return r.stdout
@@ -135,7 +148,7 @@ def quell_eintraege(freigabe: dict, commit: str) -> list[dict]:
     return eintraege
 
 
-def beleg_eintraege(freigabe: dict, ausgabe: str, pflicht: bool) -> list[dict]:
+def beleg_eintraege(freigabe: dict, ausgabe: str) -> list[dict]:
     eintraege, fehlend = [], []
     for name in (freigabe.get('belege') or []) + (freigabe.get('dokumente') or []):
         pfad = os.path.join(ausgabe, name)
@@ -149,9 +162,6 @@ def beleg_eintraege(freigabe: dict, ausgabe: str, pflicht: bool) -> list[dict]:
             'herkunft': 'beleg' if name.startswith('belege/') else 'paketdokument',
         })
     if fehlend:
-        if pflicht:
-            raise Abweichung('Freigegebene Belege/Dokumente fehlen im Paketordner: '
-                             + ', '.join(sorted(fehlend)))
         print('Hinweis: nicht vorhanden und daher nicht im Paket: '
               + ', '.join(sorted(fehlend)), file=sys.stderr)
     return eintraege
@@ -339,6 +349,24 @@ def pruefe_evidenz(ausgabe: str, commit: str) -> None:
         raise Abweichung(f'EVIDENZ.json nennt Commit {genannt[:7]} statt {commit[:7]}.')
     if quelle.get('dirty') is not False:
         raise Abweichung('EVIDENZ.json weist den Arbeitsbaum nicht als sauber aus.')
+    pytest_eintraege = [e for e in daten.get('dateien') or [] if e.get('name') == 'pytest']
+    if not pytest_eintraege:
+        raise Abweichung('EVIDENZ.json enthält keinen pytest-Nachweis.')
+    for eintrag in pytest_eintraege:
+        log_pfad = os.path.join(ausgabe, eintrag['target'])
+        if not os.path.exists(log_pfad):
+            raise Abweichung(f'pytest-Protokoll fehlt: {eintrag["target"]}')
+        ergebnis = ergebnis_aus_log(open(log_pfad, encoding='utf-8').read()) or {}
+        gemessen = ergebnis.get('passed')
+        if gemessen is None:
+            raise Abweichung(f'pytest-Protokoll {eintrag["target"]} enthält keine Zeile '
+                             '"N passed".')
+        if gemessen != daten.get('testzahl'):
+            raise Abweichung(f'EVIDENZ.json nennt {daten.get("testzahl")} Tests, das '
+                             f'Protokoll misst {gemessen}.')
+        if 'uebersprungen' in daten and ergebnis.get('skipped', 0) != daten['uebersprungen']:
+            raise Abweichung(f'EVIDENZ.json nennt {daten["uebersprungen"]} übersprungene '
+                             f'Tests, das Protokoll {ergebnis.get("skipped", 0)}.')
 
 
 def letzte_zeile(text: str) -> str:
@@ -351,6 +379,20 @@ def testzahl_aus_log(text: str) -> int | None:
     """Liest die Testzahl aus der pytest-Schlusszeile (``402 passed``)."""
     treffer = MUSTER_TESTZAHL.findall(text)
     return int(treffer[-1]) if treffer else None
+
+
+def ergebnis_aus_log(text: str) -> dict[str, int] | None:
+    """Zählt alle Zustände der pytest-Schlusszeile (``417 passed, 2 skipped``).
+
+    ``skipped`` gehört zur Gesamtzahl der Tests, nicht zu den bestandenen;
+    ``failed``, ``errors`` und ``xfailed`` sind Abbruchgründe.
+    """
+    zahlen: dict[str, int] = {}
+    for zahl, zustand in MUSTER_ERGEBNIS.findall(letzte_zeile(text)):
+        if zustand == 'error':
+            zustand = 'errors'
+        zahlen[zustand] = zahlen.get(zustand, 0) + int(zahl)
+    return zahlen or None
 
 
 def testzahl_aus_junit(pfad: str) -> int:
@@ -370,18 +412,55 @@ def befehl_text(argv: tuple[str, ...]) -> str:
     return 'python ' + ' '.join(argv)
 
 
+def _lies(pfad: str, was: str) -> str:
+    """Liest eine vorhandene Evidenzdatei oder bricht mit klarem Befund ab."""
+    try:
+        return open(pfad, encoding='utf-8').read()
+    except OSError as fehler:
+        raise Abweichung(f'{was} fehlt oder ist nicht lesbar: {pfad}') from fehler
+
+
+def _exit_code_aus_datei(pfad: str | None) -> int:
+    """Exit-Code des übernommenen Laufs; ohne Datei gibt es keinen Nachweis."""
+    if not pfad:
+        raise Abweichung('--pytest-log braucht --pytest-exit-code mit dem Exit-Code '
+                         'des Laufs.')
+    inhalt = _lies(pfad, 'Exit-Code-Datei').strip()
+    try:
+        return int(inhalt)
+    except ValueError as fehler:
+        raise Abweichung(f'Exit-Code-Datei {pfad} enthält keine Zahl: {inhalt!r}') from fehler
+
+
+PYTEST_ARTEFAKT_BEFEHL = 'python -m pytest -q tests --junitxml=artifacts/pytest/junit.xml'
+
+
 def fuehre_evidenz_aus(ausgabe: str, commit: str, branch: str,
-                       junit: str | None = None) -> dict:
+                       junit: str | None = None,
+                       pytest_log: str | None = None,
+                       pytest_exit_code: str | None = None) -> dict:
     """Führt die Nachweise aus und schreibt Protokolle, EVIDENZ.json und EVIDENZ.md.
 
     Die Testzahl stammt aus dem Protokoll bzw. dem JUnit-Bericht; sie wird nirgends
-    von Hand eingetragen. Schlägt ein Nachweis fehl oder widersprechen sich Log und
-    JUnit-Bericht, bricht der Bau ab.
+    von Hand eingetragen. Mit ``pytest_log`` wird ein vorhandenes Protokoll aus dem
+    CI-Job übernommen, statt die Suite erneut zu starten; der Exit-Code kommt dann
+    aus ``pytest_exit_code``. Schlägt ein Nachweis fehl oder widersprechen sich Log
+    und JUnit-Bericht, bricht der Bau ab.
     """
-    dateien = []
+    dateien, protokolle = [], {}
     for name, argv, ziel in PRUEFUNGEN:
-        lauf = subprocess.run([sys.executable, *argv], cwd=WURZEL, capture_output=True, text=True)
-        text = lauf.stdout + lauf.stderr
+        if name == 'pytest' and pytest_log:
+            text = _lies(pytest_log, 'pytest-Protokoll')
+            exit_code = _exit_code_aus_datei(pytest_exit_code)
+            befehl = PYTEST_ARTEFAKT_BEFEHL
+            herkunft = 'Job pytest (Artefakt)'
+        else:
+            lauf = subprocess.run([sys.executable, *argv], cwd=WURZEL,
+                                  capture_output=True, text=True)
+            text = lauf.stdout + lauf.stderr
+            exit_code = lauf.returncode
+            befehl = befehl_text(argv)
+            herkunft = 'lokaler Lauf'
         pfad = os.path.join(ausgabe, ziel)
         os.makedirs(os.path.dirname(pfad), exist_ok=True)
         with open(pfad, 'w', encoding='utf-8') as f:
@@ -390,22 +469,33 @@ def fuehre_evidenz_aus(ausgabe: str, commit: str, branch: str,
             'name': name,
             'target': ziel,
             'commit': commit,
-            'befehl': befehl_text(argv),
-            'exit_code': lauf.returncode,
+            'befehl': befehl,
+            'herkunft': herkunft,
+            'exit_code': exit_code,
             'sha256': sha256_datei(pfad),
             'bytes': os.path.getsize(pfad),
             'log': letzte_zeile(text),
         })
+        protokolle[name] = text
     dateien.append(_strategie_nachweis(ausgabe, commit))
     pytest_eintrag = next(d for d in dateien if d['name'] == 'pytest')
-    aus_log = testzahl_aus_log(open(os.path.join(ausgabe, pytest_eintrag['target']),
-                                    encoding='utf-8').read())
-    if aus_log is None:
+    protokoll = protokolle['pytest']
+    ergebnis = ergebnis_aus_log(protokoll)
+    if not ergebnis or 'passed' not in ergebnis:
         raise Abweichung('pytest-Protokoll enthält keine Zeile "N passed".')
+    for zustand in ('failed', 'errors', 'xfailed'):
+        if ergebnis.get(zustand):
+            raise Abweichung(f'pytest meldet {ergebnis[zustand]} {zustand}; ein Nachweis '
+                             'zählt nur ohne fehlgeschlagene oder erwartet '
+                             'fehlschlagende Tests.')
+    bestanden = ergebnis['passed']
+    uebersprungen = ergebnis.get('skipped', 0)
+    gesamt = bestanden + uebersprungen
     if junit:
         aus_junit = testzahl_aus_junit(junit)
-        if aus_junit != aus_log:
-            raise Abweichung(f'JUnit-Bericht nennt {aus_junit} Tests, das Protokoll {aus_log}.')
+        if aus_junit != gesamt:
+            raise Abweichung(f'JUnit-Bericht nennt {aus_junit} Tests, Protokoll und Skips '
+                             f'ergeben {gesamt} (passed + skipped).')
     if pytest_eintrag['exit_code'] != 0:
         raise Abweichung(f'pytest endete mit Exit {pytest_eintrag["exit_code"]}: '
                          f'{pytest_eintrag["log"]}')
@@ -414,7 +504,9 @@ def fuehre_evidenz_aus(ausgabe: str, commit: str, branch: str,
         'generated_at': '2026-11-19T00:00:00Z',
         'quelle': {'commit': commit, 'branch': branch, 'dirty': False},
         'umgebung': umgebung(),
-        'testzahl': aus_log,
+        'testzahl': bestanden,
+        'uebersprungen': uebersprungen,
+        'gesamt': gesamt,
         'dateien': dateien,
     }
     with open(os.path.join(ausgabe, 'EVIDENZ.json'), 'w', encoding='utf-8') as f:
@@ -466,12 +558,15 @@ def rendere_evidenz_md(evidenz: dict) -> str:
     zeilen = [
         '# Evidenz',
         '',
-        f"Alle Nachweise wurden vom Paket-Generator auf Commit `{quelle['commit']}` "
-        f"(Branch `{quelle['branch']}`, Arbeitsbaum sauber, `dirty: false`) erzeugt. "
+        f"Alle Nachweise beziehen sich auf Commit `{quelle['commit']}` "
+        f"(Branch `{quelle['branch']}`, Arbeitsbaum sauber, `dirty: false`). "
         'Zahlen und Hashes dieser Datei stammen aus den Protokollen und den Dateien '
         'selbst; der Generator bricht ab, sobald eine Angabe davon abweicht.',
         '',
+        *herkunft_zeilen(evidenz),
+        '',
         f"Gemessene Testzahl: **{evidenz['testzahl']}** (`pytest`).",
+        *uebersprungene_zeilen(evidenz),
         '',
         '| Nachweis | Befehl | Exit | Ergebniszeile | Protokoll (SHA-256) |',
         '|---|---|---:|---|---|',
@@ -496,8 +591,31 @@ def rendere_evidenz_md(evidenz: dict) -> str:
     return '\n'.join(zeilen)
 
 
+def uebersprungene_zeilen(evidenz: dict) -> list[str]:
+    """Weist übersprungene Tests aus, statt sie als bestanden mitzuzählen."""
+    anzahl = evidenz.get('uebersprungen') or 0
+    if not anzahl:
+        return []
+    return ['', f"Übersprungen: **{anzahl}** Tests; sie zählen zur Gesamtzahl "
+                f"{evidenz.get('gesamt', evidenz['testzahl'] + anzahl)}, nicht zu den "
+                'bestandenen.']
+
+
+def herkunft_zeilen(evidenz: dict) -> list[str]:
+    """Nennt übernommene Nachweise, damit kein fremder Lauf als eigener gilt."""
+    fremd = [e for e in evidenz['dateien'] if e.get('herkunft') != 'lokaler Lauf']
+    if not fremd:
+        return []
+    return ['Übernommen: ' + ', '.join(
+        f"{e['name']} aus {e.get('herkunft', 'unbekannt')} (`{e['befehl']}`)"
+        for e in fremd) + '. Die übrigen Nachweise hat der Generator lokal erzeugt.', '']
+
+
 def repo_slug() -> str:
-    """``owner/name`` aus der Origin-URL."""
+    """``owner/name`` aus der CI-Umgebung oder der Origin-URL."""
+    aus_ci = os.environ.get('GITHUB_REPOSITORY')
+    if aus_ci:
+        return aus_ci
     url = git('remote', 'get-url', 'origin').decode().strip()
     treffer = re.search(r'[:/]([^/:]+/[^/]+?)(?:\.git)?$', url)
     if not treffer:
@@ -505,43 +623,84 @@ def repo_slug() -> str:
     return treffer.group(1)
 
 
+def _http_json(url: str) -> dict:
+    """Liest JSON über HTTPS; Token aus ``GITHUB_TOKEN``/``GH_TOKEN``, wenn gesetzt."""
+    kopf = {'Accept': 'application/vnd.github+json',
+            'User-Agent': 'orakel-review-paket'}
+    token = os.environ.get('GITHUB_TOKEN') or os.environ.get('GH_TOKEN')
+    if token:
+        kopf['Authorization'] = f'Bearer {token}'
+    anfrage = urllib.request.Request(url, headers=kopf)
+    with urllib.request.urlopen(anfrage, timeout=20) as antwort:
+        return json.loads(antwort.read().decode('utf-8'))
+
+
 def ci_lauf(run_id: str) -> dict:
-    """Fragt Lauf-ID, Head-Commit und Ergebnis über die GitHub-API ab."""
-    r = subprocess.run(
-        ['gh', 'api', f'repos/{repo_slug()}/actions/runs/{run_id}',
-         '--jq', '{head_sha: .head_sha, conclusion: .conclusion, event: .event}'],
-        capture_output=True, text=True,
-    )
-    if r.returncode != 0:
-        raise Abweichung(f'CI-Lauf {run_id} nicht abrufbar: {r.stderr.strip()[:200]}')
-    try:
-        daten = json.loads(r.stdout)
-    except json.JSONDecodeError as fehler:
-        raise Abweichung(f'CI-Lauf {run_id} liefert kein JSON.') from fehler
-    if not daten.get('head_sha'):
-        raise Abweichung(f'CI-Lauf {run_id} nennt keinen Head-Commit.')
-    return {'run_id': int(run_id), **daten}
+    """Fragt Lauf-ID, Head-Commit und Ergebnis direkt über HTTPS ab.
 
-
-def pruefe_konsistenz(ausgabe: str, commit: str, evidenz: dict | None) -> None:
-    """Prüft Doku gegen Quellen: Hashes, Testzahl und CI-Lauf-IDs.
-
-    Läuft nach jedem Bau und bei ``--pruefen``; jede Abweichung beendet den Lauf.
+    Bewusst ohne ``gh``: Der Check läuft damit auch dort, wo das CLI fehlt.
+    Ist die API nicht erreichbar, bricht der Lauf ab, statt den Nachweis
+    stillschweigend zu überspringen.
     """
+    try:
+        lauf_id = int(run_id)
+    except (TypeError, ValueError) as fehler:
+        raise Abweichung(f'CI-Lauf {run_id!r} ist keine Zahl.') from fehler
+    url = f'{API_BASIS}/repos/{repo_slug()}/actions/runs/{lauf_id}'
+    try:
+        daten = _http_json(url)
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as fehler:
+        raise Abweichung(f'CI-Lauf {lauf_id} nicht abrufbar ({url}): {fehler}') from fehler
+    if not daten.get('head_sha'):
+        raise Abweichung(f'CI-Lauf {lauf_id} nennt keinen Head-Commit.')
+    return {'run_id': lauf_id, 'head_sha': daten['head_sha'],
+            'conclusion': daten.get('conclusion'), 'event': daten.get('event')}
+
+
+def ci_lauf_ids(text: str) -> set[str]:
+    """Sammelt CI-Lauf-IDs in URL- und Zahlenform ("CI-Lauf 123456789")."""
+    return set(MUSTER_RUN.findall(text)) | set(MUSTER_RUN_NUMMER.findall(text))
+
+
+def pruefe_konsistenz(ausgabe: str, commit: str, evidenz: dict | None,
+                      quellen: dict[str, str] | None = None,
+                      lauf=None) -> None:
+    """Prüft Doku und Manifest gegen die Quellen: Hashes, Testzahl, CI-Lauf-IDs.
+
+    ``quellen`` bildet Zielpfade auf den frisch aus dem Commit gelesenen
+    SHA-256 ab. Damit werden auch Quellhashes geprüft, die in ``MANIFEST.json``
+    oder in der Doku stehen — nicht nur die Protokolle aus ``EVIDENZ.json``.
+    CI-Lauf-IDs werden über HTTPS geprüft, ohne ``gh``; ``lauf`` ersetzt den
+    Abruf in Tests. Läuft nach jedem Bau und bei ``--pruefen``;
+    jede Abweichung beendet den Lauf.
+    """
+    lauf = lauf or ci_lauf
+    soll: dict[str, str] = {}
+    manifest_pfad = os.path.join(ausgabe, MANIFEST_NAME)
+    if os.path.exists(manifest_pfad):
+        manifest = json.load(open(manifest_pfad, encoding='utf-8'))
+        for eintrag in manifest.get('files', []):
+            soll[eintrag['target']] = eintrag['sha256']
+    if evidenz:
+        for eintrag in evidenz['dateien']:
+            soll.setdefault(eintrag['target'], eintrag['sha256'])
+    for ziel, echt in (quellen or {}).items():
+        if ziel in soll and soll[ziel] != echt:
+            raise Abweichung(f'Manifest-Hash für {ziel} passt nicht zur Quelle im Commit '
+                             f'{commit[:7]}.')
+        soll[ziel] = echt
+        kopie = os.path.join(ausgabe, ziel)
+        if os.path.exists(kopie) and sha256_datei(kopie) != echt:
+            raise Abweichung(f'Kopie {ziel} weicht von der Quelle im Commit ab.')
     md_pfade = [os.path.join(ausgabe, n) for n in sorted(os.listdir(ausgabe))
                 if n.endswith('.md') and os.path.isfile(os.path.join(ausgabe, n))]
-    if not md_pfade:
-        return
-    ziel_hashes = {}
-    if evidenz:
-        ziel_hashes = {e['target']: e['sha256'] for e in evidenz['dateien']}
     for pfad in md_pfade:
         text = open(pfad, encoding='utf-8').read()
         name = os.path.basename(pfad)
         for ziel, praefix in MUSTER_EVIDENZ_HASH.findall(text):
-            echt = ziel_hashes.get(ziel)
+            echt = soll.get(ziel)
             if echt is None:
-                raise Abweichung(f'{name} nennt Hash zu unbekanntem Protokoll {ziel!r}.')
+                raise Abweichung(f'{name} nennt Hash zu unbekannter Datei {ziel!r}.')
             if not echt.startswith(praefix):
                 raise Abweichung(f'{name}: Hash {praefix}… passt nicht zu {ziel} ({echt[:16]}…).')
         if evidenz:
@@ -549,23 +708,60 @@ def pruefe_konsistenz(ausgabe: str, commit: str, evidenz: dict | None) -> None:
                 if int(zahl) != evidenz['testzahl']:
                     raise Abweichung(f'{name} nennt {zahl} passed, gemessen sind '
                                      f'{evidenz["testzahl"]}.')
-        for run_id in set(MUSTER_RUN.findall(text)):
-            if not _gh_verfuegbar():
-                print(f'Hinweis: gh fehlt, CI-Lauf {run_id} aus {name} nicht geprüft.',
-                      file=sys.stderr)
-                continue
-            lauf = ci_lauf(run_id)
-            if lauf['head_sha'] != commit:
+        for run_id in sorted(ci_lauf_ids(text)):
+            ergebnis = lauf(run_id)
+            if ergebnis['head_sha'] != commit:
                 raise Abweichung(f'{name} nennt CI-Lauf {run_id} auf '
-                                 f'{lauf["head_sha"][:7]}, Paket-Commit ist {commit[:7]}.')
+                                 f'{ergebnis["head_sha"][:7]}, Paket-Commit ist {commit[:7]}.')
 
 
-def _gh_verfuegbar() -> bool:
-    try:
-        r = subprocess.run(['gh', '--version'], capture_output=True, text=True, timeout=10)
-        return r.returncode == 0
-    except (OSError, subprocess.SubprocessError):
-        return False
+def schreibe_pruefbericht(ausgabe: str, commit: str, branch: str,
+                          eintraege: list[dict], evidenz: dict | None,
+                          ci: dict | None = None) -> str:
+    """Schreibt einen kurzen Bericht ausschliesslich aus gemessenen Werten.
+
+    Im CI gibt es kein ``artifacts/``-Verzeichnis mit Paketdokumenten; ohne
+    Dokument hätte ``pruefe_konsistenz`` nichts zu prüfen. Der Bericht nennt
+    nur Werte aus MANIFEST/EVIDENZ und dem geprüften CI-Lauf, damit die
+    Konsistenzprüfung auch dort echte Angaben prüft. Gibt den Pfad zurück.
+    """
+    quellen = [e for e in eintraege if e.get('herkunft') == 'commit']
+    belege = [e for e in eintraege if e.get('herkunft') == 'beleg']
+    zeilen = [
+        '# Prüfbericht des Review-Pakets', '',
+        f'Commit: `{commit}` (Branch `{branch}`), Paketdateien: {len(eintraege)} '
+        f'({len(quellen)} Quellen, {len(belege)} Belege).', '',
+        '## Gemessene Nachweise', '',
+    ]
+    if evidenz:
+        zeilen.append(f'- Testzahl: {evidenz["testzahl"]} passed.')
+        for eintrag in evidenz.get('dateien', []):
+            zeilen.append(f'- Beleg `{eintrag["target"]}` (`{eintrag["sha256"][:16]}`).')
+    if ci:
+        zeilen.append(f'- CI: https://github.com/{repo_slug()}/actions/runs/'
+                      f'{ci["run_id"]} ({ci.get("conclusion") or "offen"}).')
+    zeilen += ['', '## Quellen (Auszug)', '']
+    for eintrag in sorted(quellen, key=lambda e: e['target'])[:10]:
+        zeilen.append(f'- `{eintrag["target"]}` (`{eintrag["sha256"][:16]}`).')
+    zeilen += ['', 'Alle Angaben stammen aus MANIFEST.json und EVIDENZ.json; '
+               'der Bericht enthält keine Schätzungen.', '']
+    pfad = os.path.join(ausgabe, HAUPTDOKUMENT)
+    with open(pfad, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(zeilen))
+    return pfad
+
+
+def pruefe_hauptdokument(ausgabe: str) -> None:
+    """Das Hauptdokument bleibt lesbar: höchstens 200 Zeilen."""
+    pfad = os.path.join(ausgabe, HAUPTDOKUMENT)
+    if not os.path.exists(pfad):
+        return
+    with open(pfad, encoding='utf-8') as f:
+        zeilen = sum(1 for _ in f)
+    if zeilen > MAX_HAUPTDOKUMENT_ZEILEN:
+        raise Abweichung(f'{HAUPTDOKUMENT} hat {zeilen} Zeilen; erlaubt sind höchstens '
+                         f'{MAX_HAUPTDOKUMENT_ZEILEN}.')
+    print(f'Hauptdokument: {zeilen} Zeilen (Grenze {MAX_HAUPTDOKUMENT_ZEILEN}).')
 
 
 def pruefe_evidenz_dateien(ausgabe: str, evidenz: dict) -> None:
@@ -621,8 +817,10 @@ def pruefe_zip(eintraege: list[dict], ausgabe: str) -> str:
 
 
 def baue(freigabe: dict, commit: str, branch: str, ausgabe: str,
-         pflicht: bool = False, evidenz_bauen: bool = False,
-         junit: str | None = None, ci: dict | None = None) -> tuple[list[dict], str]:
+         evidenz_bauen: bool = False,
+         junit: str | None = None, ci: dict | None = None,
+         pytest_log: str | None = None,
+         pytest_exit_code: str | None = None) -> tuple[list[dict], str]:
     quellen = quell_eintraege(freigabe, commit)
     schreibe_kopien(quellen, ausgabe)
     for e in quellen:
@@ -630,12 +828,13 @@ def baue(freigabe: dict, commit: str, branch: str, ausgabe: str,
     os.makedirs(ausgabe, exist_ok=True)
     evidenz = None
     if evidenz_bauen:
-        evidenz = fuehre_evidenz_aus(ausgabe, commit, branch, junit)
-    weitere = beleg_eintraege(freigabe, ausgabe, pflicht=pflicht)
+        evidenz = fuehre_evidenz_aus(ausgabe, commit, branch, junit,
+                                     pytest_log=pytest_log,
+                                     pytest_exit_code=pytest_exit_code)
+    weitere = beleg_eintraege(freigabe, ausgabe)
     eintraege = quellen + weitere
-    pruefe_kopien(quellen, ausgabe)
     pruefe_unerlaubte_dateien(freigabe, ausgabe)
-    if pflicht or os.path.exists(os.path.join(ausgabe, 'EVIDENZ.json')):
+    if os.path.exists(os.path.join(ausgabe, 'EVIDENZ.json')):
         pruefe_evidenz(ausgabe, commit)
     if evidenz is None and os.path.exists(os.path.join(ausgabe, 'EVIDENZ.json')):
         evidenz = json.load(open(os.path.join(ausgabe, 'EVIDENZ.json'), encoding='utf-8'))
@@ -651,7 +850,9 @@ def baue(freigabe: dict, commit: str, branch: str, ausgabe: str,
     with open(os.path.join(ausgabe, ZIP_NAME + '.sha256'), 'w', encoding='utf-8') as f:
         f.write(f'{zip_sha}  {ZIP_NAME}\n')
     pruefe_zip(eintraege + [manifest_eintrag], ausgabe)
-    pruefe_konsistenz(ausgabe, commit, evidenz)
+    pruefe_hauptdokument(ausgabe)
+    pruefe_konsistenz(ausgabe, commit, evidenz,
+                      {e['target']: e['sha256'] for e in quellen})
     return eintraege, zip_sha
 
 
@@ -660,7 +861,7 @@ def pruefe(freigabe: dict, commit: str, ausgabe: str) -> tuple[list[dict], str]:
     for e in quellen:
         e.pop('daten', None)
     pruefe_kopien(quellen, ausgabe)
-    weitere = beleg_eintraege(freigabe, ausgabe, pflicht=False)
+    weitere = beleg_eintraege(freigabe, ausgabe)
     eintraege = quellen + weitere
     pruefe_unerlaubte_dateien(freigabe, ausgabe)
     pruefe_evidenz(ausgabe, commit)
@@ -697,7 +898,9 @@ def pruefe(freigabe: dict, commit: str, ausgabe: str) -> tuple[list[dict], str]:
         raise Abweichung('ZIP-Prüfsummendatei passt nicht zum ZIP.')
     if manifest.get('testzahl') != evidenz.get('testzahl'):
         raise Abweichung('Manifest-Testzahl weicht von EVIDENZ.json ab.')
-    pruefe_konsistenz(ausgabe, commit, evidenz)
+    pruefe_hauptdokument(ausgabe)
+    pruefe_konsistenz(ausgabe, commit, evidenz,
+                      {e['target']: e['sha256'] for e in quellen})
     return eintraege, zip_sha
 
 
@@ -707,8 +910,14 @@ def main() -> int:
     ap.add_argument('--ausgabe', default=STANDARD_AUSGABE)
     ap.add_argument('--pruefen', action='store_true', help='nur prüfen, nichts schreiben')
     ap.add_argument('--evidenz', action='store_true',
-                    help='Nachweise ausführen und EVIDENZ.json/EVIDENZ.md neu erzeugen')
+                    help='Nachweise ausführen und EVIDENZ.json/EVIDENZ.md neu erzeugen '
+                         '(im --pruefen-Lauf ohne Paket immer aktiv)')
     ap.add_argument('--junit', default=None, help='JUnit-XML des pytest-Laufs (eine Testzahl)')
+    ap.add_argument('--pytest-log', default=None,
+                    help='vorhandenes pytest-Protokoll übernehmen (CI-Artefakt) statt '
+                         'die Suite erneut zu starten')
+    ap.add_argument('--pytest-exit-code', default=None,
+                    help='Datei mit dem Exit-Code des Laufs, zu dem --pytest-log gehört')
     ap.add_argument('--ci-run', default=None, help='CI-Lauf-ID, deren Head-Commit geprüft wird')
     args = ap.parse_args()
 
@@ -729,12 +938,28 @@ def main() -> int:
         elif args.pruefen:
             # CI hat kein artifacts/-Verzeichnis: nur die Quellen prüfen.
             with tempfile.TemporaryDirectory(prefix='review-paket-') as temp:
-                eintraege, zip_sha = baue(freigabe, commit, branch, temp, pflicht=False,
-                                          evidenz_bauen=args.evidenz, junit=args.junit, ci=ci)
+                # Auch ohne ``--evidenz``: Im Prüflauf muss die Testzahl aus einem
+                # echten pytest-Protokoll stammen, nicht aus einer alten Datei.
+                eintraege, zip_sha = baue(freigabe, commit, branch, temp,
+                                          evidenz_bauen=True, junit=args.junit, ci=ci,
+                                          pytest_log=args.pytest_log,
+                                          pytest_exit_code=args.pytest_exit_code)
+                # Ohne Paketdokumente hätte ``pruefe_konsistenz`` nichts zu prüfen.
+                # Der Bericht entsteht aus den gerade gemessenen Werten und wird
+                # anschliessend mit denselben Prüfungen wie ein echtes Paket geprüft.
+                evidenz = json.load(open(os.path.join(temp, 'EVIDENZ.json'),
+                                         encoding='utf-8'))
+                schreibe_pruefbericht(temp, commit, branch, eintraege, evidenz, ci)
+                pruefe_hauptdokument(temp)
+                pruefe_konsistenz(temp, commit, evidenz,
+                                  {e['target']: e['sha256'] for e in eintraege
+                                   if e.get('herkunft') == 'commit'})
         else:
             os.makedirs(ausgabe, exist_ok=True)
             eintraege, zip_sha = baue(freigabe, commit, branch, ausgabe,
-                                      evidenz_bauen=args.evidenz, junit=args.junit, ci=ci)
+                                      evidenz_bauen=args.evidenz, junit=args.junit, ci=ci,
+                                      pytest_log=args.pytest_log,
+                                      pytest_exit_code=args.pytest_exit_code)
     except Abweichung as fehler:
         print(f'Review-Paket FEHLER: {fehler}', file=sys.stderr)
         return 1
