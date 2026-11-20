@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from orakel.db import Facts
-from orakel.paper import tick
+from orakel.kern.db import Facts
+from orakel.kern.paper import tick
 
 from test_paper_datenqualitaet import baue_df
 

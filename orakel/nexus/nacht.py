@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ..db import Facts
+from ..kern.db import Facts
 from .abruf import Abrufer, CacheEintrag, HttpCache
 from .bewertung import claims_auffrischen
 from .graph import graph_auffrischen

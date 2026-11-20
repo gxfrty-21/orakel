@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from orakel.db import Facts
+from orakel.kern.db import Facts
 from orakel.nexus.abruf import Abrufer, CacheEintrag, HttpCache
 from orakel.nexus.nacht import _backup, dns_und_tls, ist_faellig, nachtlauf
 

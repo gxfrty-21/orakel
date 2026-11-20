@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from orakel import db as db_mod
+from orakel.kern import db as db_mod
 
 
 def test_schema_wird_pro_pfad_nur_einmal_angelegt(tmp_path, monkeypatch):
     pfad = tmp_path / "einmal.db"
     aufrufe: list[int] = []
-    echtes_nachziehen = db_mod.Facts._spalten_nachziehen
+    echtes_anwenden = db_mod.migrationen.anwenden
 
-    def zaehle(c):
+    def zaehle(ziel, **kwargs):
         aufrufe.append(1)
-        echtes_nachziehen(c)
+        return echtes_anwenden(ziel, **kwargs)
 
-    monkeypatch.setattr(db_mod.Facts, "_spalten_nachziehen", staticmethod(zaehle))
+    monkeypatch.setattr(db_mod.migrationen, "anwenden", zaehle)
 
     db_mod.Facts(pfad)
     db_mod.Facts(pfad)

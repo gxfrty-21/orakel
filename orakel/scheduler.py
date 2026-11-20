@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from . import agents
 from .betrieb import Betrieb
 from .config import Config, RisikoGrenzen
-from .db import Facts
+from .kern.db import Facts
 
 
 def _validierungen_als_dicts(db: Facts) -> list[dict[str, Any]]:

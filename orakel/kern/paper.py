@@ -34,7 +34,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from .config import Config, RisikoGrenzen
+from ..config import Config, RisikoGrenzen
 from .data import df_aus_db
 from .db import Facts, jetzt
 from .markt import korrelation_max
