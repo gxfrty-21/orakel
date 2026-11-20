@@ -42,8 +42,8 @@ python -m venv .venv
 ### Lange Läufe
 
 «Lauf starten» blockiert nicht mehr. `POST /api/lauf` legt nur einen Auftrag an
-und antwortet sofort mit `202` und `{"id": …}`; ein Hintergrund-Arbeiter führt
-ihn aus. `GET /api/lauf/{id}` liefert `status` (`offen`, `aktiv`, `fertig`,
+und antwortet sofort mit `202` und `{"id": …}`; der Hintergrund-Loop (der
+Takt-Scheduler aus `orakel/scheduler.py`) führt ihn aus. `GET /api/lauf/{id}` liefert `status` (`offen`, `aktiv`, `fertig`,
 `fehler`) sowie bei Erfolg die Zusammenfassung aus Dauer, Validierungen, Plan
 und Fehlern. Das Dashboard fragt alle zwei Sekunden nach und lädt den Bericht
 erst danach neu.
@@ -56,7 +56,7 @@ auf deren Ergebnis. Erst nach `fertig` oder `fehler` startet ein neuer Klick
 einen neuen Auftrag.
 
 Bleibt ein Auftrag nach einem Absturz auf `aktiv` stehen, setzt ihn der
-Arbeiter beim nächsten Start wieder auf `offen` (`zuruecksetzen` in
+Hintergrund-Loop beim nächsten Start wieder auf `offen` (`zuruecksetzen` in
 `orakel/lauf_queue.py`): Beim Start hält kein Prozess mehr einen Auftrag, der
 Rest kann also gefahrlos erneut laufen. `gestartet` wird geleert, ein Ereignis
 protokolliert jeden Reset; erst danach beginnt die Schleife. Ein Auftrag, der
@@ -144,6 +144,12 @@ Der Hintergrund-Takt ist bewusst **opt-in** (`serve --takt` oder
 sechs Stunden), Intelligence, Missionen und optional die Company-Schicht. Im
 laufenden Takt werden zusätzlich offene Quittungen nach Frist erinnert
 (`[unternehmen] erinnerungen_intervall_minuten`).
+
+Takt und Lauf-Warteschlange teilen sich denselben Thread (`Takt` in
+`orakel/scheduler.py`): Je Runde läuft erst der Betriebstakt, dann genau ein
+Auftrag aus der Warteschlange. Ohne `--takt` läuft derselbe Loop im
+Sekundentakt nur für die Warteschlange, damit ein gestarteter Lauf auch ohne
+Dauerbetrieb abgearbeitet wird.
 Fehler erhalten einen persistenten exponentiellen Backoff; DB-, RSS- und
 Speichergrenzen pausieren schreibintensive Jobs, statt den Prozess volllaufen
 zu lassen. Jeder Lauf wird in `betrieb_laeufe` protokolliert.

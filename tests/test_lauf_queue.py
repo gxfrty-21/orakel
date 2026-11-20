@@ -6,14 +6,14 @@ from datetime import timedelta
 
 from fastapi.testclient import TestClient
 
-from orakel import lauf_queue, web
+from orakel import lauf_queue, scheduler, web
 from orakel.kern.db import Facts, jetzt
 
 
 def test_post_lauf_antwortet_unter_200_ms(cfg, monkeypatch):
     """Der Endpunkt legt nur an; er wartet nicht auf die Engine."""
     monkeypatch.setattr(web, "load_config", lambda _pfad: cfg)
-    app = web.create_app("unbenutzt.toml", arbeiter=False)
+    app = web.create_app("unbenutzt.toml", hintergrund=False)
 
     with TestClient(app) as client:
         beginn = time.perf_counter()
@@ -30,7 +30,7 @@ def test_post_lauf_antwortet_unter_200_ms(cfg, monkeypatch):
 
 def test_get_lauf_liefert_status_und_404(cfg, monkeypatch):
     monkeypatch.setattr(web, "load_config", lambda _pfad: cfg)
-    app = web.create_app("unbenutzt.toml", arbeiter=False)
+    app = web.create_app("unbenutzt.toml", hintergrund=False)
 
     with TestClient(app) as client:
         lauf_id = client.post("/api/lauf?modus=backtest").json()["id"]
@@ -94,7 +94,7 @@ def test_ohne_auftrag_passiert_nichts(cfg):
 def test_zweiter_start_liefert_409_mit_bestehender_id(cfg, monkeypatch):
     """Doppelklick reiht keinen zweiten Backtest ein, sondern nennt den ersten."""
     monkeypatch.setattr(web, "load_config", lambda _pfad: cfg)
-    app = web.create_app("unbenutzt.toml", arbeiter=False)
+    app = web.create_app("unbenutzt.toml", hintergrund=False)
 
     with TestClient(app) as client:
         erster = client.post("/api/lauf?modus=backtest")
@@ -151,37 +151,72 @@ def _aktiviere(db: Facts, lauf_id: int, gestartet: str) -> None:
                   (lauf_queue.AKTIV, gestartet, lauf_id))
 
 
-def test_arbeiter_reiht_beim_start_aktive_auftraege_wieder_ein(cfg, monkeypatch):
-    """Ein Absturzrest wird beim Start wieder «offen», nicht verworfen."""
+def test_takt_reiht_beim_start_aktive_auftraege_wieder_ein(cfg, monkeypatch):
+    """Ein Absturzrest wird beim Start des Hintergrund-Loops wieder «offen»."""
     db = Facts(cfg.db_pfad)
     lauf_id = lauf_queue.anlegen(db)
     _aktiviere(db, lauf_id, "2020-01-01T00:00:00")
-    schleifen: list[int] = []
+    runden: list[int] = []
 
     def stub(db, cfg_pfad="unbenutzt.toml", engine=None):
-        schleifen.append(1)
+        runden.append(1)
         return None
 
-    monkeypatch.setattr(lauf_queue, "verarbeite_einen", stub)
-    arbeiter = lauf_queue.LaufWorker("unbenutzt.toml", db, intervall=0.05)
-    arbeiter.start()
+    monkeypatch.setattr(scheduler, "verarbeite_einen", stub)
+    loop = scheduler.Takt(cfg, db, cfg_pfad="unbenutzt.toml", takt_aktiv=False)
+    loop.start()
     grenze = time.monotonic() + 5
     try:
         while time.monotonic() < grenze:
-            if schleifen:
+            if runden:
                 break
             time.sleep(0.05)
     finally:
-        arbeiter.stoppe()
-        arbeiter.join(timeout=2)
+        loop.stoppe()
+        loop.join(timeout=2)
 
     stand = lauf_queue.stand(db, lauf_id)
-    assert schleifen                     # die Schleife lief nach dem Reset
+    assert runden                         # die Schleife lief nach dem Reset
     assert stand["status"] == lauf_queue.OFFEN
     assert stand["gestartet"] is None
     assert stand["beendet"] is None
     assert any("wieder offen" in zeile["text"] for zeile in db.ereignisse())
     assert lauf_queue.anlegen_wenn_frei(db) == (lauf_id, lauf_queue.OFFEN)
+
+
+def test_warteschlange_laeuft_wenn_der_takt_aktiv_ist(cfg, monkeypatch):
+    """Takt und Warteschlange teilen sich den Loop; ein Auftrag wird trotzdem fertig."""
+    db = Facts(cfg.db_pfad)
+    lauf_id = lauf_queue.anlegen(db)
+    takt_schritte: list[bool] = []
+
+    def takt_stub(self, erzwungen=None):
+        takt_schritte.append(True)
+        return {}
+
+    echt = lauf_queue.verarbeite_einen
+
+    def mit_engine(db, cfg_pfad="unbenutzt.toml", engine=None):
+        return echt(db, cfg_pfad, engine=lambda **_k: {"dauer_sekunden": 0.01})
+
+    monkeypatch.setattr(scheduler.Betrieb, "takt", takt_stub)
+    monkeypatch.setattr(scheduler, "verarbeite_einen", mit_engine)
+    loop = scheduler.Takt(cfg, db, cfg_pfad="unbenutzt.toml", takt_aktiv=True)
+    loop.start()
+    grenze = time.monotonic() + 5
+    try:
+        while time.monotonic() < grenze:
+            if lauf_queue.stand(db, lauf_id)["status"] == lauf_queue.FERTIG:
+                break
+            time.sleep(0.05)
+    finally:
+        loop.stoppe()
+        loop.join(timeout=2)
+
+    assert takt_schritte                  # der Betriebstakt lief im selben Loop
+    stand = lauf_queue.stand(db, lauf_id)
+    assert stand["status"] == lauf_queue.FERTIG
+    assert stand["ergebnis"] == {"dauer": 0.01, "validierungen": 0, "plan": 0, "fehler": 0}
 
 
 def test_reset_laesst_andere_zustaende_unberuehrt(cfg):

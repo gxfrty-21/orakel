@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
@@ -201,29 +200,3 @@ def verarbeite_einen(db: Facts, cfg_pfad: str = "config.toml",
         return lauf_id
     abschliessen(db, lauf_id, _zusammenfassung(ergebnis))
     return lauf_id
-
-
-class LaufWorker(threading.Thread):
-    """Daemon-Thread: arbeitet die Warteschlange ab, bis er gestoppt wird."""
-
-    def __init__(self, cfg_pfad: str, db: Facts, intervall: float = 1.0) -> None:
-        super().__init__(daemon=True, name="orakel-lauf-arbeiter")
-        self.cfg_pfad = cfg_pfad
-        self.db = db
-        self.intervall = max(0.05, float(intervall))
-        self._stopp = threading.Event()
-
-    def run(self) -> None:  # pragma: no cover - Zeitverhalten
-        # Einmal beim Start: Absturzreste zurück in die Warteschlange. Nicht in
-        # der Schleife, sonst reiht ein laufender Auftrag sich selbst ein.
-        zuruecksetzen(self.db)
-        while not self._stopp.is_set():
-            try:
-                verwerfe_haengende(self.db)
-                verarbeite_einen(self.db, self.cfg_pfad)
-            except Exception as exc:  # noqa: BLE001 - Arbeiter darf nicht sterben
-                self.db.ereignis("fehler", "Lauf", f"Arbeiter gestört: {exc}")
-            self._stopp.wait(self.intervall)
-
-    def stoppe(self) -> None:
-        self._stopp.set()

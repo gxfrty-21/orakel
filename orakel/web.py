@@ -41,8 +41,7 @@ from .nexus.quellen import lade_register
 from .nexus.raum import raum_daten
 from .nexus.status import gesamt_status
 from .kern.paper import tick
-from .lauf_queue import (OFFEN, LaufWorker, anlegen_wenn_frei as lauf_anlegen,
-                         stand as lauf_stand)
+from .lauf_queue import OFFEN, anlegen_wenn_frei as lauf_anlegen, stand as lauf_stand
 from .report import baue_bericht
 from .scheduler import Takt, _kontext
 from .spider import Spider
@@ -119,24 +118,27 @@ def _bericht(cfg: Config) -> dict[str, Any]:
 
 
 def create_app(cfg_pfad: str = "config.toml", takt: bool = False,
-               arbeiter: bool = True) -> FastAPI:
+               hintergrund: bool = True) -> FastAPI:
     # Konfiguration einmal je App laden; Endpunkte nutzen denselben Stand.
     konfig = load_config(cfg_pfad)
-    arbeiter_thread: LaufWorker | None = None
+    takt_thread: Takt | None = None
 
     @asynccontextmanager
     async def _lebenszyklus(_app: FastAPI):
-        nonlocal arbeiter_thread
+        nonlocal takt_thread
         # Schema und Migration nur beim Start, nicht bei jeder Anfrage.
         initialisiere(konfig.db_pfad)
-        if arbeiter:
-            arbeiter_thread = LaufWorker(cfg_pfad, Facts(konfig.db_pfad))
-            arbeiter_thread.start()
+        if hintergrund:
+            # Ein einziger Hintergrund-Loop: Der Takt-Scheduler arbeitet auch
+            # die Lauf-Warteschlange ab. Der Paper-Takt selbst bleibt opt-in.
+            takt_thread = Takt(konfig, Facts(konfig.db_pfad), cfg_pfad=cfg_pfad,
+                               takt_aktiv=takt)
+            takt_thread.start()
         try:
             yield
         finally:
-            if arbeiter_thread is not None:
-                arbeiter_thread.stoppe()
+            if takt_thread is not None:
+                takt_thread.stoppe()
 
     app = FastAPI(
         title="Orakel Trading-Engine",
@@ -828,11 +830,5 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False,
         except Exception as exc:
             return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=500)
         return JSONResponse({"ok": True, "beschluss": protokoll.get("beschluss")})
-
-    if takt:
-        @app.on_event("startup")
-        def _starte_takt() -> None:  # pragma: no cover - Zeitverhalten
-            cfg = konfig
-            Takt(cfg, Facts(cfg.db_pfad)).start()
 
     return app
