@@ -381,3 +381,62 @@ def test_veraenderte_evidenzdatei_faellt_auf(tmp_path):
 
     with pytest.raises(modul.Abweichung, match="verändert"):
         modul.pruefe_evidenz_dateien(str(tmp_path), evidenz)
+
+
+def test_ergebnis_zaehlt_alle_zustaende_der_schlusszeile():
+    modul = _modul()
+
+    assert modul.ergebnis_aus_log("417 passed, 2 skipped in 38.81s\n") == {
+        "passed": 417, "skipped": 2}
+    assert modul.ergebnis_aus_log("1 failed, 4 passed in 0.10s\n") == {
+        "failed": 1, "passed": 4}
+    assert modul.ergebnis_aus_log("kein Ergebnis") is None
+
+
+def test_evidenz_zaehlt_skips_zur_gesamtzahl(tmp_path, monkeypatch):
+    """Skips zählen zur JUnit-Gesamtzahl, nicht zu den bestandenen Tests."""
+    modul = _modul()
+    log, code = _artefakt(tmp_path, protokoll="5 passed, 1 skipped in 1.00s\n")
+    junit = tmp_path / "artefakt" / "junit.xml"
+    junit.write_text('<testsuite name="pytest" tests="6" />', encoding="utf-8")
+    monkeypatch.setattr(modul, "PRUEFUNGEN", (
+        ("pytest", ("-m", "pytest", "-q", "tests"), "belege/evidenz-pytest.log"),))
+    monkeypatch.setattr(modul, "subprocess", _NichtStarten)
+
+    evidenz = modul.fuehre_evidenz_aus(str(tmp_path / "paket"), "a" * 40, "main",
+                                       junit=str(junit), pytest_log=str(log),
+                                       pytest_exit_code=str(code))
+
+    assert (evidenz["testzahl"], evidenz["uebersprungen"], evidenz["gesamt"]) == (5, 1, 6)
+    text = (tmp_path / "paket" / "EVIDENZ.md").read_text(encoding="utf-8")
+    assert "Übersprungen: **1** Tests" in text
+    assert "Gesamtzahl 6" in text
+
+
+def test_evidenz_meldet_widerspruch_bei_skips(tmp_path, monkeypatch):
+    """Ein JUnit-Bericht ohne den Skip fällt auf."""
+    modul = _modul()
+    log, code = _artefakt(tmp_path, protokoll="5 passed, 1 skipped in 1.00s\n")
+    junit = tmp_path / "artefakt" / "junit.xml"
+    junit.write_text('<testsuite name="pytest" tests="5" />', encoding="utf-8")
+    monkeypatch.setattr(modul, "PRUEFUNGEN", (
+        ("pytest", ("-m", "pytest", "-q", "tests"), "belege/evidenz-pytest.log"),))
+    monkeypatch.setattr(modul, "subprocess", _NichtStarten)
+
+    with pytest.raises(modul.Abweichung, match="passed \\+ skipped"):
+        modul.fuehre_evidenz_aus(str(tmp_path / "paket"), "a" * 40, "main",
+                                 junit=str(junit), pytest_log=str(log),
+                                 pytest_exit_code=str(code))
+
+
+def test_evidenz_lehnt_fehlgeschlagene_tests_ab(tmp_path, monkeypatch):
+    """Ein Lauf mit Fehlschlägen ist kein Nachweis, auch mit Exit 0."""
+    modul = _modul()
+    log, code = _artefakt(tmp_path, protokoll="1 failed, 4 passed in 1.00s\n")
+    monkeypatch.setattr(modul, "PRUEFUNGEN", (
+        ("pytest", ("-m", "pytest", "-q", "tests"), "belege/evidenz-pytest.log"),))
+    monkeypatch.setattr(modul, "subprocess", _NichtStarten)
+
+    with pytest.raises(modul.Abweichung, match="1 failed"):
+        modul.fuehre_evidenz_aus(str(tmp_path / "paket"), "a" * 40, "main",
+                                 pytest_log=str(log), pytest_exit_code=str(code))

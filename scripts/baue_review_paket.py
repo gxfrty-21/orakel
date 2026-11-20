@@ -45,6 +45,7 @@ FESTE_ZEIT = (2026, 11, 18, 0, 0, 0)
 NEBEN_DATEIEN = {MANIFEST_NAME, PROVENIENZ_NAME, ZIP_NAME, ZIP_NAME + '.sha256'}
 EVIDENZ_MD = 'EVIDENZ.md'
 MUSTER_TESTZAHL = re.compile(r'(\d+)\s+passed')
+MUSTER_ERGEBNIS = re.compile(r'(\d+)\s+(passed|failed|errors?|skipped|xfailed|xpassed)\b')
 MUSTER_JUNIT = re.compile(r'<testsuite\b[^>]*\btests="(\d+)"')
 MUSTER_EVIDENZ_HASH = re.compile(r'`((?:belege|dateien)/[^`]+)`\s*\(`([0-9a-f]{8,64})')
 MUSTER_RUN = re.compile(r'/actions/runs/(\d+)')
@@ -358,13 +359,17 @@ def pruefe_evidenz(ausgabe: str, commit: str) -> None:
         log_pfad = os.path.join(ausgabe, eintrag['target'])
         if not os.path.exists(log_pfad):
             raise Abweichung(f'pytest-Protokoll fehlt: {eintrag["target"]}')
-        gemessen = testzahl_aus_log(open(log_pfad, encoding='utf-8').read())
+        ergebnis = ergebnis_aus_log(open(log_pfad, encoding='utf-8').read()) or {}
+        gemessen = ergebnis.get('passed')
         if gemessen is None:
             raise Abweichung(f'pytest-Protokoll {eintrag["target"]} enthält keine Zeile '
                              '"N passed".')
         if gemessen != daten.get('testzahl'):
             raise Abweichung(f'EVIDENZ.json nennt {daten.get("testzahl")} Tests, das '
                              f'Protokoll misst {gemessen}.')
+        if 'uebersprungen' in daten and ergebnis.get('skipped', 0) != daten['uebersprungen']:
+            raise Abweichung(f'EVIDENZ.json nennt {daten["uebersprungen"]} übersprungene '
+                             f'Tests, das Protokoll {ergebnis.get("skipped", 0)}.')
 
 
 def letzte_zeile(text: str) -> str:
@@ -377,6 +382,20 @@ def testzahl_aus_log(text: str) -> int | None:
     """Liest die Testzahl aus der pytest-Schlusszeile (``402 passed``)."""
     treffer = MUSTER_TESTZAHL.findall(text)
     return int(treffer[-1]) if treffer else None
+
+
+def ergebnis_aus_log(text: str) -> dict[str, int] | None:
+    """Zählt alle Zustände der pytest-Schlusszeile (``417 passed, 2 skipped``).
+
+    ``skipped`` gehört zur Gesamtzahl der Tests, nicht zu den bestandenen;
+    ``failed``, ``errors`` und ``xfailed`` sind Abbruchgründe.
+    """
+    zahlen: dict[str, int] = {}
+    for zahl, zustand in MUSTER_ERGEBNIS.findall(letzte_zeile(text)):
+        if zustand == 'error':
+            zustand = 'errors'
+        zahlen[zustand] = zahlen.get(zustand, 0) + int(zahl)
+    return zahlen or None
 
 
 def testzahl_aus_junit(pfad: str) -> int:
@@ -461,14 +480,23 @@ def fuehre_evidenz_aus(ausgabe: str, commit: str, branch: str,
             'log': letzte_zeile(text),
         })
     pytest_eintrag = next(d for d in dateien if d['name'] == 'pytest')
-    aus_log = testzahl_aus_log(open(os.path.join(ausgabe, pytest_eintrag['target']),
-                                    encoding='utf-8').read())
-    if aus_log is None:
+    protokoll = open(os.path.join(ausgabe, pytest_eintrag['target']), encoding='utf-8').read()
+    ergebnis = ergebnis_aus_log(protokoll)
+    if not ergebnis or 'passed' not in ergebnis:
         raise Abweichung('pytest-Protokoll enthält keine Zeile "N passed".')
+    for zustand in ('failed', 'errors', 'xfailed'):
+        if ergebnis.get(zustand):
+            raise Abweichung(f'pytest meldet {ergebnis[zustand]} {zustand}; ein Nachweis '
+                             'zählt nur ohne fehlgeschlagene oder erwartet '
+                             'fehlschlagende Tests.')
+    bestanden = ergebnis['passed']
+    uebersprungen = ergebnis.get('skipped', 0)
+    gesamt = bestanden + uebersprungen
     if junit:
         aus_junit = testzahl_aus_junit(junit)
-        if aus_junit != aus_log:
-            raise Abweichung(f'JUnit-Bericht nennt {aus_junit} Tests, das Protokoll {aus_log}.')
+        if aus_junit != gesamt:
+            raise Abweichung(f'JUnit-Bericht nennt {aus_junit} Tests, Protokoll und Skips '
+                             f'ergeben {gesamt} (passed + skipped).')
     if pytest_eintrag['exit_code'] != 0:
         raise Abweichung(f'pytest endete mit Exit {pytest_eintrag["exit_code"]}: '
                          f'{pytest_eintrag["log"]}')
@@ -477,7 +505,9 @@ def fuehre_evidenz_aus(ausgabe: str, commit: str, branch: str,
         'generated_at': '2026-11-19T00:00:00Z',
         'quelle': {'commit': commit, 'branch': branch, 'dirty': False},
         'umgebung': umgebung(),
-        'testzahl': aus_log,
+        'testzahl': bestanden,
+        'uebersprungen': uebersprungen,
+        'gesamt': gesamt,
         'dateien': dateien,
     }
     with open(os.path.join(ausgabe, 'EVIDENZ.json'), 'w', encoding='utf-8') as f:
@@ -502,6 +532,7 @@ def rendere_evidenz_md(evidenz: dict) -> str:
         *herkunft_zeilen(evidenz),
         '',
         f"Gemessene Testzahl: **{evidenz['testzahl']}** (`pytest`).",
+        *uebersprungene_zeilen(evidenz),
         '',
         '| Nachweis | Befehl | Exit | Ergebniszeile | Protokoll (SHA-256) |',
         '|---|---|---:|---|---|',
@@ -524,6 +555,16 @@ def rendere_evidenz_md(evidenz: dict) -> str:
         '',
     ]
     return '\n'.join(zeilen)
+
+
+def uebersprungene_zeilen(evidenz: dict) -> list[str]:
+    """Weist übersprungene Tests aus, statt sie als bestanden mitzuzählen."""
+    anzahl = evidenz.get('uebersprungen') or 0
+    if not anzahl:
+        return []
+    return ['', f"Übersprungen: **{anzahl}** Tests; sie zählen zur Gesamtzahl "
+                f"{evidenz.get('gesamt', evidenz['testzahl'] + anzahl)}, nicht zu den "
+                'bestandenen.']
 
 
 def herkunft_zeilen(evidenz: dict) -> list[str]:
