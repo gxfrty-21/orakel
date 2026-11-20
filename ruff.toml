@@ -48,3 +48,6 @@ select = ["BLE001", "S110", "S"]
 # Der Auth-Test startet den Server bewusst auf 0.0.0.0 und als echten Prozess,
 # um die fail-closed-Sperre zu pruefen; beides ist Testabsicht.
 "tests/test_web.py" = ["S101", "S104", "S603", "S607"]
+# Dieser Test führt bewusst die in docs/MIGRATIONEN.md dokumentierten Befehle
+# als echten Unterprozess aus; die Argumente stammen aus der Doku im Repo.
+"tests/test_doku_migrationen.py" = ["S101", "S603"]
