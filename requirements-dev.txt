@@ -3,5 +3,6 @@
 -r requirements.txt
 hypothesis>=6.100
 httpx2>=2.0
+bandit==1.9.4
 pytest-cov==7.1.0
 ruff==0.17.6

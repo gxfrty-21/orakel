@@ -248,6 +248,22 @@ Der Job `Coverage Handelskern` misst `orakel.paper`, `orakel.risk`,
 Stand bei Einführung: paper 95 %, risk 90 %, backtest 94 %, judge 82 %, zusammen
 89 % (710 Anweisungen, 77 nicht ausgeführt).
 
+Der Job `bandit` prüft die Sicherheitsregeln und bricht bei **hoher**
+Schwere ab (`python -m bandit -q -r orakel -lll`). Stand bei Einführung:
+25 Funde auf 15 041 Zeilen, davon 0 hoch, 21 mittel und 4 niedrig. Die
+mittleren und niedrigen Funde sind bekannt und offen:
+
+- `B608` 14 × – SQL aus zusammengesetzten Zeichenketten (Spalten- und
+  Tabellennamen aus festen Listen, Werte als Parameter).
+- `B310` 4 × – `urllib.request.urlopen` für Quellen- und Watchdog-Abrufe.
+- `B314` 2 × – `xml.etree.ElementTree.fromstring` für Feeds.
+- `B104` 1 × – Binden an alle Schnittstellen im Docker-Pfad.
+- `B404` 1 ×, `B603` 1 × – `subprocess` ohne `shell=True`.
+- `B405` 2 × – Import von `xml.etree.ElementTree`.
+
+Diese Liste wird abgearbeitet, nicht per Skip-Liste stillgelegt; das Tor
+auf hohe Schwere verhindert währenddessen neue kritische Funde.
+
 ### Schutz von `main`
 
 `main` ist durch ein Repository-Ruleset geschützt: Änderungen laufen
