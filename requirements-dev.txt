@@ -3,3 +3,5 @@
 -r requirements.txt
 hypothesis>=6.100
 httpx2>=2.0
+mypy==2.4.1
+pandas-stubs==3.1.0.261029

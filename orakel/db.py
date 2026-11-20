@@ -860,9 +860,9 @@ class Facts:
                 if schluessel in ("zeitraum", "bedingung"):
                     return str(zeile.get(schluessel) or "")
                 if schluessel == "sicherheit":
-                    return round(max(0.0, min(1.0, float(
-                        zeile.get(schluessel) if zeile.get(schluessel) is not None
-                        else 0.5))), 3)
+                    roh = zeile.get(schluessel)
+                    sicherheit = float(roh) if roh is not None else 0.5
+                    return round(max(0.0, min(1.0, sicherheit)), 3)
                 return zeile[schluessel]
 
             if claims:

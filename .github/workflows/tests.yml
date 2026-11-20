@@ -66,6 +66,32 @@ jobs:
       - name: Tests ausführen
         run: python -m pytest -q
 
+  # Eigener Job: prüft die Typen des Handelskerns. Die Konfiguration steht in
+  # mypy.ini; mypy zieht die importierten Kernmodule mit hinein.
+  mypy:
+    name: mypy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Handelskern typprüfen
+        run: python -m mypy
+
   # Eigener sichtbarer Job: Prüft die versionierten Markdown-Dateien auf
   # relative Links, Markdown- und HTML-Anker, alte Raumschiff- und
   # Navigationsbegriffe sowie englische Altnamen der Agentenabteilungen.

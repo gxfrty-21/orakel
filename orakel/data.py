@@ -169,20 +169,20 @@ def synthetische_kerzen(
         drifts.extend([d] * regime_len)
         vols.extend([v] * regime_len)
 
-    drifts = np.array(drifts[:kerzen])
-    vols = np.array(vols[:kerzen])
+    drift_array = np.array(drifts[:kerzen])
+    vol_array = np.array(vols[:kerzen])
     # sehr leichte Autokorrelation: genug Struktur für Trendfolge, aber keine
     # unrealistischen Wunderkurven (wird vom Zufallsvergleich sonst entlarvt)
     schocks = rng.standard_normal(kerzen)
     for i in range(1, kerzen):
         schocks[i] = 0.03 * schocks[i - 1] + 0.97 * schocks[i]
-    rets = drifts + vols * schocks
+    rets = drift_array + vol_array * schocks
 
     close = 100.0 * np.exp(np.cumsum(rets))
     open_ = np.empty_like(close)
     open_[0] = 100.0
     open_[1:] = close[:-1]
-    spanne = np.abs(rng.standard_normal(kerzen)) * vols * close * 0.9 + close * 0.0002
+    spanne = np.abs(rng.standard_normal(kerzen)) * vol_array * close * 0.9 + close * 0.0002
     high = np.maximum(open_, close) + spanne
     low = np.minimum(open_, close) - spanne
     volume = rng.integers(500, 5000, kerzen).astype(float)

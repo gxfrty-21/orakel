@@ -207,6 +207,20 @@ tests/           Risiko, Backtest, Daten, Bericht
 - Der Richter ist fest verdrahtet; keine KI ändert seine Regeln.
 - Jede Zahl im Dashboard stammt aus SQLite — nichts wird geschätzt oder erfunden.
 
+## Typprüfung des Handelskerns
+
+`mypy.ini` prüft `orakel/paper.py`, `orakel/risk.py`, `orakel/backtest.py` und
+`orakel/judge.py` samt den von ihnen importierten Kernmodulen. Die Einstellungen
+sind geschärft: untypisierte und unvollständig typisierte Funktionen sind
+Fehler, `Optional` muss ausgeschrieben sein, unbenutzte `# type: ignore` und
+redundante Casts fallen auf. Web, Agenten und Nexus bleiben aussen vor; dort
+würde ein Tor nur `ignore`-Zeilen erzeugen. Der CI-Job heisst `mypy`; lokal
+genügt `python -m mypy`. Die vier Module waren bei Einführung fehlerfrei: acht
+Fundstellen in vier Dateien sind behoben, statt sie zu unterdrücken — fehlende
+Parametertypen in `risk.py`, ein `DataFrame | None` ohne Prüfung in `paper.py`,
+`ndarray`-Zuweisungen an `list[float]` in `data.py` und ein `float(None)`-Pfad
+in `db.py`.
+
 ## Doku-Prüfung
 
 `python scripts/pruefe_doku.py` prüft die versionierten Markdown-Dateien auf

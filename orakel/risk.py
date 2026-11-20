@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from .config import RisikoGrenzen
+
 
 @dataclass(frozen=True, slots=True)
 class Order:
@@ -56,7 +58,8 @@ class Pruefung:
         return {"genehmigt": self.genehmigt, "gruende": list(self.gruende)}
 
 
-def positionsgroesse(equity: float, cash: float, preis: float, stop: float, grenzen) -> float:
+def positionsgroesse(equity: float, cash: float, preis: float, stop: float,
+                     grenzen: RisikoGrenzen) -> float:
     """Einzige Stelle, an der Positionsgrössen entstehen.
 
     Backtest und Paper-Trading nutzen exakt dieselbe Funktion (Regel 8).
@@ -75,7 +78,7 @@ def positionsgroesse(equity: float, cash: float, preis: float, stop: float, gren
 class Risikomanager:
     """Unabhängige Instanz. Sie darf jeden Kauf ablehnen — Verkäufe nie."""
 
-    def __init__(self, grenzen) -> None:
+    def __init__(self, grenzen: RisikoGrenzen) -> None:
         self.g = grenzen
 
     # ---------- Handelsstopp ----------

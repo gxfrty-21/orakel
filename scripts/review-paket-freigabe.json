@@ -187,6 +187,10 @@
       "ziel": "dateien/requirements-dev.txt"
     },
     {
+      "quelle": "mypy.ini",
+      "ziel": "dateien/mypy.ini"
+    },
+    {
       "quelle": "requirements.txt",
       "ziel": "dateien/requirements.txt"
     },
