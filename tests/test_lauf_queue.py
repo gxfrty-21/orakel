@@ -259,3 +259,49 @@ def test_grenze_entscheidet_ueber_verwerfen(cfg):
     stand = lauf_queue.stand(db, lauf_id)
     assert stand["status"] == lauf_queue.FEHLER
     assert "30 Minuten" in stand["fehler"]
+
+
+def test_verarbeite_einen_zaehlt_den_versuch(cfg):
+    """Jeder Startversuch wird gezählt; die Grenze hängt daran."""
+    db = Facts(cfg.db_pfad)
+    lauf_id = lauf_queue.anlegen(db)
+
+    lauf_queue.verarbeite_einen(db, "unbenutzt.toml", engine=lambda **_k: {})
+
+    assert lauf_queue.stand(db, lauf_id)["versuche"] == 1
+
+
+def test_nach_max_versuchen_wird_der_auftrag_verworfen(cfg):
+    """Ein Lauf, der den Prozess wiederholt mitnimmt, blockiert nicht ewig."""
+    db = Facts(cfg.db_pfad)
+    lauf_id = lauf_queue.anlegen(db)
+    with db.conn() as c:
+        c.execute(
+            "UPDATE laeufe SET status = ?, gestartet = ?, versuche = ? WHERE id = ?",
+            (lauf_queue.AKTIV, "2020-01-01T00:00:00", lauf_queue.MAX_VERSUCHE, lauf_id),
+        )
+
+    assert lauf_queue.zuruecksetzen(db) == []       # nicht wieder eingereiht
+
+    stand = lauf_queue.stand(db, lauf_id)
+    assert stand["status"] == lauf_queue.FEHLER
+    assert stand["beendet"] is not None
+    assert f"{lauf_queue.MAX_VERSUCHE} Versuchen" in stand["fehler"]
+    assert any("Versuchen als Fehler" in zeile["text"] for zeile in db.ereignisse())
+
+
+def test_ein_versuch_weniger_wird_noch_eingereiht(cfg):
+    """Unterhalb der Grenze bleibt der Auftrag offen für einen neuen Versuch."""
+    db = Facts(cfg.db_pfad)
+    lauf_id = lauf_queue.anlegen(db)
+    with db.conn() as c:
+        c.execute(
+            "UPDATE laeufe SET status = ?, gestartet = ?, versuche = ? WHERE id = ?",
+            (lauf_queue.AKTIV, "2020-01-01T00:00:00", lauf_queue.MAX_VERSUCHE - 1, lauf_id),
+        )
+
+    assert lauf_queue.zuruecksetzen(db) == [lauf_id]
+
+    stand = lauf_queue.stand(db, lauf_id)
+    assert stand["status"] == lauf_queue.OFFEN
+    assert stand["gestartet"] is None

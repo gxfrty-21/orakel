@@ -66,6 +66,12 @@ verbucht ihn die Schleife als `fehler`; der Fehlertext nennt die Grenze.
 Danach ist die Warteschlange in beiden Fällen wieder frei für einen neuen
 Start.
 
+Ein Auftrag, der den Prozess beim Laufen mitnimmt, würde sonst bei jedem Start
+wieder laufen. Jeder Startversuch zählt (`versuche`, Migration
+`0005_laeufe_versuche.sql`); nach drei Versuchen (`MAX_VERSUCHE`) verbucht der
+Start ihn als `fehler` mit Hinweis auf die Absturzschleife. Unterhalb der
+Grenze wird er wie bisher wieder auf `offen` gesetzt.
+
 Die Company-Schicht ist additiv und standardmäßig **nicht** in den laufenden
 Paper-Takt eingebunden (`[unternehmen] aktiv = false`). Sie enthält noch keine
 3D-Welt, keine LLM-Anbindung und keine echten Orders.

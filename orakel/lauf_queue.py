@@ -12,7 +12,9 @@ nacheinander; die Reihenfolge ist die Reihenfolge des Eingangs.
 
 Beim Start hält kein Prozess mehr einen Auftrag: Was dann noch auf ``aktiv``
 steht, stammt von einem abgestürzten Vorgänger und wird wieder auf ``offen``
-gesetzt, damit es nicht liegen bleibt.
+gesetzt, damit es nicht liegen bleibt. Nach ``MAX_VERSUCHE`` Versuchen ist
+Schluss: Ein Lauf, der den Prozess abstürzen lässt, käme sonst bei jedem Start
+wieder in die Warteschlange und hielte den Prozess in einer Absturzschleife.
 """
 from __future__ import annotations
 
@@ -31,6 +33,10 @@ FEHLER = "fehler"
 # Ein Auftrag, der länger als das hier auf «aktiv» steht, kann nicht mehr von
 # einem laufenden Arbeiter stammen: Der Prozess hängt oder ist abgestürzt.
 HAENGE_GRENZE = timedelta(minutes=60)
+
+# So oft darf ein Auftrag neu starten. Gezählt wird jeder Startversuch; ein
+# Lauf, der den Prozess mitnimmt, wird danach nicht mehr eingereiht.
+MAX_VERSUCHE = 3
 
 Engine = Callable[..., dict[str, Any]]
 
@@ -84,27 +90,42 @@ def stand(db: Facts, lauf_id: int) -> dict[str, Any] | None:
 
 
 def zuruecksetzen(db: Facts) -> list[int]:
-    """Setzt Aufträge, die ein Absturz auf «aktiv» liess, wieder auf «offen».
+    """Setzt Absturzreste wieder auf «offen» – bis ``MAX_VERSUCHE`` erreicht ist.
 
-    Das läuft genau einmal beim Start des Arbeiters, nicht in der Schleife:
-    Beim Start hält kein Prozess mehr einen Auftrag, ein Absturzrest kann also
-    gefahrlos erneut eingereiht werden. ``gestartet`` wird geleert, damit die
-    Hänge-Grenze ab dem neuen Versuch misst. Ein Ereignis hält jeden Reset
-    fest. In der Schleife würde derselbe Aufruf einen laufenden Auftrag wieder
-    einreihen.
+    Das läuft genau einmal beim Start, nicht in der Schleife: Beim Start hält
+    kein Prozess mehr einen Auftrag, ein Absturzrest kann also erneut laufen.
+    ``gestartet`` wird geleert, damit die Hänge-Grenze ab dem neuen Versuch
+    misst. Ein Ereignis hält jeden Reset fest. In der Schleife würde derselbe
+    Aufruf einen laufenden Auftrag wieder einreihen.
+
+    Ein Auftrag, der den Prozess schon ``MAX_VERSUCHE`` mal mitgenommen hat,
+    wird stattdessen als Fehler verbucht: Sonst hinge der Prozess in einer
+    Absturzschleife. Zurückgegeben werden nur die wieder eingereihten IDs.
     """
     with db.conn() as c:
-        ids = [int(zeile["id"]) for zeile in c.execute(
-            "SELECT id FROM laeufe WHERE status = ? ORDER BY id", (AKTIV,))]
-        if ids:
-            c.execute(
-                "UPDATE laeufe SET status = ?, gestartet = NULL WHERE status = ?",
-                (OFFEN, AKTIV),
+        zeilen = [dict(zeile) for zeile in c.execute(
+            "SELECT id, versuche FROM laeufe WHERE status = ? ORDER BY id", (AKTIV,))]
+        wieder_offen = [int(z["id"]) for z in zeilen
+                        if int(z["versuche"]) < MAX_VERSUCHE]
+        erschoepft = [int(z["id"]) for z in zeilen
+                      if int(z["versuche"]) >= MAX_VERSUCHE]
+        if wieder_offen:
+            c.executemany(
+                "UPDATE laeufe SET status = ?, gestartet = NULL WHERE id = ?",
+                [(OFFEN, lauf_id) for lauf_id in wieder_offen],
             )
-    for lauf_id in ids:
+    for lauf_id in wieder_offen:
         db.ereignis("warnung", "Lauf",
                     f"Auftrag {lauf_id} stand beim Start auf «aktiv» und ist wieder offen")
-    return ids
+    for lauf_id in erschoepft:
+        scheitern(
+            db, lauf_id,
+            f"Nach {MAX_VERSUCHE} Versuchen abgebrochen: Der Lauf hat den Prozess "
+            "vermutlich abstürzen lassen und würde sonst in einer Schleife laufen",
+        )
+        db.ereignis("fehler", "Lauf",
+                    f"Auftrag {lauf_id} nach {MAX_VERSUCHE} Versuchen als Fehler verbucht")
+    return wieder_offen
 
 
 def verwerfe_haengende(db: Facts, *, grenze: timedelta = HAENGE_GRENZE,
@@ -163,7 +184,11 @@ def _zusammenfassung(ergebnis: dict[str, Any]) -> dict[str, Any]:
 
 
 def _naechsten_beanspruchen(db: Facts) -> int | None:
-    """Setzt den ältesten offenen Auftrag auf aktiv; nur ein Arbeiter gewinnt."""
+    """Setzt den ältesten offenen Auftrag auf aktiv; nur ein Arbeiter gewinnt.
+
+    Der Start zählt als Versuch; ``versuche`` begrenzt die Wiederholungen nach
+    einem Absturz (``zuruecksetzen``).
+    """
     with db.conn() as c:
         zeile = c.execute(
             "SELECT id FROM laeufe WHERE status = ? ORDER BY id LIMIT 1", (OFFEN,)
@@ -172,7 +197,8 @@ def _naechsten_beanspruchen(db: Facts) -> int | None:
             return None
         lauf_id = int(zeile["id"])
         cur = c.execute(
-            "UPDATE laeufe SET status = ?, gestartet = ? WHERE id = ? AND status = ?",
+            "UPDATE laeufe SET status = ?, gestartet = ?, versuche = versuche + 1 "
+            "WHERE id = ? AND status = ?",
             (AKTIV, jetzt(), lauf_id, OFFEN),
         )
         return lauf_id if cur.rowcount == 1 else None
