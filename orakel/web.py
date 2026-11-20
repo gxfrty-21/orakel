@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 import os
 import secrets
 import threading
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -42,7 +44,7 @@ from .nexus.quellen import lade_register
 from .nexus.raum import raum_daten
 from .nexus.status import gesamt_status
 from .kern.paper import tick
-from .pipeline import lauf as engine_lauf
+from .lauf_queue import OFFEN, anlegen_wenn_frei as lauf_anlegen, stand as lauf_stand
 from .report import baue_bericht
 from .scheduler import Takt, _kontext
 from .spider import Spider
@@ -50,6 +52,32 @@ from .spider import Spider
 STATIC = Path(__file__).parent / "web" / "static"
 BERICHT = Path("dashboard.json")
 _sperre = threading.Lock()
+LOGGER = logging.getLogger(__name__)
+
+
+class NutzerFehler(ValueError):
+    """Fehler mit bewusst formuliertem Text; dieser Text darf an den Client."""
+
+
+def _fehler_text(exc: Exception) -> str:
+    """Nur eigene Validierungsfehler im Klartext, alles andere anonym mit Fehler-ID.
+
+    Ausnahmetexte können Pfade, SQL, Konfigurationswerte oder Datenbankinhalte
+    enthalten. Sie bleiben deshalb im Log; der Client bekommt eine ID, mit der
+    sich der Vorfall dort wiederfinden lässt.
+    """
+    if isinstance(exc, (NutzerFehler, ValueError, TypeError)):
+        return str(exc)
+    fehler_id = uuid.uuid4().hex
+    LOGGER.exception("Interner Fehler %s (%s)", fehler_id, type(exc).__name__, exc_info=exc)
+    return f"Interner Fehler ({fehler_id})"
+
+
+def _fehler_code(exc: Exception) -> str:
+    """Stabiler Code neben dem Text, damit Clients ohne Textvergleich reagieren."""
+    if isinstance(exc, (NutzerFehler, ValueError, TypeError)):
+        return "eingabe"
+    return "interner_fehler"
 
 
 def _basic_ok(kopf: str, benutzer: str, passwort: str) -> bool:
@@ -58,7 +86,7 @@ def _basic_ok(kopf: str, benutzer: str, passwort: str) -> bool:
         return False
     try:
         roh = base64.b64decode(kopf.split(" ", 1)[1], validate=True).decode("utf-8")
-    except Exception:
+    except ValueError:  # binascii.Error und UnicodeDecodeError sind ValueError
         return False
     name, trenner, pw = roh.partition(":")
     if not trenner:
@@ -101,7 +129,7 @@ def _bericht(cfg: Config) -> dict[str, Any]:
             eintrag = dict(r)
             try:
                 eintrag["symbole"] = ", ".join(_json.loads(eintrag.get("symbole") or "[]"))
-            except Exception:
+            except (ValueError, TypeError):
                 eintrag["symbole"] = ""
             # Alte Zeilen kennen keine Erkennungszeit; dann gilt der Abrufzeitpunkt.
             eintrag["erkannt"] = eintrag.get("erkannt") or eintrag.get("geholt")
@@ -119,15 +147,57 @@ def _bericht(cfg: Config) -> dict[str, Any]:
     return bericht
 
 
-def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+WAHRE_WERTE = {"1", "true", "yes", "on"}
+
+
+def _startfreigabe(host: str | None) -> None:
+    """Ohne Zugangsdaten darf der Server nur auf Loopback lauschen (fail-closed).
+
+    Der Start auf einer externen Adresse ohne ``ORAKEL_AUTH_USER`` /
+    ``ORAKEL_AUTH_PASS`` würde alle Endpunkte offen ins Netz stellen. Eine
+    bewusste Ausnahme erlaubt ``ORAKEL_ALLOW_NO_AUTH=1``.
+    """
+    if os.environ.get("ORAKEL_AUTH_USER", "").strip():
+        return
+    if os.environ.get("ORAKEL_ALLOW_NO_AUTH", "").strip().lower() in WAHRE_WERTE:
+        return
+    if host is None:
+        return
+    if host.strip().lower() not in LOOPBACK_HOSTS:
+        raise RuntimeError(
+            f"Start abgebrochen: Binde {host} ohne Login waere oeffentlich "
+            "erreichbar.\n"
+            "ORAKEL_AUTH_USER und ORAKEL_AUTH_PASS setzen (Docker: .env, "
+            "Railway: Service-Variablen), oder nur lokal auf 127.0.0.1 "
+            "starten.\n"
+            "Bewusste Ausnahme fuer die Entwicklung: ORAKEL_ALLOW_NO_AUTH=1."
+        )
+
+
+def create_app(cfg_pfad: str = "config.toml", takt: bool = False,
+               host: str | None = None, hintergrund: bool = True) -> FastAPI:
+    _startfreigabe(host)
     # Konfiguration einmal je App laden; Endpunkte nutzen denselben Stand.
     konfig = load_config(cfg_pfad)
+    takt_thread: Takt | None = None
 
     @asynccontextmanager
     async def _lebenszyklus(_app: FastAPI):
+        nonlocal takt_thread
         # Schema und Migration nur beim Start, nicht bei jeder Anfrage.
         initialisiere(konfig.db_pfad)
-        yield
+        if hintergrund:
+            # Ein einziger Hintergrund-Loop: Der Takt-Scheduler arbeitet auch
+            # die Lauf-Warteschlange ab. Der Paper-Takt selbst bleibt opt-in.
+            takt_thread = Takt(konfig, Facts(konfig.db_pfad), cfg_pfad=cfg_pfad,
+                               takt_aktiv=takt)
+            takt_thread.start()
+        try:
+            yield
+        finally:
+            if takt_thread is not None:
+                takt_thread.stoppe()
 
     app = FastAPI(
         title="Orakel Trading-Engine",
@@ -155,6 +225,37 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                     headers={"WWW-Authenticate": 'Basic realm="Orakel", charset="UTF-8"'},
                 )
             return await call_next(request)
+
+    # CSRF-Schutz: Browser senden bei schreibenden Anfragen Origin/Referer mit.
+    # Grundauthentifizierung wird automatisch angehängt, deshalb muss die
+    # Herkunft geprüft werden, bevor eine POST-Route wirkt.
+    erlaubte_herkuenfte = {
+        eintrag.strip().rstrip("/")
+        for eintrag in os.environ.get("ORAKEL_ERLAUBTE_ORIGINS", "").split(",")
+        if eintrag.strip()
+    }
+
+    @app.middleware("http")
+    async def _herkunft(request: Request, call_next):
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            herkunft = (
+                request.headers.get("origin")
+                or request.headers.get("referer")
+                or ""
+            ).rstrip("/")
+            if herkunft:
+                basis = f"{request.url.scheme}://{request.url.netloc}"
+                erlaubt = {basis} | erlaubte_herkuenfte
+                if not any(
+                    herkunft == eintrag or herkunft.startswith(eintrag + "/")
+                    for eintrag in erlaubt
+                ):
+                    return JSONResponse(
+                        {"ok": False, "fehler": "Ungueltige Herkunft",
+                         "code": "herkunft_abgelehnt"},
+                        status_code=403,
+                    )
+        return await call_next(request)
 
     @app.get("/")
     def index() -> FileResponse:
@@ -202,7 +303,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                                      mindestprioritaet=mindestprioritaet,
                                      limit=limit)
         except ValueError as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc),
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc), "code": _fehler_code(exc),
                                  "code": "company_filter_invalid"}, status_code=400)
         return JSONResponse(daten, headers={"Cache-Control": "no-store"})
 
@@ -236,7 +337,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                 daten.get("value"),
             )
         except (ValueError, TypeError) as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc),
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc), "code": _fehler_code(exc),
                                  "code": "company_memory_invalid"}, status_code=400)
         return JSONResponse({"ok": True, "erinnerung": eintrag},
                             headers={"Cache-Control": "no-store"})
@@ -269,7 +370,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                                         thread_id=thread_id, seit=seit,
                                         nur_offen=nur_offen, limit=limit)
         except ValueError as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc),
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc), "code": _fehler_code(exc),
                                  "code": "company_filter_invalid"}, status_code=400)
         return JSONResponse(daten, headers={"Cache-Control": "no-store"})
 
@@ -306,7 +407,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
             )
         except MessageRateLimitError as exc:
             return JSONResponse(
-                {"ok": False, "fehler": str(exc),
+                {"ok": False, "fehler": _fehler_text(exc), "code": _fehler_code(exc),
                  "code": "company_message_rate_limited",
                  "retry_after": exc.retry_after, "limit": exc.limit},
                 status_code=429,
@@ -314,7 +415,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                          "Cache-Control": "no-store"},
             )
         except (ValueError, TypeError) as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc),
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc), "code": _fehler_code(exc),
                                  "code": "company_message_invalid"}, status_code=400)
         ids = list(ergebnis.get("message_ids") or [])
         ergebnis["messages"] = [
@@ -338,7 +439,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                 message_id, daten.get("agent_id"),
             )
         except (ValueError, TypeError) as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc),
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc), "code": _fehler_code(exc),
                                  "code": "company_message_ack_invalid"}, status_code=400)
         formatiert = company_nachricht(CompanyStore(Facts(cfg.db_pfad)), message_id)
         return JSONResponse({"ok": True, **(formatiert or {})},
@@ -414,7 +515,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
             ergebnis = chat(Facts(cfg.db_pfad), str(daten.get("sekretaer") or ""),
                             str(daten.get("text") or ""))
         except ValueError as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc), "code": _fehler_code(exc)}, status_code=400)
         return JSONResponse({"ok": True, **ergebnis}, headers={"Cache-Control": "no-store"})
 
     @app.post("/api/sekretariat/agenda")
@@ -483,7 +584,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
             ergebnis = stimme(Facts(cfg.db_pfad), int(daten.get("index", -1)),
                               str(daten.get("entscheid") or ""))
         except (ValueError, TypeError, AttributeError) as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc), "code": _fehler_code(exc)}, status_code=400)
         return JSONResponse({"ok": True, **ergebnis}, headers={"Cache-Control": "no-store"})
 
     @app.post("/api/sitzung/weiter")
@@ -494,7 +595,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         try:
             ergebnis = sitzung_weiter(Facts(cfg.db_pfad), Vault(cfg.vault_ordner))
         except ValueError as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc), "code": _fehler_code(exc)}, status_code=400)
         return JSONResponse({"ok": True, **ergebnis}, headers={"Cache-Control": "no-store"})
 
     @app.post("/api/sitzung/ueberstimmen")
@@ -508,7 +609,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                                     str(daten.get("entscheid") or ""),
                                     str(daten.get("begruendung") or ""))
         except (ValueError, TypeError, AttributeError) as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc), "code": _fehler_code(exc)}, status_code=400)
         return JSONResponse({"ok": True, **ergebnis}, headers={"Cache-Control": "no-store"})
 
     @app.post("/api/sitzung/abschluss")
@@ -519,7 +620,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         try:
             ergebnis = sitzung_abschluss(Facts(cfg.db_pfad), Vault(cfg.vault_ordner))
         except ValueError as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc), "code": _fehler_code(exc)}, status_code=400)
         return JSONResponse({"ok": True, **ergebnis}, headers={"Cache-Control": "no-store"})
 
     @app.post("/api/sekretariat/bericht")
@@ -599,7 +700,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                 str(daten.get("prioritaet") or "mittel"),
             )
         except ValueError as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc), "code": _fehler_code(exc)}, status_code=400)
         except Exception as exc:
             return JSONResponse({"ok": False, "fehler": type(exc).__name__},
                                 status_code=500)
@@ -686,7 +787,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                           if daten.get("claim_id") is not None else None),
             )
         except ValueError as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc), "code": _fehler_code(exc)}, status_code=400)
         except Exception as exc:
             return JSONResponse({"ok": False, "fehler": type(exc).__name__},
                                 status_code=500)
@@ -717,17 +818,31 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
                 # nach dem Deploy vergleicht ihn mit dem erwarteten Commit.
                 "commit": os.environ.get("RAILWAY_GIT_COMMIT_SHA") or None}
 
-    @app.post("/api/lauf")
+    @app.post("/api/lauf", status_code=202)
     def starte_lauf(modus: str = "backtest", spider: bool = False) -> JSONResponse:
-        if not _sperre.acquire(blocking=False):
-            return JSONResponse({"ok": False, "fehler": "Ein Lauf ist bereits aktiv"}, status_code=409)
-        try:
-            ergebnis = engine_lauf(cfg_pfad=cfg_pfad, modus=modus, mit_spider=spider)
-        finally:
-            _sperre.release()
-        return JSONResponse({"ok": True, "dauer": ergebnis.get("dauer_sekunden"),
-                             "validierungen": len(ergebnis.get("validierungen", [])),
-                             "plan": len(ergebnis.get("plan", []))})
+        """Legt nur einen Auftrag an; die Arbeit macht der Hintergrund-Arbeiter.
+
+        Läuft bereits ein Auftrag, wird kein zweiter eingereiht: Die Antwort
+        ist dann ``409`` und enthält die ID des offenen oder aktiven Laufs,
+        damit die Oberfläche an ihn anknüpfen kann.
+        """
+        lauf_id, blockiert = lauf_anlegen(Facts(konfig.db_pfad), modus=modus, spider=spider)
+        if blockiert is not None:
+            return JSONResponse(
+                {"ok": False, "id": lauf_id, "status": blockiert,
+                 "fehler": "Ein Lauf ist bereits offen oder aktiv"},
+                status_code=409,
+            )
+        return JSONResponse({"ok": True, "id": lauf_id, "status": OFFEN},
+                            status_code=202)
+
+    @app.get("/api/lauf/{lauf_id}")
+    def lauf_status(lauf_id: int) -> JSONResponse:
+        daten = lauf_stand(Facts(konfig.db_pfad), lauf_id)
+        if daten is None:
+            return JSONResponse({"ok": False, "fehler": "Lauf unbekannt"},
+                                status_code=404)
+        return JSONResponse({"ok": True, **daten}, headers={"Cache-Control": "no-store"})
 
     @app.post("/api/paper")
     def paper_tick() -> JSONResponse:
@@ -737,7 +852,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
             ergebnis = tick(cfg, db)
         except Exception as exc:
             db.ereignis("fehler", "Takt", f"Paper-Takt über API fehlgeschlagen: {exc}")
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=500)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc), "code": _fehler_code(exc)}, status_code=500)
         return JSONResponse({"ok": True, **ergebnis})
 
     @app.post("/api/spider")
@@ -748,7 +863,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
             ergebnis = Spider(cfg, db, Vault(cfg.vault_ordner)).lauf()
         except Exception as exc:
             db.ereignis("fehler", "Spider", f"Recherche über API fehlgeschlagen: {exc}")
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=500)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc), "code": _fehler_code(exc)}, status_code=500)
         db.zustand_setzen("spider_letzter_lauf", ergebnis)
         try:
             netz = IntelNetz(cfg, db, Vault(cfg.vault_ordner))
@@ -774,7 +889,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         try:
             geaendert = auftrag_aendern(db, kennung, status, ergebnis)
         except ValueError as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc), "code": _fehler_code(exc)}, status_code=400)
         if not geaendert:
             return JSONResponse({"ok": False, "fehler": f"Unbekannter Auftrag: {kennung}"},
                                 status_code=404)
@@ -788,7 +903,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         try:
             geaendert = weiterleitung_aendern(db, kennung, abteilung, status)
         except ValueError as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc), "code": _fehler_code(exc)}, status_code=400)
         if not geaendert:
             return JSONResponse({"ok": False, "fehler": f"Unbekannte Weiterleitung: {kennung}"},
                                 status_code=404)
@@ -803,13 +918,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         try:
             protokoll = agents.konferenz(db, _kontext(cfg, db), erzwungen=True)
         except Exception as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=500)
+            return JSONResponse({"ok": False, "fehler": _fehler_text(exc), "code": _fehler_code(exc)}, status_code=500)
         return JSONResponse({"ok": True, "beschluss": protokoll.get("beschluss")})
-
-    if takt:
-        @app.on_event("startup")
-        def _starte_takt() -> None:  # pragma: no cover - Zeitverhalten
-            cfg = konfig
-            Takt(cfg, Facts(cfg.db_pfad)).start()
 
     return app

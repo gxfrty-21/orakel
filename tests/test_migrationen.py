@@ -36,6 +36,10 @@ def test_teilstand_auf_0003_wendet_nur_die_neuere_migration_an(tmp_path):
     ordner = tmp_path / "migrationen"
     ordner.mkdir()
     for quelle in migrationen.dateien():
+        if quelle.nummer > 3:
+            # Spaetere Migrationen (0004 und folgende) kaemen der selbst
+            # angelegten 0004 in die Quere; der Ordner endet hier auf Stand 3.
+            continue
         for datei in (quelle.hoch, quelle.runter):
             if datei is not None:
                 (ordner / datei.name).write_bytes(datei.read_bytes())
@@ -137,7 +141,7 @@ def test_downgrade_entfernt_die_migration_und_ihre_tabellen(tmp_path):
 
     ergebnis = migrationen.zurueckrollen(pfad, bis=ALLE[1])
 
-    assert ergebnis["zurueckgerollt"] == ALLE[2:]
+    assert ergebnis["zurueckgerollt"] == sorted(ALLE[2:], reverse=True)
     assert migrationen.angewendet(pfad) == ALLE[:2]
     tabellen = _tabellen(pfad)
     assert "agent_profiles" in tabellen
