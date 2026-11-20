@@ -112,6 +112,12 @@ bewusst mit `ORAKEL_ALLOW_NO_AUTH=1`.
 Für Railway ohne eigenen Server, Caddy oder eigene Domain: siehe
 [RAILWAY.md](RAILWAY.md).
 
+Interne Fehler bleiben intern: Eine unerwartete Ausnahme beantwortet die API
+mit `500`, `code: interner_fehler` und einer allgemeinen Meldung; Typ, Pfad und
+Stacktrace stehen nur im Serverprotokoll (Ereignis `fehler` mit Bereich, z. B.
+`Takt`, `Spider`, `Konferenz`). Fehlerhafte Eingaben bleiben bei `400` mit
+konkreter Begründung.
+
 ### Phase 8: Dauerbetrieb und Monitoring
 
 Der Hintergrund-Takt ist bewusst **opt-in** (`serve --takt` oder

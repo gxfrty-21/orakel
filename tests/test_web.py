@@ -229,3 +229,63 @@ def test_erlaubte_herkuenfte_konfigurierbar(cfg, monkeypatch):
         auth=("orakel", "geheim"),
     )
     assert weiterhin_fremd.status_code == 403
+
+
+def test_serverfehler_ohne_innendetails(cfg, monkeypatch):
+    """500 nennt keine Interna; der Fehler steht im Serverprotokoll."""
+    monkeypatch.setenv("ORAKEL_AUTH_USER", "orakel")
+    monkeypatch.setenv("ORAKEL_AUTH_PASS", "geheim")
+    monkeypatch.setattr(web, "load_config", lambda _pfad: cfg)
+
+    def kaputt(*_a, **_k):
+        raise RuntimeError("/srv/geheim/orakel.db ist gesperrt (Code 4711)")
+
+    monkeypatch.setattr(web, "tick", kaputt)
+    client = TestClient(web.create_app())
+
+    antwort = client.post("/api/paper", auth=("orakel", "geheim"))
+
+    assert antwort.status_code == 500
+    assert antwort.json() == {"ok": False, "fehler": web.INTERNER_FEHLER,
+                              "code": "interner_fehler"}
+    assert "/srv/geheim" not in antwort.text
+    assert "4711" not in antwort.text
+    assert "RuntimeError" not in antwort.text
+    protokoll = [zeile["text"] for zeile in Facts(cfg.db_pfad).ereignisse()]
+    assert any("/srv/geheim/orakel.db" in text for text in protokoll)
+
+
+def test_serverfehler_bei_der_konferenz(cfg, monkeypatch):
+    """Auch die Konferenz protokolliert und antwortet generisch."""
+    monkeypatch.setenv("ORAKEL_AUTH_USER", "orakel")
+    monkeypatch.setenv("ORAKEL_AUTH_PASS", "geheim")
+    monkeypatch.setattr(web, "load_config", lambda _pfad: cfg)
+
+    def kaputt(*_a, **_k):
+        raise KeyError("interne_kennung")
+
+    monkeypatch.setattr(web.agents, "konferenz", kaputt)
+    client = TestClient(web.create_app())
+
+    antwort = client.post("/api/konferenz", auth=("orakel", "geheim"))
+
+    assert antwort.status_code == 500
+    assert "interne_kennung" not in antwort.text
+    assert antwort.json()["code"] == "interner_fehler"
+    assert any("Konferenz über API fehlgeschlagen" in zeile["text"]
+               for zeile in Facts(cfg.db_pfad).ereignisse())
+
+
+def test_kaputter_json_body_bleibt_ein_400(cfg, monkeypatch):
+    """Der verengte Except fängt weiterhin kaputte Bodys ab."""
+    monkeypatch.setenv("ORAKEL_AUTH_USER", "orakel")
+    monkeypatch.setenv("ORAKEL_AUTH_PASS", "geheim")
+    monkeypatch.setattr(web, "load_config", lambda _pfad: cfg)
+    client = TestClient(web.create_app())
+
+    antwort = client.post("/api/nexus/mission", content=b"kein json",
+                          headers={"Content-Type": "application/json"},
+                          auth=("orakel", "geheim"))
+
+    assert antwort.status_code == 400
+    assert antwort.json()["fehler"] == "Ungültiger JSON-Body"

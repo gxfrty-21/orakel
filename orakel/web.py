@@ -50,6 +50,16 @@ STATIC = Path(__file__).parent / "web" / "static"
 BERICHT = Path("dashboard.json")
 _sperre = threading.Lock()
 
+# Interne Fehler gehen nicht an den Client: Meldung, Code und Status ja,
+# Details (Typ, Pfad, Stacktrace) nur ins Serverprotokoll als Ereignis.
+INTERNER_FEHLER = "Interner Fehler — Details stehen im Serverprotokoll."
+
+
+def _serverfehler() -> JSONResponse:
+    """Antwort auf einen unbehandelten Fehler, ohne Innendetails."""
+    return JSONResponse({"ok": False, "fehler": INTERNER_FEHLER,
+                         "code": "interner_fehler"}, status_code=500)
+
 
 def _basic_ok(kopf: str, benutzer: str, passwort: str) -> bool:
     """Prüft HTTP-Basic in konstanter Zeit. Leere Zugangsdaten sind nie gültig."""
@@ -57,7 +67,7 @@ def _basic_ok(kopf: str, benutzer: str, passwort: str) -> bool:
         return False
     try:
         roh = base64.b64decode(kopf.split(" ", 1)[1], validate=True).decode("utf-8")
-    except Exception:
+    except ValueError:
         return False
     name, trenner, pw = roh.partition(":")
     if not trenner:
@@ -101,7 +111,7 @@ def _bericht(cfg_pfad: str) -> dict[str, Any]:
             eintrag = dict(r)
             try:
                 eintrag["symbole"] = ", ".join(_json.loads(eintrag.get("symbole") or "[]"))
-            except Exception:
+            except (ValueError, TypeError):
                 eintrag["symbole"] = ""
             # Alte Zeilen kennen keine Erkennungszeit; dann gilt der Abrufzeitpunkt.
             eintrag["erkannt"] = eintrag.get("erkannt") or eintrag.get("geholt")
@@ -453,7 +463,7 @@ def create_app(
         cfg = load_config(cfg_pfad)
         try:
             daten = await request.json()
-        except Exception:
+        except ValueError:
             return JSONResponse({"ok": False, "fehler": "Ungültiger JSON-Body"},
                                 status_code=400)
         if not isinstance(daten, dict):
@@ -635,7 +645,7 @@ def create_app(
         cfg = load_config(cfg_pfad)
         try:
             daten = await request.json()
-        except Exception:
+        except ValueError:
             return JSONResponse({"ok": False, "fehler": "Ungültiger JSON-Body"},
                                 status_code=400)
         if not isinstance(daten, dict):
@@ -650,8 +660,9 @@ def create_app(
         except ValueError as exc:
             return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
         except Exception as exc:
-            return JSONResponse({"ok": False, "fehler": type(exc).__name__},
-                                status_code=500)
+            Facts(cfg.db_pfad).ereignis(
+                "fehler", "Mission", f"Anlegen fehlgeschlagen: {exc}")
+            return _serverfehler()
         return JSONResponse({"ok": True, "mission": mission}, status_code=201)
 
     @app.post("/api/nexus/mission/{kennung}/lauf")
@@ -667,8 +678,7 @@ def create_app(
                 max_tasks=grenze, kennung=kennung)
         except Exception as exc:
             db.ereignis("fehler", "Mission", f"{kennung} konnte nicht laufen: {exc}")
-            return JSONResponse({"ok": False, "fehler": type(exc).__name__},
-                                status_code=500)
+            return _serverfehler()
         return JSONResponse({"ok": True, **ergebnis,
                              "mission": db.nexus_mission(kennung)},
                             headers={"Cache-Control": "no-store"})
@@ -715,7 +725,7 @@ def create_app(
         cfg = load_config(cfg_pfad)
         try:
             daten = await request.json()
-        except Exception:
+        except ValueError:
             return JSONResponse({"ok": False, "fehler": "Ungültiger JSON-Body"},
                                 status_code=400)
         if not isinstance(daten, dict):
@@ -737,8 +747,9 @@ def create_app(
         except ValueError as exc:
             return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
         except Exception as exc:
-            return JSONResponse({"ok": False, "fehler": type(exc).__name__},
-                                status_code=500)
+            Facts(cfg.db_pfad).ereignis(
+                "fehler", "Prognose", f"Anlegen fehlgeschlagen: {exc}")
+            return _serverfehler()
         return JSONResponse({"ok": True, "prognose": forecast}, status_code=201)
 
     @app.get("/api/betrieb")
@@ -786,7 +797,7 @@ def create_app(
             ergebnis = tick(cfg, db)
         except Exception as exc:
             db.ereignis("fehler", "Takt", f"Paper-Takt über API fehlgeschlagen: {exc}")
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=500)
+            return _serverfehler()
         return JSONResponse({"ok": True, **ergebnis})
 
     @app.post("/api/spider")
@@ -797,7 +808,7 @@ def create_app(
             ergebnis = Spider(cfg, db, Vault(cfg.vault_ordner)).lauf()
         except Exception as exc:
             db.ereignis("fehler", "Spider", f"Recherche über API fehlgeschlagen: {exc}")
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=500)
+            return _serverfehler()
         db.zustand_setzen("spider_letzter_lauf", ergebnis)
         try:
             netz = IntelNetz(cfg, db, Vault(cfg.vault_ordner))
@@ -813,7 +824,7 @@ def create_app(
         db = Facts(cfg.db_pfad)
         try:
             daten = await request.json()
-        except Exception:
+        except ValueError:
             return JSONResponse({"ok": False, "fehler": "Ungültiger JSON-Body"}, status_code=400)
         if not isinstance(daten, dict):
             return JSONResponse({"ok": False, "fehler": "Ungültiger JSON-Body"}, status_code=400)
@@ -852,7 +863,8 @@ def create_app(
         try:
             protokoll = agents.konferenz(db, _kontext(cfg, db), erzwungen=True)
         except Exception as exc:
-            return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=500)
+            db.ereignis("fehler", "Konferenz", f"Konferenz über API fehlgeschlagen: {exc}")
+            return _serverfehler()
         return JSONResponse({"ok": True, "beschluss": protokoll.get("beschluss")})
 
     if takt:
