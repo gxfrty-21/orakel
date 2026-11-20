@@ -158,6 +158,38 @@ def test_konsistenz_prueft_quellenhash_gegen_manifest(tmp_path):
                                 {"dateien/README.md": "0" * 64})
 
 
+def test_konsistenz_prueft_ci_lauf_id_in_zahlform(tmp_path, monkeypatch):
+    """Auch "CI-Lauf 123456789" ohne URL wird gegen den Commit geprüft."""
+    modul = _modul()
+    evidenz = _evidenz(tmp_path)
+    (tmp_path / "EVIDENZ.md").write_text("CI-Lauf 123456789.\n", encoding="utf-8")
+
+    monkeypatch.setattr(modul, "ci_lauf",
+                        lambda run_id: {"run_id": int(run_id), "head_sha": "a" * 40})
+    modul.pruefe_konsistenz(str(tmp_path), "a" * 40, evidenz)
+
+    monkeypatch.setattr(modul, "ci_lauf",
+                        lambda run_id: {"run_id": int(run_id), "head_sha": "b" * 40})
+    with pytest.raises(modul.Abweichung, match="123456789"):
+        modul.pruefe_konsistenz(str(tmp_path), "a" * 40, evidenz)
+
+
+def test_ci_lauf_ids_trennt_zahl_von_url_und_laufzeit():
+    modul = _modul()
+    ids = modul.ci_lauf_ids(
+        "CI: https://github.com/example/repo/actions/runs/111222333\n"
+        "CI-Lauf 444555666, Laufzeit 4000 s\n")
+
+    assert ids == {"111222333", "444555666"}
+
+
+def test_konsistenzprobe_meldet_erfolg():
+    """Die Probe im CI prüft alle vier Punkte und muss selbst bestehen."""
+    modul = _modul()
+
+    assert modul.konsistenzprobe() == 0
+
+
 def test_hauptdokument_hoechstens_200_zeilen(tmp_path):
     modul = _modul()
     dokument = tmp_path / "ORAKEL-REVIEW-PAKET.md"

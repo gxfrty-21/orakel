@@ -11,10 +11,13 @@ ZIP-Lücke — beendet den Lauf mit Exit-Code 1.
 Aufrufe:
     python scripts/baue_review_paket.py            # Paket bauen und prüfen
     python scripts/baue_review_paket.py --pruefen  # nur prüfen (CI)
+    python scripts/baue_review_paket.py --konsistenzprobe  # Prüfung selbst prüfen
 
 ``--pruefen`` prüft ein vorhandenes Paket gegen den Commit. Existiert noch kein
 Paket (CI ohne ``artifacts/``), baut der Builder in ein temporäres Verzeichnis
-und prüft dort Quellen, Hashes und ZIP.
+und prüft dort Quellen, Hashes und ZIP. ``--konsistenzprobe`` führt die
+Konsistenzprüfung gegen ein synthetisches Paket aus, damit sie im CI ohne
+tracked Paketdokumente erreichbar bleibt.
 """
 from __future__ import annotations
 
@@ -43,6 +46,9 @@ MUSTER_TESTZAHL = re.compile(r'(\d+)\s+passed')
 MUSTER_JUNIT = re.compile(r'<testsuite\b[^>]*\btests="(\d+)"')
 MUSTER_EVIDENZ_HASH = re.compile(r'`((?:belege|dateien)/[^`]+)`\s*\(`([0-9a-f]{8,64})')
 MUSTER_RUN = re.compile(r'/actions/runs/(\d+)')
+# Lauf-IDs stehen in Berichten auch als Zahl ("CI-Lauf 123456789"), nicht nur
+# als URL. Ab sechs Ziffern, damit Jahreszahlen und kurze Nummern auffallen.
+MUSTER_RUN_NUMMER = re.compile(r'\b(?:CI-Lauf|Lauf(?:-ID)?|Run(?:-ID)?)[ \t:#]*(\d{6,})\b')
 MUSTER_COMMIT = re.compile(r'\b([0-9a-f]{7,40})\b')
 HAUPTDOKUMENT = 'ORAKEL-REVIEW-PAKET.md'
 MAX_HAUPTDOKUMENT_ZEILEN = 200
@@ -524,16 +530,24 @@ def ci_lauf(run_id: str) -> dict:
             'conclusion': daten.get('conclusion'), 'event': daten.get('event')}
 
 
+def ci_lauf_ids(text: str) -> set[str]:
+    """Sammelt CI-Lauf-IDs in URL- und Zahlenform ("CI-Lauf 123456789")."""
+    return set(MUSTER_RUN.findall(text)) | set(MUSTER_RUN_NUMMER.findall(text))
+
+
 def pruefe_konsistenz(ausgabe: str, commit: str, evidenz: dict | None,
-                      quellen: dict[str, str] | None = None) -> None:
+                      quellen: dict[str, str] | None = None,
+                      lauf=None) -> None:
     """Prüft Doku und Manifest gegen die Quellen: Hashes, Testzahl, CI-Lauf-IDs.
 
     ``quellen`` bildet Zielpfade auf den frisch aus dem Commit gelesenen
     SHA-256 ab. Damit werden auch Quellhashes geprüft, die in ``MANIFEST.json``
     oder in der Doku stehen — nicht nur die Protokolle aus ``EVIDENZ.json``.
-    CI-Lauf-IDs werden über HTTPS geprüft, ohne ``gh``. Läuft nach jedem Bau und
-    bei ``--pruefen``; jede Abweichung beendet den Lauf.
+    CI-Lauf-IDs werden über HTTPS geprüft, ohne ``gh``; ``lauf`` ersetzt den
+    Abruf in der Konsistenzprobe. Läuft nach jedem Bau und bei ``--pruefen``;
+    jede Abweichung beendet den Lauf.
     """
+    lauf = lauf or ci_lauf
     soll: dict[str, str] = {}
     manifest_pfad = os.path.join(ausgabe, MANIFEST_NAME)
     if os.path.exists(manifest_pfad):
@@ -567,11 +581,11 @@ def pruefe_konsistenz(ausgabe: str, commit: str, evidenz: dict | None,
                 if int(zahl) != evidenz['testzahl']:
                     raise Abweichung(f'{name} nennt {zahl} passed, gemessen sind '
                                      f'{evidenz["testzahl"]}.')
-        for run_id in sorted(set(MUSTER_RUN.findall(text))):
-            lauf = ci_lauf(run_id)
-            if lauf['head_sha'] != commit:
+        for run_id in sorted(ci_lauf_ids(text)):
+            ergebnis = lauf(run_id)
+            if ergebnis['head_sha'] != commit:
                 raise Abweichung(f'{name} nennt CI-Lauf {run_id} auf '
-                                 f'{lauf["head_sha"][:7]}, Paket-Commit ist {commit[:7]}.')
+                                 f'{ergebnis["head_sha"][:7]}, Paket-Commit ist {commit[:7]}.')
 
 
 def pruefe_hauptdokument(ausgabe: str) -> None:
@@ -585,6 +599,102 @@ def pruefe_hauptdokument(ausgabe: str) -> None:
         raise Abweichung(f'{HAUPTDOKUMENT} hat {zeilen} Zeilen; erlaubt sind höchstens '
                          f'{MAX_HAUPTDOKUMENT_ZEILEN}.')
     print(f'Hauptdokument: {zeilen} Zeilen (Grenze {MAX_HAUPTDOKUMENT_ZEILEN}).')
+
+
+def konsistenzprobe() -> int:
+    """Führt die Konsistenzprüfung gegen ein synthetisches Paket aus.
+
+    Im CI gibt es kein ``artifacts/``-Verzeichnis, und die echten
+    Paketdokumente sind nicht versioniert. Damit der Konsistenz-Check im CI
+    erreichbar bleibt, baut die Probe ein kleines Paket im Temp-Verzeichnis und
+    prüft es vollständig: Hashes gegen MANIFEST und Dateien, Testzahl,
+    CI-Lauf in URL- und Zahlenform sowie die 200-Zeilen-Grenze. Anschliessend
+    verfälscht sie jeden dieser Punkte einzeln und erwartet einen Befund.
+    """
+    commit = 'a' * 40
+    fehler: list[str] = []
+    with tempfile.TemporaryDirectory(prefix='review-konsistenz-') as ausgabe:
+        quelle = os.path.join(ausgabe, 'dateien', 'README.md')
+        os.makedirs(os.path.dirname(quelle), exist_ok=True)
+        with open(quelle, 'wb') as f:
+            f.write(b'# Probe\n')
+        quelle_sha = hashlib.sha256(open(quelle, 'rb').read()).hexdigest()
+        beleg = os.path.join(ausgabe, 'belege', 'evidenz-pytest.log')
+        os.makedirs(os.path.dirname(beleg), exist_ok=True)
+        with open(beleg, 'wb') as f:
+            f.write(b'402 passed in 1.00s\n')
+        beleg_sha = hashlib.sha256(open(beleg, 'rb').read()).hexdigest()
+        evidenz = {'testzahl': 402, 'dateien': [
+            {'target': 'belege/evidenz-pytest.log', 'sha256': beleg_sha}]}
+        manifest = {'files': [
+            {'target': 'dateien/README.md', 'sha256': quelle_sha},
+            {'target': 'belege/evidenz-pytest.log', 'sha256': beleg_sha}]}
+        manifest_pfad = os.path.join(ausgabe, MANIFEST_NAME)
+        dokument = os.path.join(ausgabe, HAUPTDOKUMENT)
+        stub = lambda run_id: {'run_id': int(run_id), 'head_sha': commit}
+
+        def schreibe(text: str) -> None:
+            with open(dokument, 'w', encoding='utf-8') as f:
+                f.write(text)
+
+        def baue_manifest(quelle_hash: str) -> None:
+            daten = json.loads(json.dumps(manifest))
+            daten['files'][0]['sha256'] = quelle_hash
+            with open(manifest_pfad, 'w', encoding='utf-8') as f:
+                json.dump(daten, f)
+
+        def erwarte(name: str, text: str, *, quelle_hash: str = quelle_sha,
+                    lauf=None) -> None:
+            schreibe(text)
+            baue_manifest(quelle_hash)
+            try:
+                pruefe_konsistenz(ausgabe, commit, evidenz,
+                                  {'dateien/README.md': quelle_sha},
+                                  lauf=lauf or stub)
+            except Abweichung:
+                return
+            fehler.append(f'{name}: Verfälschung blieb unbemerkt')
+
+        gut = (
+            '# Prüfbericht\n'
+            f'Quelle `dateien/README.md` (`{quelle_sha[:16]}`).\n'
+            f'Beleg `belege/evidenz-pytest.log` (`{beleg_sha[:16]}`).\n'
+            '402 passed.\n'
+            'CI: https://github.com/example/repo/actions/runs/123456789\n'
+            'CI-Lauf 123456789.\n'
+        )
+        schreibe(gut)
+        baue_manifest(quelle_sha)
+        try:
+            pruefe_konsistenz(ausgabe, commit, evidenz,
+                              {'dateien/README.md': quelle_sha}, lauf=stub)
+        except Abweichung as befund:
+            fehler.append(f'gutes Paket abgelehnt: {befund}')
+        try:
+            pruefe_hauptdokument(ausgabe)
+        except Abweichung as befund:
+            fehler.append(f'gutes Hauptdokument abgelehnt: {befund}')
+
+        erwarte('falsche Testzahl', gut.replace('402 passed', '403 passed'))
+        erwarte('falscher Quellhash', gut.replace(quelle_sha[:16], '0' * 16))
+        erwarte('falscher Hash im Manifest', gut, quelle_hash='0' * 64)
+        erwarte('fremder CI-Lauf', gut,
+                lauf=lambda run_id: {'run_id': int(run_id), 'head_sha': 'b' * 40})
+        schreibe('\n'.join(['Zeile'] * (MAX_HAUPTDOKUMENT_ZEILEN + 1)) + '\n')
+        try:
+            pruefe_hauptdokument(ausgabe)
+        except Abweichung:
+            pass
+        else:
+            fehler.append('zu langes Hauptdokument blieb unbemerkt')
+
+    if fehler:
+        for befund in fehler:
+            print(f'Konsistenzprobe FEHLGESCHLAGEN: {befund}', file=sys.stderr)
+        return 1
+    print('Konsistenzprobe OK: Hashes, Testzahl, CI-Lauf (URL und Zahl) und '
+          f'{MAX_HAUPTDOKUMENT_ZEILEN}-Zeilen-Grenze geprüft')
+    return 0
 
 
 def pruefe_evidenz_dateien(ausgabe: str, evidenz: dict) -> None:
@@ -733,8 +843,13 @@ def main() -> int:
                     help='Nachweise ausführen und EVIDENZ.json/EVIDENZ.md neu erzeugen '
                          '(im --pruefen-Lauf ohne Paket immer aktiv)')
     ap.add_argument('--junit', default=None, help='JUnit-XML des pytest-Laufs (eine Testzahl)')
+    ap.add_argument('--konsistenzprobe', action='store_true',
+                    help='Konsistenzprüfung mit einem synthetischen Paket prüfen (CI)')
     ap.add_argument('--ci-run', default=None, help='CI-Lauf-ID, deren Head-Commit geprüft wird')
     args = ap.parse_args()
+
+    if args.konsistenzprobe:
+        return konsistenzprobe()
 
     try:
         freigabe = lade_freigabe()
