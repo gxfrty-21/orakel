@@ -55,6 +55,14 @@ hintereinander ein; das Dashboard hängt sich an die bestehende ID und wartet
 auf deren Ergebnis. Erst nach `fertig` oder `fehler` startet ein neuer Klick
 einen neuen Auftrag.
 
+Bleibt ein Auftrag nach einem Absturz auf `aktiv` stehen, verbucht ihn der
+Arbeiter beim nächsten Start und in jeder Schleife als `fehler`, sobald er
+länger als 60 Minuten in diesem Zustand war (`HAENGE_GRENZE` in
+`orakel/lauf_queue.py`); der Fehlertext nennt die Grenze, die Sicherung der
+Ergebnisse bleibt Sache des Laufs. Bewusst kein erneutes Einreihen: Ein
+Auftrag, der den Prozess zum Absturz bringt, würde sonst endlos wiederholt.
+Danach ist die Warteschlange wieder frei für einen neuen Start.
+
 Die Company-Schicht ist additiv und standardmäßig **nicht** in den laufenden
 Paper-Takt eingebunden (`[unternehmen] aktiv = false`). Sie enthält noch keine
 3D-Welt, keine LLM-Anbindung und keine echten Orders.

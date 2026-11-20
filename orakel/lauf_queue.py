@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from .kern.db import Facts, jetzt
@@ -23,6 +24,11 @@ OFFEN = "offen"
 AKTIV = "aktiv"
 FERTIG = "fertig"
 FEHLER = "fehler"
+
+# Ein Auftrag, der länger als das hier auf «aktiv» steht, kann nicht mehr von
+# einem laufenden Arbeiter stammen: Der Prozess ist abgestürzt oder der Lauf
+# hängt. Er wird als Fehler verbucht, damit die Warteschlange nicht blockiert.
+HAENGE_GRENZE = timedelta(minutes=60)
 
 Engine = Callable[..., dict[str, Any]]
 
@@ -116,6 +122,41 @@ def abschliessen(db: Facts, lauf_id: int, ergebnis: dict[str, Any]) -> None:
         )
 
 
+def haengende_auftraege(db: Facts, *, grenze: timedelta = HAENGE_GRENZE,
+                        jetzt_wert: datetime | None = None) -> list[int]:
+    """IDs von Aufträgen, die seit mehr als ``grenze`` auf «aktiv» stehen."""
+    bezug = (jetzt_wert or datetime.now(timezone.utc)).astimezone()
+    grenz_zeit = (bezug - grenze).replace(microsecond=0).isoformat()
+    with db.conn() as c:
+        return [int(zeile["id"]) for zeile in c.execute(
+            "SELECT id FROM laeufe WHERE status = ? AND gestartet IS NOT NULL "
+            "AND gestartet <= ? ORDER BY id",
+            (AKTIV, grenz_zeit),
+        )]
+
+
+def verwerfe_haengende(db: Facts, *, grenze: timedelta = HAENGE_GRENZE,
+                       jetzt_wert: datetime | None = None) -> list[int]:
+    """Verbucht hängende Aufträge als Fehler und liefert ihre IDs.
+
+    Das läuft beim Start des Arbeiters und in jeder Schleife, damit ein
+    Absturz die Warteschlange nicht dauerhaft blockiert. Ein erneutes
+    Einreihen gibt es bewusst nicht: Ein Auftrag, der den Prozess zum Absturz
+    bringt, würde sonst endlos wiederholt. Der Fehlertext nennt die Grenze.
+    """
+    ids = haengende_auftraege(db, grenze=grenze, jetzt_wert=jetzt_wert)
+    minuten = int(grenze.total_seconds() // 60)
+    for lauf_id in ids:
+        scheitern(
+            db, lauf_id,
+            f"Lauf blieb länger als {minuten} Minuten auf «aktiv» und wurde "
+            "verworfen (Arbeiter abgestürzt oder hängen geblieben)",
+        )
+        db.ereignis("fehler", "Lauf",
+                    f"Auftrag {lauf_id} hing auf «aktiv» und wurde als Fehler verbucht")
+    return ids
+
+
 def scheitern(db: Facts, lauf_id: int, fehler: str) -> None:
     with db.conn() as c:
         c.execute(
@@ -178,10 +219,15 @@ class LaufWorker(threading.Thread):
     def run(self) -> None:  # pragma: no cover - Zeitverhalten
         while not self._stopp.is_set():
             try:
+                self.aufraeumen()
                 self.verarbeite()
             except Exception as exc:  # noqa: BLE001 - Arbeiter darf nicht sterben
                 self.db.ereignis("fehler", "Lauf", f"Arbeiter gestört: {exc}")
             self._stopp.wait(self.intervall)
+
+    def aufraeumen(self) -> list[int]:
+        """Verwirft Aufträge, die ein abgestürzter Arbeiter hängen liess."""
+        return verwerfe_haengende(self.db)
 
     def verarbeite(self) -> dict[str, Any] | None:
         return verarbeite_einen(self.cfg_pfad, db=self.db)

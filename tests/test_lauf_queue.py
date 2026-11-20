@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import time
+from datetime import timedelta
 
 from fastapi.testclient import TestClient
 
 from orakel import lauf_queue, web
-from orakel.kern.db import Facts
+from orakel.kern.db import Facts, jetzt
 
 
 def test_post_lauf_antwortet_unter_200_ms(cfg, monkeypatch):
@@ -142,3 +143,64 @@ def test_nach_abschluss_startet_wieder_ein_auftrag(cfg):
     assert zweiter != erster
     assert lauf_queue.stand(db, erster)["status"] == lauf_queue.FERTIG
     assert lauf_queue.stand(db, zweiter)["status"] == lauf_queue.OFFEN
+
+
+def _aktiviere(db: Facts, lauf_id: int, gestartet: str) -> None:
+    """Setzt einen Auftrag direkt auf aktiv, wie es ein Absturz hinterlässt."""
+    with db.conn() as c:
+        c.execute("UPDATE laeufe SET status = ?, gestartet = ? WHERE id = ?",
+                  (lauf_queue.AKTIV, gestartet, lauf_id))
+
+
+def test_haengender_auftrag_wird_beim_start_des_arbeiters_verworfen(cfg):
+    """Ein Absturz hinterlässt «aktiv»; der nächste Arbeiter verbucht ihn als Fehler."""
+    db = Facts(cfg.db_pfad)
+    lauf_id = lauf_queue.anlegen(db)
+    _aktiviere(db, lauf_id, "2020-01-01T00:00:00")
+
+    arbeiter = lauf_queue.LaufWorker("unbenutzt.toml", db, intervall=0.05)
+    arbeiter.start()
+    grenze = time.monotonic() + 5
+    try:
+        while time.monotonic() < grenze:
+            if lauf_queue.stand(db, lauf_id)["status"] == lauf_queue.FEHLER:
+                break
+            time.sleep(0.05)
+    finally:
+        arbeiter.stoppe()
+        arbeiter.join(timeout=2)
+
+    stand = lauf_queue.stand(db, lauf_id)
+    assert stand["status"] == lauf_queue.FEHLER
+    assert "60 Minuten" in stand["fehler"]
+    assert "aktiv" in stand["fehler"]
+    assert stand["beendet"]
+    assert any("als Fehler verbucht" in zeile["text"] for zeile in db.ereignisse())
+    assert lauf_queue.offene_id(db) is None
+    neue_id, neu = lauf_queue.anlegen_wenn_frei(db)
+    assert neu is True and neue_id != lauf_id
+
+
+def test_frischer_aktiver_auftrag_bleibt_stehen(cfg):
+    """Innerhalb der Grenze wird nichts angefasst: Der Lauf könnte echt sein."""
+    db = Facts(cfg.db_pfad)
+    lauf_id = lauf_queue.anlegen(db)
+    _aktiviere(db, lauf_id, jetzt())
+
+    assert lauf_queue.verwerfe_haengende(db) == []
+    assert lauf_queue.stand(db, lauf_id)["status"] == lauf_queue.AKTIV
+    assert lauf_queue.anlegen_wenn_frei(db) == (lauf_id, False)
+
+
+def test_grenze_entscheidet_ueber_verwerfen(cfg):
+    db = Facts(cfg.db_pfad)
+    lauf_id = lauf_queue.anlegen(db)
+    _aktiviere(db, lauf_id, "2020-01-01T00:00:00")
+
+    assert lauf_queue.verwerfe_haengende(db, grenze=timedelta(days=3650)) == []
+    assert lauf_queue.stand(db, lauf_id)["status"] == lauf_queue.AKTIV
+
+    assert lauf_queue.verwerfe_haengende(db, grenze=timedelta(minutes=30)) == [lauf_id]
+    stand = lauf_queue.stand(db, lauf_id)
+    assert stand["status"] == lauf_queue.FEHLER
+    assert "30 Minuten" in stand["fehler"]
