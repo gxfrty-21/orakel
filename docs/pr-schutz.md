@@ -45,6 +45,31 @@ laut GitHub-Dokumentation `Success` und blockiert den Merge auch als
 Required Check nicht; belegt an PR #179, dessen Check `Doku-Prüfung` auf
 `830167b` mit `skipped` abgeschlossen ist und der anschließend gemergt wurde.
 
+## Pflichtverweis auf diese Datei
+
+`README.md` muss diese Dokumentation über einen **sichtbaren** Link nennen.
+`scripts/pruefe_doku.py` prüft das bei jeder Doku-Prüfung über
+`PFLICHT_VERWEISE`.
+
+Als sichtbarer Link gelten:
+
+- Inline-Link: `[Schutz](docs/pr-schutz.md)`
+- HTML-Link: `<a href="docs/pr-schutz.md">Schutz</a>`
+- tatsächlich verwendete Referenz: `[Schutz][ref]`, `[Schutz][]` oder
+  `[Schutz]` zusammen mit einer passenden Definition
+  `[ref]: docs/pr-schutz.md`
+
+Nicht ausreichend:
+
+- eine reine Referenzdefinition ohne Verwendung, etwa
+  `[ref]: docs/pr-schutz.md`
+- Bildziele: `![Schutz](docs/pr-schutz.md)` und
+  `<img src="docs/pr-schutz.md">`
+
+`python scripts/pruefe_doku.py --negativtest` belegt, dass ein fehlender
+Pflichtverweis erkannt wird; dieser Lauf gehört zur Doku-Prüfung, sobald das
+Prüfskript geändert wurde.
+
 ## Weitere Regeln
 
 - Keine Force-Pushes (`non_fast_forward`).
