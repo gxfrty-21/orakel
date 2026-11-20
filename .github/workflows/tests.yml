@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   # Der Doku-Job wird nur bei Markdown- oder Prüfskript-Änderungen gestartet.
@@ -63,8 +64,29 @@ jobs:
           python -m pip install -r requirements-dev.txt
 
       # Als Modul aufrufen, damit das Repo-Root für "import orakel" im Pfad liegt.
+      # Protokoll und JUnit-XML werden als Artefakt an den Review-Job gegeben,
+      # damit die Suite nur einmal läuft.
       - name: Tests ausführen
-        run: python -m pytest -q
+        run: |
+          mkdir -p artifacts/pytest
+          set +e
+          python -m pytest -q tests --junitxml=artifacts/pytest/junit.xml 2>&1 \
+            | tee artifacts/pytest/pytest.log
+          code=${PIPESTATUS[0]}
+          echo "$code" > artifacts/pytest/exit_code
+          exit "$code"
+
+      - name: pytest-Evidenz hochladen
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pytest-evidenz
+          path: |
+            artifacts/pytest/pytest.log
+            artifacts/pytest/junit.xml
+            artifacts/pytest/exit_code
+          if-no-files-found: error
+          retention-days: 7
 
   # Hält die Grenze aus Bereich 4.1: Der Handelskern (orakel/kern) darf
   # nichts aus Web, Agenten, Nexus oder Betrieb importieren. Der Vertrag steht
@@ -122,8 +144,11 @@ jobs:
   # weil aus dem Commit in ein temporäres Verzeichnis gebaut wird.
   review_paket:
     name: Review-Paket
+    needs: pytest
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Repository auschecken
@@ -134,9 +159,23 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Freigabe, Kopien und ZIP prüfen
+      # Das Protokoll kommt aus dem pytest-Job: eine Testzahl aus einem echten
+      # Lauf, ohne die Suite ein zweites Mal zu starten. Skript und Doku-Prüfung
+      # sind stdlib-only, deshalb hier kein pip install.
+      - name: pytest-Evidenz übernehmen
+        uses: actions/download-artifact@v6
+        with:
+          name: pytest-evidenz
+          path: artifacts/pytest
+
+      # Fehlende Evidenz, ein fremder Exit-Code oder ein Widerspruch zwischen
+      # Protokoll und JUnit-Bericht ist ein Fehler.
+      - name: Freigabe, Kopien, Hashes, Testzahl und ZIP prüfen
         run: |
-          python scripts/baue_review_paket.py --pruefen
+          python scripts/baue_review_paket.py --pruefen --evidenz \
+            --pytest-log artifacts/pytest/pytest.log \
+            --pytest-exit-code artifacts/pytest/exit_code \
+            --junit artifacts/pytest/junit.xml
 
   # Stellt sicher, dass das Dockerfile inklusive Seed-DB weiterhin baut.
   docker:

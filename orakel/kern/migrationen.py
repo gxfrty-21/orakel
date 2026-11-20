@@ -129,6 +129,31 @@ def _altes_schema(datei: Path, anweisung: str, fehler: sqlite3.OperationalError,
     )
 
 
+def startmeldung(fehler: AltesSchemaFehler, datenbank: str | Path) -> str:
+    """Startmeldung zu einem alten Bestand: eine Zeile je Punkt, ohne Stacktrace.
+
+    Der Aufrufer gibt sie vor dem Serverstart aus und beendet den Prozess. Jede
+    Zeile trägt das Präfix ``orakel:``, damit sie auch in einem mit Zeitstempeln
+    versehenen Protokoll als eigener Block lesbar bleibt. Genannt werden der
+    konkrete Fehler, der unveränderte Stand und die Sicherung: die vorhandene
+    Datei, sonst der Befehl davor.
+    """
+    datei = Path(datenbank)
+    sicherungen = sorted(datei.parent.glob(f"{datei.name}.vor-migration-*.bak"))
+    if sicherungen:
+        sicherung = f"Sicherung vorhanden: {sicherungen[-1]}"
+    else:
+        sicherung = f'Sicherung anlegen: cp "{datei}" "{datei}.vor-umbau"'
+    zeilen = str(fehler).splitlines() or ["unbekannter Fehler"]
+    return "\n".join((
+        "orakel: Start abgebrochen — die Datenbank hat ein älteres Schema.",
+        f"orakel: {zeilen[0]}",
+        "orakel: Die Migration wurde zurückgerollt, die Datenbank ist unverändert.",
+        f"orakel: {sicherung}",
+        "orakel: Weg zum Umbau: docs/MIGRATIONEN.md, Abschnitt «Sehr alte Bestände».",
+    ))
+
+
 def _wende_datei_an(c: sqlite3.Connection, datei: Path,
                     datenbank: Path | None = None) -> None:
     """Führt eine Datei in einer Transaktion aus; bei Fehler bleibt nichts zurück."""

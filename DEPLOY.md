@@ -92,7 +92,10 @@ Der Entrypoint setzt dafür `ORAKEL_DB_PFAD`, `ORAKEL_DATEN_ORDNER` und
 Die Quelle vorher stoppen, damit SQLite keine offene WAL-Datei hat.
 
 ```bash
-# im bisherigen Projektordner
+# im bisherigen Projektordner: Pfad aus config.toml ([basis] db_pfad),
+# ORAKEL_DB_PFAD sticht ihn. Im Archiv heisst die Datei wie im Container.
+DB=$(python3 -c "from orakel.config import load_config; print(load_config('config.toml').db_pfad)")
+[ "$DB" = orakel.db ] || cp "$DB" orakel.db
 tar czf orakel-umzug.tar.gz orakel.db vault daten
 ```
 

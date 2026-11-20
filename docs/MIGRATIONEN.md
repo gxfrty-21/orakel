@@ -53,6 +53,17 @@ und Spalte — statt eines nackten `no such column`. Die Transaktion ist
 zurückgerollt, die Datenbank bleibt unverändert, die Sicherung von Schritt 3
 liegt daneben.
 
+Beim Start prüft jeder Befehl, der die Datenbank anfasst (`serve`, `pruefen`,
+`konferenz`, `unternehmen`, `daten`), das Schema vorab. Ein solcher Bestand
+beendet den Prozess deshalb mit einer eigenen Meldung statt mit einem
+Traceback aus dem Lifespan von uvicorn: je Punkt eine Zeile mit dem Präfix
+`orakel:` — Fehler, zurückgerollter Stand, die vorhandene Sicherungsdatei und
+der Verweis auf diesen Abschnitt. Der Prozess endet mit Exit-Code 2. Im
+Container gilt das ohne Zusatz, weil `docker-entrypoint.sh` `python -m orakel …
+serve` startet; der Seed-Schritt davor rührt ein vorhandenes Schema nicht an.
+Eine eigene App-Instanz (`create_app(...)` direkt) prüft erst im Lifespan — also
+beim ersten Request — und meldet den Fehler dort als Serverfehler.
+
 Der Weg führt über Export und Import in ein frisches Schema:
 
 ```bash
