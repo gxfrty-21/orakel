@@ -88,6 +88,31 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Hält die Grenze aus Bereich 4.1: Der Handelskern (orakel/kern) darf
+  # nichts aus Web, Agenten, Nexus oder Betrieb importieren. Der Vertrag steht
+  # in .importlinter; zusätzlich prüft tests/test_architektur.py dasselbe ohne
+  # Zusatzpaket im normalen pytest-Lauf.
+  architektur:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Import-Linter installieren
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install import-linter==2.17
+
+      - name: Architekturverträge prüfen
+        run: lint-imports --verbose
+
   # Eigener sichtbarer Job: Prüft die versionierten Markdown-Dateien auf
   # relative Links, Markdown- und HTML-Anker, alte Raumschiff- und
   # Navigationsbegriffe sowie englische Altnamen der Agentenabteilungen.

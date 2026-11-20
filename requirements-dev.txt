@@ -3,3 +3,4 @@
 -r requirements.txt
 hypothesis>=6.100
 httpx2>=2.0
+import-linter==2.17
