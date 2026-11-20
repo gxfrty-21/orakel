@@ -211,6 +211,15 @@ tests/           Risiko, Backtest, Daten, Bericht
 - Der Richter ist fest verdrahtet; keine KI ändert seine Regeln.
 - Jede Zahl im Dashboard stammt aus SQLite — nichts wird geschätzt oder erfunden.
 
+## Qualitätstor
+
+Drei eigene CI-Jobs prüfen den Code: `ruff` (blinde Fänge `BLE001`, stille
+Fehlerschlucker `S110`, Sicherheitsregeln `S`), `mypy` für den Handelskern
+(`paper`, `risk`, `backtest`, `judge`) und `Coverage Handelskern` mit einer
+Untergrenze von 85 % für dieselben vier Module. Regeln, Ausnahmen für den
+Altbestand und die lokalen Befehle stehen in
+[docs/QUALITAET.md](docs/QUALITAET.md).
+
 ## Doku-Prüfung
 
 `python scripts/pruefe_doku.py` prüft die versionierten Markdown-Dateien auf

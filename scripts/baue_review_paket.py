@@ -42,7 +42,7 @@ class Abweichung(Exception):
 
 
 def git(*args: str) -> bytes:
-    r = subprocess.run(['git', '-c', 'safe.directory=*', '-C', WURZEL, *args], capture_output=True)
+    r = subprocess.run(['git', '-c', 'safe.directory=*', '-C', WURZEL, *args], capture_output=True)  # noqa: S603, S607 - Programmaufruf mit fester Argumentliste, ohne Shell; Programmname und Argumente sind fest verdrahtet
     if r.returncode != 0:
         raise Abweichung(f'git {" ".join(args)} fehlgeschlagen: {r.stderr.decode(errors="replace").strip()}')
     return r.stdout

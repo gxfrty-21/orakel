@@ -92,7 +92,7 @@ def _backup(ordner: Path) -> dict[str, Any]:
                     )
                 }
                 tabellen = {
-                    name: int(con.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0])
+                    name: int(con.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0])  # noqa: S608 - Tabellenname ist eine feste interne Liste
                     for name in QUEUE_MESS_TABELLEN if name in vorhanden
                 }
             finally:

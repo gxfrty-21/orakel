@@ -246,7 +246,7 @@ def main(argv: list[str] | None = None) -> int:
     pr.set_defaults(func=cmd_pruefen)
 
     s = sub.add_parser("serve", help="Dashboard im Browser starten")
-    s.add_argument("--host", default="0.0.0.0")
+    s.add_argument("--host", default="0.0.0.0")  # noqa: S104 - Server soll im Container auf allen Schnittstellen lauschen
     s.add_argument("--port", type=int, default=8000)
     s.add_argument("--takt", action="store_true", help="Paper-Takt im Hintergrund starten")
     s.set_defaults(func=cmd_serve)

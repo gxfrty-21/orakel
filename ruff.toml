@@ -1,0 +1,42 @@
+# Ruff-Konfiguration für das Qualitätstor aus Bereich 6.4.
+#
+# Geprüft werden blinde Fänge (BLE001), stille Fehlerschlucker (S110) und die
+# Sicherheitsregeln aus flake8-bandit (S). Bewusst schmal gehalten: keine
+# Stilregeln, damit dieses Tor nur Verhalten und Sicherheit bewertet.
+
+target-version = "py312"
+
+[lint]
+select = ["BLE001", "S110", "S"]
+
+[lint.per-file-ignores]
+# `assert` ist in Tests das Prüfmittel, kein Produktionscode.
+"tests/**" = ["S101"]
+# Altbestand: Diese Module sichern Prozess-, Nacht- und Endpunktabläufe mit
+# bewusst breiten Fängen ab (ein Fehler in einer Quelle, einem Job oder einer
+# Ansicht darf den Rest nicht beenden). Die Liste ist eine Schuldenliste und
+# soll schrumpfen: Wird ein Modul eingeengt, fliegt es hier heraus. Neue
+# Module, orakel/kern/ und alle Tests sind nicht ausgenommen.
+"orakel/agents.py" = ["BLE001", "S110"]
+"orakel/betrieb.py" = ["BLE001", "S110"]
+"orakel/company/handlers.py" = ["BLE001", "S110"]
+"orakel/company/runtime.py" = ["BLE001", "S110"]
+"orakel/globe.py" = ["BLE001", "S110"]
+"orakel/intel.py" = ["BLE001", "S110"]
+"orakel/knowledge.py" = ["BLE001", "S110"]
+"orakel/nexus/__main__.py" = ["BLE001", "S110"]
+"orakel/nexus/abruf.py" = ["BLE001", "S110"]
+"orakel/nexus/missionen.py" = ["BLE001", "S110"]
+"orakel/nexus/nacht.py" = ["BLE001", "S110"]
+"orakel/nexus/rollen.py" = ["BLE001", "S110"]
+"orakel/pipeline.py" = ["BLE001", "S110"]
+"orakel/report.py" = ["BLE001", "S110"]
+"orakel/scheduler.py" = ["BLE001", "S110"]
+"orakel/sekretariat.py" = ["BLE001", "S110"]
+"orakel/spider.py" = ["BLE001", "S110"]
+"orakel/watchdog.py" = ["BLE001", "S110"]
+"orakel/web.py" = ["BLE001", "S110"]
+"scripts/soak_abnahme.py" = ["BLE001", "S110"]
+"scripts/soak_auto_abnahme.py" = ["BLE001", "S110"]
+"scripts/soak_monitor.py" = ["BLE001", "S110"]
+"scripts/soak_probe.py" = ["BLE001", "S110"]

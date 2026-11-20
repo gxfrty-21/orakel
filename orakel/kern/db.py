@@ -398,7 +398,7 @@ class Facts:
         with self.conn() as c:
             for tabelle in ("nexus_claim_quellen", "nexus_widersprueche",
                             "nexus_claims", "nexus_quellen_reputation"):
-                c.execute(f"DELETE FROM {tabelle}")
+                c.execute(f"DELETE FROM {tabelle}")  # noqa: S608 - Tabellenname ist eine feste interne Liste
             if quellen:
                 c.executemany(
                     "INSERT INTO nexus_quellen_reputation(quelle_id,name,host,gewicht,"
@@ -413,9 +413,8 @@ class Facts:
                 if schluessel in ("zeitraum", "bedingung"):
                     return str(zeile.get(schluessel) or "")
                 if schluessel == "sicherheit":
-                    return round(max(0.0, min(1.0, float(
-                        zeile.get(schluessel) if zeile.get(schluessel) is not None
-                        else 0.5))), 3)
+                    roh = zeile.get(schluessel)
+                    return round(max(0.0, min(1.0, float(roh if roh is not None else 0.5))), 3)
                 return zeile[schluessel]
 
             if claims:
@@ -620,7 +619,7 @@ class Facts:
             if mission_kennung:
                 args.append(mission_kennung)
             zeile = c.execute(
-                "SELECT t.*, m.kennung AS mission_kennung, m.titel, m.auftrag, "
+                "SELECT t.*, m.kennung AS mission_kennung, m.titel, m.auftrag, "  # noqa: S608 - SQL-Gerüst aus festen Spaltennamen, Werte als Parameter
                 "m.prioritaet, m.status AS mission_status "
                 "FROM nexus_tasks t JOIN nexus_missionen m ON m.id=t.mission_id "
                 "WHERE t.status='offen' AND t.faellig_am<=? "
@@ -789,7 +788,7 @@ class Facts:
         platzhalter = ",".join("?" for _ in ids)
         with self.conn() as c:
             return [dict(r) for r in c.execute(
-                f"SELECT * FROM nexus_claims WHERE id IN ({platzhalter}) ORDER BY id",
+                f"SELECT * FROM nexus_claims WHERE id IN ({platzhalter}) ORDER BY id",  # noqa: S608 - nur «?»-Platzhalter, Werte als Parameter
                 tuple(int(i) for i in ids),
             )]
 
@@ -799,7 +798,7 @@ class Facts:
         platzhalter = ",".join("?" for _ in claim_ids)
         with self.conn() as c:
             return [dict(r) for r in c.execute(
-                f"SELECT * FROM nexus_claim_quellen WHERE claim_id IN ({platzhalter}) "
+                f"SELECT * FROM nexus_claim_quellen WHERE claim_id IN ({platzhalter}) "  # noqa: S608 - nur «?»-Platzhalter, Werte als Parameter
                 "ORDER BY claim_id, id",
                 tuple(int(i) for i in claim_ids),
             )]
@@ -810,7 +809,7 @@ class Facts:
         platzhalter = ",".join("?" for _ in claim_ids)
         with self.conn() as c:
             return [dict(r) for r in c.execute(
-                f"SELECT w.*, c.claim_key, c.kernaussage FROM nexus_widersprueche w "
+                f"SELECT w.*, c.claim_key, c.kernaussage FROM nexus_widersprueche w "  # noqa: S608 - SQL-Gerüst aus festen Spaltennamen, Werte als Parameter
                 f"JOIN nexus_claims c ON c.id=w.claim_id WHERE w.claim_id IN ({platzhalter}) "
                 "ORDER BY w.sicherheit DESC, w.id",
                 tuple(int(i) for i in claim_ids),
@@ -928,7 +927,7 @@ class Facts:
             return []
         platzhalter = ",".join("?" for _ in ids)
         with self.conn() as c:
-            return list(c.execute(f"SELECT * FROM artikel WHERE id IN ({platzhalter})", tuple(ids)))
+            return list(c.execute(f"SELECT * FROM artikel WHERE id IN ({platzhalter})", tuple(ids)))  # noqa: S608 - nur «?»-Platzhalter, Werte als Parameter
 
     def artikel_aktualisieren(self, artikel_id: int, qualitaet: float, symbole: list[str]) -> None:
         with self.conn() as c:
