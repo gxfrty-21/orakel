@@ -1,0 +1,241 @@
+/* Sitzung, Agenda, Protokolle, Missionsaufgaben.
+   Aus style.css ausgelagert; Kaskadenreihenfolge steht in style.css. */
+.sekTabs{display:flex;gap:6px;padding:8px 0;flex-wrap:wrap}
+
+.sekTabs button{padding:4px 10px;border:1px solid var(--line2);border-radius:4px;background:var(--panel2);
+  color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer}
+
+.sekTabs button.on{color:var(--accent);border-color:var(--accent)}
+
+.sekThread{display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto;padding:4px 0}
+
+.sekMsg{padding:6px 9px;border-radius:5px;background:var(--panel2);border:1px solid var(--line);font-size:12px;color:var(--fg)}
+
+.sekMsg.ich{background:rgba(255,63,164,.10);border-color:rgba(255,63,164,.35)}
+
+.sekMsg small{display:block;font-family:var(--mono);font-size:9.5px;color:var(--dim);margin-bottom:2px}
+
+.sekForm{display:flex;gap:8px;padding-top:8px}
+
+.sekForm input{flex:1;min-width:0;padding:7px 10px;border-radius:4px;border:1px solid var(--line2);
+  background:var(--panel2);color:var(--fg);font:inherit;font-size:12px}
+
+.sekAgendaHead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0 4px;
+  font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--dim);text-transform:uppercase}
+
+.sekAgenda{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow:auto}
+
+.sekStand{font-family:var(--mono);font-size:10px;color:var(--dim)}
+
+.sekThema{display:flex;flex-direction:column;gap:3px;padding:7px 9px;border-left:2px solid var(--accent);
+  background:var(--panel2);border-radius:4px;font-size:11.5px;color:var(--muted)}
+
+.sekThema b{color:var(--fg);font-weight:500}
+
+.sekThema small{font-family:var(--mono);font-size:9px;color:var(--accent);letter-spacing:.06em}
+
+.sekThema i{display:inline-block;min-width:58px;font-style:normal;font-family:var(--mono);
+  font-size:9px;color:var(--dim);text-transform:uppercase}
+
+.mtgThema{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid rgba(255,184,77,.28);
+  border-radius:6px;background:rgba(40,24,12,.45)}
+
+.mtgThema small{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:var(--amber)}
+
+.mtgThema b{font-size:13px;color:var(--fg);font-weight:600}
+
+.mtgFakt{margin:0;font-size:11.5px;color:var(--muted)}
+
+.mtgWort{display:flex;gap:8px;font-size:11.5px;color:var(--muted)}
+
+.mtgWort span{min-width:42px;font-family:var(--mono);font-size:9.5px;color:var(--accent);text-transform:uppercase}
+
+.mtgEmpf{font-size:11.5px;color:var(--fg);border-left:2px solid var(--amber);padding-left:8px}
+
+.mtgVote{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+
+.mtgVote button{padding:5px 12px;border-radius:4px;border:1px solid var(--line2);background:var(--panel2);
+  color:var(--fg);font-family:var(--mono);font-size:10.5px;cursor:pointer}
+
+.mtgVote button:hover{border-color:var(--accent);color:var(--accent)}
+
+.mtgLog{display:flex;flex-direction:column;gap:3px;font-family:var(--mono);font-size:10px;color:var(--dim)}
+
+.mtgResult{display:flex;flex-direction:column;gap:4px;padding:10px;border:1px solid rgba(255,184,77,.3);border-radius:6px}
+
+.mtgResult b{font-size:12.5px;color:var(--fg)}
+
+.mtgResult span{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+
+.mtgStimmen{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--muted);padding:6px 0;
+  border-top:1px solid var(--line)}
+
+.mtgStimmen b{font-family:var(--mono);font-size:9.5px;color:var(--accent);text-transform:uppercase;margin-right:4px}
+
+.mtgStimmen i{font-style:normal;color:var(--fg)}
+
+.mtgErg{font-size:12px;color:var(--fg);padding:6px 8px;border-left:2px solid var(--amber);background:rgba(255,184,77,.07)}
+
+.mtgErg small{font-family:var(--mono);font-size:9.5px;color:var(--dim);margin-left:6px}
+
+.mtgProto{margin-top:6px;border:1px solid var(--line);border-radius:5px;background:var(--panel2)}
+
+.mtgProto summary{padding:7px 9px;cursor:pointer;font-size:11.5px;color:var(--fg);list-style:none}
+
+.mtgProto summary::before{content:"▸ ";color:var(--amber)}
+
+.mtgProto[open] summary::before{content:"▾ "}
+
+.mtgProto summary small{font-family:var(--mono);font-size:9.5px;color:var(--dim);margin-left:6px}
+
+.mtgProto pre{margin:0;padding:0 10px 10px;font-family:var(--mono);font-size:10.5px;color:var(--muted);
+  white-space:pre-wrap;max-height:240px;overflow:auto}
+
+.mtgOverride{margin-top:6px;padding:7px 9px;border:1px dashed rgba(255,184,77,.5);border-radius:5px;font-size:11.5px}
+
+.mtgOverride summary{cursor:pointer;color:var(--amber);font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase}
+
+.mtgOverride select,.mtgOverride input{margin-top:6px;padding:5px 8px;border-radius:4px;border:1px solid var(--line2);
+  background:var(--panel2);color:var(--fg);font:inherit;font-size:11.5px}
+
+.mtgOverride input{width:100%;box-sizing:border-box}
+
+.mtgOverride button{margin-top:6px;padding:5px 12px;border-radius:4px;border:1px solid var(--amber);
+  background:transparent;color:var(--amber);font-family:var(--mono);font-size:10.5px;cursor:pointer}
+
+.mtgProto .md{padding:2px 10px 10px;font-size:11.5px;color:var(--muted);max-height:260px;overflow:auto}
+
+.mtgProto .md p{margin:4px 0}
+
+.mtgProto .md ul{margin:4px 0;padding-left:16px}
+
+.mtgProto .md li{margin:2px 0}
+
+.mtgProto .md h3,.mtgProto .md h4{margin:6px 0 3px;font-size:12px;color:var(--fg)}
+
+.mtgProto .md b{color:var(--fg)}
+
+.protoTools{display:flex;gap:6px;padding:2px 0 8px;flex-wrap:wrap}
+
+.protoTools input:not([type="checkbox"]),.protoTools select{padding:5px 8px;border-radius:4px;border:1px solid var(--line2);
+  background:var(--panel2);color:var(--fg);font:inherit;font-size:11px}
+
+.protoTools input:not([type="checkbox"]){flex:1;min-width:140px}
+
+.mtasks{display:flex;flex-direction:column;gap:3px;margin:2px 0 4px;padding-left:2px}
+
+.mtask{display:flex;gap:6px;align-items:baseline;font-size:10.5px;color:var(--muted);flex-wrap:wrap}
+
+.mtask b{font-family:var(--mono);font-size:9px;color:var(--accent);text-transform:uppercase;min-width:54px}
+
+.mtaskstat{font-family:var(--mono);font-size:9px;color:var(--fg);background:rgba(255,255,255,.06);padding:1px 5px;border-radius:3px}
+
+.mtask small{color:var(--dim);font-size:10px}
+
+.mtgProto .md table{border-collapse:collapse;margin:6px 0;width:100%;font-size:10.5px}
+
+.mtgProto .md th,.mtgProto .md td{border:1px solid var(--line);padding:3px 6px;text-align:left}
+
+.mtgProto .md th{background:rgba(255,255,255,.05);color:var(--fg);font-weight:600}
+
+.mtgProto .md a{color:var(--accent);text-decoration:underline}
+
+.mtgErg .mtasks .mtaskres{display:block;color:var(--fg);opacity:.75;margin-top:2px}
+
+.mtgTakt{display:flex;align-items:center;gap:6px;margin:6px 0;font-size:11px;color:var(--muted)}
+
+.mtgTakt select{background:transparent;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:2px 4px;font-size:11px}
+
+.musterTrades{margin:6px 0;font-size:11px}
+
+.musterTrades summary{cursor:pointer;color:var(--accent)}
+
+.musterTrades ul{margin:4px 0 0 14px;padding:0}
+
+.musterTrades li{margin:2px 0;color:var(--muted)}
+
+.musterTrades li>span::before{content:" · ";color:var(--dim)}
+
+.trKopf{display:none}
+
+.musterTrades .trFilter{display:flex;align-items:center;gap:5px;margin:4px 0 0 2px;color:var(--muted);cursor:pointer}
+
+.musterTrades .trFilter input{accent-color:var(--accent);margin:0}
+
+.musterTrades ul.nurAbw li:not(.abweichend){display:none}
+
+.protoVault{display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--muted);white-space:nowrap}
+
+.protoQuick{background:transparent;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:2px 6px;font-size:10.5px;cursor:pointer}
+
+.protoQuick.on{color:var(--accent);border-color:var(--accent)}
+
+.mtgProto .md pre{background:rgba(0,0,0,.35);border:1px solid var(--line);border-radius:6px;padding:6px 8px;overflow-x:auto;font-size:10.5px}
+
+.mtgProto .md code{font-family:var(--mono,monospace)}
+
+.mtgProto .md blockquote{margin:6px 0;padding:2px 0 2px 8px;border-left:2px solid var(--accent);color:var(--muted)}
+
+.mtgTaktStand{font-size:10.5px;color:var(--muted);margin-left:2px}
+
+.mtgTaktStand.on{color:var(--accent)}
+
+.mtgProto .md code{background:rgba(255,255,255,.07);border-radius:3px;padding:0 3px;font-size:10.5px}
+
+.mtgProto .md pre code{background:none;padding:0}
+
+.mtgProto .md ol{margin:4px 0 4px 18px;padding:0}
+
+.mtgProto .md li{margin:1px 0}
+
+.protoZeit{font-size:10.5px;color:var(--muted);white-space:nowrap}
+
+.mtgLog{margin:4px 0 2px;font-size:10.5px;color:var(--muted)}
+
+.mtgLogZeile{padding:1px 0;border-top:1px solid rgba(255,255,255,.05)}
+
+.mtask.alt{background:rgba(217,163,0,.08);border-left:2px solid #d9a300;padding-left:6px}
+
+.mtask.alt .mtaskstat{color:#e0b64a}
+
+.trRend.plus{color:#4ade80}
+
+.trRend.minus{color:#f87171}
+
+.trNet,.trRend,.trDauer,.trDatum{white-space:nowrap}
+
+#mtgPanel .ph .mtgTaktStand{margin-left:6px}
+
+.mtgLogKopf{display:flex;align-items:center;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-top:6px}
+
+.mtgLogKopf .toggle{font-size:10px;padding:1px 6px}
+
+.mtgLogKopf .toggle:disabled{opacity:.4;cursor:default}
+
+header.top .mtgTaktStand{font-size:11px;color:var(--muted);white-space:nowrap}
+
+.mtask .mtaskgrund{display:block;color:#f0a35e;margin-top:2px}
+
+.trNet.plus{color:#4ade80}
+
+.trNet.minus{color:#f87171}
+
+.mtgLogKopf .mtgLogHinweis{font-size:10px;color:var(--muted);margin-left:6px}
+
+.mtgAltZahl{background:none;border:0;padding:0;cursor:pointer;font:inherit}
+
+.mtgAltZahl.on{color:var(--accent);text-decoration:underline}
+
+body.nurAlt .mtask:not(.alt){display:none}
+
+.mtask .mtaskzeit{display:block;color:var(--muted);margin-top:1px}
+
+.mtask .mtaskziel{display:block;color:var(--muted);margin-top:2px}
+
+.musterTrades li.abweichend{background:rgba(217,163,0,.08);border-left:2px solid #d9a300;padding-left:5px}
+
+body.nurAlt .mtasks.ohneAlt{display:none}
+
+body.nurAltBloecke .mtasks.ohneAlt{display:none}
+
+.mtgAltKopf{display:inline-flex;gap:6px;align-items:center}
