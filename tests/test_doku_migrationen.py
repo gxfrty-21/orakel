@@ -39,6 +39,11 @@ def _stand(pfad: Path) -> list[int]:
     return migrationen.angewendet(pfad)
 
 
+def _voller_stand() -> list[int]:
+    """Alle vorhandenen Migrationen – der Stand nach dem vollständigen Lauf."""
+    return [migration.nummer for migration in migrationen.dateien()]
+
+
 def _probe(tmp_path: Path) -> Path:
     """Seed-Kopie mit eigener ``config.toml``, vollständig migriert."""
     db = tmp_path / "orakel.db"
@@ -48,7 +53,7 @@ def _probe(tmp_path: Path) -> Path:
     assert ersetzt == 1, "config.toml: db_pfad nicht eindeutig ersetzt"
     (tmp_path / "config.toml").write_text(config, encoding="utf-8")
     migrationen.anwenden(db)
-    assert _stand(db) == [1, 2, 3]
+    assert _stand(db) == _voller_stand()
     return db
 
 
@@ -70,8 +75,8 @@ def test_stand_befehl_laeuft_auf_der_seed_kopie(tmp_path):
     lauf = _fuehre_aus(befehl, tmp_path)
 
     assert lauf.returncode == 0, lauf.stderr
-    assert ast.literal_eval(lauf.stdout) == [1, 2, 3]
-    assert _stand(db) == [1, 2, 3]
+    assert ast.literal_eval(lauf.stdout) == _voller_stand()
+    assert _stand(db) == _voller_stand()
     assert set(tmp_path.glob("*.bak")) == sicherungen_vorher, \
         "Status hat die Datenbank verändert"
 
@@ -84,12 +89,14 @@ def test_zurueck_befehl_rollt_zurueck_und_sichert_vorher(tmp_path):
 
     assert lauf.returncode == 0, lauf.stderr
     ergebnis = ast.literal_eval(lauf.stdout)
-    assert ergebnis["zurueckgerollt"] == [3]
+    erwartet = sorted((nummer for nummer in _voller_stand() if nummer > 2),
+                      reverse=True)
+    assert ergebnis["zurueckgerollt"] == erwartet
     assert _stand(db) == [1, 2]
 
     sicherung = Path(ergebnis["backup"])
     assert sicherung.is_file()
     assert sicherung.parent == tmp_path
     assert re.fullmatch(r"orakel\.db\.vor-migration-\d{8}-\d{6}\.bak", sicherung.name)
-    assert _stand(sicherung) == [1, 2, 3], \
+    assert _stand(sicherung) == _voller_stand(), \
         "Sicherung muss den Stand vor dem Rückweg halten"

@@ -93,7 +93,7 @@ im Bestand, entsteht sie beim Start leer.
 # Stand anzeigen (Pfad aus config.toml)
 .venv/bin/python -c "import sys; from orakel.config import load_config; from orakel.kern import migrationen; print(migrationen.angewendet(load_config(sys.argv[1]).db_pfad))" config.toml
 
-# Auf Stand 0002 zurückrollen (führt 0003_*.down.sql aus, legt vorher eine Sicherung an)
+# Auf Stand 0002 zurückrollen (führt alle neueren Down-Dateien aus, legt vorher eine Sicherung an)
 .venv/bin/python -c "import sys; from orakel.config import load_config; from orakel.kern import migrationen; print(migrationen.zurueckrollen(load_config(sys.argv[1]).db_pfad, bis=2))" config.toml
 ```
 
