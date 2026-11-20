@@ -167,6 +167,11 @@ def _aufteilung(n: int, v: dict[str, Any]) -> tuple[int, int, int, list[int]] | 
     return dev_n, holdout_n, train_bars, grenzen
 
 
+def aufteilung(n: int, cfg: Config) -> tuple[int, int, int, list[int]] | None:
+    """Öffentliche Fassung der Zeitaufteilung für Berichte und Tests."""
+    return _aufteilung(n, cfg["validierung"])
+
+
 def _train_parameter(
     df: pd.DataFrame, strategie: Strategie, cfg: Config, grenzen: RisikoGrenzen,
     train_start: int, train_end: int,

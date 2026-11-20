@@ -159,9 +159,16 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Der Strategie-Nachweis führt Anwendungscode aus und braucht deshalb die
+      # Laufzeit-Abhängigkeiten. Die Testsuite selbst startet weiterhin nur der
+      # pytest-Job.
+      - name: Laufzeit-Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
       # Das Protokoll kommt aus dem pytest-Job: eine Testzahl aus einem echten
-      # Lauf, ohne die Suite ein zweites Mal zu starten. Skript und Doku-Prüfung
-      # sind stdlib-only, deshalb hier kein pip install.
+      # Lauf, ohne die Suite ein zweites Mal zu starten.
       - name: pytest-Evidenz übernehmen
         uses: actions/download-artifact@v6
         with:

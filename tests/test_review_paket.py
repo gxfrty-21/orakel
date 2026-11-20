@@ -6,6 +6,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -304,9 +305,11 @@ class _NichtStarten:
 
     @staticmethod
     def run(argv, **_kwargs):
-        if any("pytest" in str(teil) for teil in argv):
+        if list(argv[1:3]) == ["-m", "pytest"] or str(argv[0]).endswith("pytest"):
             pytest.fail("pytest wurde erneut gestartet")
-        raise OSError("im Test nicht verfügbar")
+        # Übrige Nachweise (z. B. der Strategie-Bericht) werden simuliert; der
+        # Test prüft allein, dass pytest nicht ein zweites Mal startet.
+        return SimpleNamespace(returncode=0, stdout="Nachweis OK\n", stderr="")
 
 
 def test_evidenz_uebernimmt_das_ci_protokoll(tmp_path, monkeypatch):

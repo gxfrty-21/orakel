@@ -28,6 +28,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -476,6 +477,7 @@ def fuehre_evidenz_aus(ausgabe: str, commit: str, branch: str,
             'log': letzte_zeile(text),
         })
         protokolle[name] = text
+    dateien.append(_strategie_nachweis(ausgabe, commit))
     pytest_eintrag = next(d for d in dateien if d['name'] == 'pytest')
     protokoll = protokolle['pytest']
     ergebnis = ergebnis_aus_log(protokoll)
@@ -513,6 +515,41 @@ def fuehre_evidenz_aus(ausgabe: str, commit: str, branch: str,
     with open(os.path.join(ausgabe, EVIDENZ_MD), 'w', encoding='utf-8') as f:
         f.write(rendere_evidenz_md(evidenz))
     return evidenz
+
+
+def _strategie_nachweis(ausgabe: str, commit: str) -> dict:
+    """Erzeugt den Strategie-Bericht als Teil der Evidenz (Kopie der Seed-Datenbank)."""
+    seed = os.path.join(WURZEL, 'seed', 'orakel-seed.db')
+    if not os.path.exists(seed):
+        raise Abweichung('seed/orakel-seed.db fehlt — Strategie-Bericht nicht erzeugbar.')
+    ziel = os.path.join(ausgabe, 'belege')
+    os.makedirs(ziel, exist_ok=True)
+    log_pfad = os.path.join(ziel, 'evidenz-strategie.log')
+    with tempfile.TemporaryDirectory(prefix='strategie-') as temp:
+        quelle = os.path.join(temp, 'quelle.db')
+        shutil.copyfile(seed, quelle)
+        argv = (sys.executable, '-m', 'orakel', 'strategie-bericht', '--db', quelle,
+                '--quelle', 'seed/orakel-seed.db (Simulation, keine Marktaussage)',
+                '--ausgabe', ziel)
+        lauf = subprocess.run(argv, cwd=WURZEL, capture_output=True, text=True)
+    text = lauf.stdout + lauf.stderr
+    with open(log_pfad, 'w', encoding='utf-8') as f:
+        f.write(text)
+    if lauf.returncode != 0:
+        raise Abweichung(f'Strategie-Bericht endete mit Exit {lauf.returncode}: '
+                         f'{letzte_zeile(text)}')
+    return {
+        'name': 'strategie',
+        'target': 'belege/evidenz-strategie.log',
+        'commit': commit,
+        'befehl': 'python -m orakel strategie-bericht --db seed/orakel-seed.db '
+                  '--ausgabe belege',
+        'exit_code': lauf.returncode,
+        'sha256': sha256_datei(log_pfad),
+        'bytes': os.path.getsize(log_pfad),
+        'log': next((z.strip() for z in text.splitlines()
+                     if z.strip().startswith('Strategie-Bericht:')), letzte_zeile(text)),
+    }
 
 
 def rendere_evidenz_md(evidenz: dict) -> str:
