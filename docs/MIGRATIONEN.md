@@ -90,12 +90,26 @@ im Bestand, entsteht sie beim Start leer.
 ## Stand und Rückweg
 
 ```bash
-# Stand anzeigen
-.venv/bin/python -c "from orakel.kern import migrationen; print(migrationen.angewendet('orakel.db'))"
+# Stand anzeigen — rein lesend, ändert nichts
+.venv/bin/python -m orakel migration --status
 
 # Auf Stand 0002 zurückrollen (führt 0003_*.down.sql aus)
-.venv/bin/python -c "from orakel.kern import migrationen; print(migrationen.zurueckrollen('orakel.db', bis=2))"
+.venv/bin/python -m orakel migration --zurueck 2 --bestaetigen
 ```
+
+Der Datenbankpfad kommt aus `config.toml` (`[basis] db_pfad`); `ORAKEL_DB_PFAD`
+sticht ihn. Für einen anderen Bestand davor `--config` setzen:
+`python -m orakel --config pfad/zu/config.toml migration --status`. Beide
+Schalter schliessen sich aus; ohne Angabe nennt der Befehl die Möglichkeiten.
+
+`--status` öffnet die Datenbank nicht schreibend und legt sie nicht an: Fehlt
+die Datei, endet der Befehl mit Hinweis und Exit-Code 1. `--zurueck N` zeigt
+Stand und geplante Schritte, führt ohne `--bestaetigen` aber nichts aus (Exit
+1). Fehlt für einen geplanten Schritt die `.down.sql`, bricht er vor jeder
+Änderung ab und nennt die Nummern. Nach dem Lauf stehen die zurückgerollten
+Migrationen, der Sicherungspfad und der neue Stand in der Ausgabe. Der Befehl
+startet bewusst keine App: `Facts` würde beim Öffnen die Migrationen sofort
+wieder anwenden.
 
 Der Rückweg löscht Daten der betroffenen Migrationen. Fehlt eine
 `.down.sql`-Datei, bricht `zurueckrollen()` ab, **bevor** etwas geändert wird,
