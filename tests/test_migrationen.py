@@ -195,3 +195,85 @@ def test_bestandsdatenbank_ohne_historie_wird_durchmigriert(tmp_path):
         assert c.execute("SELECT COUNT(*) FROM artikel").fetchone()[0] == 1
     finally:
         c.close()
+
+
+def test_serve_bricht_bei_altem_schema_mit_eigener_meldung_ab(tmp_path, monkeypatch, capsys):
+    """Der App-Start endet mit eigener Meldung statt mit einem uvicorn-Traceback."""
+    import argparse
+
+    import uvicorn
+
+    from orakel import __main__ as cli
+    from orakel.config import Config
+
+    pfad = tmp_path / "uralt.db"
+    c = sqlite3.connect(pfad)
+    c.executescript("CREATE TABLE artikel (id INTEGER PRIMARY KEY, titel TEXT NOT NULL);")
+    c.execute("INSERT INTO artikel (titel) VALUES ('Alter Artikel')")
+    c.commit()
+    c.close()
+    daten = {"basis": {
+        "start_kapital": 100000.0, "waehrung": "USD", "zeitzone": "Europe/Zurich",
+        "daten_ordner": str(tmp_path / "daten"), "vault_ordner": str(tmp_path / "vault"),
+        "db_pfad": str(pfad), "datenquelle": "synthetisch", "bars_pro_jahr": 24960,
+    }}
+    cfg = Config(daten, tmp_path / "config.toml")
+    monkeypatch.setattr(cli, "_cfg", lambda _pfad: cfg)
+    gestartet: list[object] = []
+    monkeypatch.setattr(uvicorn, "run", lambda *a, **k: gestartet.append(a))
+
+    args = argparse.Namespace(config=str(cfg.pfad), host="127.0.0.1", port=8000, takt=False)
+    code = cli.cmd_serve(args)
+    ausgabe = capsys.readouterr().err
+
+    assert code == 2
+    assert gestartet == []          # kein Serverstart auf einem alten Bestand
+    assert "Traceback" not in ausgabe and 'File "' not in ausgabe
+    zeilen = [z for z in ausgabe.splitlines() if z.strip()]
+    assert len(zeilen) == 5
+    assert all(z.startswith("orakel: ") for z in zeilen)
+    assert "älteres Schema" in ausgabe
+    assert "0001_basis.sql" in ausgabe
+    assert "ix_artikel_hash" in ausgabe and "artikel.titel_hash" in ausgabe
+    assert "zurückgerollt" in ausgabe
+    assert "vor-migration-" in ausgabe          # konkrete Sicherungsdatei
+    assert "docs/MIGRATIONEN.md" in ausgabe
+    assert list(tmp_path.glob("uralt.db.vor-migration-*.bak"))
+
+
+@pytest.mark.parametrize("befehl", ["cmd_daten", "cmd_pruefen", "cmd_konferenz",
+                                   "cmd_unternehmen"])
+def test_jeder_befehl_meldet_alten_bestand(tmp_path, monkeypatch, capsys, befehl):
+    """Auch die anderen Startwege enden mit der klaren Meldung, nicht im Traceback."""
+    import argparse
+
+    from orakel import __main__ as cli
+    from orakel import pipeline
+    from orakel.config import Config
+
+    pfad = tmp_path / "uralt.db"
+    c = sqlite3.connect(pfad)
+    c.executescript("CREATE TABLE artikel (id INTEGER PRIMARY KEY, titel TEXT NOT NULL);")
+    c.commit()
+    c.close()
+    daten = {"basis": {
+        "start_kapital": 100000.0, "waehrung": "USD", "zeitzone": "Europe/Zurich",
+        "daten_ordner": str(tmp_path / "daten"), "vault_ordner": str(tmp_path / "vault"),
+        "db_pfad": str(pfad), "datenquelle": "synthetisch", "bars_pro_jahr": 24960,
+    }}
+    cfg = Config(daten, tmp_path / "config.toml")
+    monkeypatch.setattr(cli, "_cfg", lambda _pfad: cfg)
+
+    def nie(*_a, **_k):
+        raise AssertionError("Ablauf lief trotz altem Bestand")
+
+    monkeypatch.setattr(pipeline, "lauf", nie)
+    args = argparse.Namespace(config=str(cfg.pfad))
+
+    code = getattr(cli, befehl)(args)
+    ausgabe = capsys.readouterr().err
+
+    assert code == 2
+    assert "älteres Schema" in ausgabe
+    assert "docs/MIGRATIONEN.md" in ausgabe
+    assert "Traceback" not in ausgabe
