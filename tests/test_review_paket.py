@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -102,14 +103,101 @@ def test_konsistenz_bricht_bei_falschem_hash(tmp_path):
         modul.pruefe_konsistenz(str(tmp_path), "a" * 40, evidenz)
 
 
-def test_konsistenz_ueberspringt_ci_laeufe_ohne_gh(tmp_path, monkeypatch):
+def test_ci_lauf_ohne_gh_nutzt_http(monkeypatch):
+    """Die Lauf-ID wird per HTTPS geprüft; das CLI wird nicht gebraucht."""
+    modul = _modul()
+    monkeypatch.setattr(modul, "repo_slug", lambda: "example/repo")
+    monkeypatch.setattr(modul, "_http_json", lambda url: {
+        "head_sha": "a" * 40, "conclusion": "success", "event": "push"})
+
+    def kein_gh(*_args, **_kwargs):
+        raise AssertionError("gh darf für CI-Läufe nicht aufgerufen werden")
+
+    monkeypatch.setattr(modul.subprocess, "run", kein_gh)
+
+    lauf = modul.ci_lauf("123")
+
+    assert lauf["run_id"] == 123
+    assert lauf["head_sha"] == "a" * 40
+
+
+def test_konsistenz_prueft_ci_lauf_ohne_gh(tmp_path, monkeypatch):
     modul = _modul()
     evidenz = _evidenz(tmp_path)
     (tmp_path / "EVIDENZ.md").write_text(
         "CI: https://github.com/example/repo/actions/runs/123456\n", encoding="utf-8")
-    monkeypatch.setattr(modul, "_gh_verfuegbar", lambda: False)
 
+    monkeypatch.setattr(modul, "ci_lauf",
+                        lambda run_id: {"run_id": int(run_id), "head_sha": "a" * 40})
     modul.pruefe_konsistenz(str(tmp_path), "a" * 40, evidenz)
+
+    monkeypatch.setattr(modul, "ci_lauf",
+                        lambda run_id: {"run_id": int(run_id), "head_sha": "b" * 40})
+    with pytest.raises(modul.Abweichung, match="123456"):
+        modul.pruefe_konsistenz(str(tmp_path), "a" * 40, evidenz)
+
+
+def test_konsistenz_prueft_quellenhash_gegen_manifest(tmp_path):
+    """Ein Hash in der Doku muss zum Manifest und zur Commit-Quelle passen."""
+    modul = _modul()
+    evidenz = _evidenz(tmp_path)
+    quelle = tmp_path / "dateien" / "README.md"
+    quelle.parent.mkdir(parents=True)
+    quelle.write_text("inhalt\n", encoding="utf-8")
+    echt = hashlib.sha256(quelle.read_bytes()).hexdigest()
+    (tmp_path / "MANIFEST.json").write_text(json.dumps({"files": [
+        {"target": "dateien/README.md", "sha256": echt}]}), encoding="utf-8")
+    (tmp_path / "ORAKEL-REVIEW-PAKET.md").write_text(
+        f"`dateien/README.md` (`{echt[:16]}…`)\n", encoding="utf-8")
+
+    modul.pruefe_konsistenz(str(tmp_path), "a" * 40, evidenz,
+                            {"dateien/README.md": echt})
+
+    with pytest.raises(modul.Abweichung, match="README.md"):
+        modul.pruefe_konsistenz(str(tmp_path), "a" * 40, evidenz,
+                                {"dateien/README.md": "0" * 64})
+
+
+def test_hauptdokument_hoechstens_200_zeilen(tmp_path):
+    modul = _modul()
+    dokument = tmp_path / "ORAKEL-REVIEW-PAKET.md"
+
+    dokument.write_text("\n".join(["Zeile"] * 200) + "\n", encoding="utf-8")
+    modul.pruefe_hauptdokument(str(tmp_path))
+
+    dokument.write_text("\n".join(["Zeile"] * 201) + "\n", encoding="utf-8")
+    with pytest.raises(modul.Abweichung, match="201"):
+        modul.pruefe_hauptdokument(str(tmp_path))
+
+
+def test_evidenz_testzahl_muss_zum_protokoll_passen(tmp_path):
+    modul = _modul()
+    evidenz = _evidenz(tmp_path)
+    evidenz["testzahl"] = 999
+    (tmp_path / "EVIDENZ.json").write_text(json.dumps(evidenz), encoding="utf-8")
+
+    with pytest.raises(modul.Abweichung, match="999"):
+        modul.pruefe_evidenz(str(tmp_path), "a" * 40)
+
+
+def test_pruefen_erzwingt_evidenz_im_tempbau(tmp_path, monkeypatch):
+    """Ohne vorhandenes Paket wird die Testzahl immer neu gemessen."""
+    modul = _modul()
+    aufrufe: list[dict] = []
+
+    def bau_merken(freigabe, commit, branch, ausgabe, **kwargs):
+        aufrufe.append(kwargs)
+        return [], "0" * 64
+
+    monkeypatch.setattr(modul, "lade_freigabe", lambda: {
+        "quellen": [{"quelle": "README.md", "ziel": "dateien/README.md"}]})
+    monkeypatch.setattr(modul, "pruefe_commit", lambda _commit: ("a" * 40, "main"))
+    monkeypatch.setattr(modul, "baue", bau_merken)
+    monkeypatch.setattr(sys, "argv", ["baue_review_paket.py", "--pruefen",
+                                      "--ausgabe", str(tmp_path / "paket")])
+
+    assert modul.main() == 0
+    assert aufrufe and aufrufe[0]["evidenz_bauen"] is True
 
 
 def test_veraenderte_evidenzdatei_faellt_auf(tmp_path):

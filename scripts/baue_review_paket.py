@@ -26,6 +26,8 @@ import re
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 import zipfile
 
 WURZEL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -39,9 +41,12 @@ NEBEN_DATEIEN = {MANIFEST_NAME, PROVENIENZ_NAME, ZIP_NAME, ZIP_NAME + '.sha256'}
 EVIDENZ_MD = 'EVIDENZ.md'
 MUSTER_TESTZAHL = re.compile(r'(\d+)\s+passed')
 MUSTER_JUNIT = re.compile(r'<testsuite\b[^>]*\btests="(\d+)"')
-MUSTER_EVIDENZ_HASH = re.compile(r'`(belege/[^`]+)`\s*\(`([0-9a-f]{8,64})')
+MUSTER_EVIDENZ_HASH = re.compile(r'`((?:belege|dateien)/[^`]+)`\s*\(`([0-9a-f]{8,64})')
 MUSTER_RUN = re.compile(r'/actions/runs/(\d+)')
 MUSTER_COMMIT = re.compile(r'\b([0-9a-f]{7,40})\b')
+HAUPTDOKUMENT = 'ORAKEL-REVIEW-PAKET.md'
+MAX_HAUPTDOKUMENT_ZEILEN = 200
+API_BASIS = 'https://api.github.com'
 
 # Nachweise, die der Generator selbst ausführt. Reihenfolge = Reihenfolge im Bericht.
 PRUEFUNGEN = (
@@ -338,6 +343,20 @@ def pruefe_evidenz(ausgabe: str, commit: str) -> None:
         raise Abweichung(f'EVIDENZ.json nennt Commit {genannt[:7]} statt {commit[:7]}.')
     if quelle.get('dirty') is not False:
         raise Abweichung('EVIDENZ.json weist den Arbeitsbaum nicht als sauber aus.')
+    pytest_eintraege = [e for e in daten.get('dateien') or [] if e.get('name') == 'pytest']
+    if not pytest_eintraege:
+        raise Abweichung('EVIDENZ.json enthält keinen pytest-Nachweis.')
+    for eintrag in pytest_eintraege:
+        log_pfad = os.path.join(ausgabe, eintrag['target'])
+        if not os.path.exists(log_pfad):
+            raise Abweichung(f'pytest-Protokoll fehlt: {eintrag["target"]}')
+        gemessen = testzahl_aus_log(open(log_pfad, encoding='utf-8').read())
+        if gemessen is None:
+            raise Abweichung(f'pytest-Protokoll {eintrag["target"]} enthält keine Zeile '
+                             '"N passed".')
+        if gemessen != daten.get('testzahl'):
+            raise Abweichung(f'EVIDENZ.json nennt {daten.get("testzahl")} Tests, das '
+                             f'Protokoll misst {gemessen}.')
 
 
 def letzte_zeile(text: str) -> str:
@@ -460,7 +479,10 @@ def rendere_evidenz_md(evidenz: dict) -> str:
 
 
 def repo_slug() -> str:
-    """``owner/name`` aus der Origin-URL."""
+    """``owner/name`` aus der CI-Umgebung oder der Origin-URL."""
+    aus_ci = os.environ.get('GITHUB_REPOSITORY')
+    if aus_ci:
+        return aus_ci
     url = git('remote', 'get-url', 'origin').decode().strip()
     treffer = re.search(r'[:/]([^/:]+/[^/]+?)(?:\.git)?$', url)
     if not treffer:
@@ -468,43 +490,76 @@ def repo_slug() -> str:
     return treffer.group(1)
 
 
+def _http_json(url: str) -> dict:
+    """Liest JSON über HTTPS; Token aus ``GITHUB_TOKEN``/``GH_TOKEN``, wenn gesetzt."""
+    kopf = {'Accept': 'application/vnd.github+json',
+            'User-Agent': 'orakel-review-paket'}
+    token = os.environ.get('GITHUB_TOKEN') or os.environ.get('GH_TOKEN')
+    if token:
+        kopf['Authorization'] = f'Bearer {token}'
+    anfrage = urllib.request.Request(url, headers=kopf)
+    with urllib.request.urlopen(anfrage, timeout=20) as antwort:
+        return json.loads(antwort.read().decode('utf-8'))
+
+
 def ci_lauf(run_id: str) -> dict:
-    """Fragt Lauf-ID, Head-Commit und Ergebnis über die GitHub-API ab."""
-    r = subprocess.run(
-        ['gh', 'api', f'repos/{repo_slug()}/actions/runs/{run_id}',
-         '--jq', '{head_sha: .head_sha, conclusion: .conclusion, event: .event}'],
-        capture_output=True, text=True,
-    )
-    if r.returncode != 0:
-        raise Abweichung(f'CI-Lauf {run_id} nicht abrufbar: {r.stderr.strip()[:200]}')
-    try:
-        daten = json.loads(r.stdout)
-    except json.JSONDecodeError as fehler:
-        raise Abweichung(f'CI-Lauf {run_id} liefert kein JSON.') from fehler
-    if not daten.get('head_sha'):
-        raise Abweichung(f'CI-Lauf {run_id} nennt keinen Head-Commit.')
-    return {'run_id': int(run_id), **daten}
+    """Fragt Lauf-ID, Head-Commit und Ergebnis direkt über HTTPS ab.
 
-
-def pruefe_konsistenz(ausgabe: str, commit: str, evidenz: dict | None) -> None:
-    """Prüft Doku gegen Quellen: Hashes, Testzahl und CI-Lauf-IDs.
-
-    Läuft nach jedem Bau und bei ``--pruefen``; jede Abweichung beendet den Lauf.
+    Bewusst ohne ``gh``: Der Check läuft damit auch dort, wo das CLI fehlt.
+    Ist die API nicht erreichbar, bricht der Lauf ab, statt den Nachweis
+    stillschweigend zu überspringen.
     """
+    try:
+        lauf_id = int(run_id)
+    except (TypeError, ValueError) as fehler:
+        raise Abweichung(f'CI-Lauf {run_id!r} ist keine Zahl.') from fehler
+    url = f'{API_BASIS}/repos/{repo_slug()}/actions/runs/{lauf_id}'
+    try:
+        daten = _http_json(url)
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as fehler:
+        raise Abweichung(f'CI-Lauf {lauf_id} nicht abrufbar ({url}): {fehler}') from fehler
+    if not daten.get('head_sha'):
+        raise Abweichung(f'CI-Lauf {lauf_id} nennt keinen Head-Commit.')
+    return {'run_id': lauf_id, 'head_sha': daten['head_sha'],
+            'conclusion': daten.get('conclusion'), 'event': daten.get('event')}
+
+
+def pruefe_konsistenz(ausgabe: str, commit: str, evidenz: dict | None,
+                      quellen: dict[str, str] | None = None) -> None:
+    """Prüft Doku und Manifest gegen die Quellen: Hashes, Testzahl, CI-Lauf-IDs.
+
+    ``quellen`` bildet Zielpfade auf den frisch aus dem Commit gelesenen
+    SHA-256 ab. Damit werden auch Quellhashes geprüft, die in ``MANIFEST.json``
+    oder in der Doku stehen — nicht nur die Protokolle aus ``EVIDENZ.json``.
+    CI-Lauf-IDs werden über HTTPS geprüft, ohne ``gh``. Läuft nach jedem Bau und
+    bei ``--pruefen``; jede Abweichung beendet den Lauf.
+    """
+    soll: dict[str, str] = {}
+    manifest_pfad = os.path.join(ausgabe, MANIFEST_NAME)
+    if os.path.exists(manifest_pfad):
+        manifest = json.load(open(manifest_pfad, encoding='utf-8'))
+        for eintrag in manifest.get('files', []):
+            soll[eintrag['target']] = eintrag['sha256']
+    if evidenz:
+        for eintrag in evidenz['dateien']:
+            soll.setdefault(eintrag['target'], eintrag['sha256'])
+    for ziel, echt in (quellen or {}).items():
+        if ziel in soll and soll[ziel] != echt:
+            raise Abweichung(f'Manifest-Hash für {ziel} passt nicht zur Quelle im Commit '
+                             f'{commit[:7]}.')
+        soll[ziel] = echt
+        kopie = os.path.join(ausgabe, ziel)
+        if os.path.exists(kopie) and sha256_datei(kopie) != echt:
+            raise Abweichung(f'Kopie {ziel} weicht von der Quelle im Commit ab.')
     md_pfade = [os.path.join(ausgabe, n) for n in sorted(os.listdir(ausgabe))
                 if n.endswith('.md') and os.path.isfile(os.path.join(ausgabe, n))]
-    if not md_pfade:
-        return
-    ziel_hashes = {}
-    if evidenz:
-        ziel_hashes = {e['target']: e['sha256'] for e in evidenz['dateien']}
     for pfad in md_pfade:
         text = open(pfad, encoding='utf-8').read()
         name = os.path.basename(pfad)
         for ziel, praefix in MUSTER_EVIDENZ_HASH.findall(text):
-            echt = ziel_hashes.get(ziel)
+            echt = soll.get(ziel)
             if echt is None:
-                raise Abweichung(f'{name} nennt Hash zu unbekanntem Protokoll {ziel!r}.')
+                raise Abweichung(f'{name} nennt Hash zu unbekannter Datei {ziel!r}.')
             if not echt.startswith(praefix):
                 raise Abweichung(f'{name}: Hash {praefix}… passt nicht zu {ziel} ({echt[:16]}…).')
         if evidenz:
@@ -512,23 +567,24 @@ def pruefe_konsistenz(ausgabe: str, commit: str, evidenz: dict | None) -> None:
                 if int(zahl) != evidenz['testzahl']:
                     raise Abweichung(f'{name} nennt {zahl} passed, gemessen sind '
                                      f'{evidenz["testzahl"]}.')
-        for run_id in set(MUSTER_RUN.findall(text)):
-            if not _gh_verfuegbar():
-                print(f'Hinweis: gh fehlt, CI-Lauf {run_id} aus {name} nicht geprüft.',
-                      file=sys.stderr)
-                continue
+        for run_id in sorted(set(MUSTER_RUN.findall(text))):
             lauf = ci_lauf(run_id)
             if lauf['head_sha'] != commit:
                 raise Abweichung(f'{name} nennt CI-Lauf {run_id} auf '
                                  f'{lauf["head_sha"][:7]}, Paket-Commit ist {commit[:7]}.')
 
 
-def _gh_verfuegbar() -> bool:
-    try:
-        r = subprocess.run(['gh', '--version'], capture_output=True, text=True, timeout=10)
-        return r.returncode == 0
-    except (OSError, subprocess.SubprocessError):
-        return False
+def pruefe_hauptdokument(ausgabe: str) -> None:
+    """Das Hauptdokument bleibt lesbar: höchstens 200 Zeilen."""
+    pfad = os.path.join(ausgabe, HAUPTDOKUMENT)
+    if not os.path.exists(pfad):
+        return
+    with open(pfad, encoding='utf-8') as f:
+        zeilen = sum(1 for _ in f)
+    if zeilen > MAX_HAUPTDOKUMENT_ZEILEN:
+        raise Abweichung(f'{HAUPTDOKUMENT} hat {zeilen} Zeilen; erlaubt sind höchstens '
+                         f'{MAX_HAUPTDOKUMENT_ZEILEN}.')
+    print(f'Hauptdokument: {zeilen} Zeilen (Grenze {MAX_HAUPTDOKUMENT_ZEILEN}).')
 
 
 def pruefe_evidenz_dateien(ausgabe: str, evidenz: dict) -> None:
@@ -614,7 +670,9 @@ def baue(freigabe: dict, commit: str, branch: str, ausgabe: str,
     with open(os.path.join(ausgabe, ZIP_NAME + '.sha256'), 'w', encoding='utf-8') as f:
         f.write(f'{zip_sha}  {ZIP_NAME}\n')
     pruefe_zip(eintraege + [manifest_eintrag], ausgabe)
-    pruefe_konsistenz(ausgabe, commit, evidenz)
+    pruefe_hauptdokument(ausgabe)
+    pruefe_konsistenz(ausgabe, commit, evidenz,
+                      {e['target']: e['sha256'] for e in quellen})
     return eintraege, zip_sha
 
 
@@ -660,7 +718,9 @@ def pruefe(freigabe: dict, commit: str, ausgabe: str) -> tuple[list[dict], str]:
         raise Abweichung('ZIP-Prüfsummendatei passt nicht zum ZIP.')
     if manifest.get('testzahl') != evidenz.get('testzahl'):
         raise Abweichung('Manifest-Testzahl weicht von EVIDENZ.json ab.')
-    pruefe_konsistenz(ausgabe, commit, evidenz)
+    pruefe_hauptdokument(ausgabe)
+    pruefe_konsistenz(ausgabe, commit, evidenz,
+                      {e['target']: e['sha256'] for e in quellen})
     return eintraege, zip_sha
 
 
@@ -670,7 +730,8 @@ def main() -> int:
     ap.add_argument('--ausgabe', default=STANDARD_AUSGABE)
     ap.add_argument('--pruefen', action='store_true', help='nur prüfen, nichts schreiben')
     ap.add_argument('--evidenz', action='store_true',
-                    help='Nachweise ausführen und EVIDENZ.json/EVIDENZ.md neu erzeugen')
+                    help='Nachweise ausführen und EVIDENZ.json/EVIDENZ.md neu erzeugen '
+                         '(im --pruefen-Lauf ohne Paket immer aktiv)')
     ap.add_argument('--junit', default=None, help='JUnit-XML des pytest-Laufs (eine Testzahl)')
     ap.add_argument('--ci-run', default=None, help='CI-Lauf-ID, deren Head-Commit geprüft wird')
     args = ap.parse_args()
@@ -692,8 +753,10 @@ def main() -> int:
         elif args.pruefen:
             # CI hat kein artifacts/-Verzeichnis: nur die Quellen prüfen.
             with tempfile.TemporaryDirectory(prefix='review-paket-') as temp:
+                # Auch ohne ``--evidenz``: Im Prüflauf muss die Testzahl aus einem
+                # echten pytest-Protokoll stammen, nicht aus einer alten Datei.
                 eintraege, zip_sha = baue(freigabe, commit, branch, temp, pflicht=False,
-                                          evidenz_bauen=args.evidenz, junit=args.junit, ci=ci)
+                                          evidenz_bauen=True, junit=args.junit, ci=ci)
         else:
             os.makedirs(ausgabe, exist_ok=True)
             eintraege, zip_sha = baue(freigabe, commit, branch, ausgabe,

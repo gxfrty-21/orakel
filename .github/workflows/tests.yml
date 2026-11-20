@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   # Der Doku-Job wird nur bei Markdown- oder Prüfskript-Änderungen gestartet.
@@ -98,7 +99,9 @@ jobs:
   review_paket:
     name: Review-Paket
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Repository auschecken
@@ -108,10 +111,19 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
 
-      - name: Freigabe, Kopien und ZIP prüfen
+      - name: Abhängigkeiten installieren
         run: |
-          python scripts/baue_review_paket.py --pruefen
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      # Der Prüflauf misst die Testzahl selbst aus einem echten pytest-Protokoll;
+      # fehlende Evidenz oder ein Widerspruch zum Log ist ein Fehler.
+      - name: Freigabe, Kopien, Hashes, Testzahl und ZIP prüfen
+        run: |
+          python scripts/baue_review_paket.py --pruefen --evidenz
 
   # Stellt sicher, dass das Dockerfile inklusive Seed-DB weiterhin baut.
   docker:
