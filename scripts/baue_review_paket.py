@@ -12,6 +12,10 @@ Aufrufe:
     python scripts/baue_review_paket.py            # Paket bauen und prüfen
     python scripts/baue_review_paket.py --pruefen  # nur prüfen (CI)
 
+``--pytest-log PFAD`` übernimmt ein vorhandenes pytest-Protokoll (CI-Artefakt)
+statt die Suite erneut zu starten; ``--pytest-exit-code PFAD`` nennt dazu die
+Datei mit dem Exit-Code des Laufs, ``--junit PFAD`` bleibt die zweite Quelle.
+
 ``--pruefen`` prüft ein vorhandenes Paket gegen den Commit. Existiert noch kein
 Paket (CI ohne ``artifacts/``), baut der Builder in ein temporäres Verzeichnis,
 schreibt dort einen Bericht aus den gemessenen Werten und prüft Quellen, Hashes,
@@ -392,18 +396,55 @@ def befehl_text(argv: tuple[str, ...]) -> str:
     return 'python ' + ' '.join(argv)
 
 
+def _lies(pfad: str, was: str) -> str:
+    """Liest eine vorhandene Evidenzdatei oder bricht mit klarem Befund ab."""
+    try:
+        return open(pfad, encoding='utf-8').read()
+    except OSError as fehler:
+        raise Abweichung(f'{was} fehlt oder ist nicht lesbar: {pfad}') from fehler
+
+
+def _exit_code_aus_datei(pfad: str | None) -> int:
+    """Exit-Code des übernommenen Laufs; ohne Datei gibt es keinen Nachweis."""
+    if not pfad:
+        raise Abweichung('--pytest-log braucht --pytest-exit-code mit dem Exit-Code '
+                         'des Laufs.')
+    inhalt = _lies(pfad, 'Exit-Code-Datei').strip()
+    try:
+        return int(inhalt)
+    except ValueError as fehler:
+        raise Abweichung(f'Exit-Code-Datei {pfad} enthält keine Zahl: {inhalt!r}') from fehler
+
+
+PYTEST_ARTEFAKT_BEFEHL = 'python -m pytest -q tests --junitxml=artifacts/pytest/junit.xml'
+
+
 def fuehre_evidenz_aus(ausgabe: str, commit: str, branch: str,
-                       junit: str | None = None) -> dict:
+                       junit: str | None = None,
+                       pytest_log: str | None = None,
+                       pytest_exit_code: str | None = None) -> dict:
     """Führt die Nachweise aus und schreibt Protokolle, EVIDENZ.json und EVIDENZ.md.
 
     Die Testzahl stammt aus dem Protokoll bzw. dem JUnit-Bericht; sie wird nirgends
-    von Hand eingetragen. Schlägt ein Nachweis fehl oder widersprechen sich Log und
-    JUnit-Bericht, bricht der Bau ab.
+    von Hand eingetragen. Mit ``pytest_log`` wird ein vorhandenes Protokoll aus dem
+    CI-Job übernommen, statt die Suite erneut zu starten; der Exit-Code kommt dann
+    aus ``pytest_exit_code``. Schlägt ein Nachweis fehl oder widersprechen sich Log
+    und JUnit-Bericht, bricht der Bau ab.
     """
     dateien = []
     for name, argv, ziel in PRUEFUNGEN:
-        lauf = subprocess.run([sys.executable, *argv], cwd=WURZEL, capture_output=True, text=True)
-        text = lauf.stdout + lauf.stderr
+        if name == 'pytest' and pytest_log:
+            text = _lies(pytest_log, 'pytest-Protokoll')
+            exit_code = _exit_code_aus_datei(pytest_exit_code)
+            befehl = PYTEST_ARTEFAKT_BEFEHL
+            herkunft = 'Job pytest (Artefakt)'
+        else:
+            lauf = subprocess.run([sys.executable, *argv], cwd=WURZEL,
+                                  capture_output=True, text=True)
+            text = lauf.stdout + lauf.stderr
+            exit_code = lauf.returncode
+            befehl = befehl_text(argv)
+            herkunft = 'lokaler Lauf'
         pfad = os.path.join(ausgabe, ziel)
         os.makedirs(os.path.dirname(pfad), exist_ok=True)
         with open(pfad, 'w', encoding='utf-8') as f:
@@ -412,8 +453,9 @@ def fuehre_evidenz_aus(ausgabe: str, commit: str, branch: str,
             'name': name,
             'target': ziel,
             'commit': commit,
-            'befehl': befehl_text(argv),
-            'exit_code': lauf.returncode,
+            'befehl': befehl,
+            'herkunft': herkunft,
+            'exit_code': exit_code,
             'sha256': sha256_datei(pfad),
             'bytes': os.path.getsize(pfad),
             'log': letzte_zeile(text),
@@ -452,10 +494,12 @@ def rendere_evidenz_md(evidenz: dict) -> str:
     zeilen = [
         '# Evidenz',
         '',
-        f"Alle Nachweise wurden vom Paket-Generator auf Commit `{quelle['commit']}` "
-        f"(Branch `{quelle['branch']}`, Arbeitsbaum sauber, `dirty: false`) erzeugt. "
+        f"Alle Nachweise beziehen sich auf Commit `{quelle['commit']}` "
+        f"(Branch `{quelle['branch']}`, Arbeitsbaum sauber, `dirty: false`). "
         'Zahlen und Hashes dieser Datei stammen aus den Protokollen und den Dateien '
         'selbst; der Generator bricht ab, sobald eine Angabe davon abweicht.',
+        '',
+        *herkunft_zeilen(evidenz),
         '',
         f"Gemessene Testzahl: **{evidenz['testzahl']}** (`pytest`).",
         '',
@@ -480,6 +524,16 @@ def rendere_evidenz_md(evidenz: dict) -> str:
         '',
     ]
     return '\n'.join(zeilen)
+
+
+def herkunft_zeilen(evidenz: dict) -> list[str]:
+    """Nennt übernommene Nachweise, damit kein fremder Lauf als eigener gilt."""
+    fremd = [e for e in evidenz['dateien'] if e.get('herkunft') != 'lokaler Lauf']
+    if not fremd:
+        return []
+    return ['Übernommen: ' + ', '.join(
+        f"{e['name']} aus {e.get('herkunft', 'unbekannt')} (`{e['befehl']}`)"
+        for e in fremd) + '. Die übrigen Nachweise hat der Generator lokal erzeugt.', '']
 
 
 def repo_slug() -> str:
@@ -689,7 +743,9 @@ def pruefe_zip(eintraege: list[dict], ausgabe: str) -> str:
 
 def baue(freigabe: dict, commit: str, branch: str, ausgabe: str,
          pflicht: bool = False, evidenz_bauen: bool = False,
-         junit: str | None = None, ci: dict | None = None) -> tuple[list[dict], str]:
+         junit: str | None = None, ci: dict | None = None,
+         pytest_log: str | None = None,
+         pytest_exit_code: str | None = None) -> tuple[list[dict], str]:
     quellen = quell_eintraege(freigabe, commit)
     schreibe_kopien(quellen, ausgabe)
     for e in quellen:
@@ -697,7 +753,9 @@ def baue(freigabe: dict, commit: str, branch: str, ausgabe: str,
     os.makedirs(ausgabe, exist_ok=True)
     evidenz = None
     if evidenz_bauen:
-        evidenz = fuehre_evidenz_aus(ausgabe, commit, branch, junit)
+        evidenz = fuehre_evidenz_aus(ausgabe, commit, branch, junit,
+                                     pytest_log=pytest_log,
+                                     pytest_exit_code=pytest_exit_code)
     weitere = beleg_eintraege(freigabe, ausgabe, pflicht=pflicht)
     eintraege = quellen + weitere
     pruefe_kopien(quellen, ausgabe)
@@ -781,6 +839,11 @@ def main() -> int:
                     help='Nachweise ausführen und EVIDENZ.json/EVIDENZ.md neu erzeugen '
                          '(im --pruefen-Lauf ohne Paket immer aktiv)')
     ap.add_argument('--junit', default=None, help='JUnit-XML des pytest-Laufs (eine Testzahl)')
+    ap.add_argument('--pytest-log', default=None,
+                    help='vorhandenes pytest-Protokoll übernehmen (CI-Artefakt) statt '
+                         'die Suite erneut zu starten')
+    ap.add_argument('--pytest-exit-code', default=None,
+                    help='Datei mit dem Exit-Code des Laufs, zu dem --pytest-log gehört')
     ap.add_argument('--ci-run', default=None, help='CI-Lauf-ID, deren Head-Commit geprüft wird')
     args = ap.parse_args()
 
@@ -804,7 +867,9 @@ def main() -> int:
                 # Auch ohne ``--evidenz``: Im Prüflauf muss die Testzahl aus einem
                 # echten pytest-Protokoll stammen, nicht aus einer alten Datei.
                 eintraege, zip_sha = baue(freigabe, commit, branch, temp, pflicht=False,
-                                          evidenz_bauen=True, junit=args.junit, ci=ci)
+                                          evidenz_bauen=True, junit=args.junit, ci=ci,
+                                          pytest_log=args.pytest_log,
+                                          pytest_exit_code=args.pytest_exit_code)
                 # Ohne Paketdokumente hätte ``pruefe_konsistenz`` nichts zu prüfen.
                 # Der Bericht entsteht aus den gerade gemessenen Werten und wird
                 # anschliessend mit denselben Prüfungen wie ein echtes Paket geprüft.
@@ -818,7 +883,9 @@ def main() -> int:
         else:
             os.makedirs(ausgabe, exist_ok=True)
             eintraege, zip_sha = baue(freigabe, commit, branch, ausgabe,
-                                      evidenz_bauen=args.evidenz, junit=args.junit, ci=ci)
+                                      evidenz_bauen=args.evidenz, junit=args.junit, ci=ci,
+                                      pytest_log=args.pytest_log,
+                                      pytest_exit_code=args.pytest_exit_code)
     except Abweichung as fehler:
         print(f'Review-Paket FEHLER: {fehler}', file=sys.stderr)
         return 1

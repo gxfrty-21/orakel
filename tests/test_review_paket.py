@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -282,6 +283,94 @@ def test_pruefen_erzwingt_evidenz_im_tempbau(tmp_path, monkeypatch):
 
     assert modul.main() == 0
     assert aufrufe and aufrufe[0]["evidenz_bauen"] is True
+
+
+def _artefakt(tmp_path: Path, *, protokoll: str = "7 passed in 1.20s\n",
+              exit_code: str = "0"):
+    """Dateien, wie sie der pytest-Job als Artefakt ablegt."""
+    ordner = tmp_path / "artefakt"
+    ordner.mkdir(parents=True, exist_ok=True)
+    log = ordner / "pytest.log"
+    log.write_text(protokoll, encoding="utf-8")
+    code = ordner / "exit_code"
+    code.write_text(exit_code + "\n", encoding="utf-8")
+    return log, code
+
+
+class _NichtStarten:
+    """Ersatz für ``subprocess``: der Testlauf darf im Test nicht starten."""
+
+    SubprocessError = subprocess.SubprocessError
+
+    @staticmethod
+    def run(argv, **_kwargs):
+        if any("pytest" in str(teil) for teil in argv):
+            pytest.fail("pytest wurde erneut gestartet")
+        raise OSError("im Test nicht verfügbar")
+
+
+def test_evidenz_uebernimmt_das_ci_protokoll(tmp_path, monkeypatch):
+    """Ein vorhandenes Protokoll ersetzt den eigenen pytest-Lauf."""
+    modul = _modul()
+    log, code = _artefakt(tmp_path)
+    monkeypatch.setattr(modul, "PRUEFUNGEN", (
+        ("pytest", ("-m", "pytest", "-q", "tests"), "belege/evidenz-pytest.log"),))
+    monkeypatch.setattr(modul, "subprocess", _NichtStarten)
+
+    evidenz = modul.fuehre_evidenz_aus(str(tmp_path / "paket"), "a" * 40, "main",
+                                       pytest_log=str(log), pytest_exit_code=str(code))
+
+    kopie = tmp_path / "paket" / "belege" / "evidenz-pytest.log"
+    assert evidenz["testzahl"] == 7
+    assert kopie.read_text(encoding="utf-8") == log.read_text(encoding="utf-8")
+    eintrag = evidenz["dateien"][0]
+    assert eintrag["herkunft"] == "Job pytest (Artefakt)"
+    assert eintrag["exit_code"] == 0
+    assert eintrag["befehl"] == modul.PYTEST_ARTEFAKT_BEFEHL
+    assert "Job pytest (Artefakt)" in (
+        tmp_path / "paket" / "EVIDENZ.md").read_text(encoding="utf-8")
+
+
+def test_evidenz_verweigert_fremden_exit_code(tmp_path, monkeypatch):
+    """Ein Protokoll mit Exit 1 ist kein bestandener Nachweis."""
+    modul = _modul()
+    log, code = _artefakt(tmp_path, exit_code="1")
+    monkeypatch.setattr(modul, "PRUEFUNGEN", (
+        ("pytest", ("-m", "pytest", "-q", "tests"), "belege/evidenz-pytest.log"),))
+    monkeypatch.setattr(modul, "subprocess", _NichtStarten)
+
+    with pytest.raises(modul.Abweichung, match="Exit 1"):
+        modul.fuehre_evidenz_aus(str(tmp_path / "paket"), "a" * 40, "main",
+                                 pytest_log=str(log), pytest_exit_code=str(code))
+
+
+def test_evidenz_ohne_exit_code_datei_bricht_ab(tmp_path, monkeypatch):
+    """Ohne Exit-Code ist der übernommene Lauf nicht belegt."""
+    modul = _modul()
+    log, _code = _artefakt(tmp_path)
+    monkeypatch.setattr(modul, "PRUEFUNGEN", (
+        ("pytest", ("-m", "pytest", "-q", "tests"), "belege/evidenz-pytest.log"),))
+    monkeypatch.setattr(modul, "subprocess", _NichtStarten)
+
+    with pytest.raises(modul.Abweichung, match="pytest-exit-code"):
+        modul.fuehre_evidenz_aus(str(tmp_path / "paket"), "a" * 40, "main",
+                                 pytest_log=str(log))
+
+
+def test_evidenz_prueft_das_artefakt_gegen_junit(tmp_path, monkeypatch):
+    """JUnit-Bericht und übernommenes Protokoll müssen dieselbe Zahl nennen."""
+    modul = _modul()
+    log, code = _artefakt(tmp_path)
+    junit = tmp_path / "artefakt" / "junit.xml"
+    junit.write_text('<testsuite name="pytest" tests="8" />', encoding="utf-8")
+    monkeypatch.setattr(modul, "PRUEFUNGEN", (
+        ("pytest", ("-m", "pytest", "-q", "tests"), "belege/evidenz-pytest.log"),))
+    monkeypatch.setattr(modul, "subprocess", _NichtStarten)
+
+    with pytest.raises(modul.Abweichung, match="JUnit-Bericht nennt 8"):
+        modul.fuehre_evidenz_aus(str(tmp_path / "paket"), "a" * 40, "main",
+                                 junit=str(junit), pytest_log=str(log),
+                                 pytest_exit_code=str(code))
 
 
 def test_veraenderte_evidenzdatei_faellt_auf(tmp_path):
