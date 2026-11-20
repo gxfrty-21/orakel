@@ -2816,9 +2816,12 @@ $('#runBtn').onclick = async () => {
   const b = $('#runBtn'); b.disabled = true; b.textContent = 'Lauf läuft …';
   try{
     const r = await fetch('/api/lauf?modus=backtest',{method:'POST'});
-    if(!r.ok) throw new Error('Lauf konnte nicht gestartet werden');
-    const {id} = await r.json();
-    const stand = await warteAufLauf(id);
+    const antwort = await r.json();
+    // 409 heisst: Es läuft schon einer. Der Knopf hängt sich an dessen ID,
+    // statt einen zweiten Backtest einzureihen.
+    if(!r.ok && r.status !== 409) throw new Error(antwort.fehler || 'Lauf konnte nicht gestartet werden');
+    if(!antwort.id) throw new Error('Lauf konnte nicht gestartet werden');
+    const stand = await warteAufLauf(antwort.id);
     if(stand.status === 'fehler') throw new Error(stand.fehler || 'Lauf fehlgeschlagen');
     await lade();
   }catch(e){

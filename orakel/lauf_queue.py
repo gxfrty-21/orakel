@@ -13,6 +13,7 @@ nacheinander; die Reihenfolge ist die Reihenfolge des Eingangs.
 from __future__ import annotations
 
 import json
+import sqlite3
 import threading
 from typing import Any, Callable
 
@@ -26,14 +27,39 @@ FEHLER = "fehler"
 Engine = Callable[..., dict[str, Any]]
 
 
+def _einfuegen(c: sqlite3.Connection, modus: str, spider: bool) -> int:
+    cur = c.execute(
+        "INSERT INTO laeufe (status, modus, spider, erstellt) VALUES (?, ?, ?, ?)",
+        (OFFEN, modus, int(bool(spider)), jetzt()),
+    )
+    return int(cur.lastrowid)
+
+
 def anlegen(db: Facts, modus: str = "backtest", spider: bool = False) -> int:
     """Legt einen Auftrag an und liefert seine ID. Führt nichts aus."""
     with db.conn() as c:
-        cur = c.execute(
-            "INSERT INTO laeufe (status, modus, spider, erstellt) VALUES (?, ?, ?, ?)",
-            (OFFEN, modus, int(bool(spider)), jetzt()),
-        )
-        return int(cur.lastrowid)
+        return _einfuegen(c, modus, spider)
+
+
+def anlegen_wenn_frei(db: Facts, modus: str = "backtest",
+                      spider: bool = False) -> tuple[int, bool]:
+    """Legt nur an, wenn kein Auftrag offen oder aktiv ist: ``(id, neu)``.
+
+    Prüfung und Einfügen laufen in einer Schreibtransaktion (``BEGIN
+    IMMEDIATE``). Zwei gleichzeitige Klicks sehen deshalb nacheinander denselben
+    Stand: Der zweite bekommt die ID des ersten Auftrags und legt keinen
+    weiteren an. ``neu`` ist ``False``, wenn ein bestehender Auftrag den Start
+    verhindert.
+    """
+    with db.conn() as c:
+        c.execute("BEGIN IMMEDIATE")
+        zeile = c.execute(
+            "SELECT id FROM laeufe WHERE status IN (?, ?) ORDER BY id LIMIT 1",
+            (OFFEN, AKTIV),
+        ).fetchone()
+        if zeile is not None:
+            return int(zeile["id"]), False
+        return _einfuegen(c, modus, spider), True
 
 
 def stand(db: Facts, lauf_id: int) -> dict[str, Any] | None:

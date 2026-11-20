@@ -89,3 +89,56 @@ def test_ohne_auftrag_passiert_nichts(cfg):
 
     assert lauf_queue.verarbeite_einen("unbenutzt.toml", db=db,
                                        engine=lambda **_k: {}) is None
+
+
+def test_zweiter_start_liefert_409_mit_bestehender_id(cfg, monkeypatch):
+    """Doppelklick reiht keinen zweiten Backtest ein, sondern nennt den ersten."""
+    monkeypatch.setattr(web, "load_config", lambda _pfad: cfg)
+    app = web.create_app("unbenutzt.toml", arbeiter=False)
+
+    with TestClient(app) as client:
+        erster = client.post("/api/lauf?modus=backtest")
+        zweiter = client.post("/api/lauf?modus=backtest")
+        dritter = client.post("/api/lauf?modus=paper")
+
+    assert erster.status_code == 202
+    lauf_id = erster.json()["id"]
+    assert zweiter.status_code == 409
+    assert zweiter.json()["ok"] is False
+    assert zweiter.json()["id"] == lauf_id
+    assert zweiter.json()["status"] == "offen"
+    assert "bereits" in zweiter.json()["fehler"]
+    assert dritter.status_code == 409
+    assert dritter.json()["id"] == lauf_id
+    assert lauf_queue.offene_id(Facts(cfg.db_pfad)) == lauf_id
+
+
+def test_waehrend_der_arbeit_entsteht_kein_zweiter_auftrag(cfg):
+    """Auch ein aktiver Auftrag blockiert; die Arbeit sieht ihn als aktiv."""
+    db = Facts(cfg.db_pfad)
+    lauf_id, neu = lauf_queue.anlegen_wenn_frei(db)
+    assert neu is True
+    waehrend: list[tuple[int, bool]] = []
+
+    def engine(**_kwargs):
+        waehrend.append(lauf_queue.anlegen_wenn_frei(db, modus="paper"))
+        return {"dauer_sekunden": 0.01}
+
+    lauf_queue.verarbeite_einen("unbenutzt.toml", db=db, engine=engine)
+
+    assert waehrend == [(lauf_id, False)]
+    assert lauf_queue.stand(db, lauf_id)["status"] == lauf_queue.FERTIG
+
+
+def test_nach_abschluss_startet_wieder_ein_auftrag(cfg):
+    db = Facts(cfg.db_pfad)
+    erster, neu = lauf_queue.anlegen_wenn_frei(db)
+    assert neu is True
+    lauf_queue.abschliessen(db, erster, {"dauer_sekunden": 0.01})
+
+    zweiter, wieder_neu = lauf_queue.anlegen_wenn_frei(db)
+
+    assert wieder_neu is True
+    assert zweiter != erster
+    assert lauf_queue.stand(db, erster)["status"] == lauf_queue.FERTIG
+    assert lauf_queue.stand(db, zweiter)["status"] == lauf_queue.OFFEN

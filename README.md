@@ -48,6 +48,13 @@ ihn aus. `GET /api/lauf/{id}` liefert `status` (`offen`, `aktiv`, `fertig`,
 und Fehlern. Das Dashboard fragt alle zwei Sekunden nach und lädt den Bericht
 erst danach neu.
 
+Solange ein Auftrag offen oder aktiv ist, legt ein weiteres `POST /api/lauf`
+keinen zweiten an: Die Antwort ist `409` mit `{"id": …}` des laufenden Laufs
+und seinem `status`. Mehrfaches Klicken reiht deshalb keine Backtests
+hintereinander ein; das Dashboard hängt sich an die bestehende ID und wartet
+auf deren Ergebnis. Erst nach `fertig` oder `fehler` startet ein neuer Klick
+einen neuen Auftrag.
+
 Die Company-Schicht ist additiv und standardmäßig **nicht** in den laufenden
 Paper-Takt eingebunden (`[unternehmen] aktiv = false`). Sie enthält noch keine
 3D-Welt, keine LLM-Anbindung und keine echten Orders.
