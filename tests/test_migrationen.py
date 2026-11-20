@@ -36,6 +36,10 @@ def test_teilstand_auf_0003_wendet_nur_die_neuere_migration_an(tmp_path):
     ordner = tmp_path / "migrationen"
     ordner.mkdir()
     for quelle in migrationen.dateien():
+        if quelle.nummer > 3:
+            # Spaetere Migrationen (0004 und folgende) kaemen der selbst
+            # angelegten 0004 in die Quere; der Ordner endet hier auf Stand 3.
+            continue
         for datei in (quelle.hoch, quelle.runter):
             if datei is not None:
                 (ordner / datei.name).write_bytes(datei.read_bytes())
