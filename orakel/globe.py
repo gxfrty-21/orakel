@@ -172,7 +172,7 @@ def _vault_knoten(cfg: Config, orders: list[dict[str, Any]], jetzt_utc: datetime
     for datei in dateien:
         try:
             text = datei.read_text(encoding="utf-8")[:12000]
-        except Exception:  # noqa: S112 - fehlerhafter Datensatz wird übersprungen, der Rest bleibt sichtbar
+        except OSError:
             continue
         titel = datei.stem.replace("-", " ")
         erstellt = datetime.fromtimestamp(datei.stat().st_mtime, tz=timezone.utc).isoformat()
