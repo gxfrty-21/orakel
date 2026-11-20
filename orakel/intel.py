@@ -12,9 +12,8 @@ Grundsätze, an die sich dieses Modul hält:
 from __future__ import annotations
 
 import json
-import re
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import urlparse
@@ -107,7 +106,7 @@ def _nach(zeit_a: str, zeit_b: str) -> bool:
         if b.tzinfo is None:
             b = b.replace(tzinfo=timezone.utc)
         return a > b
-    except Exception:
+    except (ValueError, TypeError, OverflowError):
         return str(zeit_a) > str(zeit_b)
 
 
@@ -133,7 +132,7 @@ def _aktualitaet(veroeffentlicht: str | None) -> float:
         if zeit.tzinfo is None:
             zeit = zeit.replace(tzinfo=timezone.utc)
         tage = (_jetzt() - zeit).total_seconds() / 86400
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return 0.5
     if tage < 0:
         return 1.0
@@ -145,7 +144,7 @@ def relevanz(artikel: Any, inhalt: str = "") -> float:
     q = float(artikel["qualitaet"] or 0.0)
     try:
         symbole = json.loads(artikel["symbole"] or "[]")
-    except Exception:
+    except (ValueError, TypeError):
         symbole = []
     tiefe = min(1.0, len(inhalt) / 1500.0) if inhalt else 0.0
     return round(min(1.0, 0.45 * q + 0.25 * min(1.0, len(symbole) / 2.0)
@@ -258,7 +257,7 @@ class IntelNetz:
             abt, name = ABTEILUNG[thema]
             try:
                 symbole = json.loads(a["symbole"] or "[]")
-            except Exception:
+            except (ValueError, TypeError):
                 symbole = []
             for sym in (symbole or [""]):
                 gruppen[(abt, name, sym, thema)].append(a)
@@ -329,7 +328,7 @@ class IntelNetz:
                 continue
             try:
                 bericht = json.loads(r["bericht"])
-            except Exception:
+            except (ValueError, TypeError):
                 bericht = {}
             gruende = [str(g) for g in (bericht.get("gruende") or [])]
             if gruende:
@@ -441,14 +440,14 @@ class IntelNetz:
             if then.tzinfo is None:
                 then = then.replace(tzinfo=timezone.utc)
             return (_jetzt() - then).total_seconds() / 86400
-        except Exception:
+        except (ValueError, TypeError, OverflowError):
             return 0.0
 
     def _abschluss(self, auftrag: Any, status: str, ergebnis: str) -> None:
         self.db.intel_status_setzen(auftrag["kennung"], status, ergebnis)
         try:
             quellen = json.loads(auftrag["quellen"] or "[]")
-        except Exception:
+        except (ValueError, TypeError):
             quellen = []
         for eintrag in quellen:
             if str(eintrag).startswith("http"):

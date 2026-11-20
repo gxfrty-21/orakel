@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from ..db import Facts
+from ..fehler import ABLAUF_FEHLER
 from ..knowledge import Vault
 from .gegenargument import lauf as gegenargumente_lauf
 from .rollen import lauf as rollen_lauf
@@ -177,7 +178,7 @@ class Missionen:
                 self.db.nexus_task_erledigt(
                     int(task["id"]), ergebnis, bericht, self._iso(jetzt))
                 zaehler["erledigt"] += 1
-            except Exception as exc:  # eine defekte Aufgabe stoppt die Queue nicht
+            except ABLAUF_FEHLER as exc:  # eine defekte Aufgabe stoppt die Queue nicht
                 versuch = int(task["versuche"])
                 endgueltig = versuch >= int(task["max_versuche"])
                 if endgueltig:

@@ -231,6 +231,23 @@ Lauf, dass `README.md` die Schutz-Dokumentation
 [docs/pr-schutz.md](docs/pr-schutz.md) verlinkt; sonst schlägt er fehl, damit
 die Datei nicht unbemerkt verwaist.
 
+### Qualitätstor: ruff und Abdeckung
+
+`ruff.toml` aktiviert `E9`, `F`, `BLE001` und `S110`. `BLE001` verbietet
+`except Exception`, `S110` still geschluckte Ausnahmen; der Job `ruff` bricht
+bei jedem Fund ab. Die bisherigen 102 Fundstellen wurden auf benannte
+Fehlerklassen eingeengt, statt sie über eine Ausnahmeliste zu unterdrücken. An
+den Grenzen von Quellen, Jobs, Handlern und Ansichten gilt die gemeinsame
+Liste `ABLAUF_FEHLER` aus `orakel/fehler.py` (Dateisystem, Datenbank,
+Zahlen/JSON, fehlende Felder, abgebrochene Abläufe). Die zuvor stillen Stellen
+melden ihren Fehler jetzt über `logging`; ein Programmierfehler schlägt
+dagegen durch und bleibt sichtbar.
+
+Der Job `Coverage Handelskern` misst `orakel.paper`, `orakel.risk`,
+`orakel.backtest` und `orakel.judge` in einem Lauf und bricht unter 85 % ab.
+Stand bei Einführung: paper 95 %, risk 90 %, backtest 94 %, judge 82 %, zusammen
+89 % (710 Anweisungen, 77 nicht ausgeführt).
+
 ### Schutz von `main`
 
 `main` ist durch ein Repository-Ruleset geschützt: Änderungen laufen

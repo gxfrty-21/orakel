@@ -73,7 +73,7 @@ def _commit() -> str:
             capture_output=True, text=True, timeout=5, check=False,
         )
         return f"{commit}+dirty" if (status.stdout or "").strip() else commit
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         return "unbekannt"
 
 

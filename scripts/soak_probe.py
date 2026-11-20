@@ -21,6 +21,7 @@ from typing import Any
 from orakel.betrieb import betrieb_status
 from orakel.company.store import CompanyStore
 from orakel.config import load_config
+from orakel.fehler import ABLAUF_FEHLER
 from orakel.db import Facts
 
 OFFENE_STATES = ("proposed", "queued", "accepted", "running", "review", "blocked")
@@ -97,7 +98,7 @@ def _backup(ordner: Path) -> dict[str, Any]:
                 }
             finally:
                 con.close()
-    except Exception as exc:
+    except (sqlite3.Error, OSError) as exc:
         return {
             "ok": False,
             "pfad": str(quelle),
@@ -131,7 +132,7 @@ def main() -> int:
         )
         print(json.dumps(daten, ensure_ascii=False, default=str))
         return 0
-    except Exception as exc:
+    except ABLAUF_FEHLER as exc:
         print(json.dumps({
             "fehler": f"{type(exc).__name__}: {exc}",
             "company": {"audit_ok": None, "fehler": f"{type(exc).__name__}"},

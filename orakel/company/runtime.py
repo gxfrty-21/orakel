@@ -8,6 +8,7 @@ Audit-Event. Es gibt keinen LLM-Aufruf und keine Broker-Order.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -17,12 +18,15 @@ from zoneinfo import ZoneInfo
 
 from ..config import Config, RisikoGrenzen
 from ..db import Facts
+from ..fehler import ABLAUF_FEHLER
 from .handlers import HandlerResult, run_handler
 from .memory import AgentMemory
 from .messaging import MessagingService
 from .policy import CompanyPolicy, PolicyError
 from .roster import Profile, PROFILES, profile_by_id
 from .store import CompanyStore
+
+log = logging.getLogger(__name__)
 
 # Spezielle Task-Typen. Alle anderen Rollen laufen als daily_check.
 TASK_TYPES = {
@@ -78,7 +82,7 @@ class CompanyRuntime:
         for r in self.db.letzte_validierungen(lauf):
             try:
                 bericht = json.loads(r["bericht"])
-            except Exception:
+            except (ValueError, TypeError):
                 bericht = {}
             bericht.update({
                 "symbol": r["symbol"], "strategie": r["strategie"],
@@ -181,7 +185,7 @@ class CompanyRuntime:
 
         try:
             ergebnis: HandlerResult = run_handler(profile, ctx)
-        except Exception as exc:
+        except ABLAUF_FEHLER as exc:
             neu = self.store.fail(int(task["id"]), f"Handler-Ausnahme: {exc}")
             self.db.agenten_lauf(
                 f"{profile.agent_id}:{profile.role}", profile.dept, profile.mission,
@@ -277,7 +281,7 @@ class CompanyRuntime:
         # keine neue Beschäftigung. Ein Fehler darf den Lauf nicht kippen.
         try:
             summary["erinnerungen"] = MessagingService(self.store).erinnere_offene_acks()
-        except Exception as exc:
+        except ABLAUF_FEHLER as exc:
             summary["erinnerungen"] = {
                 "ok": False, "fehler": type(exc).__name__,
             }
@@ -299,10 +303,10 @@ class CompanyRuntime:
                     "ref": f"task:{task['id']}",
                 },
             )
-        except Exception:
+        except ABLAUF_FEHLER as exc:
             # Ein Gedächtnisfehler darf einen bereits abgeschlossenen Task nicht
             # nachträglich als fehlgeschlagen erscheinen lassen.
-            pass
+            log.warning("Agentengedächtnis nicht gespeichert: %s", exc)
 
     def _worker(self, worker: str, max_tasks: int | None, ctx: dict[str, Any]) -> None:
         while True:
@@ -312,9 +316,9 @@ class CompanyRuntime:
             try:
                 zustand = self._execute(task, ctx)
                 self._merke_task(task, zustand)
-            except Exception as exc:
+            except ABLAUF_FEHLER as exc:
                 # Ein einzelner kaputter Handler darf die anderen 102 nicht stoppen.
                 try:
                     self.store.fail(int(task["id"]), f"Runtime-Fehler: {exc}")
-                except Exception:
-                    pass
+                except ABLAUF_FEHLER as exc:
+                    log.warning("Task konnte nicht als fehlgeschlagen markiert werden: %s", exc)

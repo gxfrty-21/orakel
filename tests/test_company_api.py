@@ -194,7 +194,7 @@ def test_agentendetail_liefert_profil_historie_und_nachrichten(cfg):
     assert daten["nachrichten"][0]["id"] == nachricht
     assert daten["nachrichten"][0]["requires_ack"] is True
     assert daten["nachrichten"][0]["evidence"] == [f"task:{ids['laeuft']}"]
-    assert f"agent:A1" in daten["source_refs"]
+    assert "agent:A1" in daten["source_refs"]
     assert api.agent_detail(store, "GIBT-ES-NICHT") is None
 
 

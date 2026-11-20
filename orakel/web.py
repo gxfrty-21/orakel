@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import binascii
 import json
 import os
 import secrets
@@ -14,6 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import agents
+from .fehler import ABLAUF_FEHLER
 from .betrieb import betrieb_health, betrieb_status
 from .company.api import agent_detail as company_agent_detail
 from .company.api import agenten as company_agenten
@@ -57,7 +59,7 @@ def _basic_ok(kopf: str, benutzer: str, passwort: str) -> bool:
         return False
     try:
         roh = base64.b64decode(kopf.split(" ", 1)[1], validate=True).decode("utf-8")
-    except Exception:
+    except (binascii.Error, ValueError):
         return False
     name, trenner, pw = roh.partition(":")
     if not trenner:
@@ -101,7 +103,7 @@ def _bericht(cfg_pfad: str) -> dict[str, Any]:
             eintrag = dict(r)
             try:
                 eintrag["symbole"] = ", ".join(_json.loads(eintrag.get("symbole") or "[]"))
-            except Exception:
+            except (ValueError, TypeError):
                 eintrag["symbole"] = ""
             # Alte Zeilen kennen keine Erkennungszeit; dann gilt der Abrufzeitpunkt.
             eintrag["erkannt"] = eintrag.get("erkannt") or eintrag.get("geholt")
@@ -391,7 +393,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         cfg = load_config(cfg_pfad)
         try:
             daten = await request.json()
-        except Exception:
+        except (ValueError, TypeError):
             return JSONResponse({"ok": False, "fehler": "Ungültiger JSON-Body"},
                                 status_code=400)
         if not isinstance(daten, dict):
@@ -573,7 +575,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         cfg = load_config(cfg_pfad)
         try:
             daten = await request.json()
-        except Exception:
+        except (ValueError, TypeError):
             return JSONResponse({"ok": False, "fehler": "Ungültiger JSON-Body"},
                                 status_code=400)
         if not isinstance(daten, dict):
@@ -587,7 +589,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
             )
         except ValueError as exc:
             return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
-        except Exception as exc:
+        except ABLAUF_FEHLER as exc:
             return JSONResponse({"ok": False, "fehler": type(exc).__name__},
                                 status_code=500)
         return JSONResponse({"ok": True, "mission": mission}, status_code=201)
@@ -603,7 +605,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         try:
             ergebnis = Missionen(db, vault=Vault(cfg.vault_ordner)).weiterarbeiten(
                 max_tasks=grenze, kennung=kennung)
-        except Exception as exc:
+        except ABLAUF_FEHLER as exc:
             db.ereignis("fehler", "Mission", f"{kennung} konnte nicht laufen: {exc}")
             return JSONResponse({"ok": False, "fehler": type(exc).__name__},
                                 status_code=500)
@@ -653,7 +655,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         cfg = load_config(cfg_pfad)
         try:
             daten = await request.json()
-        except Exception:
+        except (ValueError, TypeError):
             return JSONResponse({"ok": False, "fehler": "Ungültiger JSON-Body"},
                                 status_code=400)
         if not isinstance(daten, dict):
@@ -674,7 +676,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
             )
         except ValueError as exc:
             return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=400)
-        except Exception as exc:
+        except ABLAUF_FEHLER as exc:
             return JSONResponse({"ok": False, "fehler": type(exc).__name__},
                                 status_code=500)
         return JSONResponse({"ok": True, "prognose": forecast}, status_code=201)
@@ -722,7 +724,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         db = Facts(cfg.db_pfad)
         try:
             ergebnis = tick(cfg, db)
-        except Exception as exc:
+        except ABLAUF_FEHLER as exc:
             db.ereignis("fehler", "Takt", f"Paper-Takt über API fehlgeschlagen: {exc}")
             return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=500)
         return JSONResponse({"ok": True, **ergebnis})
@@ -733,7 +735,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         db = Facts(cfg.db_pfad)
         try:
             ergebnis = Spider(cfg, db, Vault(cfg.vault_ordner)).lauf()
-        except Exception as exc:
+        except ABLAUF_FEHLER as exc:
             db.ereignis("fehler", "Spider", f"Recherche über API fehlgeschlagen: {exc}")
             return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=500)
         db.zustand_setzen("spider_letzter_lauf", ergebnis)
@@ -741,7 +743,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
             netz = IntelNetz(cfg, db, Vault(cfg.vault_ordner))
             ergebnis["intel"] = {**netz.verarbeite(ergebnis.get("neue_ids") or []),
                                  **netz.lernschleife()}
-        except Exception as exc:
+        except ABLAUF_FEHLER as exc:
             db.ereignis("fehler", "Intel", f"Intelligence über API fehlgeschlagen: {exc}")
         return JSONResponse({"ok": True, **ergebnis})
 
@@ -751,7 +753,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         db = Facts(cfg.db_pfad)
         try:
             daten = await request.json()
-        except Exception:
+        except (ValueError, TypeError):
             return JSONResponse({"ok": False, "fehler": "Ungültiger JSON-Body"}, status_code=400)
         if not isinstance(daten, dict):
             return JSONResponse({"ok": False, "fehler": "Ungültiger JSON-Body"}, status_code=400)
@@ -789,7 +791,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False) -> FastAPI:
         db = Facts(cfg.db_pfad)
         try:
             protokoll = agents.konferenz(db, _kontext(cfg, db), erzwungen=True)
-        except Exception as exc:
+        except ABLAUF_FEHLER as exc:
             return JSONResponse({"ok": False, "fehler": str(exc)}, status_code=500)
         return JSONResponse({"ok": True, "beschluss": protokoll.get("beschluss")})
 

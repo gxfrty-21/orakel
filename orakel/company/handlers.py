@@ -7,7 +7,6 @@ Audit- oder Vault-Daten. Fehlen Daten, wird das als solches gemeldet.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import statistics
@@ -16,6 +15,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .. import agents
+from ..fehler import ABLAUF_FEHLER
 from ..knowledge import Vault
 from .roster import Profile
 
@@ -209,7 +209,8 @@ def _signal_fusion(ctx: dict[str, Any]) -> HandlerResult:
             " WHERE dept='I' AND state='done' GROUP BY task_type ORDER BY task_type"))
     if not rows:
         return HandlerResult(False, "keine abgeschlossenen I-Ergebnisse für eine Fusion", (), True)
-    text = ", ".join(f"{r['task_type']}/{r['state']}: {r['n']}" for r in rows)
+    # Die Abfrage gruppiert bereits auf state='done'; eine Spalte state gibt es im Ergebnis nicht.
+    text = ", ".join(f"{r['task_type']} erledigt: {r['n']}" for r in rows)
     return HandlerResult(True, f"Fusion nur aus belegten I-Ergebnissen: {text}", ("company:observatory_tasks",))
 
 
@@ -440,7 +441,7 @@ def run_handler(profile: Profile, ctx: dict[str, Any]) -> HandlerResult:
         return HandlerResult(False, f"kein Handler für {profile.handler}", (), True)
     try:
         ok, text = handler(ctx)
-    except Exception as exc:
+    except ABLAUF_FEHLER as exc:
         return HandlerResult(False, f"Handler-Fehler: {exc}", (), True)
     return HandlerResult(
         bool(ok), str(text), (f"handler:{profile.handler}",), blocked=not ok,

@@ -25,12 +25,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ..db import Facts
+from ..fehler import ABLAUF_FEHLER
 from .abruf import Abrufer, CacheEintrag, HttpCache
 from .bewertung import claims_auffrischen
 from .graph import graph_auffrischen
 from .kalibrierung import kalibrierung_auffrischen
 from .feeds import parse_feed
-from .quellen import Quelle, lade_register
+from .quellen import lade_register
 from .speicher import MeldungSpeicher
 
 STANDARD_BACKUP_ORDNER = Path("backups")
@@ -104,7 +105,7 @@ def dns_und_tls(domain: str, timeout: float = 10.0) -> dict[str, object]:
     try:
         infos = socket.getaddrinfo(domain, 443, type=socket.SOCK_STREAM)
         ergebnis["ips"] = sorted({info[4][0] for info in infos})
-    except Exception as exc:
+    except OSError as exc:
         ergebnis["fehler"] = f"DNS: {type(exc).__name__}"
         return ergebnis
 
@@ -117,14 +118,14 @@ def dns_und_tls(domain: str, timeout: float = 10.0) -> dict[str, object]:
         ablauf = ablauf.replace(tzinfo=timezone.utc)
         ergebnis["zertifikat_bis"] = ablauf.isoformat()
         ergebnis["tage_rest"] = (ablauf - datetime.now(timezone.utc)).days
-    except Exception as exc:
+    except (OSError, ValueError, TypeError, KeyError) as exc:
         ergebnis["fehler"] = f"TLS: {type(exc).__name__}"
         return ergebnis
 
     try:
         with urllib.request.urlopen(f"https://{domain}/api/health", timeout=timeout) as antwort:
             ergebnis["health_status"] = int(antwort.status)
-    except Exception as exc:
+    except (OSError, ValueError) as exc:
         ergebnis["fehler"] = f"Health: {type(exc).__name__}"
         return ergebnis
 
@@ -143,7 +144,7 @@ def _sende(url: str, body: bytes | None, content_type: str,
         )
         with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:
             return 200 <= int(antwort.status) < 300, None
-    except Exception as exc:
+    except (OSError, ValueError) as exc:
         return False, type(exc).__name__
 
 
@@ -232,7 +233,7 @@ def nachtlauf(
         if ergebnis.ok and ergebnis.inhalt:
             try:
                 meldungen = parse_feed(ergebnis.inhalt, quelle)
-            except Exception as exc:
+            except (ValueError, TypeError, AttributeError) as exc:
                 ergebnis.fehler = f"Parse: {type(exc).__name__}"
         if ergebnis.status == 304:
             zaehler.unveraendert += 1
@@ -247,7 +248,7 @@ def nachtlauf(
             try:
                 ergebnis_speicher = speicher.speichere(
                     meldung, quelle, abgerufen_am=zeit)
-            except Exception as exc:
+            except ABLAUF_FEHLER as exc:
                 speicher_fehler += 1
                 speicher_fehler_typ = type(exc).__name__
                 continue
@@ -276,21 +277,21 @@ def nachtlauf(
     bewertung_fehler = False
     try:
         bewertung = claims_auffrischen(datenbank, quellen)
-    except Exception as exc:
+    except ABLAUF_FEHLER as exc:
         bewertung = {"fehler": type(exc).__name__}
         bewertung_fehler = True
 
     graph_fehler = False
     try:
         graph = graph_auffrischen(datenbank)
-    except Exception as exc:
+    except ABLAUF_FEHLER as exc:
         graph = {"fehler": type(exc).__name__}
         graph_fehler = True
 
     kalibrierung_fehler = False
     try:
         kalibrierung = kalibrierung_auffrischen(datenbank, jetzt)
-    except Exception as exc:
+    except ABLAUF_FEHLER as exc:
         kalibrierung = {"fehler": type(exc).__name__}
         kalibrierung_fehler = True
 
@@ -316,7 +317,7 @@ def nachtlauf(
     if backup_ordner:
         try:
             bericht["backup"] = _backup(db_pfad, Path(backup_ordner), jetzt, behalten_tage)
-        except Exception as exc:
+        except ABLAUF_FEHLER as exc:
             bericht["backup"] = {"fehler": type(exc).__name__}
 
     if domain:
@@ -356,7 +357,7 @@ def nachtlauf(
             f"geprüfte Prognosen, ok={bericht['ok']}",
         )
         datenbank.zustand_setzen("nexus_nacht", bericht)
-    except Exception as exc:
+    except ABLAUF_FEHLER as exc:
         bericht["zustand_fehler"] = type(exc).__name__
 
     return bericht

@@ -8,13 +8,16 @@ im Browser.
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from .config import Config
+from .fehler import ABLAUF_FEHLER
 from .db import Facts, jetzt
 from .knowledge import Vault
+
+log = logging.getLogger(__name__)
 
 SEKRETAERE: list[dict[str, str]] = [
     {"id": "S1", "name": "Mira", "rolle": "Empfang & Koordination",
@@ -88,7 +91,7 @@ def _dauer_minuten(einstieg: str, ausstieg: str) -> int | None:
         a = datetime.fromisoformat(str(einstieg))
         b = datetime.fromisoformat(str(ausstieg))
         return max(0, int((b - a).total_seconds() // 60))
-    except Exception:
+    except (ValueError, TypeError, OverflowError):
         return None
 
 
@@ -239,7 +242,7 @@ def agenda(db: Facts, grenze: int = 6) -> dict[str, Any]:
         from .config import load_config
         vorlauf = max(1, int(load_config().abschnitt("betrieb")
                              .get("sekretariat_termin_tage", 7)))
-    except Exception:
+    except (OSError, ValueError, KeyError, TypeError):
         vorlauf = 7
     frist = (datetime.fromisoformat(jetzt()).astimezone(timezone.utc)
              + timedelta(days=vorlauf)).date().isoformat()
@@ -534,7 +537,7 @@ def sitzung_weiter(db: Facts, vault: Vault | None = None) -> dict[str, Any]:
                 kennung, abteilung = _mission_anlegen(db, t)
                 eintrag["mission"] = kennung
                 eintrag["abteilung"] = abteilung
-            except Exception as exc:  # Sitzung darf daran nicht scheitern
+            except ABLAUF_FEHLER as exc:  # Sitzung darf daran nicht scheitern
                 eintrag["mission_fehler"] = f"{type(exc).__name__}: {exc}"
         s.setdefault("entscheide", []).append(eintrag)
     db.zustand_setzen("sekretariat_sitzung", s)
@@ -569,7 +572,7 @@ def sitzung_mit_status(db: Facts) -> dict[str, Any]:
         from .config import load_config
         s["alt_stunden"] = max(1, int(load_config().abschnitt("betrieb")
                                      .get("sekretariat_alt_stunden", 1)))
-    except Exception:
+    except (OSError, ValueError, KeyError, TypeError):
         s["alt_stunden"] = 1
     for e in s.get("entscheide") or []:
         kennung = e.get("mission")
@@ -577,7 +580,7 @@ def sitzung_mit_status(db: Facts) -> dict[str, Any]:
             continue
         try:
             m = db.nexus_mission(kennung)
-        except Exception:
+        except ABLAUF_FEHLER:
             m = None
         if m:
             e["mission_status"] = m.get("status")
@@ -691,7 +694,7 @@ def ueberstimmen(db: Facts, index: int, entscheid: str,
             try:
                 e["mission"], e["abteilung"] = _mission_anlegen(db, t)
                 e.pop("mission_storniert", None)
-            except Exception as exc:
+            except ABLAUF_FEHLER as exc:
                 e["mission_fehler"] = f"{type(exc).__name__}: {exc}"
         if vorher == "annehmen" and entscheid != "annehmen" and e.get("mission"):
             try:
@@ -699,8 +702,8 @@ def ueberstimmen(db: Facts, index: int, entscheid: str,
                     c.execute("UPDATE nexus_missionen SET status='storniert' WHERE kennung=?",
                               (e["mission"],))
                 e["mission_storniert"] = True
-            except Exception:
-                pass
+            except ABLAUF_FEHLER as exc:
+                log.warning("Mission %s nicht storniert: %s", e.get("mission"), exc)
         break
     db.zustand_setzen("sekretariat_sitzung", s)
     return s
@@ -732,8 +735,8 @@ def sitzung_abschluss(db: Facts, vault: Vault | None = None) -> dict[str, Any]:
         try:
             vault.notiz("konferenz", f"Sitzung {str(s['start'])[:16]}", text,
                         tags=["sitzung", "sekretariat"])
-        except Exception:
-            pass
+        except ABLAUF_FEHLER as exc:
+            log.warning("Sitzungsnotiz nicht gespeichert: %s", exc)
     db.zustand_setzen("sekretariat_sitzung", s)
     return s
 

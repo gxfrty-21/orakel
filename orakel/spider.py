@@ -27,6 +27,7 @@ from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
 from .db import Facts, jetzt
+from .fehler import ABLAUF_FEHLER
 from .knowledge import Vault
 
 MAX_BYTES = 2_000_000
@@ -154,7 +155,7 @@ def _alter_tage(veroeffentlicht: str | None) -> float | None:
         if zeit.tzinfo is None:
             zeit = zeit.replace(tzinfo=timezone.utc)
         return (datetime.now(timezone.utc) - zeit).total_seconds() / 86400
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -232,7 +233,7 @@ class Spider:
             roh = self.abrufer(f"{basis}/robots.txt", int(self.s["timeout_sekunden"]),
                                str(self.s["user_agent"]))
             parser.parse((roh or b"").decode("utf-8", "replace").splitlines())
-        except Exception:
+        except (OSError, ValueError, TypeError):
             # Nicht erreichbar: wir behandeln es wie "keine Regel gefunden",
             # protokollieren das aber als Warnung.
             parser.parse([])
@@ -320,7 +321,7 @@ class Spider:
         self._host_abstand(url)
         try:
             roh = self.abrufer(url, int(self.s["timeout_sekunden"]), str(self.s["user_agent"]))
-        except Exception as exc:
+        except (OSError, ValueError) as exc:
             self.db.ereignis("warnung", "Spider", f"Seite nicht lesbar: {url} ({exc})")
             return None
         if not roh:
@@ -364,7 +365,7 @@ class Spider:
         for r in self.db.artikel_ohne_prioritaet(500):
             try:
                 symbole = json.loads(r["symbole"] or "[]")
-            except Exception:
+            except (ValueError, TypeError):
                 symbole = []
             artikel = Artikel(
                 quelle=str(r["quelle"]), typ=str(r["typ"]), titel=str(r["titel"]),
@@ -415,7 +416,7 @@ class Spider:
                 eintrag["gelesen"] = len(gelesen)
                 eintrag["letzter_abruf"] = jetzt()
                 gesammelt.extend(gelesen)
-            except Exception as exc:  # eine defekte Quelle stoppt nie den Lauf
+            except ABLAUF_FEHLER as exc:  # eine defekte Quelle stoppt nie den Lauf
                 eintrag["status"] = "fehler"
                 eintrag["fehler"] = str(exc)[:200]
                 fehler.append(f"{quelle.get('name')}: {exc}")
@@ -470,7 +471,7 @@ class Spider:
                 continue
             try:
                 symbole = set(json.loads(a["symbole"] or "[]"))
-            except Exception:
+            except (ValueError, TypeError):
                 symbole = set()
             symbole |= set(_symbole_erkennen(a["titel"] + " " + volltext))
             qualitaet = float(a["qualitaet"])

@@ -14,6 +14,7 @@ Es werden keine zusätzlichen Missionen, Artikel oder Kennzahlen erzeugt.
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import sys
@@ -25,11 +26,14 @@ from typing import Any, Callable
 
 from .config import Config
 from .db import Facts
+from .fehler import ABLAUF_FEHLER
 from .intel import IntelNetz
 from .knowledge import Vault
 from .nexus.missionen import Missionen
 from .paper import tick
 from .spider import Spider
+
+log = logging.getLogger(__name__)
 
 STATUS_KEY = "betrieb_status"
 STATUS_VERSION = 1
@@ -71,7 +75,7 @@ def _rss_mb() -> float | None:
         rss = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
         # Linux meldet KiB, macOS Bytes.
         return round(rss / (1024 * 1024) if sys.platform == "darwin" else rss / 1024, 1)
-    except Exception:
+    except (ImportError, OSError, ValueError):
         return None
 
 
@@ -361,9 +365,9 @@ class Betrieb:
                 job, status, dauer_ms=dauer_ms, fehler=fehler,
                 details=_kompakte_details(details or {}),
             )
-        except Exception:
+        except ABLAUF_FEHLER as exc:
             # Das Protokoll darf den Betrieb nie anhalten.
-            pass
+            log.warning("Betriebsprotokoll nicht gespeichert: %s", exc)
 
     def takt(self, erzwungen: set[str] | None = None) -> dict[str, Any]:
         """Führt alle fälligen Jobs aus. Rückgabe behält die alten Schlüssel."""
@@ -419,7 +423,7 @@ class Betrieb:
                 ergebnis[job.name] = wert
                 ergebnis["betrieb"]["jobs"][job.name] = "ok"
                 self._protokoll(job.name, "ok", dauer, "", _kompakte_details(wert))
-            except Exception as exc:
+            except ABLAUF_FEHLER as exc:
                 dauer = int((time.monotonic() - beginn) * 1000)
                 fehler_im_takt = True
                 status["letzter_status"] = "fehler"
@@ -441,8 +445,8 @@ class Betrieb:
                         "fehler", "Betrieb",
                         f"{job.titel}: {_job_fehler_text(exc)}; nächster Versuch "
                         f"in {status['backoff_sekunden']} s")
-                except Exception:
-                    pass
+                except ABLAUF_FEHLER as exc:
+                    log.warning("Betriebsereignis nicht gespeichert: %s", exc)
             finally:
                 self._status_speichern()
 
@@ -453,8 +457,8 @@ class Betrieb:
         self._status_speichern()
         try:
             self.db.betrieb_laeufe_trim(self.grenzen.max_laeufe)
-        except Exception:
-            pass
+        except ABLAUF_FEHLER as exc:
+            log.warning("Betriebsläufe nicht gekürzt: %s", exc)
         ergebnis["betrieb"]["status"] = self._status["letzter_takt_status"]
         ergebnis["betrieb"]["dauer_ms"] = self._status["letzter_takt_dauer_ms"]
         return ergebnis
@@ -563,12 +567,12 @@ class Betrieb:
                 "missionen": int(self.db.nexus_mission_statistik().get("gesamt") or 0),
                 "intel": self.db.intel_statistik(),
             }
-        except Exception:
+        except ABLAUF_FEHLER:
             daten = {"artikel": 0, "missionen": 0, "intel": {}}
         try:
             historie = self.db.betrieb_laeufe(20)
             statistik = self.db.betrieb_statistik(24)
-        except Exception:
+        except ABLAUF_FEHLER:
             historie, statistik = [], {"stunden": 24, "gesamt": 0, "fehler": 0,
                                        "uebersprungen": 0}
 

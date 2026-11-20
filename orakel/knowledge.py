@@ -119,7 +119,7 @@ class Vault:
             for pfad in sorted((self.wurzel / unter).glob("*.md")):
                 try:
                     text = pfad.read_text(encoding="utf-8")
-                except Exception as exc:
+                except (OSError, UnicodeDecodeError) as exc:
                     fehler.append(f"{pfad.name}: {exc}")
                     continue
                 titel = pfad.stem
@@ -127,7 +127,7 @@ class Vault:
                 if m:
                     try:
                         titel = str(json.loads(m.group(1)))
-                    except Exception:
+                    except (ValueError, TypeError):
                         titel = m.group(1).strip().strip('"') or titel
                 tags: list[str] = []
                 m = re.search(r"^tags:\s*\[(.*?)\]\s*$", text, re.M)
@@ -223,8 +223,8 @@ class Vault:
             if m:
                 try:
                     titel = json.loads(m.group(1))
-                except Exception:
-                    pass
+                except (ValueError, TypeError):
+                    titel = str(m.group(1)).strip().strip('"') or titel
             m = re.search(r"^tags: \[(.*)\]$", text, re.M)
             if m:
                 tags = [t.strip() for t in m.group(1).split(",") if t.strip()]

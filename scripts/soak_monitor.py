@@ -72,7 +72,7 @@ def health_holen(timeout: float) -> dict[str, Any]:
                 "dauer_ms": round((time.monotonic() - start) * 1000),
                 "daten": daten,
             }
-    except Exception as exc:
+    except (OSError, ValueError, TypeError) as exc:
         return {
             "ts": iso(),
             "ts_epoch": time.time(),
@@ -109,7 +109,7 @@ def deep_holen(timeout: float) -> dict[str, Any]:
             "dauer_ms": round((time.monotonic() - start) * 1000),
             "daten": daten,
         }
-    except Exception as exc:
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
         return {
             "ts": iso(),
             "ok": False,

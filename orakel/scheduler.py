@@ -12,6 +12,7 @@ from . import agents
 from .betrieb import Betrieb
 from .config import Config, RisikoGrenzen
 from .db import Facts
+from .fehler import ABLAUF_FEHLER
 
 
 def _validierungen_als_dicts(db: Facts) -> list[dict[str, Any]]:
@@ -22,7 +23,7 @@ def _validierungen_als_dicts(db: Facts) -> list[dict[str, Any]]:
     for r in db.letzte_validierungen(lauf):
         try:
             bericht = json.loads(r["bericht"])
-        except Exception:
+        except (ValueError, TypeError):
             bericht = {}
         bericht.update({"symbol": r["symbol"], "strategie": r["strategie"],
                         "urteil": r["urteil"], "parameter": json.loads(r["parameter"]),
@@ -132,7 +133,7 @@ class Takt(threading.Thread):
             beginn = time.monotonic()
             try:
                 self.letzter_lauf = self.betrieb.takt(erzwungen=erzwungen)
-            except Exception as exc:
+            except ABLAUF_FEHLER as exc:
                 self.db.ereignis("fehler", "Takt", f"Betriebstakt abgebrochen: {exc}")
             erzwungen = None
             if time.monotonic() - letzte_erinnerung >= erinnerungs_intervall:
@@ -142,7 +143,7 @@ class Takt(threading.Thread):
                     from .company.store import CompanyStore
 
                     MessagingService(CompanyStore(self.db)).erinnere_offene_acks()
-                except Exception as exc:
+                except ABLAUF_FEHLER as exc:
                     self.db.ereignis(
                         "fehler", "Takt", f"Erinnerungen abgebrochen: {exc}")
             # Ein langer Takt verlängert den Abstand nicht zusätzlich.

@@ -8,10 +8,10 @@ Ergebnis, das aus der Fakten-Datenbank stammt.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from typing import Any, Callable
 
 from .db import Facts
+from .fehler import ABLAUF_FEHLER
 
 ABTEILUNGEN = {
     "A": "Hauptzentrale",
@@ -241,7 +241,7 @@ def _hdl_artikel_symbol(ctx: dict[str, Any]) -> tuple[bool, str]:
     for r in zeilen:
         try:
             symbole = json.loads(r["symbole"] or "[]")
-        except Exception:
+        except (ValueError, TypeError):
             symbole = []
         for s in symbole:
             zaehler[s] = zaehler.get(s, 0) + 1
@@ -285,11 +285,13 @@ def _hdl_mehrdeutig(ctx: dict[str, Any]) -> tuple[bool, str]:
         return False, "keine Datenbank im Kontext"
     mehr = 0
     for r in db.artikel(500):
+        mehrere = False
         try:
-            if len(json.loads(r["symbole"] or "[]")) > 1:
-                mehr += 1
-        except Exception:
-            pass
+            mehrere = len(json.loads(r["symbole"] or "[]")) > 1
+        except (ValueError, TypeError):
+            mehrere = False
+        if mehrere:
+            mehr += 1
     return True, f"{mehr} Artikel mit mehreren Symbolen"
 
 
@@ -410,7 +412,7 @@ def lauf(db: Facts, ctx: dict[str, Any], nur_abteilung: str | None = None) -> li
         handler = HANDLER[_handler_fuer(kennung, aufgabe)]
         try:
             ok, ergebnis = handler(ctx)
-        except Exception as exc:  # Ein Agent darf den Lauf nicht abbrechen
+        except ABLAUF_FEHLER as exc:  # Ein Agent darf den Lauf nicht abbrechen
             ok, ergebnis = False, f"Fehler: {exc}"
         db.agenten_lauf(f"{abteilung}{kennung[1:]}:{name}", abteilung, aufgabe, ergebnis, ok)
         ergebnisse.append({"agent": f"{abteilung}{kennung[1:]}:{name}", "abteilung": abteilung,
@@ -521,7 +523,7 @@ def konferenz(db: Facts, ctx: dict[str, Any], erzwungen: bool = False) -> dict[s
             "agenda": _agenda.get("themen") or [],
             "leitung": ["S1", "S2", "S3"],
         }
-    except Exception as exc:  # Sekretariat darf die Konferenz nie blockieren
+    except ABLAUF_FEHLER as exc:  # Sekretariat darf die Konferenz nie blockieren
         sekretariat_block = {"fehler": f"Sekretariat nicht verfügbar: {type(exc).__name__}"}
 
     protokoll = {

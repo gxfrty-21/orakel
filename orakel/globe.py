@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -83,7 +83,7 @@ def _parse_zeit(wert: Any) -> datetime | None:
         if zeit.tzinfo is None:
             zeit = zeit.replace(tzinfo=timezone.utc)
         return zeit.astimezone(timezone.utc)
-    except Exception:
+    except (ValueError, TypeError, OverflowError):
         return None
 
 
@@ -97,7 +97,7 @@ def _alter_stunden(wert: Any, jetzt_utc: datetime) -> float | None:
 def _json_wert(wert: Any, standard: Any) -> Any:
     try:
         return json.loads(wert) if isinstance(wert, str) else (wert or standard)
-    except Exception:
+    except (ValueError, TypeError):
         return standard
 
 
@@ -172,7 +172,7 @@ def _vault_knoten(cfg: Config, orders: list[dict[str, Any]], jetzt_utc: datetime
     for datei in dateien:
         try:
             text = datei.read_text(encoding="utf-8")[:12000]
-        except Exception:
+        except (OSError, UnicodeDecodeError):
             continue
         titel = datei.stem.replace("-", " ")
         erstellt = datetime.fromtimestamp(datei.stat().st_mtime, tz=timezone.utc).isoformat()
@@ -189,7 +189,7 @@ def _vault_knoten(cfg: Config, orders: list[dict[str, Any]], jetzt_utc: datetime
                     if schluessel.strip() == "titel":
                         try:
                             titel = json.loads(wert)
-                        except Exception:
+                        except (ValueError, TypeError):
                             titel = wert.strip('"')
                     elif schluessel.strip() == "erstellt":
                         erstellt = wert.strip()

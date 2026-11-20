@@ -54,7 +54,7 @@ def _hole(args: argparse.Namespace) -> int:
         if ergebnis.ok and ergebnis.inhalt:
             try:
                 anzahl = len(parse_feed(ergebnis.inhalt, quelle))
-            except Exception as exc:
+            except (ValueError, TypeError, AttributeError) as exc:
                 anzahl = 0
                 ergebnis.fehler = f"Parse-Fehler: {type(exc).__name__}"
         if not ergebnis.ok:

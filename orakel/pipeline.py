@@ -12,6 +12,7 @@ from . import agents as agenten
 from .config import Config, RisikoGrenzen, load_config
 from .data import df_aus_db, lade_csv, pruefe_daten, synthetische_kerzen
 from .db import Facts, jetzt
+from .fehler import ABLAUF_FEHLER
 from .intel import IntelNetz
 from .judge import beurteile_walk_forward, pruefe_holdout
 from .knowledge import Vault
@@ -35,7 +36,7 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
             symbol = datei.stem.split("_")[0].upper()
             try:
                 df = lade_csv(datei)
-            except Exception as exc:
+            except ABLAUF_FEHLER as exc:
                 db.ereignis("fehler", "Daten", f"{datei.name}: {exc}")
                 continue
             db.kerzen_speichern(symbol, "M15", df.to_dict("records"))
@@ -106,7 +107,7 @@ def lauf(
         for strategie in strategien(cfg).values():
             try:
                 u = beurteile_walk_forward(df, symbol, strategie, cfg, grenzen)
-            except Exception as exc:
+            except ABLAUF_FEHLER as exc:
                 db.ereignis("fehler", "Richter", f"{symbol} {strategie.name}: {exc}")
                 fehler.append(f"{symbol} {strategie.name}: {exc}")
                 continue
@@ -127,7 +128,7 @@ def lauf(
         )
         try:
             pruefe_holdout(bester, daten[symbol], strategie, cfg, grenzen)
-        except Exception as exc:
+        except ABLAUF_FEHLER as exc:
             bester.urteil = "abgelehnt"
             bester.gruende.append(f"Versiegelter Holdout konnte nicht geprüft werden: {exc}")
             db.ereignis("fehler", "Richter", f"{symbol} Holdout: {exc}")
@@ -248,7 +249,7 @@ def lauf(
 
         try:
             spider_ergebnis = Spider(cfg, db, vault).lauf()
-        except Exception as exc:
+        except ABLAUF_FEHLER as exc:
             db.ereignis("fehler", "Spider", f"Recherche fehlgeschlagen: {exc}")
             fehler.append(f"Spider: {exc}")
 
@@ -259,7 +260,7 @@ def lauf(
         intel_ergebnis = netz.verarbeite((spider_ergebnis or {}).get("neue_ids") or [], markt=markt)
         intel_ergebnis.update(netz.lernschleife(markt=markt))
         intel_ergebnis["hypothesen"] = netz.hypothesen_aus_lage(markt=markt)
-    except Exception as exc:
+    except ABLAUF_FEHLER as exc:
         db.ereignis("fehler", "Intel", f"Intelligence fehlgeschlagen: {exc}")
         fehler.append(f"Intel: {exc}")
 
@@ -277,13 +278,13 @@ def lauf(
     if mit_agenten:
         try:
             agenten_ergebnisse = agenten.lauf(db, ctx)
-        except Exception as exc:  # Agenten dürfen den Lauf nie abbrechen
+        except ABLAUF_FEHLER as exc:  # Agenten dürfen den Lauf nie abbrechen
             db.ereignis("fehler", "Agenten", f"Agentenlauf fehlgeschlagen: {exc}")
             fehler.append(f"Agentenlauf: {exc}")
     if mit_konferenz:
         try:
             protokoll = agenten.konferenz(db, ctx)
-        except Exception as exc:
+        except ABLAUF_FEHLER as exc:
             db.ereignis("fehler", "Konferenz", f"Konferenz fehlgeschlagen: {exc}")
             fehler.append(f"Konferenz: {exc}")
 

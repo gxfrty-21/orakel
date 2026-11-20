@@ -71,7 +71,6 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 
 def cmd_konferenz(args: argparse.Namespace) -> int:
-    from . import agents
     from .pipeline import lauf
 
     bericht = lauf(cfg_pfad=args.config, modus="backtest", mit_konferenz=True)

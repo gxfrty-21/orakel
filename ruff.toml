@@ -1,0 +1,9 @@
+# Qualitätstor der CI: echte Fehler und blinde Fänge.
+# BLE001 meldet ``except Exception``, S110 still geschluckte Ausnahmen.
+# Beide Regeln verlangen benannte Fehlerklassen statt eines Pauschalfangs.
+target-version = "py312"
+line-length = 100
+extend-exclude = [".venv", "artifacts", "seed", "vault"]
+
+[lint]
+select = ["E9", "F", "BLE001", "S110"]

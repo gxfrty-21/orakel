@@ -13,6 +13,7 @@ Regeln:
 
 from __future__ import annotations
 
+import http.client
 import sqlite3
 import time
 import urllib.error
@@ -253,7 +254,7 @@ class Abrufer:
             self._fehler_zaehlen(host)
             return AbrufErgebnis(quelle_id, url, exc.code,
                                  fehler=f"HTTP {exc.code}", dauer_ms=self._dauer(start))
-        except Exception as exc:  # Netzfehler jeder Art stoppen nie den gesamten Lauf
+        except (OSError, http.client.HTTPException, ValueError) as exc:  # Netzfehler jeder Art stoppen nie den gesamten Lauf
             self._fehler_zaehlen(host)
             return AbrufErgebnis(quelle_id, url, 0, fehler=type(exc).__name__,
                                  dauer_ms=self._dauer(start))

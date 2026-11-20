@@ -53,7 +53,6 @@ def backtest(
     slip = float(cfg["kosten"]["slippage_bps"]) / 10_000.0
     atr_serie = atr(df, 14).to_numpy(dtype=float)
     o = df["open"].to_numpy(dtype=float)
-    h = df["high"].to_numpy(dtype=float)
     l = df["low"].to_numpy(dtype=float)
     c = df["close"].to_numpy(dtype=float)
     ts = df["ts"].astype(str).to_numpy()

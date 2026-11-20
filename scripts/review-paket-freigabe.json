@@ -187,6 +187,10 @@
       "ziel": "dateien/requirements-dev.txt"
     },
     {
+      "quelle": "ruff.toml",
+      "ziel": "dateien/ruff.toml"
+    },
+    {
       "quelle": "requirements.txt",
       "ziel": "dateien/requirements.txt"
     },

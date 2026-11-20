@@ -7,11 +7,15 @@ nachvollziehbare Eigenschaft der Mission und schreibt ihr Ergebnis in
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
 from ..db import Facts
+from ..fehler import ABLAUF_FEHLER
+
+log = logging.getLogger(__name__)
 
 STATUS_ERLAUBT = {"bestätigt", "teilweise", "unbestätigt", "widersprüchlich"}
 BEFUND = Callable[[dict[str, Any]], list[dict[str, Any]]]
@@ -243,7 +247,7 @@ def lauf(db: Facts, mission: dict[str, Any], lage: dict[str, Any],
         try:
             gefunden = rolle.pruefer(ctx)
             fehler = ""
-        except Exception as exc:  # eine Rolle stoppt die andere nicht
+        except ABLAUF_FEHLER as exc:  # eine Rolle stoppt die andere nicht
             gefunden = [_b("rollenfehler", f"{role_name(rolle)}: {type(exc).__name__}",
                            schwere="hoch")]
             fehler = type(exc).__name__
@@ -263,8 +267,8 @@ def lauf(db: Facts, mission: dict[str, Any], lage: dict[str, Any],
         try:
             db.agenten_lauf(f"B:{rolle.kennung}:{rolle.name}", "B", rolle.aufgabe,
                             text[:240], not gefunden and not fehler)
-        except Exception:
-            pass
+        except ABLAUF_FEHLER as exc:
+            log.warning("Agentenlauf der Rolle %s nicht gespeichert: %s", rolle.kennung, exc)
     return {"rollen": len(ROSTEN), "agenten": agenten, "befunde": befunde,
             "befundzahl": len(befunde)}
 

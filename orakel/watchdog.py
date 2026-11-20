@@ -149,7 +149,7 @@ def pruefe(
             jetzt, f"http_{exc.code}",
             f"Der Health-Endpunkt antwortet mit HTTP {exc.code}.", url,
         )
-    except Exception as exc:
+    except (OSError, ValueError, TypeError) as exc:
         return _abruf_fehler(
             jetzt, "abruf_fehlgeschlagen",
             f"{type(exc).__name__}: {exc}", url,
