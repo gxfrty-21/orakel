@@ -129,7 +129,7 @@ gespeicherte Meldungen zu verlieren.
 Manuell neu berechnen:
 
 ```bash
-python -m orakel.nexus bewertung --db orakel.db
+python -m orakel.nexus bewertung
 ```
 
 ---
