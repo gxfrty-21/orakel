@@ -9,6 +9,10 @@ einen Lauf ab, der ohnehin weiterliefe.
 Der Status ist über ``GET /api/lauf/{id}`` abfragbar: ``offen``, ``aktiv``,
 ``fertig`` oder ``fehler``. Ein einzelner Arbeiter verarbeitet die Aufträge
 nacheinander; die Reihenfolge ist die Reihenfolge des Eingangs.
+
+Beim Start hält kein Prozess mehr einen Auftrag: Was dann noch auf ``aktiv``
+steht, stammt von einem abgestürzten Vorgänger und wird wieder auf ``offen``
+gesetzt, damit es nicht liegen bleibt.
 """
 from __future__ import annotations
 
@@ -26,8 +30,7 @@ FERTIG = "fertig"
 FEHLER = "fehler"
 
 # Ein Auftrag, der länger als das hier auf «aktiv» steht, kann nicht mehr von
-# einem laufenden Arbeiter stammen: Der Prozess ist abgestürzt oder der Lauf
-# hängt. Er wird als Fehler verbucht, damit die Warteschlange nicht blockiert.
+# einem laufenden Arbeiter stammen: Der Prozess hängt oder ist abgestürzt.
 HAENGE_GRENZE = timedelta(minutes=60)
 
 Engine = Callable[..., dict[str, Any]]
@@ -48,109 +51,85 @@ def anlegen(db: Facts, modus: str = "backtest", spider: bool = False) -> int:
 
 
 def anlegen_wenn_frei(db: Facts, modus: str = "backtest",
-                      spider: bool = False) -> tuple[int, bool]:
-    """Legt nur an, wenn kein Auftrag offen oder aktiv ist: ``(id, neu)``.
+                      spider: bool = False) -> tuple[int, str | None]:
+    """Legt nur an, wenn kein Auftrag offen oder aktiv ist: ``(id, blockiert)``.
 
     Prüfung und Einfügen laufen in einer Schreibtransaktion (``BEGIN
     IMMEDIATE``). Zwei gleichzeitige Klicks sehen deshalb nacheinander denselben
     Stand: Der zweite bekommt die ID des ersten Auftrags und legt keinen
-    weiteren an. ``neu`` ist ``False``, wenn ein bestehender Auftrag den Start
-    verhindert.
+    weiteren an. ``blockiert`` ist ``None`` für einen neuen Auftrag, sonst der
+    Status des Auftrags, der den Start verhindert.
     """
     with db.conn() as c:
         c.execute("BEGIN IMMEDIATE")
         zeile = c.execute(
-            "SELECT id FROM laeufe WHERE status IN (?, ?) ORDER BY id LIMIT 1",
+            "SELECT id, status FROM laeufe WHERE status IN (?, ?) ORDER BY id LIMIT 1",
             (OFFEN, AKTIV),
         ).fetchone()
         if zeile is not None:
-            return int(zeile["id"]), False
-        return _einfuegen(c, modus, spider), True
+            return int(zeile["id"]), str(zeile["status"])
+        return _einfuegen(c, modus, spider), None
 
 
 def stand(db: Facts, lauf_id: int) -> dict[str, Any] | None:
-    """Status eines Auftrags; ``None``, wenn es die ID nicht gibt."""
+    """Auftrag als Zeile; ``ergebnis`` ist ausgepackt, ``None`` ohne ID."""
     with db.conn() as c:
         zeile = c.execute("SELECT * FROM laeufe WHERE id = ?", (lauf_id,)).fetchone()
     if zeile is None:
         return None
     daten = dict(zeile)
-    ergebnis = None
-    if daten.get("ergebnis_json"):
-        try:
-            ergebnis = json.loads(daten["ergebnis_json"])
-        except ValueError:
-            ergebnis = None
-    return {
-        "id": daten["id"],
-        "status": daten["status"],
-        "modus": daten["modus"],
-        "spider": bool(daten["spider"]),
-        "erstellt": daten["erstellt"],
-        "gestartet": daten["gestartet"],
-        "beendet": daten["beendet"],
-        "ergebnis": ergebnis,
-        "fehler": daten["fehler"],
-    }
+    roh = daten.pop("ergebnis_json", None)
+    daten["spider"] = bool(daten["spider"])
+    daten["ergebnis"] = json.loads(roh) if roh else None
+    return daten
 
 
-def offene_id(db: Facts) -> int | None:
-    """Ältester noch nicht begonnener Auftrag."""
+def zuruecksetzen(db: Facts) -> list[int]:
+    """Setzt Aufträge, die ein Absturz auf «aktiv» liess, wieder auf «offen».
+
+    Das läuft genau einmal beim Start des Arbeiters, nicht in der Schleife:
+    Beim Start hält kein Prozess mehr einen Auftrag, ein Absturzrest kann also
+    gefahrlos erneut eingereiht werden. ``gestartet`` wird geleert, damit die
+    Hänge-Grenze ab dem neuen Versuch misst. Ein Ereignis hält jeden Reset
+    fest. In der Schleife würde derselbe Aufruf einen laufenden Auftrag wieder
+    einreihen.
+    """
     with db.conn() as c:
-        zeile = c.execute(
-            "SELECT id FROM laeufe WHERE status = ? ORDER BY id LIMIT 1", (OFFEN,)
-        ).fetchone()
-    return int(zeile["id"]) if zeile else None
-
-
-def _beanspruchen(db: Facts, lauf_id: int) -> bool:
-    """Setzt den Auftrag atomar auf aktiv; nur ein Arbeiter gewinnt."""
-    with db.conn() as c:
-        cur = c.execute(
-            "UPDATE laeufe SET status = ?, gestartet = ? WHERE id = ? AND status = ?",
-            (AKTIV, jetzt(), lauf_id, OFFEN),
-        )
-        return cur.rowcount == 1
-
-
-def abschliessen(db: Facts, lauf_id: int, ergebnis: dict[str, Any]) -> None:
-    with db.conn() as c:
-        c.execute(
-            "UPDATE laeufe SET status = ?, beendet = ?, ergebnis_json = ?, fehler = NULL "
-            "WHERE id = ?",
-            (FERTIG, jetzt(), json.dumps(ergebnis, ensure_ascii=False), lauf_id),
-        )
-
-
-def haengende_auftraege(db: Facts, *, grenze: timedelta = HAENGE_GRENZE,
-                        jetzt_wert: datetime | None = None) -> list[int]:
-    """IDs von Aufträgen, die seit mehr als ``grenze`` auf «aktiv» stehen."""
-    bezug = (jetzt_wert or datetime.now(timezone.utc)).astimezone()
-    grenz_zeit = (bezug - grenze).replace(microsecond=0).isoformat()
-    with db.conn() as c:
-        return [int(zeile["id"]) for zeile in c.execute(
-            "SELECT id FROM laeufe WHERE status = ? AND gestartet IS NOT NULL "
-            "AND gestartet <= ? ORDER BY id",
-            (AKTIV, grenz_zeit),
-        )]
+        ids = [int(zeile["id"]) for zeile in c.execute(
+            "SELECT id FROM laeufe WHERE status = ? ORDER BY id", (AKTIV,))]
+        if ids:
+            c.execute(
+                "UPDATE laeufe SET status = ?, gestartet = NULL WHERE status = ?",
+                (OFFEN, AKTIV),
+            )
+    for lauf_id in ids:
+        db.ereignis("warnung", "Lauf",
+                    f"Auftrag {lauf_id} stand beim Start auf «aktiv» und ist wieder offen")
+    return ids
 
 
 def verwerfe_haengende(db: Facts, *, grenze: timedelta = HAENGE_GRENZE,
                        jetzt_wert: datetime | None = None) -> list[int]:
-    """Verbucht hängende Aufträge als Fehler und liefert ihre IDs.
+    """Verbucht Aufträge, die im Betrieb länger als ``grenze`` «aktiv» sind.
 
-    Das läuft beim Start des Arbeiters und in jeder Schleife, damit ein
-    Absturz die Warteschlange nicht dauerhaft blockiert. Ein erneutes
-    Einreihen gibt es bewusst nicht: Ein Auftrag, der den Prozess zum Absturz
-    bringt, würde sonst endlos wiederholt. Der Fehlertext nennt die Grenze.
+    Ein Auftrag, der den Prozess nicht abstürzen lässt, aber nie zurückkommt,
+    würde die Warteschlange sonst dauerhaft blockieren. Der Fehlertext nennt
+    die Grenze. Beim Start ist das nicht nötig: Dort greift ``zuruecksetzen``.
     """
-    ids = haengende_auftraege(db, grenze=grenze, jetzt_wert=jetzt_wert)
+    bezug = (jetzt_wert or datetime.now(timezone.utc)).astimezone()
+    grenz_zeit = (bezug - grenze).replace(microsecond=0).isoformat()
+    with db.conn() as c:
+        ids = [int(zeile["id"]) for zeile in c.execute(
+            "SELECT id FROM laeufe WHERE status = ? AND gestartet IS NOT NULL "
+            "AND gestartet <= ? ORDER BY id",
+            (AKTIV, grenz_zeit),
+        )]
     minuten = int(grenze.total_seconds() // 60)
     for lauf_id in ids:
         scheitern(
             db, lauf_id,
             f"Lauf blieb länger als {minuten} Minuten auf «aktiv» und wurde "
-            "verworfen (Arbeiter abgestürzt oder hängen geblieben)",
+            "verworfen (Arbeiter hängen geblieben)",
         )
         db.ereignis("fehler", "Lauf",
                     f"Auftrag {lauf_id} hing auf «aktiv» und wurde als Fehler verbucht")
@@ -165,6 +144,15 @@ def scheitern(db: Facts, lauf_id: int, fehler: str) -> None:
         )
 
 
+def abschliessen(db: Facts, lauf_id: int, ergebnis: dict[str, Any]) -> None:
+    with db.conn() as c:
+        c.execute(
+            "UPDATE laeufe SET status = ?, beendet = ?, ergebnis_json = ?, fehler = NULL "
+            "WHERE id = ?",
+            (FERTIG, jetzt(), json.dumps(ergebnis, ensure_ascii=False), lauf_id),
+        )
+
+
 def _zusammenfassung(ergebnis: dict[str, Any]) -> dict[str, Any]:
     """Nur die Kennzahlen speichern; der volle Bericht liegt in dashboard.json."""
     return {
@@ -175,39 +163,48 @@ def _zusammenfassung(ergebnis: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def verarbeite_einen(cfg_pfad: str, db: Facts | None = None,
-                     engine: Engine | None = None) -> dict[str, Any] | None:
-    """Arbeitet den ältesten offenen Auftrag ab. Ohne Auftrag passiert nichts.
+def _naechsten_beanspruchen(db: Facts) -> int | None:
+    """Setzt den ältesten offenen Auftrag auf aktiv; nur ein Arbeiter gewinnt."""
+    with db.conn() as c:
+        zeile = c.execute(
+            "SELECT id FROM laeufe WHERE status = ? ORDER BY id LIMIT 1", (OFFEN,)
+        ).fetchone()
+        if zeile is None:
+            return None
+        lauf_id = int(zeile["id"])
+        cur = c.execute(
+            "UPDATE laeufe SET status = ?, gestartet = ? WHERE id = ? AND status = ?",
+            (AKTIV, jetzt(), lauf_id, OFFEN),
+        )
+        return lauf_id if cur.rowcount == 1 else None
+
+
+def verarbeite_einen(db: Facts, cfg_pfad: str = "config.toml",
+                     engine: Engine | None = None) -> int | None:
+    """Arbeitet den ältesten offenen Auftrag ab und liefert seine ID.
 
     ``engine`` ist im Normalfall ``orakel.pipeline.lauf``; Tests ersetzen sie,
-    ohne die echte Pipeline zu starten.
+    ohne die echte Pipeline zu starten. Ohne offenen Auftrag passiert nichts.
     """
-    if db is None:
-        from .config import load_config
-
-        db = Facts(load_config(cfg_pfad).db_pfad)
-    lauf_id = offene_id(db)
+    lauf_id = _naechsten_beanspruchen(db)
     if lauf_id is None:
-        return None
-    if not _beanspruchen(db, lauf_id):
         return None
     auftrag = stand(db, lauf_id)
     try:
         if engine is None:
             from .pipeline import lauf as engine
         ergebnis = engine(cfg_pfad=cfg_pfad, modus=auftrag["modus"],
-                          mit_spider=bool(auftrag["spider"]))
+                          mit_spider=auftrag["spider"])
     except Exception as exc:  # noqa: BLE001 - Auftrag scheitert, Arbeiter lebt weiter
         db.ereignis("fehler", "Lauf", f"Auftrag {lauf_id} abgebrochen: {exc}")
         scheitern(db, lauf_id, f"{type(exc).__name__}: {exc}")
-        return {"id": lauf_id, "status": FEHLER}
-    zusammenfassung = _zusammenfassung(ergebnis)
-    abschliessen(db, lauf_id, zusammenfassung)
-    return {"id": lauf_id, "status": FERTIG, **zusammenfassung}
+        return lauf_id
+    abschliessen(db, lauf_id, _zusammenfassung(ergebnis))
+    return lauf_id
 
 
 class LaufWorker(threading.Thread):
-    """Daemon-Thread: nimmt Aufträge aus der Warteschlange, bis er gestoppt wird."""
+    """Daemon-Thread: arbeitet die Warteschlange ab, bis er gestoppt wird."""
 
     def __init__(self, cfg_pfad: str, db: Facts, intervall: float = 1.0) -> None:
         super().__init__(daemon=True, name="orakel-lauf-arbeiter")
@@ -217,20 +214,16 @@ class LaufWorker(threading.Thread):
         self._stopp = threading.Event()
 
     def run(self) -> None:  # pragma: no cover - Zeitverhalten
+        # Einmal beim Start: Absturzreste zurück in die Warteschlange. Nicht in
+        # der Schleife, sonst reiht ein laufender Auftrag sich selbst ein.
+        zuruecksetzen(self.db)
         while not self._stopp.is_set():
             try:
-                self.aufraeumen()
-                self.verarbeite()
+                verwerfe_haengende(self.db)
+                verarbeite_einen(self.db, self.cfg_pfad)
             except Exception as exc:  # noqa: BLE001 - Arbeiter darf nicht sterben
                 self.db.ereignis("fehler", "Lauf", f"Arbeiter gestört: {exc}")
             self._stopp.wait(self.intervall)
-
-    def aufraeumen(self) -> list[int]:
-        """Verwirft Aufträge, die ein abgestürzter Arbeiter hängen liess."""
-        return verwerfe_haengende(self.db)
-
-    def verarbeite(self) -> dict[str, Any] | None:
-        return verarbeite_einen(self.cfg_pfad, db=self.db)
 
     def stoppe(self) -> None:
         self._stopp.set()

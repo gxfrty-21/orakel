@@ -41,7 +41,8 @@ from .nexus.quellen import lade_register
 from .nexus.raum import raum_daten
 from .nexus.status import gesamt_status
 from .kern.paper import tick
-from .lauf_queue import LaufWorker, anlegen_wenn_frei as lauf_anlegen, stand as lauf_stand
+from .lauf_queue import (OFFEN, LaufWorker, anlegen_wenn_frei as lauf_anlegen,
+                         stand as lauf_stand)
 from .report import baue_bericht
 from .scheduler import Takt, _kontext
 from .spider import Spider
@@ -733,17 +734,14 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False,
         ist dann ``409`` und enthält die ID des offenen oder aktiven Laufs,
         damit die Oberfläche an ihn anknüpfen kann.
         """
-        db = Facts(konfig.db_pfad)
-        lauf_id, neu = lauf_anlegen(db, modus=modus, spider=spider)
-        if not neu:
-            bestehend = lauf_stand(db, lauf_id) or {}
+        lauf_id, blockiert = lauf_anlegen(Facts(konfig.db_pfad), modus=modus, spider=spider)
+        if blockiert is not None:
             return JSONResponse(
-                {"ok": False, "id": lauf_id,
-                 "status": bestehend.get("status", "offen"),
+                {"ok": False, "id": lauf_id, "status": blockiert,
                  "fehler": "Ein Lauf ist bereits offen oder aktiv"},
                 status_code=409,
             )
-        return JSONResponse({"ok": True, "id": lauf_id, "status": "offen"},
+        return JSONResponse({"ok": True, "id": lauf_id, "status": OFFEN},
                             status_code=202)
 
     @app.get("/api/lauf/{lauf_id}")
