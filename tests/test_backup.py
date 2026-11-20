@@ -23,7 +23,7 @@ def _modul():
 
 
 def _db(tmp_path: Path) -> Path:
-    from orakel.db import Facts
+    from orakel.kern.db import Facts
 
     pfad = tmp_path / "orakel.db"
     db = Facts(pfad)
