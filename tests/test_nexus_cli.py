@@ -1,6 +1,7 @@
 """Der ``--db``-Standard der nexus-CLI kommt aus der Konfiguration."""
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,8 +20,9 @@ def test_ohne_db_kommt_der_pfad_aus_config_und_umgebung(monkeypatch):
 
     assert cli._db_pfad(None) == str(load_config("config.toml").db_pfad)
 
-    monkeypatch.setenv("ORAKEL_DB_PFAD", "/tmp/probe.db")
-    assert cli._db_pfad(None) == "/tmp/probe.db"
+    probe = str(Path(tempfile.gettempdir()) / "probe.db")
+    monkeypatch.setenv("ORAKEL_DB_PFAD", probe)
+    assert cli._db_pfad(None) == probe
 
 
 def test_orakel_config_nennt_die_konfiguration_im_container(monkeypatch):

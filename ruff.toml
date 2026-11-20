@@ -40,3 +40,8 @@ select = ["BLE001", "S110", "S"]
 "scripts/soak_auto_abnahme.py" = ["BLE001", "S110"]
 "scripts/soak_monitor.py" = ["BLE001", "S110"]
 "scripts/soak_probe.py" = ["BLE001", "S110"]
+# Der Paket-Builder ruft ausschliesslich feste Unterbefehle (`git show`,
+# `git rev-parse`) und `sys.executable -m pytest` ohne Nutzereingaben auf und
+# laedt nur URLs, die er selbst aus ``API_BASIS`` zusammensetzt; Schemata und
+# Argumente sind damit nicht von aussen steuerbar.
+"scripts/baue_review_paket.py" = ["S603", "S607", "S310"]
