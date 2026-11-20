@@ -5,6 +5,16 @@ PORT="${PORT:-3000}"
 DATA="${ORAKEL_DATA:-/data}"
 CONFIG="${ORAKEL_CONFIG:-/app/config.toml}"
 
+# Fail-closed: Der Container bindet 0.0.0.0. Ohne Login startet der Server nicht.
+if [ "${ORAKEL_ALLOW_NO_AUTH:-0}" != "1" ] \
+   && { [ -z "${ORAKEL_AUTH_USER:-}" ] || [ -z "${ORAKEL_AUTH_PASS:-}" ]; }; then
+  echo "orakel-entrypoint: FEHLER: ORAKEL_AUTH_USER und ORAKEL_AUTH_PASS muessen gesetzt sein." >&2
+  echo "orakel-entrypoint: Der Container bindet 0.0.0.0; ohne Login bricht der Server ab (fail-closed)." >&2
+  echo "orakel-entrypoint: Docker: beide Werte in .env, Railway: Service-Variablen setzen." >&2
+  echo "orakel-entrypoint: Nur fuer die Entwicklung: ORAKEL_ALLOW_NO_AUTH=1." >&2
+  exit 1
+fi
+
 mkdir -p "$DATA/daten" "$DATA/vault"
 
 export ORAKEL_DB_PFAD="${ORAKEL_DB_PFAD:-$DATA/orakel.db}"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prüft relative Markdown-Links, Pflichtverweise, Markdown- und HTML-Anker, alte Schiffsbegriffe und englische Altnamen der Agentenabteilungen.
+"""Prüft relative Markdown-Links, Pflichtverweise, Markdown- und HTML-Anker, alte Schiffsbegriffe, englische Altnamen der Agentenabteilungen und feste --db-Pfade in Befehlsblöcken.
 
 Der Lauf ist bewusst ohne Zusatzpakete nutzbar, damit er in der CI schnell
 bleibt. Relative Pfade werden vom jeweiligen Dokument aus aufgelöst. Bei
@@ -84,6 +84,11 @@ REFERENZ_KURZ = re.compile(r"(?<![!\]])\[([^\]]+)\](?!\s*:)(?![\[(])")
 HTML_LINK = re.compile(
     r"\b(?:href|src)\s*=\s*[\"']([^\"']+)[\"']", re.IGNORECASE
 )
+# Ein fester Datenbankpfad im Befehl umgeht die Konfiguration; dokumentiert
+# wird der Befehl ohne --db oder mit dem Pfad, den die Umgebung vorgibt. Nur
+# das literale Argument «orakel.db» zählt: absolute Betriebspfade wie
+# /data/orakel.db und Dateinamen wie orakel.db.vor-umbau bleiben erlaubt.
+FESTER_DB_PFAD = re.compile(r"--db(?:=|[ \t]+)orakel\.db(?![.\w-])")
 FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})")
 ATX_HEADING = re.compile(r"^[ \t]{0,3}(#{1,6})[ \t]+(.*?)(?:[ \t]+#+[ \t]*)?$")
 SETEXT_HEADING = re.compile(r"^[ \t]{0,3}(=+|-+)[ \t]*$")
@@ -133,6 +138,27 @@ def _maskiere_fenced(text: str) -> str:
         else:
             zeilen.append(zeile)
     return "".join(zeilen)
+
+
+def _fenced_zeilen(text: str):
+    """Liefert (Zeilennummer, Zeile) für Zeilen innerhalb von Fenced Code.
+
+    Die Zeilen mit den Zaunmarken selbst gehören nicht dazu; die Erkennung
+    entspricht ``_maskiere_fenced``.
+    """
+    fence: str | None = None
+    fence_laenge = 0
+    for nummer, zeile in enumerate(text.splitlines(), 1):
+        treffer = FENCE.match(zeile)
+        if fence is None and treffer:
+            fence = treffer.group(1)[0]
+            fence_laenge = len(treffer.group(1))
+            continue
+        if fence is not None:
+            if treffer and treffer.group(1)[0] == fence and len(treffer.group(1)) >= fence_laenge:
+                fence = None
+                continue
+            yield nummer, zeile
 
 
 def _maskiere_kommentare(text: str) -> str:
@@ -378,8 +404,8 @@ def _doku_dateien(root: Path) -> list[Path]:
     """Versionierte Markdown-Dateien; der Vault ist generiert und zählt nicht."""
     if (root / ".git").exists():
         try:
-            roh = subprocess.check_output(
-                ["git", "-C", str(root), "ls-files", "-z", "--", "*.md"],
+            roh = subprocess.check_output(  # noqa: S603 - Programmaufruf mit fester Argumentliste, ohne Shell
+                ["git", "-C", str(root), "ls-files", "-z", "--", "*.md"],  # noqa: S607 - Programmname und Argumente sind fest verdrahtet
                 stderr=subprocess.DEVNULL,
             )
             return sorted(root / p for p in roh.decode("utf-8").split("\0") if p)
@@ -427,6 +453,11 @@ def pruefe(root: Path) -> tuple[list[Path], int, int, list[str]]:
                 for muster, name in ENGLISCHE_ALTNAMEN:
                     if muster.search(zeile):
                         befunde.append(f"{rel}:{nummer}: englischer Altname der Agentenabteilung «{name}»")
+
+        for nummer, zeile in _fenced_zeilen(text):
+            if FESTER_DB_PFAD.search(zeile):
+                befunde.append(
+                    f"{rel}:{nummer}: fester Datenbankpfad «orakel.db» als --db-Argument")
     befunde.extend(_pruefe_pflicht_verweise(root))
     return dateien, link_anzahl, anker_anzahl, befunde
 
@@ -453,6 +484,30 @@ def negativtest() -> int:
         )
         (root / "docs" / "pr-schutz.md").write_text(
             "# Schutz von `main`\n",
+            encoding="utf-8",
+        )
+        # Treffer und Nichttreffer der --db-Regel: nur das literale Argument
+        # «orakel.db» in einem Befehlsblock ist ein Befund. Absolute Pfade,
+        # andere Befehle, Inline-Code und das Fehlen von --db bleiben still.
+        (root / "docs" / "befehle.md").write_text(
+            "# Befehle\n"
+            "\n"
+            "```bash\n"
+            "python -m orakel.nexus status --db orakel.db\n"
+            "python -m orakel.nexus nacht --db=orakel.db\n"
+            "```\n"
+            "\n"
+            "```bash\n"
+            "python -m orakel.nexus status --db /data/orakel.db\n"
+            "cp orakel.db orakel.db.vor-umbau\n"
+            "python -m orakel.nexus status\n"
+            "```\n"
+            "\n"
+            "Prosa mit `--db orakel.db` im Inline-Code ist kein Befund.\n"
+            "\n"
+            "~~~\n"
+            "docker compose exec orakel python -m orakel.nexus status --db orakel.db\n"
+            "~~~\n",
             encoding="utf-8",
         )
         (root / "README.md").write_text(
@@ -511,6 +566,7 @@ def negativtest() -> int:
         anker_fehler = [befund for befund in befunde if "Überschriften-Anker" in befund]
         begriff_fehler = [befund for befund in befunde if "veralteter Raumschiff- oder Navigationsbegriff" in befund]
         altnamen_fehler = [befund for befund in befunde if "englischer Altname der Agentenabteilung" in befund]
+        db_fehler = [befund for befund in befunde if "fester Datenbankpfad" in befund]
         if (
             not link_fehler
             or pflicht_bei_vorhandenem_link
@@ -518,13 +574,14 @@ def negativtest() -> int:
             or len(anker_fehler) != 4
             or len(begriff_fehler) != 7
             or len(altnamen_fehler) != 9
+            or len(db_fehler) != 3
             or anker_anzahl < 1
         ):
             print(
                 "Dokutest FEHLGESCHLAGEN: erwartet wurden ein fehlender Link, "
                 "ein fehlender Pflichtverweis, vier falsche Anker, sieben "
-                "veraltete Begriffe, neun englische Altnamen und mindestens "
-                "ein gültiger Ankerlink, gefunden: "
+                "veraltete Begriffe, neun englische Altnamen, drei feste "
+                "--db-Pfade und mindestens ein gültiger Ankerlink, gefunden: "
                 f"{befunde_ohne_link or 'keine Befunde'} (gültige Ankerlinks: {anker_anzahl})",
                 file=sys.stderr,
             )
@@ -533,13 +590,14 @@ def negativtest() -> int:
             f"Dokutest OK: {len(dateien)} Dateien, {link_anzahl} relative Links, "
             f"{anker_anzahl} gültige Ankerlinks, fehlender Link, fehlender "
             "Pflichtverweis, vier falsche Anker, sieben veraltete Raumschiff- "
-            "und Navigationsbegriffe sowie neun englische Altnamen erkannt"
+            "und Navigationsbegriffe, neun englische Altnamen sowie drei feste "
+            "--db-Pfade erkannt"
         )
     return 0
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Prüft relative Doku-Links, Pflichtverweise, Markdown- und HTML-Anker, veraltete Raumschiff- und Navigationsbegriffe sowie englische Altnamen der Agentenabteilungen.")
+    parser = argparse.ArgumentParser(description="Prüft relative Doku-Links, Pflichtverweise, Markdown- und HTML-Anker, veraltete Raumschiff- und Navigationsbegriffe, englische Altnamen der Agentenabteilungen sowie feste --db-Pfade in Befehlsblöcken.")
     parser.add_argument("--root", type=Path, default=ROOT, help="Repository-Wurzel (Standard: Projektordner)")
     parser.add_argument("--negativtest", action="store_true", help="Prüft die Prüfung mit absichtlich falschen Doku-Daten")
     args = parser.parse_args()
@@ -562,7 +620,7 @@ def main() -> int:
     print(
         f"Doku OK: {len(dateien)} Dateien, {link_anzahl} relative Links, "
         f"{anker_anzahl} {anker_wort}, 0 veraltete Raumschiff- und "
-        "Navigationsbegriffe sowie 0 englische Altnamen geprüft"
+        "Navigationsbegriffe, 0 englische Altnamen sowie 0 feste --db-Pfade geprüft"
     )
     return 0
 

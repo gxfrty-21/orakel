@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator, Sequence
 
-from ..db import Facts
+from ..kern.db import Facts
 from .policy import ERLAUBTE_TASK_TYPES
 from .roster import Profile, all_profiles
 
