@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 from datetime import timedelta
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -361,3 +362,59 @@ def test_takt_raeumt_in_der_ersten_runde_auf(cfg, monkeypatch):
         loop.join(timeout=2)
 
     assert aufgerufen                       # erste Runde räumt auf
+
+
+def test_takt_erinnert_in_der_ersten_runde(cfg, monkeypatch):
+    """Die Erinnerungen warten nicht auf die Laufzeit der Monotonic-Uhr.
+
+    ``monotonic()`` zählt ab dem Boot: Auf einem frisch gestarteten Rechner
+    (Container, CI) steht sie deshalb noch unter dem Erinnerungsintervall. Die
+    erste Runde muss trotzdem erinnern, so wie die Aufbewahrung auch.
+    """
+    db = Facts(cfg.db_pfad)
+    erinnert: list[int] = []
+    minuten = int(cfg.abschnitt("unternehmen").get(
+        "erinnerungen_intervall_minuten", 5))
+    frisch = max(1, minuten) * 60 / 2
+
+    class BetriebStub:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def takt(self, **_kwargs):
+            return {}
+
+    class MessagingStub:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def erinnere_offene_acks(self):
+            erinnert.append(1)
+
+    from orakel.company import messaging, store
+
+    monkeypatch.setattr(scheduler, "Betrieb", BetriebStub)
+    monkeypatch.setattr(store, "CompanyStore", lambda *a, **k: None)
+    monkeypatch.setattr(messaging, "MessagingService", MessagingStub)
+    monkeypatch.setattr(scheduler, "raeume_auf", lambda db, **_k: [])
+    monkeypatch.setattr(scheduler, "verwerfe_haengende", lambda db, **_k: [])
+    monkeypatch.setattr(scheduler, "verarbeite_einen",
+                        lambda db, cfg_pfad="unbenutzt.toml", engine=None: None)
+    # Nur der Scheduler sieht die frische Uhr; threading und die Testschleife
+    # messen weiter mit der echten Monotonic-Uhr.
+    monkeypatch.setattr(scheduler, "time",
+                        SimpleNamespace(monotonic=lambda: frisch))
+
+    loop = scheduler.Takt(cfg, db, cfg_pfad="unbenutzt.toml", takt_aktiv=True)
+    loop.start()
+    grenze = time.monotonic() + 5
+    try:
+        while time.monotonic() < grenze:
+            if erinnert:
+                break
+            time.sleep(0.05)
+    finally:
+        loop.stoppe()
+        loop.join(timeout=2)
+
+    assert erinnert, f"erste Runde blieb bei monotonic()={frisch} stumm"
