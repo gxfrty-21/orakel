@@ -225,6 +225,88 @@ def cmd_stopp_aufheben(args: argparse.Namespace) -> int:
     return 0
 
 
+def _migrationsstaende(nummern: list[int], bekannt: dict[int, object]) -> str:
+    """Nummern als lesbare Liste, mit Name, wo die Migration bekannt ist."""
+    if not nummern:
+        return "keine"
+    return ", ".join(
+        f"{nummer:04d}_{getattr(bekannt[nummer], 'name', '')}" if nummer in bekannt
+        else f"{nummer:04d}"
+        for nummer in nummern)
+
+
+def cmd_migration(args: argparse.Namespace) -> int:
+    """Stand der Schema-Migrationen zeigen oder bis zu einer Nummer zurückrollen.
+
+    ``--status`` liest nur. ``--zurueck N`` rollt alles über ``N`` zurück und
+    verlangt ``--bestaetigen``; ohne den Schalter wird nur der Plan gezeigt und
+    nichts geändert. Der Datenbankpfad kommt aus ``config.toml``;
+    ``ORAKEL_DB_PFAD`` sticht ihn. Die Funktion fasst bewusst kein ``Facts`` an:
+    Das würde beim Öffnen die Migrationen sofort wieder anwenden.
+    """
+    from .kern import migrationen
+
+    if args.status and args.zurueck is not None:
+        print("--status und --zurueck schliessen sich aus.", file=sys.stderr)
+        return 1
+    if not args.status and args.zurueck is None:
+        print("Bitte --status oder --zurueck N angeben.", file=sys.stderr)
+        return 1
+
+    pfad = Path(_cfg(args.config).db_pfad)
+    if not pfad.exists():
+        # Rein lesend: ``angewendet()`` würde die Datei per sqlite3 anlegen.
+        print(f"orakel: Keine Datenbank unter {pfad} — keine Migrationen angewendet.",
+              file=sys.stderr)
+        return 1
+
+    bekannt = {m.nummer: m for m in migrationen.dateien()}
+    stand = migrationen.angewendet(pfad)
+    print(f"orakel: Datenbank {pfad}")
+    print(f"orakel: Stand {_migrationsstaende(stand, bekannt)}")
+
+    if args.status:
+        offen = [nummer for nummer in sorted(bekannt) if nummer not in stand]
+        print(f"orakel: Offen {_migrationsstaende(offen, bekannt)}")
+        return 0
+
+    zurueck = sorted((nummer for nummer in stand if nummer > args.zurueck),
+                     reverse=True)
+    if not zurueck:
+        print(f"orakel: Nichts zu tun — der Stand ist nicht über {args.zurueck:04d}.")
+        return 0
+    print(f"orakel: Geplant {_migrationsstaende(zurueck, bekannt)} "
+          f"(zurückrollen bis {args.zurueck:04d})")
+    ohne_down = [nummer for nummer in zurueck
+                 if bekannt.get(nummer) is None or bekannt[nummer].runter is None]
+    if ohne_down:
+        print("orakel: Kein Downgrade hinterlegt für "
+              + ", ".join(f"{nummer:04d}" for nummer in ohne_down), file=sys.stderr)
+        print("orakel: Nichts geändert.", file=sys.stderr)
+        return 1
+    if not args.bestaetigen:
+        print("orakel: Nichts geändert — nur nach Prüfung mit --bestaetigen ausführen.",
+              file=sys.stderr)
+        return 1
+
+    try:
+        ergebnis = migrationen.zurueckrollen(pfad, bis=args.zurueck)
+    except migrationen.MigrationsFehler as fehler:
+        # Jeder Schritt committet einzeln; ein Abbruch mitten im Lauf kann den
+        # Stand also bereits verändert haben. Deshalb kein «nichts geändert».
+        print(f"orakel: Rückrollen abgebrochen: {fehler}", file=sys.stderr)
+        print("orakel: Stand bitte mit «orakel migration --status» prüfen.",
+              file=sys.stderr)
+        return 1
+
+    zurueckgerollt = [int(nummer) for nummer in ergebnis["zurueckgerollt"] or []]
+    print(f"orakel: Zurückgerollt {_migrationsstaende(zurueckgerollt, bekannt)}")
+    print(f"orakel: Sicherung {ergebnis['backup']}")
+    print(f"orakel: Neuer Stand "
+          f"{_migrationsstaende(migrationen.angewendet(pfad), bekannt)}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="orakel", description="Orakel Trading-Engine (Paper only)")
     p.add_argument("--config", default="config.toml")
@@ -279,6 +361,15 @@ def main(argv: list[str] | None = None) -> int:
     sa = sub.add_parser("stopp-aufheben", help="Handelsstopp nach Prüfung aufheben")
     sa.add_argument("--bestaetigen", action="store_true")
     sa.set_defaults(func=cmd_stopp_aufheben)
+
+    mi = sub.add_parser("migration", help="Schema-Migrationen anzeigen oder zurückrollen")
+    mi.add_argument("--status", action="store_true",
+                    help="Stand und offene Migrationen anzeigen (ändert nichts)")
+    mi.add_argument("--zurueck", type=int, metavar="N",
+                    help="Migrationen über Nummer N zurückrollen")
+    mi.add_argument("--bestaetigen", action="store_true",
+                    help="Rückrollen wirklich ausführen")
+    mi.set_defaults(func=cmd_migration)
 
     args = p.parse_args(argv)
     return int(args.func(args))
