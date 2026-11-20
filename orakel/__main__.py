@@ -95,7 +95,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
     takt = bool(args.takt) or os.environ.get("ORAKEL_TAKT", "").strip().lower() in {
         "1", "true", "yes", "on",
     }
-    app = create_app(args.config, takt=takt)
+    app = create_app(args.config, takt=takt, host=args.host)
+    login = "aktiv" if os.environ.get("ORAKEL_AUTH_USER", "").strip() else "aus (nur Loopback)"
+    print(f"orakel: Dashboard auf {args.host}:{args.port}, Login {login}", flush=True)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     return 0
 
@@ -280,7 +282,10 @@ def main(argv: list[str] | None = None) -> int:
     pr.set_defaults(func=cmd_pruefen)
 
     s = sub.add_parser("serve", help="Dashboard im Browser starten")
-    s.add_argument("--host", default="0.0.0.0")  # noqa: S104 - Server soll im Container auf allen Schnittstellen lauschen
+    # Ohne Zugangsdaten nur Loopback; Container setzen 0.0.0.0 ausdruecklich
+    # (docker-entrypoint.sh) und brauchen dafuer ORAKEL_AUTH_USER/PASS.
+    s.add_argument("--host", default="127.0.0.1",
+                   help="Bindeadresse (Standard 127.0.0.1; Container: 0.0.0.0)")
     s.add_argument("--port", type=int, default=8000)
     s.add_argument("--takt", action="store_true", help="Paper-Takt im Hintergrund starten")
     s.set_defaults(func=cmd_serve)

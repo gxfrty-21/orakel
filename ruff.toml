@@ -45,3 +45,6 @@ select = ["BLE001", "S110", "S"]
 # laedt nur URLs, die er selbst aus ``API_BASIS`` zusammensetzt; Schemata und
 # Argumente sind damit nicht von aussen steuerbar.
 "scripts/baue_review_paket.py" = ["S603", "S607", "S310"]
+# Der Auth-Test startet den Server bewusst auf 0.0.0.0 und als echten Prozess,
+# um die fail-closed-Sperre zu pruefen; beides ist Testabsicht.
+"tests/test_web.py" = ["S101", "S104", "S603", "S607"]

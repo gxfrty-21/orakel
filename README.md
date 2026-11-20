@@ -156,6 +156,12 @@ wiederfinden. Clients prüfen deshalb `code`, nicht den Text.
 Fertige Docker-Konfiguration mit Caddy (automatisches TLS), HTTP-Basic-Login und
 persistentem SQLite-Speicher im `/data`-Volume: siehe [DEPLOY.md](DEPLOY.md).
 
+Der Container bindet `0.0.0.0`; `ORAKEL_AUTH_USER` und `ORAKEL_AUTH_PASS`
+sind deshalb **Pflicht**. Fehlen sie, bricht der Start mit
+`Start abgebrochen: Binde 0.0.0.0 ohne Login …` ab. Ohne Login läuft der
+Server nur lokal: `python -m orakel serve` (Standard `127.0.0.1`) oder
+bewusst mit `ORAKEL_ALLOW_NO_AUTH=1`.
+
 Für Railway ohne eigenen Server, Caddy oder eigene Domain: siehe
 [RAILWAY.md](RAILWAY.md).
 

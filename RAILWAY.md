@@ -358,8 +358,10 @@ einen neuen Railway-Service ist sie nicht die Quelle der Wahrheit.
    | `RAILWAY_RUN_UID` | `0` (siehe Sicherheit) |
 
    `ORAKEL_AUTH_USER` und `ORAKEL_AUTH_PASS` müssen **beide** gesetzt sein.
-   Fehlen sie, startet die App ohne Login-Schutz. Vor dem ersten Deploy
-   setzen.
+   Der Container bindet `0.0.0.0`; fehlen sie, bricht der Start ab
+   (fail-closed). Im Deploy-Log steht dann
+   `orakel-entrypoint: FEHLER: ORAKEL_AUTH_USER und ORAKEL_AUTH_PASS muessen gesetzt sein.`
+   Vor dem ersten Deploy setzen.
 
 4. **Settings:**
    - Healthcheck Path: `/api/health`

@@ -147,8 +147,37 @@ def _bericht(cfg: Config) -> dict[str, Any]:
     return bericht
 
 
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+WAHRE_WERTE = {"1", "true", "yes", "on"}
+
+
+def _startfreigabe(host: str | None) -> None:
+    """Ohne Zugangsdaten darf der Server nur auf Loopback lauschen (fail-closed).
+
+    Der Start auf einer externen Adresse ohne ``ORAKEL_AUTH_USER`` /
+    ``ORAKEL_AUTH_PASS`` würde alle Endpunkte offen ins Netz stellen. Eine
+    bewusste Ausnahme erlaubt ``ORAKEL_ALLOW_NO_AUTH=1``.
+    """
+    if os.environ.get("ORAKEL_AUTH_USER", "").strip():
+        return
+    if os.environ.get("ORAKEL_ALLOW_NO_AUTH", "").strip().lower() in WAHRE_WERTE:
+        return
+    if host is None:
+        return
+    if host.strip().lower() not in LOOPBACK_HOSTS:
+        raise RuntimeError(
+            f"Start abgebrochen: Binde {host} ohne Login waere oeffentlich "
+            "erreichbar.\n"
+            "ORAKEL_AUTH_USER und ORAKEL_AUTH_PASS setzen (Docker: .env, "
+            "Railway: Service-Variablen), oder nur lokal auf 127.0.0.1 "
+            "starten.\n"
+            "Bewusste Ausnahme fuer die Entwicklung: ORAKEL_ALLOW_NO_AUTH=1."
+        )
+
+
 def create_app(cfg_pfad: str = "config.toml", takt: bool = False,
-               hintergrund: bool = True) -> FastAPI:
+               host: str | None = None, hintergrund: bool = True) -> FastAPI:
+    _startfreigabe(host)
     # Konfiguration einmal je App laden; Endpunkte nutzen denselben Stand.
     konfig = load_config(cfg_pfad)
     takt_thread: Takt | None = None
@@ -196,6 +225,37 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False,
                     headers={"WWW-Authenticate": 'Basic realm="Orakel", charset="UTF-8"'},
                 )
             return await call_next(request)
+
+    # CSRF-Schutz: Browser senden bei schreibenden Anfragen Origin/Referer mit.
+    # Grundauthentifizierung wird automatisch angehängt, deshalb muss die
+    # Herkunft geprüft werden, bevor eine POST-Route wirkt.
+    erlaubte_herkuenfte = {
+        eintrag.strip().rstrip("/")
+        for eintrag in os.environ.get("ORAKEL_ERLAUBTE_ORIGINS", "").split(",")
+        if eintrag.strip()
+    }
+
+    @app.middleware("http")
+    async def _herkunft(request: Request, call_next):
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            herkunft = (
+                request.headers.get("origin")
+                or request.headers.get("referer")
+                or ""
+            ).rstrip("/")
+            if herkunft:
+                basis = f"{request.url.scheme}://{request.url.netloc}"
+                erlaubt = {basis} | erlaubte_herkuenfte
+                if not any(
+                    herkunft == eintrag or herkunft.startswith(eintrag + "/")
+                    for eintrag in erlaubt
+                ):
+                    return JSONResponse(
+                        {"ok": False, "fehler": "Ungueltige Herkunft",
+                         "code": "herkunft_abgelehnt"},
+                        status_code=403,
+                    )
+        return await call_next(request)
 
     @app.get("/")
     def index() -> FileResponse:
