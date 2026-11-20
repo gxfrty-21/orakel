@@ -112,10 +112,37 @@ sind.
 
 ## Backup und Wiederherstellung
 
-Backup bei gestoppter App, damit die Datenbank konsistent ist:
+Die Datenbank läuft im WAL-Modus. Eine einfache Dateikopie kann deshalb
+unvollständig sein; das Skript nutzt den Online-Backup von SQLite, der auch
+bei laufender App konsistent ist:
 
 ```bash
-mkdir -p backups
+docker compose run --rm -T --entrypoint python orakel \
+  /app/scripts/pruefe_backup.py --db /data/orakel.db --ordner /data/backups
+```
+
+Aufbewahrung: 7 Tagesstände, sonntags zusätzlich ein Wochenstand, davon die
+letzten 4. Ältere Dateien entfernt das Skript. Als täglicher Cronjob:
+
+```cron
+15 3 * * * cd /srv/orakel && docker compose run --rm -T --entrypoint python \
+  orakel /app/scripts/pruefe_backup.py --db /data/orakel.db --ordner /data/backups
+```
+
+Nach jeder Sicherung prüft `PRAGMA integrity_check` die Datei. Die
+Wiederherstellung wird gegen die laufende Datenbank verglichen (Zeilenzahlen
+aller Tabellen):
+
+```bash
+docker compose run --rm -T --entrypoint python orakel \
+  /app/scripts/pruefe_backup.py --db /data/orakel.db --ordner /data/backups --pruefen
+```
+
+Exit 0 heisst: Integrität `ok` und alle Zeilenzahlen stimmen überein. Für den
+Umzug auf einen anderen Server weiterhin das komplette Volume archivieren
+(bei gestoppter App):
+
+```bash
 docker compose stop orakel
 docker compose run --rm --no-deps -T --entrypoint sh orakel \
   -c "tar czf - -C /data ." > "backups/orakel-$(date +%F-%H%M).tar.gz"
@@ -140,6 +167,10 @@ selbst.
 git pull
 docker compose up -d --build
 ```
+
+Das Basis-Image im `Dockerfile` ist auf einen Digest gepinnt. Ein
+Python-Update ist damit eine bewusste Änderung im `Dockerfile`, kein
+Zufallsergebnis des nächsten Builds.
 
 Das Daten-Volume bleibt erhalten. Nach Änderungen an der `.env` den App-Container
 neu erzeugen:
