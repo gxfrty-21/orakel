@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from orakel.db import Facts
+from orakel.kern.db import Facts
 from orakel.nexus.graph import graph_auffrischen, graph_daten
 
 ZEIT = "2026-11-10T05:00:00+00:00"

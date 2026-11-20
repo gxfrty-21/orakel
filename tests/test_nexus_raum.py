@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from orakel.db import Facts
+from orakel.kern.db import Facts
 from orakel.nexus.missionen import Missionen
 from orakel.nexus.raum import raum_daten
 

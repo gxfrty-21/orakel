@@ -34,7 +34,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from .config import Config, RisikoGrenzen
+from ..config import Config, RisikoGrenzen
 from .data import df_aus_db
 from .db import Facts, jetzt
 from .markt import korrelation_max
@@ -303,12 +303,12 @@ def tick(cfg: Config, db: Facts, zeitpunkt: datetime | None = None) -> dict[str,
         symbol = p["symbol"]
         df = daten.get(symbol)
         problem = datenprobleme.get(symbol)
-        if problem is not None:
+        if df is None or problem is not None:
             # Der Stop braucht keine 30 Kerzen — aber eine Kerze. Ohne gültige
             # Kerze wird nichts geschlossen und nichts erfunden.
             db.ereignis(
                 "warnung", "Trading Floor",
-                f"{symbol}: keine belastbaren Kurse ({problem}); "
+                f"{symbol}: keine belastbaren Kurse ({problem or 'keine Kerzen geladen'}); "
                 "Position bleibt offen, Einstiege gesperrt",
             )
             gesperrt.add(symbol)
