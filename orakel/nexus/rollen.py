@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from ..db import Facts
+from ..kern.db import Facts
 
 STATUS_ERLAUBT = {"bestätigt", "teilweise", "unbestätigt", "widersprüchlich"}
 BEFUND = Callable[[dict[str, Any]], list[dict[str, Any]]]

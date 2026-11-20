@@ -129,8 +129,11 @@ gespeicherte Meldungen zu verlieren.
 Manuell neu berechnen:
 
 ```bash
-python -m orakel.nexus bewertung --db orakel.db
+python -m orakel.nexus bewertung
 ```
+
+Den Datenbankpfad nimmt der Befehl aus `config.toml` (`[basis] db_pfad`);
+`ORAKEL_DB_PFAD` sticht ihn. `--db` ist nur für einen anderen Bestand nötig.
 
 ---
 

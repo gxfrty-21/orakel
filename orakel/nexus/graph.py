@@ -18,7 +18,7 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from ..db import Facts
+from ..kern.db import Facts
 
 ZEITRAEUME: dict[str, int | None] = {
     "24h": 1,

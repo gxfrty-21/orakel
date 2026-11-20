@@ -36,7 +36,11 @@ aktualisiert. Nach größeren Datenständen neu bauen:
 ```bash
 python3 - <<'PY'
 import sqlite3
-src = sqlite3.connect("file:orakel.db?mode=ro", uri=True)
+from orakel.config import load_config
+
+# [basis] db_pfad aus config.toml; ORAKEL_DB_PFAD sticht ihn.
+db = load_config("config.toml").db_pfad
+src = sqlite3.connect(f"{db.resolve().as_uri()}?mode=ro", uri=True)
 dst = sqlite3.connect("seed/orakel-seed.db")
 with dst:
     src.backup(dst)

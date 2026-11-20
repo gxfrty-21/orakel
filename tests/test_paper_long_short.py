@@ -12,8 +12,8 @@ import json
 import pandas as pd
 import pytest
 
-from orakel.db import Facts
-from orakel.paper import _equity, _positionswert, kurs_max_alter_stunden, tick
+from orakel.kern.db import Facts
+from orakel.kern.paper import _equity, _positionswert, kurs_max_alter_stunden, tick
 
 from test_paper_datenqualitaet import baue_df, ende_jetzt
 

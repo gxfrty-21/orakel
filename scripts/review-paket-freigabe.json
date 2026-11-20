@@ -63,7 +63,7 @@
       "ziel": "dateien/code/config.py"
     },
     {
-      "quelle": "orakel/db.py",
+      "quelle": "orakel/kern/db.py",
       "ziel": "dateien/code/db.py"
     },
     {
@@ -143,7 +143,7 @@
       "ziel": "dateien/code/nexus/status.py"
     },
     {
-      "quelle": "orakel/paper.py",
+      "quelle": "orakel/kern/paper.py",
       "ziel": "dateien/code/paper.py"
     },
     {

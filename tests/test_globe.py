@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
-from orakel.db import Facts
+from orakel.kern.db import Facts
 from orakel.globe import _kanal, _thema, baue_globe
 
 
