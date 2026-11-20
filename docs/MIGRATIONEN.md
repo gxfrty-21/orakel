@@ -90,12 +90,20 @@ im Bestand, entsteht sie beim Start leer.
 ## Stand und Rückweg
 
 ```bash
-# Stand anzeigen
-.venv/bin/python -c "from orakel.kern import migrationen; print(migrationen.angewendet('orakel.db'))"
+# Stand anzeigen (Pfad aus config.toml)
+.venv/bin/python -c "import sys; from orakel.config import load_config; from orakel.kern import migrationen; print(migrationen.angewendet(load_config(sys.argv[1]).db_pfad))" config.toml
 
-# Auf Stand 0002 zurückrollen (führt 0003_*.down.sql aus)
-.venv/bin/python -c "from orakel.kern import migrationen; print(migrationen.zurueckrollen('orakel.db', bis=2))"
+# Auf Stand 0002 zurückrollen (führt 0003_*.down.sql aus, legt vorher eine Sicherung an)
+.venv/bin/python -c "import sys; from orakel.config import load_config; from orakel.kern import migrationen; print(migrationen.zurueckrollen(load_config(sys.argv[1]).db_pfad, bis=2))" config.toml
 ```
+
+Beide Beispiele lesen den Pfad aus `[basis] db_pfad` in `config.toml`;
+`ORAKEL_DB_PFAD` sticht ihn. `orakel.db` steht dort nicht mehr fest im Befehl:
+Ein anderer Bestand läuft über eine andere Konfigurationsdatei oder über die
+Umgebungsvariable. Vorher auf einer Kopie üben:
+`cp orakel.db /tmp/probe.db` und dann
+`ORAKEL_DB_PFAD=/tmp/probe.db .venv/bin/python -c "…" config.toml` mit dem
+Befehl von oben.
 
 Der Rückweg löscht Daten der betroffenen Migrationen. Fehlt eine
 `.down.sql`-Datei, bricht `zurueckrollen()` ab, **bevor** etwas geändert wird,
