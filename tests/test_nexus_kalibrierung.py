@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from orakel.db import Facts
+from orakel.kern.db import Facts
 from orakel.nexus.kalibrierung import (
     kalibrierung_auffrischen,
     kalibrierung_statistik,

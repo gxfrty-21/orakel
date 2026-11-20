@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from orakel.betrieb import Betrieb, betrieb_health
-from orakel.db import Facts
+from orakel.kern.db import Facts
 
 START = datetime(2026, 11, 10, 0, 0, tzinfo=timezone.utc)
 

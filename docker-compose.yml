@@ -6,6 +6,9 @@ services:
     environment:
       PORT: "3000"
       ORAKEL_DATA: /data
+      # Die nexus-Unterbefehle lesen dieselbe Konfiguration wie der Dienst;
+      # docker compose exec erbt diese Variable.
+      ORAKEL_CONFIG: /app/config.toml
       # Für den DNS/TLS-Check des Nachtlaufs im Container.
       ORAKEL_DOMAIN: ${ORAKEL_DOMAIN:-}
       ORAKEL_AUTH_USER: ${ORAKEL_AUTH_USER:?ORAKEL_AUTH_USER fehlt in .env}

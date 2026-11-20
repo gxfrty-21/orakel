@@ -409,14 +409,17 @@ Die App vorher stoppen, damit SQLite keine offene WAL-Datei hat. Dann die
 Dateien in das Volume hochladen:
 
 ```bash
-railway volume files upload ./orakel.db /orakel.db
+# lokale Datei aus config.toml ([basis] db_pfad), ORAKEL_DB_PFAD sticht ihn;
+# der Zielpfad im Volume bleibt /orakel.db.
+DB=$(python3 -c "from orakel.config import load_config; print(load_config('config.toml').db_pfad)")
+railway volume files upload "$DB" /orakel.db
 railway volume files upload ./vault /vault
 railway volume files upload ./daten /daten
 ```
 
 Alternativ `railway volume browse /` für den interaktiven Upload verwenden.
 Nach dem Start im Dashboard prüfen, ob die bisherigen Aufträge und Artikel
-sichtbar sind. Die lokale `orakel.db` ist per `.gitignore` vom Repository
+sichtbar sind. Die lokale Datenbankdatei ist per `.gitignore` vom Repository
 ausgeschlossen und wird nicht mitgebaut.
 
 ## Backup und Wiederherstellung

@@ -26,7 +26,7 @@ from typing import Any, Callable
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
-from .db import Facts, jetzt
+from .kern.db import Facts, jetzt
 from .knowledge import Vault
 
 MAX_BYTES = 2_000_000

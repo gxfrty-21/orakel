@@ -1,0 +1,29 @@
+# Architekturgrenze Orakel (Bereich 4.1).
+# Der Handelskern in orakel/kern darf nur sich selbst und die gemeinsame Basis
+# (orakel.config) importieren. Geprüft im CI-Job "architektur" und zusätzlich
+# von tests/test_architektur.py.
+[importlinter]
+root_package = orakel
+
+[importlinter:contract:kern_ohne_ui]
+name = Handelskern importiert keine UI-, Agenten- oder Betriebsmodule
+type = forbidden
+source_modules =
+    orakel.kern
+forbidden_modules =
+    orakel.web
+    orakel.__main__
+    orakel.agents
+    orakel.betrieb
+    orakel.company
+    orakel.globe
+    orakel.intel
+    orakel.knowledge
+    orakel.nexus
+    orakel.pipeline
+    orakel.report
+    orakel.scheduler
+    orakel.seed
+    orakel.sekretariat
+    orakel.spider
+    orakel.watchdog
