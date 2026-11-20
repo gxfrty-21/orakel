@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from orakel.db import Facts
+from orakel.kern.db import Facts
 from orakel.knowledge import Vault
 from orakel.spider import Spider, _qualitaet, _symbole_erkennen
 

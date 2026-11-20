@@ -8,7 +8,7 @@ import os
 import sys
 
 from ..config import load_config
-from ..db import Facts
+from ..kern.db import Facts
 from ..knowledge import Vault
 from .abruf import Abrufer, HttpCache
 from .bewertung import claims_auffrischen

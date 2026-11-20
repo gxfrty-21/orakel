@@ -10,15 +10,15 @@ import pandas as pd
 
 from . import agents as agenten
 from .config import Config, RisikoGrenzen, load_config
-from .data import df_aus_db, lade_csv, pruefe_daten, synthetische_kerzen
-from .db import Facts, jetzt
+from .kern.data import df_aus_db, lade_csv, pruefe_daten, synthetische_kerzen
+from .kern.db import Facts, jetzt
 from .intel import IntelNetz
-from .judge import beurteile_walk_forward, pruefe_holdout
+from .kern.judge import beurteile_walk_forward, pruefe_holdout
 from .knowledge import Vault
-from .markt import korrelation_max, markt_uebersicht
+from .kern.markt import korrelation_max, markt_uebersicht
 from .report import baue_bericht, schreibe_bericht
-from .risk import KontoZustand, Order, Risikomanager, positionsgroesse
-from .strategies import atr, strategien
+from .kern.risk import KontoZustand, Order, Risikomanager, positionsgroesse
+from .kern.strategies import atr, strategien
 
 SYMBOLE_STANDARD = ["EURUSD", "US500"]
 

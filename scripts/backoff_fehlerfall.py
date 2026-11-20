@@ -23,7 +23,7 @@ if str(ROOT) not in sys.path:
 
 from orakel.betrieb import Betrieb  # noqa: E402
 from orakel.config import load_config  # noqa: E402
-from orakel.db import Facts  # noqa: E402
+from orakel.kern.db import Facts  # noqa: E402
 
 START = datetime(2026, 11, 15, 0, 0, tzinfo=timezone.utc)
 BACKOFF_SEKUNDEN = 60

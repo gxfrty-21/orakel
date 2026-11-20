@@ -7,8 +7,8 @@ import sys
 import pandas as pd
 import pytest
 
-from orakel.db import Facts
-from orakel.paper import tick
+from orakel.kern.db import Facts
+from orakel.kern.paper import tick
 
 
 def steigende_kerzen(n: int = 400, start: float = 100.0) -> pd.DataFrame:

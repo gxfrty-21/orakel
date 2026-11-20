@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..db import Facts
+from ..kern.db import Facts
 from .abruf import HttpCache
 from .graph import graph_daten
 from .kalibrierung import kalibrierung_statistik
