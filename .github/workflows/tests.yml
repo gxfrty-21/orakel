@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   # Der Doku-Job wird nur bei Markdown- oder Prüfskript-Änderungen gestartet.
@@ -63,8 +64,54 @@ jobs:
           python -m pip install -r requirements-dev.txt
 
       # Als Modul aufrufen, damit das Repo-Root für "import orakel" im Pfad liegt.
+      # Protokoll und JUnit-XML werden als Artefakt an den Review-Job gegeben,
+      # damit die Suite nur einmal läuft.
       - name: Tests ausführen
-        run: python -m pytest -q
+        run: |
+          mkdir -p artifacts/pytest
+          set +e
+          python -m pytest -q tests --junitxml=artifacts/pytest/junit.xml 2>&1 \
+            | tee artifacts/pytest/pytest.log
+          code=${PIPESTATUS[0]}
+          echo "$code" > artifacts/pytest/exit_code
+          exit "$code"
+
+      - name: pytest-Evidenz hochladen
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pytest-evidenz
+          path: |
+            artifacts/pytest/pytest.log
+            artifacts/pytest/junit.xml
+            artifacts/pytest/exit_code
+          if-no-files-found: error
+          retention-days: 7
+
+  # Hält die Grenze aus Bereich 4.1: Der Handelskern (orakel/kern) darf
+  # nichts aus Web, Agenten, Nexus oder Betrieb importieren. Der Vertrag steht
+  # in .importlinter; zusätzlich prüft tests/test_architektur.py dasselbe ohne
+  # Zusatzpaket im normalen pytest-Lauf.
+  architektur:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Import-Linter installieren
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install import-linter==2.17
+
+      - name: Architekturverträge prüfen
+        run: lint-imports --verbose
 
   # Eigener sichtbarer Job: Prüft die versionierten Markdown-Dateien auf
   # relative Links, Markdown- und HTML-Anker, alte Raumschiff- und
@@ -97,8 +144,11 @@ jobs:
   # weil aus dem Commit in ein temporäres Verzeichnis gebaut wird.
   review_paket:
     name: Review-Paket
+    needs: pytest
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Repository auschecken
@@ -109,9 +159,23 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Freigabe, Kopien und ZIP prüfen
+      # Das Protokoll kommt aus dem pytest-Job: eine Testzahl aus einem echten
+      # Lauf, ohne die Suite ein zweites Mal zu starten. Skript und Doku-Prüfung
+      # sind stdlib-only, deshalb hier kein pip install.
+      - name: pytest-Evidenz übernehmen
+        uses: actions/download-artifact@v6
+        with:
+          name: pytest-evidenz
+          path: artifacts/pytest
+
+      # Fehlende Evidenz, ein fremder Exit-Code oder ein Widerspruch zwischen
+      # Protokoll und JUnit-Bericht ist ein Fehler.
+      - name: Freigabe, Kopien, Hashes, Testzahl und ZIP prüfen
         run: |
-          python scripts/baue_review_paket.py --pruefen
+          python scripts/baue_review_paket.py --pruefen --evidenz \
+            --pytest-log artifacts/pytest/pytest.log \
+            --pytest-exit-code artifacts/pytest/exit_code \
+            --junit artifacts/pytest/junit.xml
 
   # Stellt sicher, dass das Dockerfile inklusive Seed-DB weiterhin baut.
   docker:
@@ -699,3 +763,87 @@ jobs:
           path: artifacts/touch/*
           if-no-files-found: ignore
           retention-days: 7
+
+  # Qualitätstor aus Bereich 6.4: blinde Fänge (BLE001), stille
+  # Fehlerschlucker (S110) und die Sicherheitsregeln aus flake8-bandit (S).
+  # Die Regeln und die Schuldenliste des Altbestands stehen in ruff.toml;
+  # orakel/kern/, alle Tests und jedes neue Modul sind nicht ausgenommen.
+  ruff:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Lint-Regeln prüfen
+        run: python -m ruff check . --output-format=github
+
+  # Typprüfung des Handelskerns nach mypy.ini: paper, risk, backtest und judge
+  # samt der von ihnen importierten Kernmodule. Web, Agenten und Nexus bleiben
+  # bewusst aussen vor.
+  mypy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Handelskern typisieren
+        run: python -m mypy
+
+  # Untergrenze für die vier Module, die über Geld und Urteil entscheiden.
+  # Der Stand bei Einführung liegt bei 89 %; die Grenze von 85 % lässt kleinen
+  # Umbauten Luft, meldet aber jedes Absinken. Die Tests bleiben unverändert.
+  coverage:
+    name: Coverage Handelskern
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Coverage der vier Kernmodule messen
+        run: |
+          python -m pytest -q \
+            --cov=orakel.kern.paper --cov=orakel.kern.risk \
+            --cov=orakel.kern.backtest --cov=orakel.kern.judge \
+            --cov-report=term-missing --cov-fail-under=85

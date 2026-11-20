@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from orakel import sekretariat as sek
-from orakel.db import Facts
+from orakel.kern.db import Facts
 from orakel.knowledge import Vault
 
 

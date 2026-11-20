@@ -8,7 +8,7 @@ from hypothesis import HealthCheck, example, given, settings
 from paper_strategies import paper_erlaubt, paper_konfiguration
 from orakel.company import api
 from orakel.company.store import CompanyStore
-from orakel.db import Facts
+from orakel.kern.db import Facts
 
 
 def _store(cfg) -> tuple[Facts, CompanyStore]:

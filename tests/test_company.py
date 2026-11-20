@@ -13,7 +13,7 @@ from orakel.company.policy import ERLAUBTE_TASK_TYPES, CompanyPolicy, PolicyErro
 from orakel.company.roster import PROFILES, profile_by_id, validate_roster
 from orakel.company.runtime import TASK_TYPES, CompanyRuntime
 from orakel.company.store import CompanyStore, StoreError
-from orakel.db import Facts
+from orakel.kern.db import Facts
 
 
 def _db(cfg) -> Facts:
@@ -61,7 +61,8 @@ def test_migration_erhaelt_bestehende_daten(cfg):
     db.agenten_lauf("A1:Koordinator", "A", "Bestandsaufgabe", "altes Ergebnis", True)
 
     with db.conn() as c:
-        assert c.execute("PRAGMA user_version").fetchone()[0] == 1
+        # user_version spiegelt seit 4.3 die höchste angewendete Migration.
+        assert c.execute("PRAGMA user_version").fetchone()[0] >= 1
         tabellen = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"agent_profiles", "agent_tasks", "agent_events"} <= tabellen
 

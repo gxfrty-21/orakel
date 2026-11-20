@@ -119,7 +119,7 @@ class Vault:
             for pfad in sorted((self.wurzel / unter).glob("*.md")):
                 try:
                     text = pfad.read_text(encoding="utf-8")
-                except Exception as exc:
+                except (OSError, UnicodeDecodeError) as exc:
                     fehler.append(f"{pfad.name}: {exc}")
                     continue
                 titel = pfad.stem
@@ -223,8 +223,8 @@ class Vault:
             if m:
                 try:
                     titel = json.loads(m.group(1))
-                except Exception:
-                    pass
+                except (ValueError, TypeError):
+                    pass  # kein JSON-Titel: Dateiname bleibt der Titel
             m = re.search(r"^tags: \[(.*)\]$", text, re.M)
             if m:
                 tags = [t.strip() for t in m.group(1).split(",") if t.strip()]

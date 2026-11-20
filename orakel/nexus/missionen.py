@@ -17,7 +17,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
-from ..db import Facts
+from ..kern.db import Facts
 from ..knowledge import Vault
 from .gegenargument import lauf as gegenargumente_lauf
 from .rollen import lauf as rollen_lauf

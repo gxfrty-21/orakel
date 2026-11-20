@@ -20,7 +20,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from .config import Config
-from .db import Facts, jetzt
+from .kern.db import Facts, jetzt
 from .knowledge import Vault
 
 SCHWELLE_RELEVANZ = 0.45

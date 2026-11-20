@@ -34,7 +34,7 @@ from itertools import combinations
 from typing import Any, Iterable
 from urllib.parse import urlparse
 
-from ..db import Facts, jetzt
+from ..kern.db import Facts, jetzt
 from .graph import graph_auffrischen
 from .quellen import Quelle, lade_register
 

@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from orakel.config import Config
-from orakel.data import synthetische_kerzen
+from orakel.kern.data import synthetische_kerzen
 
 
 @pytest.fixture

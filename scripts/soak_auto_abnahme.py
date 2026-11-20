@@ -185,7 +185,7 @@ def main() -> int:
         print(log, end="", flush=True)
         return 1
 
-    proc = subprocess.run(
+    proc = subprocess.run(  # noqa: S603 - Programmaufruf mit fester Argumentliste, ohne Shell
         [sys.executable, str(ABNAHME), "--verzeichnis", str(ausgabe)],
         capture_output=True, text=True, check=False,
     )
