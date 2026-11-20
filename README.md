@@ -142,6 +142,15 @@ quittungspflichtig und werden über eigene
 `message_reminder`-Audit-Events genau einmal gezählt. Sie laufen im Company-Lauf
 und im Hintergrund-Takt; ein Lauf ohne offene Quittungen schreibt nichts.
 
+### Fehlerantworten
+
+Jede Fehlerantwort trägt `ok: false`, einen Text in `fehler` und einen stabilen
+`code`. Eingabefehler (`eingabe`) nennen den Grund im Klartext, weil der Text
+bewusst formuliert ist. Interne Fehler (`interner_fehler`) zeigen nur eine
+Fehler-ID im Text; der vollständige Ausnahmetext – samt Pfaden, SQL oder
+Konfigurationswerten – bleibt im Log und lässt sich über die ID dort
+wiederfinden. Clients prüfen deshalb `code`, nicht den Text.
+
 ## Dauerbetrieb mit Login und HTTPS
 
 Fertige Docker-Konfiguration mit Caddy (automatisches TLS), HTTP-Basic-Login und
