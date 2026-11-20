@@ -1,0 +1,279 @@
+"""Tests für die nummerierten Migrationen (Bereich 4.3)."""
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+
+import pytest
+
+from orakel.kern import migrationen
+
+ALLE = [m.nummer for m in migrationen.dateien()]
+
+
+def _tabellen(pfad: Path) -> set[str]:
+    c = sqlite3.connect(pfad)
+    try:
+        return {r[0] for r in c.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+    finally:
+        c.close()
+
+
+def test_leere_datenbank_wendet_alle_migrationen_an(tmp_path):
+    pfad = tmp_path / "leer.db"
+
+    ergebnis = migrationen.anwenden(pfad)
+
+    assert ergebnis["angewendet"] == ALLE
+    assert migrationen.angewendet(pfad) == ALLE
+    tabellen = _tabellen(pfad)
+    assert {"kerzen", "artikel", "agent_profiles", "schema_migrationen"} <= tabellen
+
+
+def test_teilstand_auf_0003_wendet_nur_die_neuere_migration_an(tmp_path):
+    """Eine DB auf Stand 0003 bekommt nur die danach hinzugekommene Migration."""
+    ordner = tmp_path / "migrationen"
+    ordner.mkdir()
+    for quelle in migrationen.dateien():
+        for datei in (quelle.hoch, quelle.runter):
+            if datei is not None:
+                (ordner / datei.name).write_bytes(datei.read_bytes())
+    (ordner / "0004_nachtrag.sql").write_text(
+        "CREATE TABLE nachtrag (id INTEGER);\n", encoding="utf-8")
+    pfad = tmp_path / "stand3.db"
+
+    erster = migrationen.anwenden(pfad, ordner=ordner, bis=3)
+
+    assert erster["angewendet"] == [1, 2, 3]
+    assert migrationen.angewendet(pfad) == [1, 2, 3]
+    assert "nachtrag" not in _tabellen(pfad)
+
+    zweiter = migrationen.anwenden(pfad, ordner=ordner)
+
+    assert zweiter["angewendet"] == [4]
+    assert migrationen.angewendet(pfad) == [1, 2, 3, 4]
+    assert "nachtrag" in _tabellen(pfad)
+    assert "agent_profiles" in _tabellen(pfad)
+
+
+def test_fehlerhafte_migration_rollt_zurueck_und_laesst_die_db_unveraendert(tmp_path):
+    ordner = tmp_path / "migrationen"
+    ordner.mkdir()
+    (ordner / "0001_ok.sql").write_text("CREATE TABLE a (id INTEGER);\n", encoding="utf-8")
+    (ordner / "0002_kaputt.sql").write_text(
+        "CREATE TABLE b (id INTEGER);\nCREATE TABLE oops (;\n", encoding="utf-8")
+    pfad = tmp_path / "kaputt.db"
+
+    with pytest.raises(migrationen.MigrationsFehler, match="0002_kaputt.sql"):
+        migrationen.anwenden(pfad, ordner=ordner)
+
+    assert migrationen.angewendet(pfad) == [1]
+    tabellen = _tabellen(pfad)
+    assert "a" in tabellen
+    assert "b" not in tabellen, "Teil der fehlerhaften Migration blieb zurück"
+
+
+def test_index_auf_fehlende_spalte_meldet_altes_schema_mit_export_hinweis(tmp_path):
+    """Ein uralter Bestand ohne ``titel_hash`` scheitert klar, nicht kryptisch."""
+    pfad = tmp_path / "uralt.db"
+    c = sqlite3.connect(pfad)
+    c.executescript("CREATE TABLE artikel (id INTEGER PRIMARY KEY, titel TEXT NOT NULL);")
+    c.execute("INSERT INTO artikel (titel) VALUES ('Alter Artikel')")
+    c.commit()
+    c.close()
+
+    with pytest.raises(migrationen.AltesSchemaFehler) as fehler:
+        migrationen.anwenden(pfad)
+
+    text = str(fehler.value)
+    assert isinstance(fehler.value, migrationen.MigrationsFehler)
+    assert "0001_basis.sql" in text
+    assert "ix_artikel_hash" in text
+    assert "artikel.titel_hash" in text
+    assert "exportieren" in text and "importieren" in text
+    assert "docs/MIGRATIONEN.md" in text
+    assert "no such column: titel_hash" not in text
+
+    assert migrationen.angewendet(pfad) == []
+    c = sqlite3.connect(pfad)
+    try:
+        indizes = {r[0] for r in c.execute(
+            "SELECT name FROM sqlite_master WHERE type='index'")}
+        spalten = {r[1] for r in c.execute("PRAGMA table_info(artikel)")}
+        zeilen = c.execute("SELECT COUNT(*) FROM artikel").fetchone()[0]
+    finally:
+        c.close()
+    assert "ix_artikel_hash" not in indizes
+    assert "titel_hash" not in spalten
+    assert zeilen == 1
+    assert list(tmp_path.glob("uralt.db.vor-migration-*.bak"))
+
+
+def test_bestehende_datenbank_wird_vor_der_migration_gesichert(tmp_path):
+    pfad = tmp_path / "bestand.db"
+    migrationen.anwenden(pfad, bis=ALLE[1])
+    c = sqlite3.connect(pfad)
+    c.execute("INSERT INTO kerzen (symbol, zeitrahmen, ts, open, high, low, close, volume) "
+              "VALUES ('EURUSD', 'M15', '2026-01-01 00:00:00', 1, 1, 1, 1, 1)")
+    c.commit()
+    c.close()
+
+    ergebnis = migrationen.anwenden(pfad)
+
+    assert ergebnis["angewendet"] == ALLE[2:]
+    sicherung = Path(str(ergebnis["backup"]))
+    assert sicherung.exists()
+    kopie = sqlite3.connect(sicherung)
+    try:
+        assert kopie.execute("SELECT COUNT(*) FROM kerzen").fetchone()[0] == 1
+    finally:
+        kopie.close()
+
+
+def test_downgrade_entfernt_die_migration_und_ihre_tabellen(tmp_path):
+    pfad = tmp_path / "zurueck.db"
+    migrationen.anwenden(pfad)
+
+    ergebnis = migrationen.zurueckrollen(pfad, bis=ALLE[1])
+
+    assert ergebnis["zurueckgerollt"] == ALLE[2:]
+    assert migrationen.angewendet(pfad) == ALLE[:2]
+    tabellen = _tabellen(pfad)
+    assert "agent_profiles" in tabellen
+    assert "kerzen" in tabellen
+    c = sqlite3.connect(pfad)
+    try:
+        spalten = {r[1] for r in c.execute("PRAGMA table_info(artikel)")}
+    finally:
+        c.close()
+    assert "prioritaet" not in spalten
+
+
+def test_downgrade_ohne_hinterlegte_datei_bricht_vorher_ab(tmp_path):
+    ordner = tmp_path / "migrationen"
+    ordner.mkdir()
+    (ordner / "0001_ohne_down.sql").write_text("CREATE TABLE a (id INTEGER);\n",
+                                               encoding="utf-8")
+    pfad = tmp_path / "ohne.db"
+    migrationen.anwenden(pfad, ordner=ordner)
+
+    with pytest.raises(migrationen.MigrationsFehler, match="Downgrade"):
+        migrationen.zurueckrollen(pfad, ordner=ordner)
+
+    assert migrationen.angewendet(pfad) == [1]
+    assert "a" in _tabellen(pfad)
+
+
+def test_bestandsdatenbank_ohne_historie_wird_durchmigriert(tmp_path):
+    """Ein alter Bestand verliert keine Daten und erhält die fehlenden Spalten."""
+    from orakel.kern.db import Facts
+
+    pfad = tmp_path / "alt.db"
+    migrationen.anwenden(pfad)
+    Facts(pfad).artikel_speichern(
+        "Testquelle", "nachrichten", "Alter Artikel", "https://example.com/alt",
+        None, "Bestand", 0.9, ["EURUSD"], "hash-alt",
+    )
+
+    c = sqlite3.connect(pfad)
+    c.execute("DROP TABLE schema_migrationen")
+    for spalte in ("prioritaet", "prioritaet_grund", "erkannt"):
+        c.execute(f"ALTER TABLE artikel DROP COLUMN {spalte}")
+    c.execute("PRAGMA user_version = 1")
+    c.commit()
+    c.close()
+
+    ergebnis = migrationen.anwenden(pfad)
+
+    assert ergebnis["angewendet"] == ALLE
+    assert ergebnis["backup"] is not None
+    c = sqlite3.connect(pfad)
+    try:
+        spalten = {r[1] for r in c.execute("PRAGMA table_info(artikel)")}
+        assert {"prioritaet", "prioritaet_grund", "erkannt"} <= spalten
+        assert c.execute("SELECT COUNT(*) FROM artikel").fetchone()[0] == 1
+    finally:
+        c.close()
+
+
+def test_serve_bricht_bei_altem_schema_mit_eigener_meldung_ab(tmp_path, monkeypatch, capsys):
+    """Der App-Start endet mit eigener Meldung statt mit einem uvicorn-Traceback."""
+    import argparse
+
+    import uvicorn
+
+    from orakel import __main__ as cli
+    from orakel.config import Config
+
+    pfad = tmp_path / "uralt.db"
+    c = sqlite3.connect(pfad)
+    c.executescript("CREATE TABLE artikel (id INTEGER PRIMARY KEY, titel TEXT NOT NULL);")
+    c.execute("INSERT INTO artikel (titel) VALUES ('Alter Artikel')")
+    c.commit()
+    c.close()
+    daten = {"basis": {
+        "start_kapital": 100000.0, "waehrung": "USD", "zeitzone": "Europe/Zurich",
+        "daten_ordner": str(tmp_path / "daten"), "vault_ordner": str(tmp_path / "vault"),
+        "db_pfad": str(pfad), "datenquelle": "synthetisch", "bars_pro_jahr": 24960,
+    }}
+    cfg = Config(daten, tmp_path / "config.toml")
+    monkeypatch.setattr(cli, "_cfg", lambda _pfad: cfg)
+    gestartet: list[object] = []
+    monkeypatch.setattr(uvicorn, "run", lambda *a, **k: gestartet.append(a))
+
+    args = argparse.Namespace(config=str(cfg.pfad), host="127.0.0.1", port=8000, takt=False)
+    code = cli.cmd_serve(args)
+    ausgabe = capsys.readouterr().err
+
+    assert code == 2
+    assert gestartet == []          # kein Serverstart auf einem alten Bestand
+    assert "Traceback" not in ausgabe and 'File "' not in ausgabe
+    zeilen = [z for z in ausgabe.splitlines() if z.strip()]
+    assert len(zeilen) == 5
+    assert all(z.startswith("orakel: ") for z in zeilen)
+    assert "älteres Schema" in ausgabe
+    assert "0001_basis.sql" in ausgabe
+    assert "ix_artikel_hash" in ausgabe and "artikel.titel_hash" in ausgabe
+    assert "zurückgerollt" in ausgabe
+    assert "vor-migration-" in ausgabe          # konkrete Sicherungsdatei
+    assert "docs/MIGRATIONEN.md" in ausgabe
+    assert list(tmp_path.glob("uralt.db.vor-migration-*.bak"))
+
+
+@pytest.mark.parametrize("befehl", ["cmd_daten", "cmd_pruefen", "cmd_konferenz",
+                                   "cmd_unternehmen"])
+def test_jeder_befehl_meldet_alten_bestand(tmp_path, monkeypatch, capsys, befehl):
+    """Auch die anderen Startwege enden mit der klaren Meldung, nicht im Traceback."""
+    import argparse
+
+    from orakel import __main__ as cli
+    from orakel import pipeline
+    from orakel.config import Config
+
+    pfad = tmp_path / "uralt.db"
+    c = sqlite3.connect(pfad)
+    c.executescript("CREATE TABLE artikel (id INTEGER PRIMARY KEY, titel TEXT NOT NULL);")
+    c.commit()
+    c.close()
+    daten = {"basis": {
+        "start_kapital": 100000.0, "waehrung": "USD", "zeitzone": "Europe/Zurich",
+        "daten_ordner": str(tmp_path / "daten"), "vault_ordner": str(tmp_path / "vault"),
+        "db_pfad": str(pfad), "datenquelle": "synthetisch", "bars_pro_jahr": 24960,
+    }}
+    cfg = Config(daten, tmp_path / "config.toml")
+    monkeypatch.setattr(cli, "_cfg", lambda _pfad: cfg)
+
+    def nie(*_a, **_k):
+        raise AssertionError("Ablauf lief trotz altem Bestand")
+
+    monkeypatch.setattr(pipeline, "lauf", nie)
+    args = argparse.Namespace(config=str(cfg.pfad))
+
+    code = getattr(cli, befehl)(args)
+    ausgabe = capsys.readouterr().err
+
+    assert code == 2
+    assert "älteres Schema" in ausgabe
+    assert "docs/MIGRATIONEN.md" in ausgabe
+    assert "Traceback" not in ausgabe
