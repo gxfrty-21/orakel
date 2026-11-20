@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from orakel.data import lade_csv, pruefe_daten, synthetische_kerzen
+from orakel.kern.data import lade_csv, pruefe_daten, synthetische_kerzen
 
 
 def test_erkennt_doppelte_und_unmoegliche_kerzen(cfg):

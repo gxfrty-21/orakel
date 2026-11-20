@@ -11,7 +11,9 @@ from zoneinfo import ZoneInfo
 from . import agents
 from .betrieb import Betrieb
 from .config import Config, RisikoGrenzen
-from .db import Facts
+from .kern.db import Facts
+from .lauf_queue import (AUFBEWAHRUNG_TAKT, raeume_auf, verarbeite_einen,
+                         verwerfe_haengende, zuruecksetzen)
 
 
 def _validierungen_als_dicts(db: Facts) -> list[dict[str, Any]]:
@@ -107,45 +109,78 @@ def takt_schritt(cfg: Config, db: Facts, mit_spider: bool = False,
 
 
 class Takt(threading.Thread):
-    """Hintergrund-Takt. Daemon-Thread: stirbt mit dem Prozess."""
+    """Der eine Hintergrund-Loop: Betriebstakt und Lauf-Warteschlange.
 
-    def __init__(self, cfg: Config, db: Facts, mit_spider: bool = False) -> None:
+    Beide Arbeiten teilen sich denselben Thread, damit der Prozess nur einen
+    Hintergrund-Loop hat. Ohne ``takt_aktiv`` läuft nur die Warteschlange: Der
+    Paper-Takt bleibt opt-in (``serve --takt``), ein eingereihter Lauf wird
+    aber in jedem Fall abgearbeitet. ``cfg_pfad`` ist der Pfad, den die
+    Pipeline eines Auftrags benutzt.
+    """
+
+    def __init__(self, cfg: Config, db: Facts, mit_spider: bool = False, *,
+                 cfg_pfad: str = "config.toml", takt_aktiv: bool = True) -> None:
         super().__init__(daemon=True, name="orakel-takt")
         self.cfg = cfg
         self.db = db
         self.mit_spider = mit_spider
+        self.cfg_pfad = cfg_pfad
+        self.takt_aktiv = takt_aktiv
         self._stopp = threading.Event()
         self.letzter_lauf: dict[str, Any] = {}
         self.betrieb = Betrieb(cfg, db)
 
     def run(self) -> None:  # pragma: no cover - Zeitverhalten
-        intervall = max(5, int(self.cfg["paper"].get("takt_sekunden", 60)))
+        intervall = (max(5, int(self.cfg["paper"].get("takt_sekunden", 60)))
+                     if self.takt_aktiv else 1.0)
         try:
             erinnerungs_minuten = max(1, int(self.cfg.abschnitt(
                 "unternehmen").get("erinnerungen_intervall_minuten", 5)))
         except (TypeError, ValueError):
             erinnerungs_minuten = 5
         erinnerungs_intervall = erinnerungs_minuten * 60
-        letzte_erinnerung = 0.0
+        # -inf macht beide Arbeiten in der ersten Runde fällig. 0.0 wäre erst
+        # nach dem vollen Intervall Laufzeit der Monotonic-Uhr fällig – und die
+        # zählt ab dem Boot: Auf einem frisch gestarteten Rechner (Container,
+        # CI) würden Erinnerungen und Aufbewahrung sonst eine ganze Runde
+        # warten.
+        letzte_erinnerung = float("-inf")
+        letzte_aufbewahrung = float("-inf")
         erzwungen = {"spider"} if self.mit_spider else None
+        # Einmal beim Start: Was ein Absturz auf «aktiv» liess, wird wieder
+        # eingereiht. Nicht in der Schleife, sonst reiht sich ein laufender
+        # Auftrag selbst wieder ein.
+        zuruecksetzen(self.db)
         while not self._stopp.is_set():
             beginn = time.monotonic()
-            try:
-                self.letzter_lauf = self.betrieb.takt(erzwungen=erzwungen)
-            except Exception as exc:
-                self.db.ereignis("fehler", "Takt", f"Betriebstakt abgebrochen: {exc}")
-            erzwungen = None
-            if time.monotonic() - letzte_erinnerung >= erinnerungs_intervall:
-                letzte_erinnerung = time.monotonic()
+            if self.takt_aktiv:
                 try:
-                    from .company.messaging import MessagingService
-                    from .company.store import CompanyStore
-
-                    MessagingService(CompanyStore(self.db)).erinnere_offene_acks()
+                    self.letzter_lauf = self.betrieb.takt(erzwungen=erzwungen)
                 except Exception as exc:
-                    self.db.ereignis(
-                        "fehler", "Takt", f"Erinnerungen abgebrochen: {exc}")
-            # Ein langer Takt verlängert den Abstand nicht zusätzlich.
+                    self.db.ereignis("fehler", "Takt", f"Betriebstakt abgebrochen: {exc}")
+                erzwungen = None
+                if time.monotonic() - letzte_erinnerung >= erinnerungs_intervall:
+                    letzte_erinnerung = time.monotonic()
+                    try:
+                        from .company.messaging import MessagingService
+                        from .company.store import CompanyStore
+
+                        MessagingService(CompanyStore(self.db)).erinnere_offene_acks()
+                    except Exception as exc:
+                        self.db.ereignis(
+                            "fehler", "Takt", f"Erinnerungen abgebrochen: {exc}")
+            # Genau ein Auftrag je Runde; ein langer Lauf verlängert den Abstand
+            # genauso wenig wie ein langer Takt.
+            try:
+                # Aufbewahrung vor dem Lauf, damit ein langer Auftrag sie nicht
+                # um Stunden verschiebt; im Dauerbetrieb höchstens stündlich.
+                if time.monotonic() - letzte_aufbewahrung >= AUFBEWAHRUNG_TAKT:
+                    letzte_aufbewahrung = time.monotonic()
+                    raeume_auf(self.db)
+                verwerfe_haengende(self.db)
+                verarbeite_einen(self.db, self.cfg_pfad)
+            except Exception as exc:
+                self.db.ereignis("fehler", "Lauf", f"Warteschlange abgebrochen: {exc}")
             wartezeit = max(1.0, intervall - (time.monotonic() - beginn))
             self._stopp.wait(wartezeit)
 

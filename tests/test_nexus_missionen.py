@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from orakel.db import Facts
+from orakel.kern.db import Facts
 from orakel.knowledge import Vault
 from orakel.nexus.gegenargument import lauf as gegenargumente_lauf
 from orakel.nexus.missionen import Missionen

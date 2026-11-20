@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ..db import Facts
+from ..kern.db import Facts
 from .abruf import Abrufer, CacheEintrag, HttpCache
 from .bewertung import claims_auffrischen
 from .graph import graph_auffrischen
@@ -136,12 +136,12 @@ def _sende(url: str, body: bytes | None, content_type: str,
            methode: str, timeout: float) -> tuple[bool, str | None]:
     """Sendet eine Meldung. Gibt (erfolg, fehlername) zurück, wirft nie."""
     try:
-        anfrage = urllib.request.Request(
+        anfrage = urllib.request.Request(  # noqa: S310 - URL stammt aus Register oder Datenbank, nicht aus einer Anfrage
             url, data=body, method=methode,
             headers={"Content-Type": content_type,
                      "User-Agent": "OrakelNexus/0.1 (Nachtlauf)"},
         )
-        with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:
+        with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:  # noqa: S310 - URL stammt aus Register oder Datenbank, nicht aus einer Anfrage
             return 200 <= int(antwort.status) < 300, None
     except Exception as exc:
         return False, type(exc).__name__

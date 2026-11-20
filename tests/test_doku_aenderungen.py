@@ -17,8 +17,8 @@ SKRIPT = PROJEKT / "scripts" / "ermittle-doku-aenderungen.sh"
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
+    return subprocess.run(  # noqa: S603 - Programmaufruf mit fester Argumentliste, ohne Shell
+        ["git", *args],  # noqa: S607 - Programmname und Argumente sind fest verdrahtet
         cwd=repo,
         check=True,
         capture_output=True,
@@ -56,8 +56,8 @@ def _ausfuehren(repo: Path, before_sha: str) -> subprocess.CompletedProcess[str]
             "HEAD_SHA": "",
         }
     )
-    return subprocess.run(
-        ["bash", str(SKRIPT)],
+    return subprocess.run(  # noqa: S603 - Programmaufruf mit fester Argumentliste, ohne Shell
+        ["bash", str(SKRIPT)],  # noqa: S607 - Programmname und Argumente sind fest verdrahtet
         cwd=repo,
         env=env,
         capture_output=True,

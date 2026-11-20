@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from orakel.db import Facts
+from orakel.kern.db import Facts
 from orakel.nexus.dedup import titel_hash
 from orakel.nexus.feeds import Meldung
 from orakel.nexus.quellen import Quelle
