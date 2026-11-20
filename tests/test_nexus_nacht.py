@@ -319,13 +319,13 @@ def test_fail_skript_sendet_fail_ping(server):
     if not shutil.which("curl"):
         pytest.skip("curl fehlt")
     env = {**os.environ, "ORAKEL_PING_URL": f"{server}/ping"}
-    subprocess.run(["sh", str(FAIL_SKRIPT)], env=env, check=True, timeout=30)
+    subprocess.run(["sh", str(FAIL_SKRIPT)], env=env, check=True, timeout=30)  # noqa: S603, S607 - Programmaufruf mit fester Argumentliste, ohne Shell; Programmname und Argumente sind fest verdrahtet
     assert ("POST", "/ping/fail", "") in _Handler.ereignisse
 
 
 def test_fail_skript_ohne_url_ist_still(server):
     env = {k: v for k, v in os.environ.items() if k != "ORAKEL_PING_URL"}
-    ergebnis = subprocess.run(["sh", str(FAIL_SKRIPT)], env=env,
+    ergebnis = subprocess.run(["sh", str(FAIL_SKRIPT)], env=env,  # noqa: S603, S607 - Programmaufruf mit fester Argumentliste, ohne Shell; Programmname und Argumente sind fest verdrahtet
                               capture_output=True, text=True, timeout=10)
     assert ergebnis.returncode == 0
     assert not _Handler.ereignisse

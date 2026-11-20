@@ -91,7 +91,7 @@ def kern_zahlen(pfad: Path, *, unveraenderlich: bool = False) -> dict[str, int]:
         vorhanden = {str(r[0]) for r in c.execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}
         return {
-            tabelle: int(c.execute(f'SELECT COUNT(*) FROM "{tabelle}"').fetchone()[0])
+            tabelle: int(c.execute(f'SELECT COUNT(*) FROM "{tabelle}"').fetchone()[0])  # noqa: S608 - Tabellenname ist eine feste interne Liste
             for tabelle in KERN_TABELLEN
             if tabelle in vorhanden
         }

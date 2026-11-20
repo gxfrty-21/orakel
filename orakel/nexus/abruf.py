@@ -225,7 +225,7 @@ class Abrufer:
 
         start = self.uhr()
         try:
-            with self.oeffnen(urllib.request.Request(url, headers=kopf),
+            with self.oeffnen(urllib.request.Request(url, headers=kopf),  # noqa: S310 - URL stammt aus Register oder Datenbank, nicht aus einer Anfrage
                               timeout=self.timeout) as antwort:
                 status = int(getattr(antwort, "status", 200) or 200)
                 kopfzeilen = antwort.headers

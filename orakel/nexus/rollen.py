@@ -7,11 +7,14 @@ nachvollziehbare Eigenschaft der Mission und schreibt ihr Ergebnis in
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
 from ..kern.db import Facts
+
+LOGGER = logging.getLogger(__name__)
 
 STATUS_ERLAUBT = {"bestätigt", "teilweise", "unbestätigt", "widersprüchlich"}
 BEFUND = Callable[[dict[str, Any]], list[dict[str, Any]]]
@@ -263,8 +266,9 @@ def lauf(db: Facts, mission: dict[str, Any], lage: dict[str, Any],
         try:
             db.agenten_lauf(f"B:{rolle.kennung}:{rolle.name}", "B", rolle.aufgabe,
                             text[:240], not gefunden and not fehler)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - die Aufzeichnung darf den Prüflauf nicht anhalten
+            LOGGER.warning("Agentenlauf %s konnte nicht gespeichert werden", rolle.kennung,
+                           exc_info=True)
     return {"rollen": len(ROSTEN), "agenten": agenten, "befunde": befunde,
             "befundzahl": len(befunde)}
 
