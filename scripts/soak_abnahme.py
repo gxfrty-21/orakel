@@ -63,13 +63,13 @@ class VirtuelleUhr:
 
 def _commit() -> str:
     try:
-        proc = subprocess.run(
-            ["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"],
+        proc = subprocess.run(  # noqa: S603 - Programmaufruf mit fester Argumentliste, ohne Shell
+            ["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"],  # noqa: S607 - Programmname und Argumente sind fest verdrahtet
             capture_output=True, text=True, timeout=5, check=False,
         )
         commit = (proc.stdout or "").strip() or "unbekannt"
-        status = subprocess.run(
-            ["git", "-C", str(ROOT), "status", "--porcelain"],
+        status = subprocess.run(  # noqa: S603 - Programmaufruf mit fester Argumentliste, ohne Shell
+            ["git", "-C", str(ROOT), "status", "--porcelain"],  # noqa: S607 - Programmname und Argumente sind fest verdrahtet
             capture_output=True, text=True, timeout=5, check=False,
         )
         return f"{commit}+dirty" if (status.stdout or "").strip() else commit

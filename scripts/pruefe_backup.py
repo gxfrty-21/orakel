@@ -41,7 +41,9 @@ def zeilenzahlen(pfad: Path) -> dict[str, int]:
     """Zeilenzahl je Tabelle; fehlende Tabellen fehlen auch im Ergebnis."""
     c = _verbinde(pfad)
     try:
-        return {name: int(c.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0])
+        # Tabellennamen lassen sich nicht als Parameter binden; sie stammen aus
+        # ``sqlite_master`` derselben Datei und werden ausschliesslich gelesen.
+        return {name: int(c.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0])  # noqa: S608
                 for name in _tabellen(c)}
     finally:
         c.close()

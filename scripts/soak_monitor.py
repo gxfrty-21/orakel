@@ -61,7 +61,7 @@ def health_holen(timeout: float) -> dict[str, Any]:
     req = urllib.request.Request(HEALTH_URL, headers={"User-Agent": "orakel-soak-monitor/1"})
     start = time.monotonic()
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as antwort:
+        with urllib.request.urlopen(req, timeout=timeout) as antwort:  # noqa: S310 - URL stammt aus Register oder Datenbank, nicht aus einer Anfrage
             rohtext = antwort.read().decode("utf-8")
             daten = json.loads(rohtext)
             return {
@@ -86,7 +86,7 @@ def deep_holen(timeout: float) -> dict[str, Any]:
     start = time.monotonic()
     try:
         probe = PROBE_PFAD.read_text(encoding="utf-8")
-        proc = subprocess.run(
+        proc = subprocess.run(  # noqa: S603 - Programmaufruf mit fester Argumentliste, ohne Shell
             RAILWAY_CMD,
             input=probe,
             capture_output=True,

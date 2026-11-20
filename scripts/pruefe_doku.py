@@ -404,8 +404,8 @@ def _doku_dateien(root: Path) -> list[Path]:
     """Versionierte Markdown-Dateien; der Vault ist generiert und zählt nicht."""
     if (root / ".git").exists():
         try:
-            roh = subprocess.check_output(
-                ["git", "-C", str(root), "ls-files", "-z", "--", "*.md"],
+            roh = subprocess.check_output(  # noqa: S603 - Programmaufruf mit fester Argumentliste, ohne Shell
+                ["git", "-C", str(root), "ls-files", "-z", "--", "*.md"],  # noqa: S607 - Programmname und Argumente sind fest verdrahtet
                 stderr=subprocess.DEVNULL,
             )
             return sorted(root / p for p in roh.decode("utf-8").split("\0") if p)

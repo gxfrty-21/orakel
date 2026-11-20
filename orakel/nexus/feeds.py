@@ -70,7 +70,7 @@ def _link(eintrag: ET.Element) -> str:
 
 def parse_feed(roh: bytes, quelle: Quelle) -> list[Meldung]:
     """Liest alle Einträge. Wirft ``ET.ParseError`` bei kaputtem XML."""
-    wurzel = ET.fromstring(roh)
+    wurzel = ET.fromstring(roh)  # noqa: S314 - XML kommt vom Quellenhost des Feeds, nicht vom Nutzer
     eintraege = (
         wurzel.findall(".//item")
         + wurzel.findall(f".//{RDF}item")

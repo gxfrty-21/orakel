@@ -211,7 +211,7 @@ def angewendet(pfad: str | Path) -> list[int]:
         if not vorhanden:
             return []
         return [int(r[0]) for r in c.execute(
-            f"SELECT nummer FROM {TABELLE} ORDER BY nummer")]
+            f"SELECT nummer FROM {TABELLE} ORDER BY nummer")]  # noqa: S608 - Tabellenname ist eine feste interne Liste
     finally:
         c.close()
 
@@ -239,7 +239,7 @@ def anwenden(pfad: str | Path, *, ordner: Path | None = None, bis: int | None = 
     try:
         c.executescript(SCHEMA_TABELLE_SQL)
         c.commit()
-        stand = {int(r["nummer"]) for r in c.execute(f"SELECT nummer FROM {TABELLE}")}
+        stand = {int(r["nummer"]) for r in c.execute(f"SELECT nummer FROM {TABELLE}")}  # noqa: S608 - Tabellenname ist eine feste interne Liste
         bestand = _tabellen(c)
 
         offen = [m for m in alle
@@ -252,7 +252,7 @@ def anwenden(pfad: str | Path, *, ordner: Path | None = None, bis: int | None = 
         for migration in offen:
             _wende_datei_an(c, migration.hoch, datei)
             c.execute(
-                f"INSERT INTO {TABELLE} (nummer, name, angewendet_am) VALUES (?, ?, ?)",
+                f"INSERT INTO {TABELLE} (nummer, name, angewendet_am) VALUES (?, ?, ?)",  # noqa: S608 - Tabellenname ist eine feste interne Liste
                 (migration.nummer, migration.name, jetzt.isoformat(timespec="seconds")),
             )
             c.commit()
@@ -300,7 +300,7 @@ def zurueckrollen(pfad: str | Path, *, bis: int = 0, ordner: Path | None = None,
     try:
         for nummer in zurueck:
             _wende_datei_an(c, alle[nummer].runter, datei)  # type: ignore[arg-type]
-            c.execute(f"DELETE FROM {TABELLE} WHERE nummer = ?", (nummer,))
+            c.execute(f"DELETE FROM {TABELLE} WHERE nummer = ?", (nummer,))  # noqa: S608 - Tabellenname ist eine feste interne Liste
             c.commit()
     finally:
         c.close()

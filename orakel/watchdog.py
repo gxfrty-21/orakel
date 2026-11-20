@@ -135,11 +135,11 @@ def pruefe(
 ) -> dict[str, Any]:
     """Holt den Health-Endpunkt und bewertet ihn."""
     jetzt = _jetzt()
-    anfrage = urllib.request.Request(
+    anfrage = urllib.request.Request(  # noqa: S310 - URL stammt aus Register oder Datenbank, nicht aus einer Anfrage
         url, headers={"User-Agent": "orakel-takt-watchdog/1"}
     )
     try:
-        with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:
+        with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:  # noqa: S310 - URL stammt aus Register oder Datenbank, nicht aus einer Anfrage
             rohtext = antwort.read().decode("utf-8")
         daten = json.loads(rohtext)
         if not isinstance(daten, dict):

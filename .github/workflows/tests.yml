@@ -763,3 +763,87 @@ jobs:
           path: artifacts/touch/*
           if-no-files-found: ignore
           retention-days: 7
+
+  # Qualitätstor aus Bereich 6.4: blinde Fänge (BLE001), stille
+  # Fehlerschlucker (S110) und die Sicherheitsregeln aus flake8-bandit (S).
+  # Die Regeln und die Schuldenliste des Altbestands stehen in ruff.toml;
+  # orakel/kern/, alle Tests und jedes neue Modul sind nicht ausgenommen.
+  ruff:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Lint-Regeln prüfen
+        run: python -m ruff check . --output-format=github
+
+  # Typprüfung des Handelskerns nach mypy.ini: paper, risk, backtest und judge
+  # samt der von ihnen importierten Kernmodule. Web, Agenten und Nexus bleiben
+  # bewusst aussen vor.
+  mypy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Handelskern typisieren
+        run: python -m mypy
+
+  # Untergrenze für die vier Module, die über Geld und Urteil entscheiden.
+  # Der Stand bei Einführung liegt bei 89 %; die Grenze von 85 % lässt kleinen
+  # Umbauten Luft, meldet aber jedes Absinken. Die Tests bleiben unverändert.
+  coverage:
+    name: Coverage Handelskern
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Python einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Coverage der vier Kernmodule messen
+        run: |
+          python -m pytest -q \
+            --cov=orakel.kern.paper --cov=orakel.kern.risk \
+            --cov=orakel.kern.backtest --cov=orakel.kern.judge \
+            --cov-report=term-missing --cov-fail-under=85
