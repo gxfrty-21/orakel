@@ -52,7 +52,6 @@ MUSTER_RUN = re.compile(r'/actions/runs/(\d+)')
 # Lauf-IDs stehen in Berichten auch als Zahl ("CI-Lauf 123456789"), nicht nur
 # als URL. Ab sechs Ziffern, damit Jahreszahlen und kurze Nummern auffallen.
 MUSTER_RUN_NUMMER = re.compile(r'\b(?:CI-Lauf|Lauf(?:-ID)?|Run(?:-ID)?)[ \t:#]*(\d{6,})\b')
-MUSTER_COMMIT = re.compile(r'\b([0-9a-f]{7,40})\b')
 HAUPTDOKUMENT = 'ORAKEL-REVIEW-PAKET.md'
 MAX_HAUPTDOKUMENT_ZEILEN = 200
 API_BASIS = 'https://api.github.com'
@@ -148,7 +147,7 @@ def quell_eintraege(freigabe: dict, commit: str) -> list[dict]:
     return eintraege
 
 
-def beleg_eintraege(freigabe: dict, ausgabe: str, pflicht: bool) -> list[dict]:
+def beleg_eintraege(freigabe: dict, ausgabe: str) -> list[dict]:
     eintraege, fehlend = [], []
     for name in (freigabe.get('belege') or []) + (freigabe.get('dokumente') or []):
         pfad = os.path.join(ausgabe, name)
@@ -162,9 +161,6 @@ def beleg_eintraege(freigabe: dict, ausgabe: str, pflicht: bool) -> list[dict]:
             'herkunft': 'beleg' if name.startswith('belege/') else 'paketdokument',
         })
     if fehlend:
-        if pflicht:
-            raise Abweichung('Freigegebene Belege/Dokumente fehlen im Paketordner: '
-                             + ', '.join(sorted(fehlend)))
         print('Hinweis: nicht vorhanden und daher nicht im Paket: '
               + ', '.join(sorted(fehlend)), file=sys.stderr)
     return eintraege
@@ -450,7 +446,7 @@ def fuehre_evidenz_aus(ausgabe: str, commit: str, branch: str,
     aus ``pytest_exit_code``. Schlägt ein Nachweis fehl oder widersprechen sich Log
     und JUnit-Bericht, bricht der Bau ab.
     """
-    dateien = []
+    dateien, protokolle = [], {}
     for name, argv, ziel in PRUEFUNGEN:
         if name == 'pytest' and pytest_log:
             text = _lies(pytest_log, 'pytest-Protokoll')
@@ -479,8 +475,9 @@ def fuehre_evidenz_aus(ausgabe: str, commit: str, branch: str,
             'bytes': os.path.getsize(pfad),
             'log': letzte_zeile(text),
         })
+        protokolle[name] = text
     pytest_eintrag = next(d for d in dateien if d['name'] == 'pytest')
-    protokoll = open(os.path.join(ausgabe, pytest_eintrag['target']), encoding='utf-8').read()
+    protokoll = protokolle['pytest']
     ergebnis = ergebnis_aus_log(protokoll)
     if not ergebnis or 'passed' not in ergebnis:
         raise Abweichung('pytest-Protokoll enthält keine Zeile "N passed".')
@@ -783,7 +780,7 @@ def pruefe_zip(eintraege: list[dict], ausgabe: str) -> str:
 
 
 def baue(freigabe: dict, commit: str, branch: str, ausgabe: str,
-         pflicht: bool = False, evidenz_bauen: bool = False,
+         evidenz_bauen: bool = False,
          junit: str | None = None, ci: dict | None = None,
          pytest_log: str | None = None,
          pytest_exit_code: str | None = None) -> tuple[list[dict], str]:
@@ -797,11 +794,10 @@ def baue(freigabe: dict, commit: str, branch: str, ausgabe: str,
         evidenz = fuehre_evidenz_aus(ausgabe, commit, branch, junit,
                                      pytest_log=pytest_log,
                                      pytest_exit_code=pytest_exit_code)
-    weitere = beleg_eintraege(freigabe, ausgabe, pflicht=pflicht)
+    weitere = beleg_eintraege(freigabe, ausgabe)
     eintraege = quellen + weitere
-    pruefe_kopien(quellen, ausgabe)
     pruefe_unerlaubte_dateien(freigabe, ausgabe)
-    if pflicht or os.path.exists(os.path.join(ausgabe, 'EVIDENZ.json')):
+    if os.path.exists(os.path.join(ausgabe, 'EVIDENZ.json')):
         pruefe_evidenz(ausgabe, commit)
     if evidenz is None and os.path.exists(os.path.join(ausgabe, 'EVIDENZ.json')):
         evidenz = json.load(open(os.path.join(ausgabe, 'EVIDENZ.json'), encoding='utf-8'))
@@ -828,7 +824,7 @@ def pruefe(freigabe: dict, commit: str, ausgabe: str) -> tuple[list[dict], str]:
     for e in quellen:
         e.pop('daten', None)
     pruefe_kopien(quellen, ausgabe)
-    weitere = beleg_eintraege(freigabe, ausgabe, pflicht=False)
+    weitere = beleg_eintraege(freigabe, ausgabe)
     eintraege = quellen + weitere
     pruefe_unerlaubte_dateien(freigabe, ausgabe)
     pruefe_evidenz(ausgabe, commit)
@@ -907,7 +903,7 @@ def main() -> int:
             with tempfile.TemporaryDirectory(prefix='review-paket-') as temp:
                 # Auch ohne ``--evidenz``: Im Prüflauf muss die Testzahl aus einem
                 # echten pytest-Protokoll stammen, nicht aus einer alten Datei.
-                eintraege, zip_sha = baue(freigabe, commit, branch, temp, pflicht=False,
+                eintraege, zip_sha = baue(freigabe, commit, branch, temp,
                                           evidenz_bauen=True, junit=args.junit, ci=ci,
                                           pytest_log=args.pytest_log,
                                           pytest_exit_code=args.pytest_exit_code)
