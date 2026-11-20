@@ -21,7 +21,7 @@ from orakel.kern import migrationen
 WURZEL = Path(__file__).resolve().parent.parent
 DOKU = WURZEL / "docs" / "MIGRATIONEN.md"
 SEED = WURZEL / "seed" / "orakel-seed.db"
-VOLLER_STAND = "0001_basis, 0002_company, 0003_spalten_nachziehen"
+VOLLER_STAND = ", ".join(m.stand for m in migrationen.dateien())
 
 
 def _doku_befehle() -> list[str]:
@@ -47,7 +47,7 @@ def _probe(tmp_path: Path) -> Path:
     assert ersetzt == 1, "config.toml: db_pfad nicht eindeutig ersetzt"
     (tmp_path / "config.toml").write_text(config, encoding="utf-8")
     migrationen.anwenden(db)
-    assert _stand(db) == [1, 2, 3]
+    assert _stand(db) == [m.nummer for m in migrationen.dateien()]
     return db
 
 
@@ -72,7 +72,7 @@ def test_status_befehl_laeuft_auf_der_seed_kopie(tmp_path):
     assert f"orakel: Datenbank {db}" in lauf.stdout
     assert f"orakel: Stand {VOLLER_STAND}" in lauf.stdout
     assert "orakel: Offen keine" in lauf.stdout
-    assert _stand(db) == [1, 2, 3]
+    assert _stand(db) == [m.nummer for m in migrationen.dateien()]
     assert set(tmp_path.glob("*.bak")) == sicherungen_vorher, "Status hat die Datenbank verändert"
 
 
@@ -83,7 +83,9 @@ def test_zurueck_befehl_rollt_zurueck_und_sichert_vorher(tmp_path):
     lauf = _fuehre_aus(befehl, tmp_path)
 
     assert lauf.returncode == 0, lauf.stderr
-    assert "orakel: Zurückgerollt 0003_spalten_nachziehen" in lauf.stdout
+    assert "orakel: Zurückgerollt" in lauf.stdout
+    for zurueck in (m.stand for m in migrationen.dateien() if m.nummer > 2):
+        assert zurueck in lauf.stdout, lauf.stdout
     assert "orakel: Neuer Stand 0001_basis, 0002_company" in lauf.stdout
     assert _stand(db) == [1, 2]
 
@@ -93,4 +95,5 @@ def test_zurueck_befehl_rollt_zurueck_und_sichert_vorher(tmp_path):
     assert sicherung.is_file()
     assert sicherung.parent == tmp_path
     assert re.fullmatch(r"orakel\.db\.vor-migration-\d{8}-\d{6}\.bak", sicherung.name)
-    assert _stand(sicherung) == [1, 2, 3], "Sicherung muss den Stand vor dem Rückweg halten"
+    assert _stand(sicherung) == [m.nummer for m in migrationen.dateien()], (
+        "Sicherung muss den Stand vor dem Rückweg halten")
