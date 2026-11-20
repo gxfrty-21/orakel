@@ -71,7 +71,8 @@ PFLICHT_VERWEISE = (
 )
 
 INLINE_LINK = re.compile(
-    r"!?\[[^\]]*\]\(\s*(<[^>]+>|[^)\s]+)(?:\s+[\"'][^\"']*[\"'])?\s*\)"
+    r"!?\[(?:[^\[\]]|\[[^\[\]]*\])*\]\(\s*(<[^>]+>|[^)\s]+)"
+    r"(?:\s+[\"'][^\"']*[\"'])?\s*\)"
 )
 REFERENCE_LINK = re.compile(
     r"^[ \t]{0,3}\[[^\]]+\]:[ \t]*(<[^>]+>|\S+)", re.MULTILINE
@@ -335,6 +336,25 @@ def _normalisiere_referenz(label: str) -> str:
     return " ".join(label.split()).casefold()
 
 
+def _linktext_bereiche(text: str) -> list[tuple[int, int]]:
+    """Spanne der Linktexte (``[...]`` direkt vor ``(`` oder ``[``).
+
+    Erfasst Inline- und Referenzlinks samt Bildern und beliebiger
+    Klammer-Schachtelung. Ein Referenzlabel innerhalb dieser Spannen ist
+    Bestandteil eines fremden Linktexts und kein eigener Link.
+    """
+    bereiche: list[tuple[int, int]] = []
+    offen: list[int] = []
+    for stelle, zeichen in enumerate(text):
+        if zeichen == "[":
+            offen.append(stelle)
+        elif zeichen == "]" and offen:
+            start = offen.pop()
+            if text[stelle + 1:stelle + 2] in ("(", "["):
+                bereiche.append((start + 1, stelle))
+    return bereiche
+
+
 def _referenzziele(text: str) -> list[str]:
     """Liefert Ziele tatsächlich verwendeter Referenzlinks."""
     sichtbar = _maskiere_code(text)
@@ -353,7 +373,13 @@ def _referenzziele(text: str) -> list[str]:
         ziel = definitionen.get(_normalisiere_referenz(label))
         if ziel:
             ziele.append(ziel)
+    linktexte = _linktext_bereiche(sichtbar)
     for treffer in REFERENZ_KURZ.finditer(sichtbar):
+        if any(
+            start <= treffer.start() and treffer.end() <= ende
+            for start, ende in linktexte
+        ):
+            continue  # Label steht nur im Linktext eines anderen Links
         ziel = definitionen.get(_normalisiere_referenz(treffer.group(1)))
         if ziel:
             ziele.append(ziel)
