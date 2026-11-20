@@ -261,6 +261,306 @@
     {
       "quelle": "orakel/web/static/vaultgraph.js",
       "ziel": "dateien/web/static/vaultgraph.js"
+    },
+    {
+      "quelle": "tests/conftest.py",
+      "ziel": "dateien/tests/conftest.py"
+    },
+    {
+      "quelle": "tests/paper_strategies.py",
+      "ziel": "dateien/tests/paper_strategies.py"
+    },
+    {
+      "quelle": "tests/test_backtest.py",
+      "ziel": "dateien/tests/test_backtest.py"
+    },
+    {
+      "quelle": "tests/test_betrieb.py",
+      "ziel": "dateien/tests/test_betrieb.py"
+    },
+    {
+      "quelle": "tests/test_company.py",
+      "ziel": "dateien/tests/test_company.py"
+    },
+    {
+      "quelle": "tests/test_company_api.py",
+      "ziel": "dateien/tests/test_company_api.py"
+    },
+    {
+      "quelle": "tests/test_company_communication.py",
+      "ziel": "dateien/tests/test_company_communication.py"
+    },
+    {
+      "quelle": "tests/test_config.py",
+      "ziel": "dateien/tests/test_config.py"
+    },
+    {
+      "quelle": "tests/test_config_guards.py",
+      "ziel": "dateien/tests/test_config_guards.py"
+    },
+    {
+      "quelle": "tests/test_data.py",
+      "ziel": "dateien/tests/test_data.py"
+    },
+    {
+      "quelle": "tests/test_doku_aenderungen.py",
+      "ziel": "dateien/tests/test_doku_aenderungen.py"
+    },
+    {
+      "quelle": "tests/test_doku_pflichtverweis.py",
+      "ziel": "dateien/tests/test_doku_pflichtverweis.py"
+    },
+    {
+      "quelle": "tests/test_engine_vergleich.py",
+      "ziel": "dateien/tests/test_engine_vergleich.py"
+    },
+    {
+      "quelle": "tests/test_githooks.py",
+      "ziel": "dateien/tests/test_githooks.py"
+    },
+    {
+      "quelle": "tests/test_globe.py",
+      "ziel": "dateien/tests/test_globe.py"
+    },
+    {
+      "quelle": "tests/test_intel.py",
+      "ziel": "dateien/tests/test_intel.py"
+    },
+    {
+      "quelle": "tests/test_judge.py",
+      "ziel": "dateien/tests/test_judge.py"
+    },
+    {
+      "quelle": "tests/test_knowledge.py",
+      "ziel": "dateien/tests/test_knowledge.py"
+    },
+    {
+      "quelle": "tests/test_markt.py",
+      "ziel": "dateien/tests/test_markt.py"
+    },
+    {
+      "quelle": "tests/test_nexus_abruf.py",
+      "ziel": "dateien/tests/test_nexus_abruf.py"
+    },
+    {
+      "quelle": "tests/test_nexus_bewertung.py",
+      "ziel": "dateien/tests/test_nexus_bewertung.py"
+    },
+    {
+      "quelle": "tests/test_nexus_claim_baseline.py",
+      "ziel": "dateien/tests/test_nexus_claim_baseline.py"
+    },
+    {
+      "quelle": "tests/test_nexus_dedup.py",
+      "ziel": "dateien/tests/test_nexus_dedup.py"
+    },
+    {
+      "quelle": "tests/test_nexus_feeds.py",
+      "ziel": "dateien/tests/test_nexus_feeds.py"
+    },
+    {
+      "quelle": "tests/test_nexus_graph.py",
+      "ziel": "dateien/tests/test_nexus_graph.py"
+    },
+    {
+      "quelle": "tests/test_nexus_hn.py",
+      "ziel": "dateien/tests/test_nexus_hn.py"
+    },
+    {
+      "quelle": "tests/test_nexus_kalibrierung.py",
+      "ziel": "dateien/tests/test_nexus_kalibrierung.py"
+    },
+    {
+      "quelle": "tests/test_nexus_missionen.py",
+      "ziel": "dateien/tests/test_nexus_missionen.py"
+    },
+    {
+      "quelle": "tests/test_nexus_nacht.py",
+      "ziel": "dateien/tests/test_nexus_nacht.py"
+    },
+    {
+      "quelle": "tests/test_nexus_quellen.py",
+      "ziel": "dateien/tests/test_nexus_quellen.py"
+    },
+    {
+      "quelle": "tests/test_nexus_raum.py",
+      "ziel": "dateien/tests/test_nexus_raum.py"
+    },
+    {
+      "quelle": "tests/test_nexus_speicher.py",
+      "ziel": "dateien/tests/test_nexus_speicher.py"
+    },
+    {
+      "quelle": "tests/test_nexus_sprache.py",
+      "ziel": "dateien/tests/test_nexus_sprache.py"
+    },
+    {
+      "quelle": "tests/test_paper.py",
+      "ziel": "dateien/tests/test_paper.py"
+    },
+    {
+      "quelle": "tests/test_paper_datenqualitaet.py",
+      "ziel": "dateien/tests/test_paper_datenqualitaet.py"
+    },
+    {
+      "quelle": "tests/test_paper_long_short.py",
+      "ziel": "dateien/tests/test_paper_long_short.py"
+    },
+    {
+      "quelle": "tests/test_paper_strategies.py",
+      "ziel": "dateien/tests/test_paper_strategies.py"
+    },
+    {
+      "quelle": "tests/test_report.py",
+      "ziel": "dateien/tests/test_report.py"
+    },
+    {
+      "quelle": "tests/test_review_paket.py",
+      "ziel": "dateien/tests/test_review_paket.py"
+    },
+    {
+      "quelle": "tests/test_risiko_freigabe.py",
+      "ziel": "dateien/tests/test_risiko_freigabe.py"
+    },
+    {
+      "quelle": "tests/test_risk.py",
+      "ziel": "dateien/tests/test_risk.py"
+    },
+    {
+      "quelle": "tests/test_seed.py",
+      "ziel": "dateien/tests/test_seed.py"
+    },
+    {
+      "quelle": "tests/test_sekretariat.py",
+      "ziel": "dateien/tests/test_sekretariat.py"
+    },
+    {
+      "quelle": "tests/test_soak_abnahme.py",
+      "ziel": "dateien/tests/test_soak_abnahme.py"
+    },
+    {
+      "quelle": "tests/test_soak_auto_abnahme.py",
+      "ziel": "dateien/tests/test_soak_auto_abnahme.py"
+    },
+    {
+      "quelle": "tests/test_spider.py",
+      "ziel": "dateien/tests/test_spider.py"
+    },
+    {
+      "quelle": "tests/test_watchdog.py",
+      "ziel": "dateien/tests/test_watchdog.py"
+    },
+    {
+      "quelle": "tests/test_web.py",
+      "ziel": "dateien/tests/test_web.py"
+    },
+    {
+      "quelle": "config.toml",
+      "ziel": "dateien/config.toml"
+    },
+    {
+      "quelle": "Dockerfile",
+      "ziel": "dateien/Dockerfile"
+    },
+    {
+      "quelle": "orakel/migrations/001_company.sql",
+      "ziel": "dateien/orakel/migrations/001_company.sql"
+    },
+    {
+      "quelle": "scripts/pruefe_doku.py",
+      "ziel": "dateien/scripts/pruefe_doku.py"
+    },
+    {
+      "quelle": "scripts/pruefe-touch.mjs",
+      "ziel": "dateien/scripts/pruefe-touch.mjs"
+    },
+    {
+      "quelle": "scripts/pruefe-text250-ergebnis.mjs",
+      "ziel": "dateien/scripts/pruefe-text250-ergebnis.mjs"
+    },
+    {
+      "quelle": "scripts/text250-required-checks.json",
+      "ziel": "dateien/scripts/text250-required-checks.json"
+    },
+    {
+      "quelle": "scripts/baue_review_paket.py",
+      "ziel": "dateien/scripts/baue_review_paket.py"
+    },
+    {
+      "quelle": "orakel/__init__.py",
+      "ziel": "dateien/code/__init__.py"
+    },
+    {
+      "quelle": "orakel/__main__.py",
+      "ziel": "dateien/code/__main__.py"
+    },
+    {
+      "quelle": "orakel/kern/backtest.py",
+      "ziel": "dateien/code/backtest.py"
+    },
+    {
+      "quelle": "orakel/kern/data.py",
+      "ziel": "dateien/code/data.py"
+    },
+    {
+      "quelle": "orakel/globe.py",
+      "ziel": "dateien/code/globe.py"
+    },
+    {
+      "quelle": "orakel/intel.py",
+      "ziel": "dateien/code/intel.py"
+    },
+    {
+      "quelle": "orakel/kern/judge.py",
+      "ziel": "dateien/code/judge.py"
+    },
+    {
+      "quelle": "orakel/knowledge.py",
+      "ziel": "dateien/code/knowledge.py"
+    },
+    {
+      "quelle": "orakel/kern/markt.py",
+      "ziel": "dateien/code/markt.py"
+    },
+    {
+      "quelle": "orakel/kern/metrics.py",
+      "ziel": "dateien/code/metrics.py"
+    },
+    {
+      "quelle": "orakel/pipeline.py",
+      "ziel": "dateien/code/pipeline.py"
+    },
+    {
+      "quelle": "orakel/report.py",
+      "ziel": "dateien/code/report.py"
+    },
+    {
+      "quelle": "orakel/kern/risk.py",
+      "ziel": "dateien/code/risk.py"
+    },
+    {
+      "quelle": "orakel/scheduler.py",
+      "ziel": "dateien/code/scheduler.py"
+    },
+    {
+      "quelle": "orakel/seed.py",
+      "ziel": "dateien/code/seed.py"
+    },
+    {
+      "quelle": "orakel/sekretariat.py",
+      "ziel": "dateien/code/sekretariat.py"
+    },
+    {
+      "quelle": "orakel/spider.py",
+      "ziel": "dateien/code/spider.py"
+    },
+    {
+      "quelle": "orakel/kern/strategies.py",
+      "ziel": "dateien/code/strategies.py"
+    },
+    {
+      "quelle": "orakel/watchdog.py",
+      "ziel": "dateien/code/watchdog.py"
     }
   ],
   "dokumente": [
@@ -269,7 +569,8 @@
     "EVIDENZ.md",
     "ORAKEL-REVIEW-PAKET.md",
     "QUELLEN-DECKUNG.md",
-    "QUICKSTART.md"
+    "QUICKSTART.md",
+    "ANHANG-HISTORIE.md"
   ],
   "belege": [
     "belege/240px-kernaussagen-karte.png",
