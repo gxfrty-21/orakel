@@ -15,6 +15,7 @@ wird ihre Transaktion zurückgerollt; die Datenbank bleibt auf dem Stand davor.
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -34,6 +35,23 @@ CREATE TABLE IF NOT EXISTS {TABELLE} (
 
 class MigrationsFehler(RuntimeError):
     """Migrationen sind nicht eindeutig, fehlerhaft oder nicht umkehrbar."""
+
+
+class AltesSchemaFehler(MigrationsFehler):
+    """Der Bestand hat ein älteres Schema, das sich nicht nachziehen lässt.
+
+    Typisch: Die Tabelle existiert schon, aber ohne die Spalte, auf die eine
+    Migration einen Index legt. SQLite kann eine vorhandene Tabelle nicht
+    umbauen; hier hilft nur Export und Import in ein frisches Schema.
+    """
+
+
+_INDEX_SQL = re.compile(
+    r"CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(?P<index>\w+)\s+"
+    r"ON\s+(?P<tabelle>\w+)\s*\((?P<spalten>[^)]*)\)",
+    re.IGNORECASE,
+)
+_SPALTE_IM_FEHLER = re.compile(r"no such column: (?P<spalte>[\w.]+)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +102,35 @@ def _statements(sql: str) -> Iterable[str]:
         yield puffer.strip()
 
 
-def _wende_datei_an(c: sqlite3.Connection, datei: Path) -> None:
+def _altes_schema(datei: Path, anweisung: str, fehler: sqlite3.OperationalError,
+                  datenbank: Path | None) -> AltesSchemaFehler:
+    """Baut aus einem ``no such column`` eine Meldung mit Export/Import-Weg."""
+    index = _INDEX_SQL.search(anweisung)
+    spalte = _SPALTE_IM_FEHLER.search(str(fehler))
+    name = spalte.group("spalte") if spalte else "eine erwartete Spalte"
+    if index:
+        was = (f"Index {index.group('index')} braucht die Spalte "
+               f"{index.group('tabelle')}.{name}, die im Bestand fehlt")
+    else:
+        was = f"die Spalte {name} fehlt im Bestand"
+    ziel = str(datenbank) if datenbank is not None else "<datenbank>"
+    return AltesSchemaFehler(
+        f"{datei.name}: {was}.\n"
+        "Die Tabelle steht bereits in einer älteren Form in der Datenbank; "
+        "CREATE TABLE IF NOT EXISTS ändert eine vorhandene Tabelle nicht.\n"
+        "Die Migration wurde zurückgerollt; an der Datenbank hat sich nichts geändert.\n"
+        "Daten exportieren und in ein frisches Schema importieren "
+        "(Details: docs/MIGRATIONEN.md, Abschnitt «Sehr alte Bestände»):\n"
+        f'  1. Datei sichern: cp "{ziel}" "{ziel}.vor-umbau"\n'
+        f"  2. Export:        sqlite3 \"{ziel}\" '.dump' > orakel-export.sql\n"
+        "  3. Alte Datei weglegen, die Anwendung einmal starten (legt das neue "
+        "Schema an) und danach die Daten der Tabellen übernehmen, deren Spalten "
+        "beide Stände teilen."
+    )
+
+
+def _wende_datei_an(c: sqlite3.Connection, datei: Path,
+                    datenbank: Path | None = None) -> None:
     """Führt eine Datei in einer Transaktion aus; bei Fehler bleibt nichts zurück."""
     c.execute("BEGIN")
     try:
@@ -98,9 +144,18 @@ def _wende_datei_an(c: sqlite3.Connection, datei: Path) -> None:
                 # SQLite kennt kein ADD COLUMN IF NOT EXISTS. Eine bereits
                 # vorhandene Spalte ist kein Fehler, sondern der Normalfall bei
                 # einer frisch angelegten Datenbank.
-                if "duplicate column name" not in str(fehler):
-                    raise
+                if "duplicate column name" in str(fehler):
+                    continue
+                if "no such column" in str(fehler):
+                    # Ein Bestand ohne die Spalte (etwa ein Index auf
+                    # titel_hash) ist kein Programmierfehler: Die Meldung nennt
+                    # Index, Tabelle und Spalte und den Weg über Export/Import.
+                    raise _altes_schema(datei, anweisung, fehler, datenbank) from fehler
+                raise
         c.commit()
+    except AltesSchemaFehler:
+        c.rollback()
+        raise
     except Exception as fehler:
         c.rollback()
         raise MigrationsFehler(f"{datei.name}: {fehler}") from fehler
@@ -170,7 +225,7 @@ def anwenden(pfad: str | Path, *, ordner: Path | None = None, bis: int | None = 
 
         angewendet_nummern: list[int] = []
         for migration in offen:
-            _wende_datei_an(c, migration.hoch)
+            _wende_datei_an(c, migration.hoch, datei)
             c.execute(
                 f"INSERT INTO {TABELLE} (nummer, name, angewendet_am) VALUES (?, ?, ?)",
                 (migration.nummer, migration.name, jetzt.isoformat(timespec="seconds")),
@@ -219,7 +274,7 @@ def zurueckrollen(pfad: str | Path, *, bis: int = 0, ordner: Path | None = None,
     c = _verbinde(datei)
     try:
         for nummer in zurueck:
-            _wende_datei_an(c, alle[nummer].runter)  # type: ignore[arg-type]
+            _wende_datei_an(c, alle[nummer].runter, datei)  # type: ignore[arg-type]
             c.execute(f"DELETE FROM {TABELLE} WHERE nummer = ?", (nummer,))
             c.commit()
     finally:
