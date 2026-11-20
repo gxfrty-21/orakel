@@ -7,6 +7,7 @@ import json
 import os
 import sys
 
+from ..config import load_config
 from ..db import Facts
 from ..knowledge import Vault
 from .abruf import Abrufer, HttpCache
@@ -19,6 +20,18 @@ from .missionen import Missionen
 from .nacht import nachtlauf
 from .quellen import lade_register
 from .status import gesamt_status
+
+
+def _db_pfad(db: str | None) -> str:
+    """Datenbankpfad: ``--db`` gewinnt, sonst ``config.toml``/``ORAKEL_DB_PFAD``.
+
+    ``ORAKEL_CONFIG`` nennt im Container die Konfiguration des Dienstes;
+    ``load_config`` wendet ``ORAKEL_DB_PFAD`` selbst an. Damit brauchen die
+    Unterbefehle keinen fest verdrahteten Pfad.
+    """
+    if db:
+        return db
+    return str(load_config(os.environ.get("ORAKEL_CONFIG") or "config.toml").db_pfad)
 
 
 def _status(args: argparse.Namespace) -> int:
@@ -166,12 +179,12 @@ def main(argv: list[str] | None = None) -> int:
     unter = parser.add_subparsers(dest="befehl", required=True)
 
     status = unter.add_parser("status", help="Register und Cache anzeigen")
-    status.add_argument("--db", default="orakel.db")
+    status.add_argument("--db", default=None, help="Datenbankpfad; Standard aus config.toml, ORAKEL_DB_PFAD sticht ihn")
     status.add_argument("--register", default=None)
     status.set_defaults(funktion=_status)
 
     hole = unter.add_parser("hole", help="Quellen wirklich abrufen")
-    hole.add_argument("--db", default="orakel.db")
+    hole.add_argument("--db", default=None, help="Datenbankpfad; Standard aus config.toml, ORAKEL_DB_PFAD sticht ihn")
     hole.add_argument("--register", default=None)
     hole.add_argument("--limit", type=int, default=5)
     hole.add_argument("--nur", default=None)
@@ -182,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
     hole.set_defaults(funktion=_hole)
 
     nacht = unter.add_parser("nacht", help="Nachtlauf: Meldungen speichern, Backup, DNS/TLS")
-    nacht.add_argument("--db", default="orakel.db")
+    nacht.add_argument("--db", default=None, help="Datenbankpfad; Standard aus config.toml, ORAKEL_DB_PFAD sticht ihn")
     nacht.add_argument("--register", default=None)
     nacht.add_argument("--backup-ordner", default="backups")
     nacht.add_argument("--behalten-tage", type=int, default=14)
@@ -195,21 +208,21 @@ def main(argv: list[str] | None = None) -> int:
     nacht.set_defaults(funktion=_nacht)
 
     bewertung = unter.add_parser("bewertung", help="Kernaussagen und Quellenreputation neu berechnen")
-    bewertung.add_argument("--db", default="orakel.db")
+    bewertung.add_argument("--db", default=None, help="Datenbankpfad; Standard aus config.toml, ORAKEL_DB_PFAD sticht ihn")
     bewertung.add_argument("--register", default=None)
     bewertung.set_defaults(funktion=_bewertung)
 
     graph = unter.add_parser("graph", help="Wissensgraph neu aufbauen und anzeigen")
-    graph.add_argument("--db", default="orakel.db")
+    graph.add_argument("--db", default=None, help="Datenbankpfad; Standard aus config.toml, ORAKEL_DB_PFAD sticht ihn")
     graph.add_argument("--zeitraum", choices=tuple(ZEITRAEUME), default="7d")
     graph.set_defaults(funktion=_graph)
 
     kalibrierung = unter.add_parser("kalibrierung", help="Prognosen prüfen und Kalibrierung anzeigen")
-    kalibrierung.add_argument("--db", default="orakel.db")
+    kalibrierung.add_argument("--db", default=None, help="Datenbankpfad; Standard aus config.toml, ORAKEL_DB_PFAD sticht ihn")
     kalibrierung.set_defaults(funktion=_kalibrierung)
 
     prognose = unter.add_parser("prognose", help="Prüfbare Marktprognose anlegen")
-    prognose.add_argument("--db", default="orakel.db")
+    prognose.add_argument("--db", default=None, help="Datenbankpfad; Standard aus config.toml, ORAKEL_DB_PFAD sticht ihn")
     prognose.add_argument("--aussage", required=True)
     prognose.add_argument("--erwartung", choices=("steigt", "sinkt", "unveraendert"),
                           required=True)
@@ -222,7 +235,7 @@ def main(argv: list[str] | None = None) -> int:
     prognose.set_defaults(funktion=_prognose)
 
     mission = unter.add_parser("mission", help="Mission anlegen und optional starten")
-    mission.add_argument("--db", default="orakel.db")
+    mission.add_argument("--db", default=None, help="Datenbankpfad; Standard aus config.toml, ORAKEL_DB_PFAD sticht ihn")
     mission.add_argument("--vault", default=os.environ.get("ORAKEL_VAULT", "vault"))
     mission.add_argument("--titel", required=True)
     mission.add_argument("--auftrag", required=True)
@@ -233,18 +246,19 @@ def main(argv: list[str] | None = None) -> int:
     mission.set_defaults(funktion=_mission)
 
     missionen = unter.add_parser("missionen", help="Missionen und Queue-Statistik anzeigen")
-    missionen.add_argument("--db", default="orakel.db")
+    missionen.add_argument("--db", default=None, help="Datenbankpfad; Standard aus config.toml, ORAKEL_DB_PFAD sticht ihn")
     missionen.add_argument("--limit", type=int, default=20)
     missionen.set_defaults(funktion=_missionen)
 
     mission_lauf = unter.add_parser("mission-lauf", help="Fällige Missionen ausführen")
-    mission_lauf.add_argument("--db", default="orakel.db")
+    mission_lauf.add_argument("--db", default=None, help="Datenbankpfad; Standard aus config.toml, ORAKEL_DB_PFAD sticht ihn")
     mission_lauf.add_argument("--vault", default=os.environ.get("ORAKEL_VAULT", "vault"))
     mission_lauf.add_argument("--kennung", default=None)
     mission_lauf.add_argument("--max", type=int, default=10)
     mission_lauf.set_defaults(funktion=_mission_lauf)
 
     args = parser.parse_args(argv)
+    args.db = _db_pfad(args.db)
     return int(args.funktion(args))
 
 
