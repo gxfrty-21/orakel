@@ -140,8 +140,11 @@ class Takt(threading.Thread):
             erinnerungs_minuten = 5
         erinnerungs_intervall = erinnerungs_minuten * 60
         letzte_erinnerung = 0.0
-        # 0.0 macht die Aufbewahrung in der ersten Runde fällig.
-        letzte_aufbewahrung = 0.0
+        # -inf macht die Aufbewahrung in der ersten Runde fällig. 0.0 wäre erst
+        # nach einer Stunde Laufzeit der Monotonic-Uhr fällig – und die zählt
+        # ab dem Boot: Auf einem frisch gestarteten Rechner (Container, CI)
+        # würde die Aufbewahrung sonst eine Stunde warten.
+        letzte_aufbewahrung = float("-inf")
         erzwungen = {"spider"} if self.mit_spider else None
         # Einmal beim Start: Was ein Absturz auf «aktiv» liess, wird wieder
         # eingereiht. Nicht in der Schleife, sonst reiht sich ein laufender
