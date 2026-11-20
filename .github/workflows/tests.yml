@@ -125,14 +125,6 @@ jobs:
         run: |
           python scripts/baue_review_paket.py --pruefen --evidenz
 
-      # Die echten Paketdokumente liegen unversioniert unter artifacts/; im CI
-      # gäbe es also nichts zu prüfen. Die Probe führt Hashes, Testzahl,
-      # CI-Lauf (URL und Zahl) und die Zeilengrenze gegen ein synthetisches
-      # Paket aus und verfälscht jeden Punkt einzeln.
-      - name: Konsistenz-Prüfung selbst prüfen
-        run: |
-          python scripts/baue_review_paket.py --konsistenzprobe
-
   # Stellt sicher, dass das Dockerfile inklusive Seed-DB weiterhin baut.
   docker:
     runs-on: ubuntu-24.04

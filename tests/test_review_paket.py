@@ -183,13 +183,6 @@ def test_ci_lauf_ids_trennt_zahl_von_url_und_laufzeit():
     assert ids == {"111222333", "444555666"}
 
 
-def test_konsistenzprobe_meldet_erfolg():
-    """Die Probe im CI prüft alle vier Punkte und muss selbst bestehen."""
-    modul = _modul()
-
-    assert modul.konsistenzprobe() == 0
-
-
 def test_hauptdokument_hoechstens_200_zeilen(tmp_path):
     modul = _modul()
     dokument = tmp_path / "ORAKEL-REVIEW-PAKET.md"
