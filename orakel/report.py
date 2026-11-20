@@ -16,7 +16,7 @@ STATUS = {"simulation": "SIMULATION", "backtest": "BACKTEST", "paper": "PAPER TR
 def _json(row: Any, feld: str, standard: Any) -> Any:
     try:
         return json.loads(row[feld])
-    except Exception:
+    except (ValueError, TypeError):
         return standard
 
 
