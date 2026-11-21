@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable, Iterator, Sequence
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import numpy as np
@@ -25,17 +25,15 @@ ZEITFORMATE = (
     "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
 )
 
-# MT5 exportiert je nach Sprache/Klickpfad unterschiedliche Kopfzeilen.
-# Datum und Zeit können getrennt sein (MT5-Standard) und werden zusammengeführt.
+# MT5 exportiert je nach Sprache unterschiedliche Kopfzeilen; die spitzen
+# Klammern der MT5-Form werden vor dem Nachschlagen entfernt. Datum und Zeit
+# können getrennt sein (MT5-Standard) und werden zusammengeführt.
 ALIASE: dict[str, str] = {
     "date": "_datum", "datetime": "ts", "time": "_zeit", "datum": "_datum", "zeit": "_zeit",
-    "<date>": "_datum", "<time>": "_zeit", "<datetime>": "ts",
-    "open": "open", "<open>": "open", "eröffnung": "open", "eroeffnung": "open",
-    "high": "high", "<high>": "high", "hoch": "high",
-    "low": "low", "<low>": "low", "tief": "low",
-    "close": "close", "<close>": "close", "schluss": "close",
-    "tickvol": "volume", "<tickvol>": "volume", "tickvolume": "volume",
-    "vol": "volume", "<vol>": "volume", "volume": "volume", "volumen": "volume",
+    "open": "open", "eröffnung": "open", "eroeffnung": "open",
+    "high": "high", "hoch": "high", "low": "low", "tief": "low",
+    "close": "close", "schluss": "close",
+    "tickvol": "volume", "vol": "volume", "volume": "volume", "volumen": "volume",
 }
 
 
@@ -61,7 +59,7 @@ class Datenqualitaet:
 def _normalisiere_spalten(df: pd.DataFrame) -> pd.DataFrame:
     umbenannt: dict[str, str] = {}
     for spalte in df.columns:
-        schluessel = str(spalte).strip().lower()
+        schluessel = str(spalte).strip().strip("<>").strip().lower()
         if schluessel in ALIASE:
             umbenannt[spalte] = ALIASE[schluessel]
     df = df.rename(columns=umbenannt)
@@ -78,7 +76,7 @@ def _normalisiere_spalten(df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(f"CSV: Spalten fehlen: {', '.join(fehlend)} (gefunden: {list(df.columns)})")
     if "volume" not in df.columns:
         df["volume"] = 0.0
-    return df[SPALTEN].copy()
+    return df[SPALTEN]
 
 
 def _trenner(kopf: str) -> str:
@@ -92,12 +90,15 @@ def _trenner(kopf: str) -> str:
     raise ValueError("CSV: Trennzeichen nicht erkannt (Tabulator, Semikolon oder Komma nötig).")
 
 
-def _zeitstempel(reihen: pd.Series, zeitzone: str | None = None) -> pd.Series:
+def _zeitstempel(reihen: pd.Series, zeitzone: str | None = None,
+                 versatz_stunden: float | None = None) -> pd.Series:
     """Parst MT5- und ISO-Zeitstempel zeilenweise mit festen Formaten.
 
     Zeilenweise, weil ein zusammengeführter Export mit und ohne Sekunden
-    vorkommen kann; geraten wird trotzdem nichts. Ohne ``zeitzone`` gilt die
-    Serverzeit als UTC, sonst als Ortszeit dieser IANA-Zone (inkl. Sommerzeit).
+    vorkommen kann; geraten wird trotzdem nichts. Ohne ``zeitzone`` und ohne
+    ``versatz_stunden`` gilt die Serverzeit als UTC, mit ``zeitzone`` als
+    Ortszeit dieser IANA-Zone (inkl. Sommerzeit), mit ``versatz_stunden`` als
+    Serverzeit eines festen Broker-Versatzes.
     """
     text = (reihen.astype(str).str.strip()
             .str.replace(r"\s+", " ", regex=True)
@@ -116,11 +117,24 @@ def _zeitstempel(reihen: pd.Series, zeitzone: str | None = None) -> pd.Series:
             "Erwartet wird YYYY.MM.DD HH:MM[:SS] oder ISO 8601 mit Uhrzeit, in einer "
             "Spalte oder getrennt in Datum und Zeit."
         )
-    return _nach_utc(geparst, zeitzone)
+    return _nach_utc(geparst, zeitzone, versatz_stunden)
 
 
-def _nach_utc(geparst: pd.Series, zeitzone: str | None) -> pd.Series:
-    """Wandelt naive Serverzeit in UTC um; ohne Zone bleibt sie unverändert (UTC)."""
+def _nach_utc(geparst: pd.Series, zeitzone: str | None,
+              versatz_stunden: float | None = None) -> pd.Series:
+    """Wandelt naive Serverzeit in UTC um.
+
+    ``versatz_stunden`` ist der feste Broker-Versatz (Serverzeit = UTC + Versatz),
+    z. B. ``3`` für einen Server auf UTC+3. Er ersetzt die IANA-Zone, weil beide
+    Angaben zusammen nicht eindeutig wären.
+    """
+    if versatz_stunden is not None:
+        if zeitzone:
+            raise ValueError(
+                "CSV: server_zeitzone und server_versatz_stunden schliessen sich aus — "
+                "entweder eine IANA-Zone oder ein fester Broker-Versatz."
+            )
+        return (geparst - pd.Timedelta(hours=float(versatz_stunden))).dt.tz_localize("UTC")
     if not zeitzone:
         return geparst.dt.tz_localize("UTC")
     try:
@@ -131,15 +145,10 @@ def _nach_utc(geparst: pd.Series, zeitzone: str | None) -> pd.Series:
             "wie Europe/Athens."
         ) from exc
     # Bei der Rückstellung im Herbst wiederholt MT5 die Uhrzeiten. Die erste
-    # Fassung ist die Sommerzeit-, die zweite die Standardzeit-Stunde; so bleiben
-    # beide Stunden erhalten, statt als Dublette zusammenzufallen. Ausserhalb
-    # einer solchen Wiederholung ist das Merkmal bedeutungslos.
-    wiederholt = geparst.duplicated(keep=False)
-    if wiederholt.any():
-        fassung = geparst.groupby(geparst).cumcount()
-        ambiguous = fassung.eq(0).to_numpy()
-    else:
-        ambiguous = True
+    # Fassung ist die Sommerzeit-, jede weitere die Standardzeit-Stunde; so
+    # bleiben beide Stunden erhalten, statt als Dublette zusammenzufallen.
+    # Ausserhalb einer Wiederholung ist das Merkmal bedeutungslos.
+    ambiguous = (~geparst.duplicated(keep="first")).to_numpy()
     return geparst.dt.tz_localize(zone, ambiguous=ambiguous).dt.tz_convert("UTC")
 
 
@@ -156,31 +165,49 @@ def zerlege_dateiname(pfad: str | Path) -> tuple[str, str]:
     return stamm.split("_")[0].upper(), "M15"
 
 
-def lade_csv(pfad: str | Path, trenner: str | None = None,
-             server_zeitzone: str | None = None) -> pd.DataFrame:
+def lade_csv(pfad: str | Path, server_zeitzone: str | None = None,
+             server_versatz_stunden: float | None = None) -> pd.DataFrame:
     """Liest einen MT5-Export mit Tabulator, Komma oder Semikolon.
 
     Kopfzeilen dürfen englisch oder deutsch sein (siehe ``ALIASE``); ``<VOL>``
     und ``<SPREAD>`` werden ignoriert, ``<TICKVOL>`` wird zu ``volume``. Fehlt
     eine Volumenspalte, steht 0. Ohne ``server_zeitzone`` gilt die Serverzeit
-    als UTC, sonst als Ortszeit dieser IANA-Zone. Zeilen mit unlesbaren Preisen
+    als UTC, sonst als Ortszeit dieser IANA-Zone; ``server_versatz_stunden``
+    verschiebt stattdessen um einen festen Broker-Offset. Zeilen mit unlesbaren Preisen
     führen zu einem Fehler statt zu stillschweigend fehlenden Kerzen; doppelte
     Zeitstempel werden zusammengeführt (der letzte gewinnt), die Reihe wird
     sortiert.
     """
     p = Path(pfad)
+    sep, kodierung = _trenner_und_kodierung(p)
+    roh = pd.read_csv(p, sep=sep, encoding=kodierung)
+    return _verarbeite(_normalisiere_spalten(roh), server_zeitzone, p.name,
+                       server_versatz_stunden)
+
+
+def _trenner_und_kodierung(p: Path) -> tuple[str, str]:
     with p.open("r", encoding="utf-8-sig", errors="replace") as datei:
         kopf = datei.readline()
     if not kopf.strip():
         raise ValueError(f"CSV: {p.name} ist leer.")
-    sep = trenner or _trenner(kopf)
+    return _trenner(kopf), _kodierung(p)
+
+
+def _kodierung(p: Path) -> str:
+    # Ältere MT5-Installationen schreiben ANSI (cp1252), z. B. «Eröffnung».
+    with p.open("rb") as datei:
+        probe = datei.readline()
     try:
-        roh = pd.read_csv(p, sep=sep, encoding="utf-8-sig")
+        probe.decode("utf-8-sig")
     except UnicodeDecodeError:
-        # Ältere MT5-Installationen schreiben ANSI (cp1252), z. B. «Eröffnung».
-        roh = pd.read_csv(p, sep=sep, encoding="cp1252")
-    df = _normalisiere_spalten(roh)
-    df["ts"] = _zeitstempel(df["ts"], server_zeitzone)
+        return "cp1252"
+    return "utf-8-sig"
+
+
+def _verarbeite(df: pd.DataFrame, zeitzone: str | None, name: str,
+                versatz_stunden: float | None = None) -> pd.DataFrame:
+    """Prüft und normalisiert einen Block; unlesbare Zeilen brechen ab."""
+    df["ts"] = _zeitstempel(df["ts"], zeitzone, versatz_stunden)
     for spalte in ("open", "high", "low", "close", "volume"):
         df[spalte] = pd.to_numeric(df[spalte], errors="coerce")
 
@@ -193,8 +220,37 @@ def lade_csv(pfad: str | Path, trenner: str | None = None,
     df["volume"] = df["volume"].fillna(0.0)
     df = df.drop_duplicates(subset="ts", keep="last").sort_values("ts").reset_index(drop=True)
     if df.empty:
-        raise ValueError(f"CSV: {p.name} enthält keine vollständigen Kerzen.")
+        raise ValueError(f"CSV: {name} enthält keine vollständigen Kerzen.")
     return df
+
+
+def lade_csv_bloecke(pfad: str | Path, server_zeitzone: str | None = None,
+                     block: int = 200_000,
+                     server_versatz_stunden: float | None = None) -> Iterator[pd.DataFrame]:
+    """Liest eine grosse Datei tageweise blockweise statt ganz auf einmal.
+
+    Blöcke enden an einem Datumswechsel. Bei der Herbst-Rückstellung liegen so
+    beide Fassungen derselben Uhrzeit im selben Block und bleiben trennbar; der
+    Import schreibt blockweise in die Datenbank und prüft danach wie bisher die
+    zusammengeführte Reihe.
+    """
+    p = Path(pfad)
+    sep, kodierung = _trenner_und_kodierung(p)
+
+    puffer: pd.DataFrame | None = None
+    for roh in pd.read_csv(p, sep=sep, encoding=kodierung, chunksize=block):
+        df = _normalisiere_spalten(roh)
+        if puffer is not None:
+            df = pd.concat([puffer, df], ignore_index=True)
+        tage = df["ts"].astype(str).str[:10]
+        # Der letzte Tag wird erst mit dem nächsten Block verarbeitet.
+        ab = int((tage == tage.iloc[-1]).to_numpy().argmax())
+        puffer = df.iloc[ab:].reset_index(drop=True)
+        rest = df.iloc[:ab]
+        if len(rest):
+            yield _verarbeite(rest, server_zeitzone, p.name, server_versatz_stunden)
+    if puffer is not None and len(puffer):
+        yield _verarbeite(puffer, server_zeitzone, p.name, server_versatz_stunden)
 
 
 def pruefe_daten(df: pd.DataFrame, symbol: str, cfg: Any, timeframe: str = "M15") -> Datenqualitaet:
@@ -227,21 +283,18 @@ def pruefe_daten(df: pd.DataFrame, symbol: str, cfg: Any, timeframe: str = "M15"
         q.fehler.append("Preise kleiner oder gleich null")
 
     luecken = df["ts"].diff().dt.total_seconds().dropna()
-    if len(luecken):
-        median = float(luecken.median())
-        if median > 0:
-            grosse = luecken[luecken > median * 3]
-            anteil = len(grosse) / len(luecken) * 100
-            if anteil > float(grenzen["max_luecke_pct"]):
-                q.warnungen.append(f"{anteil:.1f} % Lücken im Zeitraster (Wochenenden/Feiertage?)")
+    median = float(luecken.median()) if len(luecken) else 0.0
+    if median > 0:
+        anteil = float((luecken > median * 3).mean()) * 100
+        if anteil > float(grenzen["max_luecke_pct"]):
+            q.warnungen.append(f"{anteil:.1f} % Lücken im Zeitraster (Wochenenden/Feiertage?)")
 
     spruenge = df["close"].pct_change().abs() * 100
-    if len(spruenge.dropna()):
-        grosse_spruenge = spruenge[spruenge > float(grenzen["max_sprung_pct"])]
-        if len(grosse_spruenge):
-            q.warnungen.append(
-                f"{len(grosse_spruenge)} Sprünge über {grenzen['max_sprung_pct']} % (Split oder Datenfehler?)"
-            )
+    grosse_spruenge = spruenge[spruenge > float(grenzen["max_sprung_pct"])]
+    if len(grosse_spruenge):
+        q.warnungen.append(
+            f"{len(grosse_spruenge)} Sprünge über {grenzen['max_sprung_pct']} % (Split oder Datenfehler?)"
+        )
 
     if q.fehler:
         q.ok = False
@@ -300,9 +353,23 @@ def synthetische_kerzen(
     )
 
 
-def df_aus_db(zeilen: list[Any]) -> pd.DataFrame:
-    if not zeilen:
+def df_aus_db(zeilen: Sequence[Any]) -> pd.DataFrame:
+    return df_aus_bloecken([zeilen])
+
+
+def df_aus_bloecken(bloecke: Iterable[Sequence[Any]]) -> pd.DataFrame:
+    """Baut die Kerzen-Tabelle blockweise auf.
+
+    Millionen Zeilen auf einmal zu materialisieren (Dicts oder Row-Objekte)
+    kostet ein Vielfaches der Tabelle; blockweise bleibt der Speicher flach.
+    """
+    teile: list[pd.DataFrame] = []
+    for block in bloecke:
+        if not len(block):
+            continue
+        df = pd.DataFrame.from_records(block, columns=SPALTEN)
+        df["ts"] = pd.to_datetime(df["ts"], utc=True, format="ISO8601")
+        teile.append(df[SPALTEN])
+    if not teile:
         return pd.DataFrame(columns=SPALTEN)
-    df = pd.DataFrame([dict(r) for r in zeilen])
-    df["ts"] = pd.to_datetime(df["ts"], utc=True, format="mixed")
-    return df[SPALTEN]
+    return pd.concat(teile, ignore_index=True)

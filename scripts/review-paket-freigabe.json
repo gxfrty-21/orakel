@@ -807,6 +807,10 @@
       "ziel": "dateien/tests/test_paper_strategies.py"
     },
     {
+      "quelle": "tests/test_pipeline.py",
+      "ziel": "dateien/tests/test_pipeline.py"
+    },
+    {
       "quelle": "tests/test_cockpit.py",
       "ziel": "dateien/tests/test_cockpit.py"
     },

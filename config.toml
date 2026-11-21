@@ -9,7 +9,8 @@ daten_ordner = "daten"
 vault_ordner = "vault"
 db_pfad = "orakel.db"
 datenquelle = "synthetisch"        # synthetisch | csv   (MT5-Exporte als CSV importieren)
-bars_pro_jahr = 24960              # M15, 24h-Markt; nur für Sharpe-Skalierung
+bars_pro_jahr = 24960              # M15, 24h-Markt; für andere Zeitrahmen skaliert
+richter_zeitrahmen = "M15"         # bewerteter Zeitrahmen (M1|M5|M15|H1); Paper bleibt M15
 
 [risiko]
 # --- deine Vorgaben ---
@@ -52,6 +53,9 @@ max_alter_tage = 5
 # Historie eine IANA-Zone angeben (z. B. "Europe/Athens"); die Sommerzeit wird
 # korrekt umgerechnet.
 server_zeitzone = ""
+# Alternativ ein fester Broker-Versatz in Stunden (z. B. 3.0 für UTC+3 ohne
+# Sommerzeit). Nur eine der beiden Angaben setzen; ohne beide gilt UTC.
+# server_versatz_stunden = 3.0
 # Paper-Takt: Kurse, die älter sind, gelten als nicht belastbar. Neue
 # Einstiege sind dann gesperrt; offene Positionen werden konservativ bewertet.
 # Der Takt liest M15-Kerzen; 4 h sind für Daytrading die relevante Grenze.

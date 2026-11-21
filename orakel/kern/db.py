@@ -103,6 +103,44 @@ class Facts:
             )
         return len(daten)
 
+    def kerzen_speichern_df(self, symbol: str, zeitrahmen: str, df: Any) -> int:
+        """Wie ``kerzen_speichern``, aber blockweise direkt aus einer Tabelle.
+
+        Millionen Zeilen als Dicts oder Tupel zu materialisieren kostet ein
+        Vielfaches des DataFrames; hier gehen die Spalten blockweise an
+        ``executemany``.
+        """
+        if df.empty:
+            return 0
+        with self.conn() as c:
+            return self._kerzen_block(c, symbol, zeitrahmen, df)
+
+    def _kerzen_block(self, c: sqlite3.Connection, symbol: str, zeitrahmen: str, df: Any) -> int:
+        sql = ("INSERT OR REPLACE INTO kerzen(symbol,zeitrahmen,ts,open,high,low,close,volume)"
+               " VALUES (?,?,?,?,?,?,?,?)")
+        for start in range(0, len(df), 50_000):
+            block = df.iloc[start:start + 50_000]
+            c.executemany(sql, zip(
+                (symbol for _ in range(len(block))),
+                (zeitrahmen for _ in range(len(block))),
+                block["ts"].astype(str),
+                block["open"].astype(float),
+                block["high"].astype(float),
+                block["low"].astype(float),
+                block["close"].astype(float),
+                block["volume"].fillna(0).astype(float),
+            ))
+        return len(df)
+
+    def kerzen_speichern_bloecke(self, symbol: str, zeitrahmen: str,
+                                 bloecke: Iterable[Any]) -> int:
+        """Schreibt Blöcke in einer Transaktion; bei einem Fehler bleibt nichts stehen."""
+        anzahl = 0
+        with self.conn() as c:
+            for block in bloecke:
+                anzahl += self._kerzen_block(c, symbol, zeitrahmen, block)
+        return anzahl
+
     def kerzen(self, symbol: str, zeitrahmen: str) -> list[sqlite3.Row]:
         with self.conn() as c:
             return list(c.execute(
@@ -110,6 +148,21 @@ class Facts:
                 " WHERE symbol=? AND zeitrahmen=? ORDER BY ts",
                 (symbol, zeitrahmen),
             ))
+
+    def kerzen_bloecke(self, symbol: str, zeitrahmen: str,
+                       groesse: int = 200_000) -> Iterator[list[sqlite3.Row]]:
+        """Liefert die Kerzen blockweise; für Millionen Zeilen schonender als ``kerzen``."""
+        with self.conn() as c:
+            cursor = c.execute(
+                "SELECT ts,open,high,low,close,volume FROM kerzen"
+                " WHERE symbol=? AND zeitrahmen=? ORDER BY ts",
+                (symbol, zeitrahmen),
+            )
+            while True:
+                block = cursor.fetchmany(groesse)
+                if not block:
+                    return
+                yield block
 
     def symbole(self) -> list[str]:
         with self.conn() as c:

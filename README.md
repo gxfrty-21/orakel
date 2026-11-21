@@ -240,6 +240,9 @@ mehrere Dateien dürfen Teilzeiträume sein:
 # Serverzeit des Brokers nach UTC umrechnen (Sommerzeit inklusive)
 .venv/bin/python -m orakel daten --csv daten/EURUSD_M15.csv --server-zeitzone Europe/Athens
 
+# oder mit festem Broker-Versatz, wenn der Server keine Sommerzeit kennt (z. B. UTC+3)
+.venv/bin/python -m orakel daten --csv daten/EURUSD_M15.csv --server-versatz-stunden 3
+
 # ohne Zeitrahmen im Dateinamen: Symbol und Rahmen vorgeben (nur bei einer Datei)
 .venv/bin/python -m orakel daten --csv daten/export.csv --symbol EURUSD --zeitrahmen M15
 
@@ -268,16 +271,27 @@ umgerechnet — inklusive Sommerzeitwechsel über mehrere Jahre. Bei der
 Rückstellung im Herbst wiederholen sich Uhrzeiten: Die erste Fassung gilt als
 Sommerzeit, die zweite als Standardzeit, sodass beide Stunden erhalten bleiben.
 Das gilt innerhalb einer Datei; wird die wiederholte Stunde über zwei Dateien
-verteilt, greift die Dublettenregel. Preise brauchen einen Dezimalpunkt; `1,035` wird
+verteilt, greift die Dublettenregel. Führt der Broker dauerhaft einen festen
+Versatz ohne Sommerzeit, verschiebt `--server-versatz-stunden 3` (oder
+`[daten] server_versatz_stunden` in `config.toml`) die Serverzeit um drei
+Stunden nach UTC; negative Werte sind erlaubt. Beide Angaben zusammen werden
+mit einer Meldung abgelehnt, weil sonst unklar wäre, welche gilt. Preise brauchen einen Dezimalpunkt; `1,035` wird
 abgelehnt statt still zu fehlen. Doppelte Zeitstempel gewinnen mit der letzten
 Zeile, die Reihe wird aufsteigend sortiert. Kodierung: UTF-8 (auch mit BOM)
-oder cp1252.
+oder cp1252. Grosse Dateien (mehrere Jahre M1) werden tageweise blockweise
+gelesen und in einer Transaktion geschrieben: Der Speicherbedarf bleibt flach,
+bei einem Fehler bleibt die Datei unverändert, und geprüft wird weiterhin die
+zusammengeführte Reihe.
 
 Zeitrahmen: importiert werden `M1`, `M5`, `M15`, `H1` (Suffix im Dateinamen
-oder `--zeitrahmen`). **Richter und Paper lesen M15**; andere Zeitrahmen werden
-gespeichert, aber nicht bewertet. Der Ordner-Import über `[basis]
-datenquelle = "csv"` liest `daten/*.csv` und überspringt andere Zeitrahmen mit
-Ereignis im Protokoll, statt sie als M15 abzulegen.
+oder `--zeitrahmen`). **Paper liest M15**; der Richter bewertet
+`[basis] richter_zeitrahmen` (Standard `M15`, z. B. `H1`). `bars_pro_jahr` gilt
+für M15 und wird für andere Zeitrahmen umgerechnet (H1: 6240 statt 24 960). Der
+Ordner-Import über `[basis] datenquelle = "csv"` liest `daten/*.csv`,
+importiert M15 und den Richter-Zeitrahmen und überspringt alles andere mit
+Ereignis im Protokoll, statt es als M15 abzulegen. Die Frischegrenzen bleiben
+je Zeitrahmen getrennt (`max_kurs_alter_stunden_h1` usw.), auch wenn der
+Paper-Takt M15 liest.
 
 ### Direkter Abruf aus dem Terminal (Windows)
 
@@ -295,6 +309,8 @@ py -m venv .venv
 Geschrieben wird `daten/EURUSD_M15.csv` im selben Format wie `Save as`
 (`<DATE> <TIME> <OPEN> …`), standardmässig monatsweise abgefragt (`--abschnitte
 jahr` fragt gröber), überlappend zusammengeführt und aufsteigend sortiert.
+Zusammengeführt wird nur, was in Zeit und Werten gleich ist — die doppelte
+Stunde der Herbst-Rückstellung bleibt deshalb vollständig erhalten.
 Danach wie oben importieren, inklusive `--server-zeitzone`. Voraussetzung: Das
 Terminal läuft, ist angemeldet und das Symbol steht im Market Watch;
 Zugangsdaten braucht das Skript nicht, und es gibt keinen Weg zu einer Order.

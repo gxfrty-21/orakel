@@ -9,6 +9,7 @@ from orakel.__main__ import _importiere_csv
 from orakel.kern.data import (
     df_aus_db,
     lade_csv,
+    lade_csv_bloecke,
     pruefe_daten,
     synthetische_kerzen,
     zerlege_dateiname,
@@ -17,7 +18,8 @@ from orakel.kern.db import Facts
 
 
 def _args(**kwargs) -> argparse.Namespace:
-    werte = {"symbol": None, "zeitrahmen": None, "server_zeitzone": None}
+    werte = {"symbol": None, "zeitrahmen": None, "server_zeitzone": None,
+             "server_versatz_stunden": None}
     werte.update(kwargs)
     return argparse.Namespace(**werte)
 
@@ -93,6 +95,39 @@ def test_server_zeitzone_wird_mit_sommerzeit_nach_utc_umgerechnet(tmp_path):
     assert df["ts"].iloc[1] == pd.Timestamp("2025-07-01 06:00", tz="UTC")
 
 
+def test_fester_broker_versatz_verschiebt_serverzeit_nach_utc(tmp_path):
+    # Fester Versatz: derselbe Offset im Winter und im Sommer, keine Sommerzeit.
+    inhalt = (
+        "<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>\n"
+        "2025.01.02\t09:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n"
+        "2025.07.01\t09:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n"
+    )
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(inhalt, encoding="utf-8")
+
+    df = lade_csv(p, server_versatz_stunden=3)
+    assert [str(t) for t in df["ts"]] == [
+        "2025-01-02 06:00:00+00:00", "2025-07-01 06:00:00+00:00",
+    ]
+    assert lade_csv(p, server_versatz_stunden=-5)["ts"].iloc[0] == pd.Timestamp(
+        "2025-01-02 14:00", tz="UTC")
+    # Auch der blockweise Import verschiebt identisch.
+    bloecke = list(lade_csv_bloecke(p, server_versatz_stunden=3))
+    assert bloecke[0]["ts"].iloc[0] == pd.Timestamp("2025-01-02 06:00", tz="UTC")
+
+
+def test_zeitzone_und_fester_versatz_schliessen_sich_aus(tmp_path):
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(
+        "<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>\n"
+        "2025.01.02\t09:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="schliessen sich aus"):
+        lade_csv(p, server_zeitzone="Europe/Athens", server_versatz_stunden=2)
+
+
 def test_herbst_umstellung_behaelt_beide_stunden(tmp_path):
     # Europe/Athens am 26.10.2025: 04:00 Sommerzeit wird zu 03:00 Standardzeit,
     # die Stunde 03:00–03:59 kommt also zweimal vor.
@@ -115,6 +150,46 @@ def test_herbst_umstellung_behaelt_beide_stunden(tmp_path):
     assert len(df) == 6  # keine der beiden Stunden fällt als Dublette weg
 
 
+def _herbst_datei(pfad):
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for zeit in ("02:45:00", "03:00:00", "03:15:00", "03:00:00", "03:15:00", "04:00:00"):
+        zeilen.append(f"2025.10.26\t{zeit}\t1.0\t1.1\t0.9\t1.05\t10\t0\t2")
+    pfad.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+
+def test_bloecke_zerteilen_die_herbststunde_nicht(tmp_path):
+    p = tmp_path / "EURUSD_M15.csv"
+    _herbst_datei(p)
+
+    bloecke = list(lade_csv_bloecke(p, server_zeitzone="Europe/Athens", block=4))
+
+    # Der Tageswechsel bestimmt die Blockgrenze: trotz block=4 ein Block, sechs
+    # getrennte UTC-Zeitstempel.
+    assert len(bloecke) == 1
+    assert [str(t) for t in bloecke[0]["ts"]] == [
+        "2025-10-25 23:45:00+00:00", "2025-10-26 00:00:00+00:00",
+        "2025-10-26 00:15:00+00:00", "2025-10-26 01:00:00+00:00",
+        "2025-10-26 01:15:00+00:00", "2025-10-26 02:00:00+00:00",
+    ]
+
+
+def test_fehlzeile_im_zweiten_block_rollt_die_datei_zurueck(cfg, tmp_path):
+    db = Facts(cfg.db_pfad)
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for zeit in ("09:00:00", "09:15:00", "09:30:00"):
+        zeilen.append(f"2025.01.02\t{zeit}\t1.0\t1.1\t0.9\t1.05\t10\t0\t2")
+    zeilen.append("2025.01.03\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2")
+    zeilen.append("2025.01.03\t09:15:00\tkaputt\t1.1\t0.9\t1.05\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unlesbaren Preisen"):
+        db.kerzen_speichern_bloecke("EURUSD", "M15", lade_csv_bloecke(p, block=3))
+
+    # Der erste Block war schon geschrieben; die Transaktion nimmt ihn zurück.
+    assert db.kerzen("EURUSD", "M15") == []
+
+
 def test_unbekannte_zeitzone_wird_abgelehnt(tmp_path):
     p = tmp_path / "EURUSD_M15.csv"
     p.write_text(
@@ -123,6 +198,24 @@ def test_unbekannte_zeitzone_wird_abgelehnt(tmp_path):
 
     with pytest.raises(ValueError, match="unbekannte Zeitzone"):
         lade_csv(p, server_zeitzone="Bogus/Zone")
+
+
+def test_unlesbarer_zeitstempel_nennt_anzahl_und_zeile(tmp_path):
+    inhalt = (
+        "<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>\n"
+        "2025.01.02\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n"
+        "2025.01.02\t09:15:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n"
+        "2025.01.02\t25:99:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n"
+    )
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(inhalt, encoding="utf-8")
+
+    with pytest.raises(ValueError) as fehler:
+        lade_csv(p)
+
+    meldung = str(fehler.value)
+    assert "1 Zeitstempel nicht lesbar" in meldung
+    assert "2025.01.02 25:99:00" in meldung
 
 
 def test_cli_speichert_serverzeit_als_utc(cfg, tmp_path):
@@ -134,6 +227,23 @@ def test_cli_speichert_serverzeit_als_utc(cfg, tmp_path):
     assert _importiere_csv(cfg, db, _args(csv=[str(p)], server_zeitzone="Europe/Athens")) == 0
     # 2024-01-01 00:00 Ortszeit (Winter, +2) wird zu 2023-12-31 22:00 UTC.
     assert db.kerzen("EURUSD", "M15")[0]["ts"] == "2023-12-31 22:00:00+00:00"
+
+
+def test_cli_speichert_festen_versatz_als_utc(cfg, tmp_path):
+    basis = synthetische_kerzen("X", kerzen=1300, seed=5)
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(_als_mt5(basis), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    # Beide Angaben zusammen lehnt die CLI ab, bevor etwas importiert wird.
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)], server_zeitzone="Europe/Athens",
+                                           server_versatz_stunden=2)) == 2
+    assert db.kerzen("EURUSD", "M15") == []
+
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)], server_versatz_stunden=5)) == 0
+    # 2024-01-01 00:00 Serverzeit (UTC+5) wird zu 2023-12-31 19:00 UTC.
+    assert db.kerzen("EURUSD", "M15")[0]["ts"] == "2023-12-31 19:00:00+00:00"
+    assert db.zustand("datenquelle") == "csv"
 
 
 def test_cp1252_mit_deutschem_kopf(tmp_path):
