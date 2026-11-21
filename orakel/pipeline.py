@@ -31,6 +31,7 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
     symbole: list[str] = []
 
     if quelle == "csv":
+        zeitzone = cfg["daten"].get("server_zeitzone") or None
         for datei in sorted(ordner.glob("*.csv")):
             symbol, zeitrahmen = zerlege_dateiname(datei)
             if zeitrahmen != "M15":
@@ -39,7 +40,7 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
                             f"{datei.name}: {zeitrahmen} übersprungen — Richter und Paper lesen M15")
                 continue
             try:
-                df = lade_csv(datei)
+                df = lade_csv(datei, server_zeitzone=zeitzone)
             except Exception as exc:
                 db.ereignis("fehler", "Daten", f"{datei.name}: {exc}")
                 continue

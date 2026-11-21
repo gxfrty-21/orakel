@@ -54,6 +54,7 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
     Kerzen» gelten.
     """
     dateien = [Path(p) for p in args.csv]
+    zeitzone = args.server_zeitzone or cfg["daten"].get("server_zeitzone") or None
     vorgabe = args.symbol[0].upper() if args.symbol else None
     if vorgabe and len(dateien) > 1:
         print("--symbol gilt nur bei einer Datei; sonst kommt das Symbol aus dem Dateinamen.",
@@ -67,7 +68,7 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
         symbol = vorgabe or symbol
         zeitrahmen = args.zeitrahmen or zeitrahmen
         try:
-            df = lade_csv(datei)
+            df = lade_csv(datei, server_zeitzone=zeitzone)
         except (OSError, ValueError) as exc:
             print(f"FEHLER {datei.name}: {exc}", file=sys.stderr)
             db.ereignis("fehler", "Daten", f"{datei.name}: {exc}")
@@ -82,6 +83,8 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
     if not geprueft:
         print("Nichts importiert.", file=sys.stderr)
         return 1
+    if zeitzone:
+        print(f"Serverzeit {zeitzone} → UTC")
     db.zustand_setzen("datenquelle", "csv")
 
     for symbol, zeitrahmen in geprueft:
@@ -448,6 +451,8 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--symbol", nargs="*")
     d.add_argument("--zeitrahmen", choices=ZEITRAHMEN, default=None,
                    help="Standard: aus dem Dateinamen (z. B. EURUSD_M15.csv), sonst M15")
+    d.add_argument("--server-zeitzone", default=None, metavar="IANA-ZONE",
+                   help="Zeitzone der MT5-Serverzeit, z. B. Europe/Athens; Standard: UTC")
     d.add_argument("--kerzen", type=int, default=6000)
     d.set_defaults(func=cmd_daten)
 
