@@ -33,6 +33,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 
@@ -272,12 +273,16 @@ def schreibe_manifest(eintraege: list[dict], ausgabe: str, commit: str, branch: 
 def umgebung() -> dict:
     """Python- und Node-Fassung des Baus; nur zur Nachvollziehbarkeit."""
     node = 'nicht verfügbar'
-    try:
-        r = subprocess.run(['node', '--version'], capture_output=True, text=True, timeout=10)
-        if r.returncode == 0:
-            node = r.stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        pass
+    # Voller Pfad zum Programm, damit kein Eintrag aus PATH aufgelöst wird (S607).
+    knoten = shutil.which('node')
+    if knoten:
+        try:
+            r = subprocess.run([knoten, '--version'],  # noqa: S603 - Programmpfad vorher per shutil.which ermittelt, Argument fest
+                               capture_output=True, text=True, timeout=10)
+            if r.returncode == 0:
+                node = r.stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            pass
     return {'python': sys.version.split()[0], 'node': node}
 
 
@@ -455,7 +460,7 @@ def fuehre_evidenz_aus(ausgabe: str, commit: str, branch: str,
             befehl = PYTEST_ARTEFAKT_BEFEHL
             herkunft = 'Job pytest (Artefakt)'
         else:
-            lauf = subprocess.run([sys.executable, *argv], cwd=WURZEL,
+            lauf = subprocess.run([sys.executable, *argv], cwd=WURZEL,  # noqa: S603 - argv stammt aus der Konstante PRUEFUNGEN, nie aus Eingaben
                                   capture_output=True, text=True)
             text = lauf.stdout + lauf.stderr
             exit_code = lauf.returncode
@@ -528,10 +533,11 @@ def _strategie_nachweis(ausgabe: str, commit: str) -> dict:
     with tempfile.TemporaryDirectory(prefix='strategie-') as temp:
         quelle = os.path.join(temp, 'quelle.db')
         shutil.copyfile(seed, quelle)
-        argv = (sys.executable, '-m', 'orakel', 'strategie-bericht', '--db', quelle,
-                '--quelle', 'seed/orakel-seed.db (Simulation, keine Marktaussage)',
-                '--ausgabe', ziel)
-        lauf = subprocess.run(argv, cwd=WURZEL, capture_output=True, text=True)
+        lauf = subprocess.run([sys.executable, '-m', 'orakel', 'strategie-bericht',  # noqa: S603 - fester Programmaufruf ohne Shell
+                               '--db', quelle,
+                               '--quelle', 'seed/orakel-seed.db (Simulation, keine Marktaussage)',
+                               '--ausgabe', ziel],
+                              cwd=WURZEL, capture_output=True, text=True)
     text = lauf.stdout + lauf.stderr
     with open(log_pfad, 'w', encoding='utf-8') as f:
         f.write(text)
@@ -625,13 +631,16 @@ def repo_slug() -> str:
 
 def _http_json(url: str) -> dict:
     """Liest JSON über HTTPS; Token aus ``GITHUB_TOKEN``/``GH_TOKEN``, wenn gesetzt."""
+    teile = urllib.parse.urlsplit(url)
+    if teile.scheme != 'https' or f'{teile.scheme}://{teile.netloc}' != API_BASIS:
+        raise Abweichung(f'Unerwartete API-Adresse: {url} — erlaubt ist nur {API_BASIS}.')
     kopf = {'Accept': 'application/vnd.github+json',
             'User-Agent': 'orakel-review-paket'}
     token = os.environ.get('GITHUB_TOKEN') or os.environ.get('GH_TOKEN')
     if token:
         kopf['Authorization'] = f'Bearer {token}'
-    anfrage = urllib.request.Request(url, headers=kopf)
-    with urllib.request.urlopen(anfrage, timeout=20) as antwort:
+    anfrage = urllib.request.Request(url, headers=kopf)  # noqa: S310 - Schema und Host sind oben auf API_BASIS geprüft
+    with urllib.request.urlopen(anfrage, timeout=20) as antwort:  # noqa: S310 - dito: nur HTTPS auf API_BASIS
         return json.loads(antwort.read().decode('utf-8'))
 
 
