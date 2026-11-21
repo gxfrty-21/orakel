@@ -195,7 +195,9 @@ Beim Überschreiten der Grenze werden DOM, Kunst und Zoom neu aufgebaut.
 
 Die Anzeigen lesen `/api/report`, `/api/betrieb`, `/api/sekretariat` sowie
 `/api/company/overview`, `/api/company/agents` und `/api/company/tasks`; fehlende
-Werte bleiben leer. Agentenstatus und offene Aufgaben aktualisieren sich alle
+Werte bleiben leer. Die Form von Bericht und Übersicht prüfen
+`scripts/report-api-pruefung.mjs` und `scripts/company-api-pruefung.mjs` mit
+`--url` gegen eine laufende API, ohne Browser. Agentenstatus und offene Aufgaben aktualisieren sich alle
 30 Sekunden, solange die Ansicht geöffnet ist. Die Ansicht ist eine Darstellung,
 keine neue Datenquelle und keine Automation.
 

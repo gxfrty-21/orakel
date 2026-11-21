@@ -995,6 +995,10 @@
       "ziel": "dateien/scripts/report-api-pruefung.mjs"
     },
     {
+      "quelle": "scripts/company-api-pruefung.mjs",
+      "ziel": "dateien/scripts/company-api-pruefung.mjs"
+    },
+    {
       "quelle": "tests/test_api_vertrag_live.py",
       "ziel": "dateien/tests/test_api_vertrag_live.py"
     }

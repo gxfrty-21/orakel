@@ -535,6 +535,14 @@ Struktur nicht; ohne erreichbare API schlägt der Prüfer anstatt still zu
 bestehen. `tests/test_api_vertrag_live.py` führt ihn gegen eine frische
 Seed-Kopie aus.
 
+Dasselbe gilt für die Company-Übersicht: `scripts/company-api-pruefung.mjs
+--url http://127.0.0.1:3300` prüft an `/api/company/overview` die Zahlen, die im
+Raumschiff stehen — Agentenzahl, Statuszähler, Abteilungen und offene Aufgaben —
+und dass `aufgaben.offen` zu den offenen Einzelstaaten passt. Geprüft wird die
+Struktur, nicht ein bestimmter Wert; eine frische Datenbank hat null offene
+Aufgaben. Auch dieser Prüfer schlägt ohne erreichbare API an, statt still zu
+bestehen.
+
 ```bash
 cp seed/orakel-seed.db /tmp/orakel-widerspruch.db
 python scripts/seed_widerspruch.py /tmp/orakel-widerspruch.db

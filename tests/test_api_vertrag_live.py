@@ -2,9 +2,11 @@
 
 Die übrigen Fälle prüfen gespeicherte Status-Proben. Hier entscheiden die
 Skripte über echte Antworten: der Widerspruchsvertrag an
-``/api/nexus/status`` (einmal mit angelegtem Widerspruch, einmal ohne) und der
+``/api/nexus/status`` (einmal mit angelegtem Widerspruch, einmal ohne), der
 Berichtsvertrag an ``/api/report``, aus dem Cockpit, Papier- und Spider-Ansicht
-ihre Kennzahlen ziehen. Browser und Playwright sind dafür nicht nötig.
+ihre Kennzahlen ziehen, und der Vertrag der Company-Übersicht an
+``/api/company/overview``, deren Zähler und offene Aufgaben im Dashboard stehen.
+Browser und Playwright sind dafür nicht nötig.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ import pytest
 WURZEL = Path(__file__).resolve().parents[1]
 MODUL = WURZEL / "scripts" / "widerspruch-api-pruefung.mjs"
 REPORT_MODUL = WURZEL / "scripts" / "report-api-pruefung.mjs"
+COMPANY_MODUL = WURZEL / "scripts" / "company-api-pruefung.mjs"
 SEED = WURZEL / "seed" / "orakel-seed.db"
 SEED_SKRIPT = WURZEL / "scripts" / "seed_widerspruch.py"
 
@@ -137,3 +140,21 @@ def test_bericht_pruefer_scheitert_ohne_erreichbare_api():
 
     assert lauf.returncode == 1, lauf.stdout
     assert "Bericht-Abruf" in lauf.stderr
+
+
+def test_live_api_liefert_company_uebersicht_mit_dashboard_zahlen(tmp_path):
+    """Agentenzahl, Status und offene Aufgaben kommen als konsistente Zahlen."""
+    with _api(tmp_path, seed=False) as url:
+        lauf = _pruefe(url, COMPANY_MODUL)
+
+    assert lauf.returncode == 0, lauf.stderr
+    assert "Company-API OK" in lauf.stdout
+    assert "103 Agenten" in lauf.stdout
+
+
+def test_company_pruefer_scheitert_ohne_erreichbare_api():
+    """Ein stiller Erfolg ist ohne Server ausgeschlossen."""
+    lauf = _pruefe("http://127.0.0.1:1", COMPANY_MODUL)
+
+    assert lauf.returncode == 1, lauf.stdout
+    assert "Company-Abruf" in lauf.stderr
