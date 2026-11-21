@@ -10,7 +10,7 @@ import pandas as pd
 
 from . import agents as agenten
 from .config import Config, RisikoGrenzen, load_config
-from .kern.data import df_aus_db, lade_csv, pruefe_daten, synthetische_kerzen
+from .kern.data import df_aus_db, lade_csv, pruefe_daten, synthetische_kerzen, zerlege_dateiname
 from .kern.db import Facts, jetzt
 from .intel import IntelNetz
 from .kern.judge import beurteile_walk_forward, pruefe_holdout
@@ -32,13 +32,18 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
 
     if quelle == "csv":
         for datei in sorted(ordner.glob("*.csv")):
-            symbol = datei.stem.split("_")[0].upper()
+            symbol, zeitrahmen = zerlege_dateiname(datei)
+            if zeitrahmen != "M15":
+                # Nicht als M15 ablegen: das würde Zeitrahmen und Kennzahlen verfälschen.
+                db.ereignis("warnung", "Daten",
+                            f"{datei.name}: {zeitrahmen} übersprungen — Richter und Paper lesen M15")
+                continue
             try:
                 df = lade_csv(datei)
             except Exception as exc:
                 db.ereignis("fehler", "Daten", f"{datei.name}: {exc}")
                 continue
-            db.kerzen_speichern(symbol, "M15", df.to_dict("records"))
+            db.kerzen_speichern(symbol, zeitrahmen, df.to_dict("records"))
             symbole.append(symbol)
             db.ereignis("info", "Daten", f"{datei.name}: {len(df)} Kerzen importiert")
         if symbole:
