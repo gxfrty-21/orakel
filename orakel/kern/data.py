@@ -247,22 +247,37 @@ def lade_csv_bloecke(pfad: str | Path, server_zeitzone: str | None = None,
     Blöcke enden an einem Datumswechsel. Bei der Herbst-Rückstellung liegen so
     beide Fassungen derselben Uhrzeit im selben Block und bleiben trennbar; der
     Import schreibt blockweise in die Datenbank und prüft danach wie bisher die
-    zusammengeführte Reihe.
+    zusammengeführte Reihe. Die Datei muss nach Datum sortiert sein (auf- oder
+    absteigend); verschränkte Tage brechen mit Meldung ab, weil die Blockgrenze
+    sonst die beiden Herbstfassungen trennen würde.
     """
     p = Path(pfad)
     sep, kodierung = _trenner_und_kodierung(p)
 
     puffer: pd.DataFrame | None = None
+    gesehen: set[str] = set()
     for roh in pd.read_csv(p, sep=sep, encoding=kodierung, chunksize=block):
         df = _normalisiere_spalten(roh)
         if puffer is not None:
             df = pd.concat([puffer, df], ignore_index=True)
         tage = df["ts"].astype(str).str[:10]
+        # Jeder Tag darf nur einen zusammenhängenden Lauf bilden; sonst könnte
+        # die Blockgrenze die beiden Fassungen der Herbststunde trennen und eine
+        # davon still als Standardzeit umrechnen.
+        wechsel = tage.ne(tage.shift())
+        laeufe = set(tage[wechsel])
+        if len(laeufe) != int(wechsel.sum()) or laeufe & gesehen:
+            raise ValueError(
+                f"CSV: {p.name} ist nicht nach Datum sortiert (ein Datum "
+                "erscheint in mehreren Abschnitten). Bitte die Datei auf- oder "
+                "absteigend sortieren; sonst würden die Herbststunden getrennt."
+            )
         # Der letzte Tag wird erst mit dem nächsten Block verarbeitet.
         ab = int((tage == tage.iloc[-1]).to_numpy().argmax())
         puffer = df.iloc[ab:].reset_index(drop=True)
         rest = df.iloc[:ab]
         if len(rest):
+            gesehen.update(tage.iloc[:ab])
             yield _verarbeite(rest, server_zeitzone, p.name, server_versatz_stunden)
     if puffer is not None and len(puffer):
         yield _verarbeite(puffer, server_zeitzone, p.name, server_versatz_stunden)
@@ -385,10 +400,12 @@ def df_aus_db(zeilen: Sequence[Any]) -> pd.DataFrame:
 
 
 def df_aus_bloecken(bloecke: Iterable[Sequence[Any]]) -> pd.DataFrame:
-    """Baut die Kerzen-Tabelle blockweise auf.
+    """Baut die Kerzen-Tabelle aus DB-Blöcken auf.
 
-    Millionen Zeilen auf einmal zu materialisieren (Dicts oder Row-Objekte)
-    kostet ein Vielfaches der Tabelle; blockweise bleibt der Speicher flach.
+    Millionen Zeilen auf einmal als Dicts oder Row-Objekte zu materialisieren
+    kostet ein Vielfaches; die Blockrahmen werden einzeln aufgebaut. Die
+    zusammengeführte Tabelle entsteht am Ende einmal — ``pruefe_daten`` braucht
+    sie vollständig.
     """
     teile: list[pd.DataFrame] = []
     for block in bloecke:
