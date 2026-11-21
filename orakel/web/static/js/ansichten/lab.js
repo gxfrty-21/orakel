@@ -1,12 +1,13 @@
 /* Lab: Kandidatenliste, Filter, Fall-Details und Walk-Forward-Faltblöcke. */
 import { R } from '../kern/daten.js';
 import { $, cls, esc, num, params, pct } from '../kern/helfer.js';
+import { zeichne } from '../kern/navigation.js';
 
-let labFilter = 'all', labSel = 0;
+let labFilter = 'all', labSel = 0, labWahl = '';
 
 document.querySelector('#labTabs').onclick = e => {
   const b = e.target.closest('.tab'); if(!b) return;
-  labFilter = b.dataset.f; labSel = 0;
+  labFilter = b.dataset.f; labSel = 0; labWahl = '';
   document.querySelectorAll('#labTabs .tab').forEach(t=>t.classList.toggle('on',t===b));
   renderLab();
 };
@@ -181,6 +182,41 @@ function wfoFoldsBlock(o){
     </tbody></table></div></details>`;
 }
 
+/* Stabile Kennung eines Kandidaten. Auswahl und Fokus sollen einen Neuaufbau
+   der Liste überstehen, auch wenn sich deren Reihenfolge ändert. */
+function labKennung(o){
+  return o ? `${o.symbol ?? ''}|${o.strategie ?? ''}|${params(o.parameter)}` : '';
+}
+
+// Guard für den Ansichts-Render: Nur ein Fokus im sichtbaren Lab-Detail
+// pausiert den Neuaufbau. Ein Fokus auf Liste oder Tabs und ein ausgeblendetes
+// Lab blockieren ihn nicht. Der Parameter macht die Regel direkt prüfbar.
+function pausiertRenderWegenLabDetail(aktiv = document.activeElement){
+  return Boolean(aktiv && aktiv.closest && aktiv.closest('#v-lab:not([hidden]) #labDetail'));
+}
+// Während der pausierte Render neue Daten nur übernimmt, zeigt #labNeu das
+// sichtbar und als höfliche Live-Region an. Beim Verlassen des Details wird
+// sofort gezeichnet, statt den nächsten Acht-Sekunden-Takt abzuwarten.
+let labNeuAusstehend = false;
+function setzeLabNeuStatus(ausstehend){
+  labNeuAusstehend = ausstehend;
+  const el = document.querySelector('#labNeu');
+  if(!el) return;
+  el.textContent = ausstehend ? 'Neue Daten verfügbar' : '';
+  el.hidden = !ausstehend;
+}
+function zeichneLabNeu(){
+  if(!labNeuAusstehend || pausiertRenderWegenLabDetail()) return;
+  // Vor dem Zeichnen löschen: renderLab stellt den Fokus wieder her, dessen
+  // focusin sonst erneut hier landet (Rekursion).
+  setzeLabNeuStatus(false);
+  zeichne();
+}
+document.addEventListener('focusin', zeichneLabNeu);
+// focusout: Der Fokus kann auf body fallen (Klick auf ein nicht fokussierbares
+// Element). Erst nach dem Fokuswechsel zeichnen, damit er nicht ins Leere geht.
+document.addEventListener('focusout', () => setTimeout(zeichneLabNeu, 0));
+
 function renderLab(){
   const v = R.validierungen||[], selbst = u => `<span class="pill ${u==='bestanden'?'':u==='abgelehnt'?'r':'g'}">${esc(u).toUpperCase()}</span>`;
   $('#labKpis').innerHTML = [['Geprüft',v.length,'Kandidaten'],['Bestanden',v.filter(x=>x.urteil==='bestanden').length,'alle Regeln inkl. Holdout'],
@@ -189,12 +225,67 @@ function renderLab(){
     .map(q=>`<div class="kpi"><div class="l">${q[0]}</div><div class="v">${q[1]}</div><div class="n">${q[2]}</div></div>`).join('');
   const items = v.filter(x=>labFilter==='all'||x.urteil===labFilter)
     .sort((a,b)=>(b.urteil==='bestanden')-(a.urteil==='bestanden')||((b.out_of_sample||{}).profit_factor||0)-((a.out_of_sample||{}).profit_factor||0));
-  $('#labList').innerHTML = items.length ? items.map((o,k)=>`<button class="li ${k===labSel?'on':''}" data-k="${k}">
-    <span><b>${esc(o.symbol)} · ${esc(o.strategie)}</b><small>${esc(params(o.parameter))}</small></span>
-    <span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">${selbst(o.urteil)}
-    <span class="r">${num((o.out_of_sample||{}).profit_factor,2)}</span></span></button>`).join('')
-    : '<div class="empty">Keine Einträge.</div>';
-  document.querySelectorAll('#labList .li').forEach(b=>b.onclick=()=>{labSel=+b.dataset.k;renderLab();});
+  const liste = $('#labList');
+  // Der Refresh baut die Liste nicht unter dem Nutzer neu auf: Einträge werden
+  // über ihre Kennung wiederverwendet und nur in die neue Reihenfolge gebracht.
+  // Fokus, Scrollposition und Auswahl bleiben damit erhalten, auch wenn sich
+  // die Sortierung ändert (Auswahl über labKennung, nicht über den Index).
+  const fokusEl = document.activeElement?.closest?.('#labList .li') ?? null;
+  const fokusK = fokusEl?.dataset.id ?? null;
+  // Rückfall über die Position, wenn der Refresh alle Kennungen austauscht
+  // (etwa bei neuen Symbolen) und der alte Knoten nicht wiederverwendet wird.
+  const fokusIndex = fokusEl?.dataset.k ?? null;
+  const scroll = liste.scrollTop;
+  if(labWahl){
+    const idx = items.findIndex(o=>labKennung(o)===labWahl);
+    if(idx>=0) labSel = idx;
+  }
+  if(labSel>=items.length) labSel = 0;
+  if(!items.length){
+    liste.innerHTML = '<div class="empty">Keine Einträge.</div>';
+  }else{
+    liste.querySelector('.empty')?.remove();
+    const frei = new Map();
+    liste.querySelectorAll('.li').forEach(el=>{
+      const id = el.dataset.id || '';
+      if(!frei.has(id)) frei.set(id, []);
+      frei.get(id).push(el);
+    });
+    items.forEach((o,k)=>{
+      const id = labKennung(o);
+      let el = frei.get(id)?.shift();
+      if(!el){
+        el = document.createElement('button');
+        el.className = 'li';
+        el.dataset.id = id;
+      }
+      el.dataset.k = k;
+      el.classList.toggle('on', k===labSel);
+      const signatur = `${esc(o.symbol)}|${esc(o.strategie)}|${esc(params(o.parameter))}|${o.urteil}|${num((o.out_of_sample||{}).profit_factor,2)}`;
+      if(el.dataset.signatur !== signatur){
+        el.dataset.signatur = signatur;
+        el.innerHTML = `<span><b>${esc(o.symbol)} · ${esc(o.strategie)}</b><small>${esc(params(o.parameter))}</small></span>
+          <span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">${selbst(o.urteil)}
+          <span class="r">${num((o.out_of_sample||{}).profit_factor,2)}</span></span>`;
+      }
+      el.onclick = () => { labSel = +el.dataset.k; labWahl = labKennung(items[labSel]); renderLab(); };
+      liste.appendChild(el);
+    });
+    frei.forEach(rest => rest.forEach(el => el.remove()));
+  }
+  liste.scrollTop = scroll;
+  if(fokusK || fokusIndex != null){
+    // Beim Verschieben bleibt der Fokus normalerweise auf demselben Knoten;
+    // nur wenn der Browser ihn verliert, wird er gezielt wiederhergestellt.
+    const aktiv = document.activeElement?.closest?.('#labList .li');
+    const passt = aktiv && (fokusK ? aktiv.dataset.id === fokusK : aktiv.dataset.k === fokusIndex);
+    if(!passt){
+      const ziel = (fokusK && [...liste.querySelectorAll('.li')].find(el => el.dataset.id === fokusK))
+        || (fokusIndex != null ? [...liste.querySelectorAll('.li')].find(el => el.dataset.k === fokusIndex) : null);
+      if(ziel) ziel.focus({preventScroll:true});
+    }
+    liste.scrollTop = scroll;
+  }
   const o = items[labSel];
   if(!o){ $('#labDetail').innerHTML = '<div class="empty">Keine Auswahl.</div>'; return; }
   const I=o.in_sample||{}, O=o.out_of_sample||{}, G=o.gesamt||{}, H=o.holdout||{}, Hk=H.kennzahlen||{};
@@ -233,4 +324,4 @@ function renderLab(){
   drahteKapitalKurve();
 }
 
-export { renderLab, wfoFoldsBlock };
+export { renderLab, wfoFoldsBlock, pausiertRenderWegenLabDetail, setzeLabNeuStatus };

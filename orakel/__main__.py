@@ -7,9 +7,9 @@ import sys
 import time
 from pathlib import Path
 
-from .config import load_config
-from .data import lade_csv, synthetische_kerzen
-from .db import Facts
+from .config import RisikoGrenzen, load_config
+from .kern.data import df_aus_db, lade_csv, synthetische_kerzen
+from .kern.db import Facts
 from .knowledge import Vault
 
 
@@ -17,8 +17,30 @@ def _cfg(pfad: str):
     return load_config(pfad)
 
 
+def _schema_pruefen(konfig) -> int | None:
+    """Prüft das Schema vor dem Lauf; bei altem Bestand Meldung und Exit 2.
+
+    Gilt für jeden Befehl, der die Datenbank anfasst, nicht nur für ``serve``:
+    Auch ``pruefen``, ``konferenz``, ``unternehmen`` und ``daten`` würden sonst
+    mit einem ``no such column`` aus dem Traceback abbrechen.
+    """
+    from .kern.db import initialisiere
+    from .kern.migrationen import AltesSchemaFehler, startmeldung
+
+    try:
+        # Schema und Migrationen vor dem Lauf prüfen: Ein alter Bestand endet so
+        # als eigene Meldung statt als Traceback mitten im Ablauf.
+        initialisiere(konfig.db_pfad)
+    except AltesSchemaFehler as fehler:
+        print(startmeldung(fehler, konfig.db_pfad), file=sys.stderr)
+        return 2
+    return None
+
+
 def cmd_daten(args: argparse.Namespace) -> int:
     cfg = _cfg(args.config)
+    if (code := _schema_pruefen(cfg)) is not None:
+        return code
     db = Facts(cfg.db_pfad)
     cfg.daten_ordner.mkdir(parents=True, exist_ok=True)
 
@@ -44,6 +66,8 @@ def cmd_daten(args: argparse.Namespace) -> int:
 def cmd_pruefen(args: argparse.Namespace) -> int:
     from .pipeline import lauf
 
+    if (code := _schema_pruefen(_cfg(args.config))) is not None:
+        return code
     bericht = lauf(cfg_pfad=args.config, modus=args.modus, quelle=args.quelle,
                    bericht_pfad=args.bericht, mit_konferenz=not args.ohne_konferenz,
                    mit_spider=args.mit_spider)
@@ -57,15 +81,59 @@ def cmd_pruefen(args: argparse.Namespace) -> int:
     return 0
 
 
+def _commit() -> str:
+    """Aktueller Commit für den Bericht; ohne git (Container) leer."""
+    import subprocess
+
+    try:
+        r = subprocess.run(['git', '-c', 'safe.directory=*', 'rev-parse', 'HEAD'],  # noqa: S607
+                           capture_output=True, text=True, timeout=10)
+        return r.stdout.strip() if r.returncode == 0 else ''
+    except (OSError, subprocess.SubprocessError):
+        return ''
+
+
+def cmd_strategie_bericht(args: argparse.Namespace) -> int:
+    from .strategiebericht import erstelle_bericht, schreibe_bericht
+
+    cfg = _cfg(args.config)
+    db = Facts(Path(args.db) if args.db else cfg.db_pfad)
+    grenzen = RisikoGrenzen.aus_config(cfg)
+    symbole = args.symbol or db.symbole()
+    mindestens = int(cfg["daten"]["min_kerzen"])
+    daten = {symbol: df_aus_db(db.kerzen(symbol, "M15")) for symbol in symbole}
+    daten = {symbol: df for symbol, df in daten.items() if len(df) >= mindestens}
+    if not daten:
+        print(f"Keine Kerzen mit mindestens {mindestens} Bars — Bericht nicht erstellt.")
+        return 1
+
+    quelle = args.quelle or (f"{args.db} (Datenbank)" if args.db else str(cfg.db_pfad))
+    bericht = erstelle_bericht(daten, cfg, grenzen, quelle=quelle, commit=_commit())
+    json_pfad, md_pfad = schreibe_bericht(bericht, args.ausgabe)
+    z = bericht["zusammenfassung"]
+    print(f"Strategie-Bericht: {z['kandidaten']} Kandidaten · bestanden {z['bestanden']} · "
+          f"abgelehnt {z['abgelehnt']} · ohne Daten {z['ohne_ausreichende_daten']}")
+    print(f"Geschrieben: {json_pfad} und {md_pfad}")
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
     from .web import create_app
 
+    konfig = _cfg(args.config)
+    # Vor dem Serverstart, damit ein alter Bestand nicht als Lifespan-Traceback
+    # von uvicorn endet.
+    if (code := _schema_pruefen(konfig)) is not None:
+        return code
+
     takt = bool(args.takt) or os.environ.get("ORAKEL_TAKT", "").strip().lower() in {
         "1", "true", "yes", "on",
     }
-    app = create_app(args.config, takt=takt)
+    app = create_app(args.config, takt=takt, host=args.host)
+    login = "aktiv" if os.environ.get("ORAKEL_AUTH_USER", "").strip() else "aus (nur Loopback)"
+    print(f"orakel: Dashboard auf {args.host}:{args.port}, Login {login}", flush=True)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     return 0
 
@@ -74,6 +142,8 @@ def cmd_konferenz(args: argparse.Namespace) -> int:
     from . import agents
     from .pipeline import lauf
 
+    if (code := _schema_pruefen(_cfg(args.config))) is not None:
+        return code
     bericht = lauf(cfg_pfad=args.config, modus="backtest", mit_konferenz=True)
     protokoll = bericht.get("konferenz") or {}
     print(protokoll.get("beschluss", "Keine Konferenz erzeugt"))
@@ -87,6 +157,8 @@ def cmd_unternehmen(args: argparse.Namespace) -> int:
     from .company.store import CompanyStore
 
     cfg = _cfg(args.config)
+    if (code := _schema_pruefen(cfg)) is not None:
+        return code
     db = Facts(cfg.db_pfad)
     store = CompanyStore(db)
     store.sync_roster()
@@ -142,7 +214,7 @@ def cmd_spider(args: argparse.Namespace) -> int:
 
 
 def cmd_paper(args: argparse.Namespace) -> int:
-    from .paper import tick
+    from .kern.paper import tick
 
     cfg = _cfg(args.config)
     db = Facts(cfg.db_pfad)
@@ -225,6 +297,88 @@ def cmd_stopp_aufheben(args: argparse.Namespace) -> int:
     return 0
 
 
+def _migrationsstaende(nummern: list[int], bekannt: dict[int, object]) -> str:
+    """Nummern als lesbare Liste, mit Name, wo die Migration bekannt ist."""
+    if not nummern:
+        return "keine"
+    return ", ".join(
+        f"{nummer:04d}_{getattr(bekannt[nummer], 'name', '')}" if nummer in bekannt
+        else f"{nummer:04d}"
+        for nummer in nummern)
+
+
+def cmd_migration(args: argparse.Namespace) -> int:
+    """Stand der Schema-Migrationen zeigen oder bis zu einer Nummer zurückrollen.
+
+    ``--status`` liest nur. ``--zurueck N`` rollt alles über ``N`` zurück und
+    verlangt ``--bestaetigen``; ohne den Schalter wird nur der Plan gezeigt und
+    nichts geändert. Der Datenbankpfad kommt aus ``config.toml``;
+    ``ORAKEL_DB_PFAD`` sticht ihn. Die Funktion fasst bewusst kein ``Facts`` an:
+    Das würde beim Öffnen die Migrationen sofort wieder anwenden.
+    """
+    from .kern import migrationen
+
+    if args.status and args.zurueck is not None:
+        print("--status und --zurueck schliessen sich aus.", file=sys.stderr)
+        return 1
+    if not args.status and args.zurueck is None:
+        print("Bitte --status oder --zurueck N angeben.", file=sys.stderr)
+        return 1
+
+    pfad = Path(_cfg(args.config).db_pfad)
+    if not pfad.exists():
+        # Rein lesend: ``angewendet()`` würde die Datei per sqlite3 anlegen.
+        print(f"orakel: Keine Datenbank unter {pfad} — keine Migrationen angewendet.",
+              file=sys.stderr)
+        return 1
+
+    bekannt = {m.nummer: m for m in migrationen.dateien()}
+    stand = migrationen.angewendet(pfad)
+    print(f"orakel: Datenbank {pfad}")
+    print(f"orakel: Stand {_migrationsstaende(stand, bekannt)}")
+
+    if args.status:
+        offen = [nummer for nummer in sorted(bekannt) if nummer not in stand]
+        print(f"orakel: Offen {_migrationsstaende(offen, bekannt)}")
+        return 0
+
+    zurueck = sorted((nummer for nummer in stand if nummer > args.zurueck),
+                     reverse=True)
+    if not zurueck:
+        print(f"orakel: Nichts zu tun — der Stand ist nicht über {args.zurueck:04d}.")
+        return 0
+    print(f"orakel: Geplant {_migrationsstaende(zurueck, bekannt)} "
+          f"(zurückrollen bis {args.zurueck:04d})")
+    ohne_down = [nummer for nummer in zurueck
+                 if bekannt.get(nummer) is None or bekannt[nummer].runter is None]
+    if ohne_down:
+        print("orakel: Kein Downgrade hinterlegt für "
+              + ", ".join(f"{nummer:04d}" for nummer in ohne_down), file=sys.stderr)
+        print("orakel: Nichts geändert.", file=sys.stderr)
+        return 1
+    if not args.bestaetigen:
+        print("orakel: Nichts geändert — nur nach Prüfung mit --bestaetigen ausführen.",
+              file=sys.stderr)
+        return 1
+
+    try:
+        ergebnis = migrationen.zurueckrollen(pfad, bis=args.zurueck)
+    except migrationen.MigrationsFehler as fehler:
+        # Jeder Schritt committet einzeln; ein Abbruch mitten im Lauf kann den
+        # Stand also bereits verändert haben. Deshalb kein «nichts geändert».
+        print(f"orakel: Rückrollen abgebrochen: {fehler}", file=sys.stderr)
+        print("orakel: Stand bitte mit «orakel migration --status» prüfen.",
+              file=sys.stderr)
+        return 1
+
+    zurueckgerollt = [int(nummer) for nummer in ergebnis["zurueckgerollt"] or []]
+    print(f"orakel: Zurückgerollt {_migrationsstaende(zurueckgerollt, bekannt)}")
+    print(f"orakel: Sicherung {ergebnis['backup']}")
+    print(f"orakel: Neuer Stand "
+          f"{_migrationsstaende(migrationen.angewendet(pfad), bekannt)}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="orakel", description="Orakel Trading-Engine (Paper only)")
     p.add_argument("--config", default="config.toml")
@@ -245,8 +399,20 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--mit-spider", action="store_true", help="Recherche mitlaufen lassen")
     pr.set_defaults(func=cmd_pruefen)
 
+    sb = sub.add_parser("strategie-bericht",
+                        help="Alle Strategien je Symbol prüfen und Bericht schreiben")
+    sb.add_argument("--config", default="config.toml")
+    sb.add_argument("--db", default=None, help="Datenbank mit Kerzen (Standard: config.toml)")
+    sb.add_argument("--quelle", default=None, help="Bezeichnung der Datenquelle im Bericht")
+    sb.add_argument("--symbol", nargs="*", default=None, help="Nur diese Symbole prüfen")
+    sb.add_argument("--ausgabe", default="artifacts/strategie-bericht")
+    sb.set_defaults(func=cmd_strategie_bericht)
+
     s = sub.add_parser("serve", help="Dashboard im Browser starten")
-    s.add_argument("--host", default="0.0.0.0")
+    # Ohne Zugangsdaten nur Loopback; Container setzen 0.0.0.0 ausdruecklich
+    # (docker-entrypoint.sh) und brauchen dafuer ORAKEL_AUTH_USER/PASS.
+    s.add_argument("--host", default="127.0.0.1",
+                   help="Bindeadresse (Standard 127.0.0.1; Container: 0.0.0.0)")
     s.add_argument("--port", type=int, default=8000)
     s.add_argument("--takt", action="store_true", help="Paper-Takt im Hintergrund starten")
     s.set_defaults(func=cmd_serve)
@@ -279,6 +445,15 @@ def main(argv: list[str] | None = None) -> int:
     sa = sub.add_parser("stopp-aufheben", help="Handelsstopp nach Prüfung aufheben")
     sa.add_argument("--bestaetigen", action="store_true")
     sa.set_defaults(func=cmd_stopp_aufheben)
+
+    mi = sub.add_parser("migration", help="Schema-Migrationen anzeigen oder zurückrollen")
+    mi.add_argument("--status", action="store_true",
+                    help="Stand und offene Migrationen anzeigen (ändert nichts)")
+    mi.add_argument("--zurueck", type=int, metavar="N",
+                    help="Migrationen über Nummer N zurückrollen")
+    mi.add_argument("--bestaetigen", action="store_true",
+                    help="Rückrollen wirklich ausführen")
+    mi.set_defaults(func=cmd_migration)
 
     args = p.parse_args(argv)
     return int(args.func(args))

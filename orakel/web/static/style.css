@@ -1,6 +1,6 @@
 /* Einstieg für das Dashboard-Stylesheet: bindet die Teile je Ansicht ein.
    Reine @import-Liste, damit ohne Build-Werkzeug dieselbe Kaskade entsteht. */
-@import url('css/basis.css?v=100');
+@import url('css/basis.css?v=101');
 @import url('css/lab.css?v=100');
 @import url('css/wissen.css?v=100');
 @import url('css/globe.css?v=100');
@@ -8,4 +8,4 @@
 @import url('css/raumschiff.css?v=100');
 @import url('css/sitzung.css?v=100');
 @import url('css/spider.css?v=100');
-@import url('css/mobil.css?v=100');
+@import url('css/mobil.css?v=101');

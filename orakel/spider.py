@@ -26,7 +26,7 @@ from typing import Any, Callable
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
-from .db import Facts, jetzt
+from .kern.db import Facts, jetzt
 from .knowledge import Vault
 
 MAX_BYTES = 2_000_000
@@ -218,9 +218,9 @@ class Spider:
 
     # ---------- Netzwerk ----------
     def _abrufen_std(self, url: str, timeout: int, user_agent: str) -> bytes | None:
-        anfrage = urllib.request.Request(url, headers={"User-Agent": user_agent,
+        anfrage = urllib.request.Request(url, headers={"User-Agent": user_agent,  # noqa: S310 - URL stammt aus Register oder Datenbank, nicht aus einer Anfrage
                                                       "Accept": "application/rss+xml, application/xml, text/xml"})
-        with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:  # noqa: S310
+        with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:  # noqa: S310 - URL stammt aus Register oder Datenbank, nicht aus einer Anfrage
             return antwort.read(MAX_BYTES)
 
     def _robots_fuer(self, basis: str) -> RobotFileParser:
@@ -274,7 +274,7 @@ class Spider:
 
     def _parse(self, roh: bytes, quelle: dict[str, Any]) -> list[Artikel]:
         try:
-            wurzel = ET.fromstring(roh)
+            wurzel = ET.fromstring(roh)  # noqa: S314 - XML kommt vom Quellenhost des Feeds, nicht vom Nutzer
         except ET.ParseError as exc:
             self.db.ereignis("warnung", "Spider", f"{quelle['name']}: XML unlesbar ({exc})")
             return []

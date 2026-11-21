@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import pandas as pd
 
-from orakel import judge
-from orakel.backtest import BacktestErgebnis
+from orakel.kern import judge
+from orakel.kern.backtest import BacktestErgebnis
 from orakel.config import RisikoGrenzen
-from orakel.judge import Urteil, _aufteilung, beurteile_walk_forward, pruefe_holdout
-from orakel.strategies import strategien
+from orakel.kern.judge import Urteil, _aufteilung, beurteile_walk_forward, pruefe_holdout
+from orakel.kern.strategies import strategien
 
 
 def _ergebnis(df: pd.DataFrame, start: int, ende: int, *, gut: bool = True) -> BacktestErgebnis:

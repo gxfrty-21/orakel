@@ -4,7 +4,7 @@ import { $, COL, MODE, esc } from './kern/helfer.js';
 import { registriereAnsicht, zeige, zeichne } from './kern/navigation.js';
 import { renderOverview } from './ansichten/uebersicht.js';
 import { renderRisk } from './ansichten/risiko.js';
-import { renderLab } from './ansichten/lab.js';
+import { renderLab, pausiertRenderWegenLabDetail, setzeLabNeuStatus } from './ansichten/lab.js';
 import { renderStrat } from './ansichten/strategien.js';
 import { renderFlow } from './ansichten/research.js';
 import { renderKb } from './ansichten/wissen.js';
@@ -68,7 +68,8 @@ registriereNachLaden(neu => {
   const laborDaten = document.querySelector('#labList');
   if (laborDaten) laborDaten.dataset.berichtKandidat = neu.validierungen?.[0]?.symbol || '';
   renderTop();
-  if (!document.activeElement?.closest('#v-lab:not([hidden]) #labDetail')) zeichne();
+  if (pausiertRenderWegenLabDetail()) setzeLabNeuStatus(true);
+  else { zeichne(); setzeLabNeuStatus(false); }
 });
 
 registriereFehler(e => {
@@ -76,12 +77,32 @@ registriereFehler(e => {
   $('#banner').innerHTML = '<b>FEHLER</b>' + esc(e.message);
 });
 
+// Der Lauf läuft im Hintergrund. Der Knopf wartet auf den Status und lädt
+// erst danach den Bericht; die Anfrage selbst ist sofort beantwortet.
+async function warteAufLauf(id){
+  const grenze = Date.now() + 15 * 60 * 1000;
+  while(Date.now() < grenze){
+    const r = await fetch('/api/lauf/' + encodeURIComponent(id),{cache:'no-store'});
+    if(r.ok){
+      const s = await r.json();
+      if(s.status === 'fertig' || s.status === 'fehler') return s;
+    }
+    await new Promise(f => setTimeout(f, 2000));
+  }
+  throw new Error('Lauf-Status nicht rechtzeitig erhalten');
+}
+
 $('#runBtn').onclick = async () => {
   const b = $('#runBtn'); b.disabled = true; b.textContent = 'Lauf läuft …';
   try{
     const r = await fetch('/api/lauf?modus=backtest',{method:'POST'});
-    if(!r.ok) throw new Error('Lauf konnte nicht gestartet werden');
-    await r.json();
+    const antwort = await r.json();
+    // 409 heisst: Es läuft schon einer. Der Knopf hängt sich an dessen ID,
+    // statt einen zweiten Backtest einzureihen.
+    if(!r.ok && r.status !== 409) throw new Error(antwort.fehler || 'Lauf konnte nicht gestartet werden');
+    if(!antwort.id) throw new Error('Lauf konnte nicht gestartet werden');
+    const stand = await warteAufLauf(antwort.id);
+    if(stand.status === 'fehler') throw new Error(stand.fehler || 'Lauf fehlgeschlagen');
     await lade();
   }catch(e){
     $('#banner').className = 'banner b-sim';
@@ -95,15 +116,24 @@ lade();
 
 // Kein Auto-Refresh, während ein Auftrag bearbeitet wird oder ein Feld den Fokus hat:
 // sonst gehen Eingaben nach acht Sekunden verloren.
-setInterval(() => {
+// Single-flight: Läuft noch eine Antwort, wird der Takt übersprungen statt einen
+// zweiten Aufruf zu starten; langsame Antworten können sich so nicht überlappen.
+// Im Hintergrundtab pausiert der Takt; beim Zurückkehren wird sofort nachgeladen.
+let ladeLaeuft = false;
+async function autoRefresh(){
+  if (document.hidden || ladeLaeuft) return;
   if (document.querySelector('details.ordEdit[open]')) return;
   // Ein geöffneter Missionsbericht darf nicht unter dem Leser verschwinden.
   if (document.querySelector('.mission-report:not([hidden])')) return;
   const a = document.activeElement;
   if (a && /^(SELECT|TEXTAREA|INPUT)$/.test(a.tagName)) return;
-  lade();
-}, 8000);
+  ladeLaeuft = true;
+  try{ await lade(); }finally{ ladeLaeuft = false; }
+}
+setInterval(autoRefresh, 8000);
+document.addEventListener('visibilitychange', () => { if(!document.hidden) autoRefresh(); });
 
 /* Schmale Brücke für die Prüfskripte: Ansichten und Claim-Renderer bleiben ohne eigene Nav-Einträge erreichbar. */
 window.zeige = zeige;
 window.zeichneBewertung = zeichneBewertung;
+window.pausiertRenderWegenLabDetail = pausiertRenderWegenLabDetail;

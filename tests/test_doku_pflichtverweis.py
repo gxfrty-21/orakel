@@ -77,3 +77,39 @@ def test_pflichtverweis_trennt_genutzte_von_ungenutzten_definitionen(
     tmp_path: Path, markup: str, erwartete_fehler: int
 ) -> None:
     assert len(_pflicht_fehler(tmp_path, markup)) == erwartete_fehler
+
+
+@pytest.mark.parametrize(
+    ("markup", "erwartete_fehler"),
+    [
+        # Label steht nur im Linktext eines Inline-Links auf ein anderes Ziel:
+        # kein sichtbarer Pflichtlink, der Pflichtverweis fehlt.
+        (
+            "[Anderes [ref]](docs/anderes.md)\n[ref]: docs/pr-schutz.md",
+            1,
+        ),
+        (
+            "[Anderes [ref] hier](docs/anderes.md)\n[ref]: docs/pr-schutz.md",
+            1,
+        ),
+        # Label steht nur im Alttext eines Bildes.
+        ("![Alt [ref]](bild.png)\n[ref]: docs/pr-schutz.md", 1),
+        # Label steht nur im Linktext eines Referenzlinks auf ein anderes Ziel.
+        (
+            "[Anderes [ref]][ziel]\n"
+            "[ziel]: docs/anderes.md\n"
+            "[ref]: docs/pr-schutz.md",
+            1,
+        ),
+        # Gültig: Shortcut-Link mit Text dahinter.
+        ("[Schutz] ist hier verlinkt\n[Schutz]: docs/pr-schutz.md", 0),
+        # Gültig: sichtbarer Inline-Link, dessen Linktext das Label enthält.
+        ("[[ref]](docs/pr-schutz.md)\n[ref]: docs/pr-schutz.md", 0),
+        # Gültig: Vollreferenz unverändert.
+        ("[Schutz][ref]\n[ref]: docs/pr-schutz.md", 0),
+    ],
+)
+def test_pflichtverweis_ignoriert_labels_in_fremden_linktexten(
+    tmp_path: Path, markup: str, erwartete_fehler: int
+) -> None:
+    assert len(_pflicht_fehler(tmp_path, markup)) == erwartete_fehler

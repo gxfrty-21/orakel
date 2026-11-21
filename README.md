@@ -13,6 +13,10 @@ Broker-Order. `[paper] order_freigabe` bleibt als harte Policy-Sperre auf
 **Raumschiff-Doku:** [docs/raumschiff/README.md](docs/raumschiff/README.md)
 — Planung und aktueller 2D-Agenten-Querschnitt (103 Räume, elf Abteilungen, Zoom/Pan, Detailspalte).
 
+**Architektur:** [docs/ARCHITEKTUR-KERN.md](docs/ARCHITEKTUR-KERN.md)
+— Grenze zwischen Handelskern (`orakel/kern/`) und Oberfläche, Prüfung in der
+CI und Feature-Stopp für Agenten und Raumschiff.
+
 ## Schnellstart
 
 ```bash
@@ -34,6 +38,46 @@ python -m venv .venv
 .venv/bin/python -m orakel unternehmen --status
 .venv/bin/python -m orakel unternehmen
 ```
+
+### Lange Läufe
+
+«Lauf starten» blockiert nicht mehr. `POST /api/lauf` legt nur einen Auftrag an
+und antwortet sofort mit `202` und `{"id": …}`; der Hintergrund-Loop (der
+Takt-Scheduler aus `orakel/scheduler.py`) führt ihn aus. `GET /api/lauf/{id}` liefert `status` (`offen`, `aktiv`, `fertig`,
+`fehler`) sowie bei Erfolg die Zusammenfassung aus Dauer, Validierungen, Plan
+und Fehlern. Das Dashboard fragt alle zwei Sekunden nach und lädt den Bericht
+erst danach neu.
+
+Solange ein Auftrag offen oder aktiv ist, legt ein weiteres `POST /api/lauf`
+keinen zweiten an: Die Antwort ist `409` mit `{"id": …}` des laufenden Laufs
+und seinem `status`. Mehrfaches Klicken reiht deshalb keine Backtests
+hintereinander ein; das Dashboard hängt sich an die bestehende ID und wartet
+auf deren Ergebnis. Erst nach `fertig` oder `fehler` startet ein neuer Klick
+einen neuen Auftrag.
+
+Bleibt ein Auftrag nach einem Absturz auf `aktiv` stehen, setzt ihn der
+Hintergrund-Loop beim nächsten Start wieder auf `offen` (`zuruecksetzen` in
+`orakel/lauf_queue.py`): Beim Start hält kein Prozess mehr einen Auftrag, der
+Rest kann also gefahrlos erneut laufen. `gestartet` wird geleert, ein Ereignis
+protokolliert jeden Reset; erst danach beginnt die Schleife. Ein Auftrag, der
+einen Absturz auslöst, läuft beim nächsten Start deshalb erneut. Hängt ein
+Auftrag dagegen im laufenden Betrieb länger als 60 Minuten (`HAENGE_GRENZE`),
+verbucht ihn die Schleife als `fehler`; der Fehlertext nennt die Grenze.
+Danach ist die Warteschlange in beiden Fällen wieder frei für einen neuen
+Start.
+
+Ein Auftrag, der den Prozess beim Laufen mitnimmt, würde sonst bei jedem Start
+wieder laufen. Jeder Startversuch zählt (`versuche`, Migration
+`0005_laeufe_versuche.sql`); nach drei Versuchen (`MAX_VERSUCHE`) verbucht der
+Start ihn als `fehler` mit Hinweis auf die Absturzschleife. Unterhalb der
+Grenze wird er wie bisher wieder auf `offen` gesetzt.
+
+Abgeschlossene Aufträge (`fertig`, `fehler`) bleiben 30 Tage (`AUFBEWAHRUNG`)
+und werden dann gelöscht; die Aufbewahrung läuft beim Start und im
+Dauerbetrieb höchstens stündlich (`AUFBEWAHRUNG_TAKT`). Offene und laufende
+Aufträge bleiben unberührt, ebenso Einträge ohne Endzeit. Die Frist hängt an
+`beendet`, nicht an `erstellt` — ein langer Lauf behält seine Frist nach dem
+Ende.
 
 Die Company-Schicht ist additiv und standardmäßig **nicht** in den laufenden
 Paper-Takt eingebunden (`[unternehmen] aktiv = false`). Sie enthält noch keine
@@ -98,10 +142,25 @@ quittungspflichtig und werden über eigene
 `message_reminder`-Audit-Events genau einmal gezählt. Sie laufen im Company-Lauf
 und im Hintergrund-Takt; ein Lauf ohne offene Quittungen schreibt nichts.
 
+### Fehlerantworten
+
+Jede Fehlerantwort trägt `ok: false`, einen Text in `fehler` und einen stabilen
+`code`. Eingabefehler (`eingabe`) nennen den Grund im Klartext, weil der Text
+bewusst formuliert ist. Interne Fehler (`interner_fehler`) zeigen nur eine
+Fehler-ID im Text; der vollständige Ausnahmetext – samt Pfaden, SQL oder
+Konfigurationswerten – bleibt im Log und lässt sich über die ID dort
+wiederfinden. Clients prüfen deshalb `code`, nicht den Text.
+
 ## Dauerbetrieb mit Login und HTTPS
 
 Fertige Docker-Konfiguration mit Caddy (automatisches TLS), HTTP-Basic-Login und
 persistentem SQLite-Speicher im `/data`-Volume: siehe [DEPLOY.md](DEPLOY.md).
+
+Der Container bindet `0.0.0.0`; `ORAKEL_AUTH_USER` und `ORAKEL_AUTH_PASS`
+sind deshalb **Pflicht**. Fehlen sie, bricht der Start mit
+`Start abgebrochen: Binde 0.0.0.0 ohne Login …` ab. Ohne Login läuft der
+Server nur lokal: `python -m orakel serve` (Standard `127.0.0.1`) oder
+bewusst mit `ORAKEL_ALLOW_NO_AUTH=1`.
 
 Für Railway ohne eigenen Server, Caddy oder eigene Domain: siehe
 [RAILWAY.md](RAILWAY.md).
@@ -113,6 +172,12 @@ Der Hintergrund-Takt ist bewusst **opt-in** (`serve --takt` oder
 sechs Stunden), Intelligence, Missionen und optional die Company-Schicht. Im
 laufenden Takt werden zusätzlich offene Quittungen nach Frist erinnert
 (`[unternehmen] erinnerungen_intervall_minuten`).
+
+Takt und Lauf-Warteschlange teilen sich denselben Thread (`Takt` in
+`orakel/scheduler.py`): Je Runde läuft erst der Betriebstakt, dann genau ein
+Auftrag aus der Warteschlange. Ohne `--takt` läuft derselbe Loop im
+Sekundentakt nur für die Warteschlange, damit ein gestarteter Lauf auch ohne
+Dauerbetrieb abgearbeitet wird.
 Fehler erhalten einen persistenten exponentiellen Backoff; DB-, RSS- und
 Speichergrenzen pausieren schreibintensive Jobs, statt den Prozess volllaufen
 zu lassen. Jeder Lauf wird in `betrieb_laeufe` protokolliert.
@@ -154,7 +219,7 @@ der erzeugte Rohbericht liegt nach dem Lauf unter
 | Dashboard | Orakel-Design, 12 Ansichten, Live-Polling, 2D-Agenten-Querschnitt, «Lauf starten» |
 | Dauerbetrieb | persistenter Plan, Backoff, Ressourcenlimits, Jobprotokoll und Betriebsansicht |
 
-Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswahl einmal geöffnet; scheitert er, gibt es keinen Ersatzkandidaten. Im Lab zeigt ein Chart die aggregierte Kapitalkurve der Testfenster; beim Überfahren nennt ein Tooltip Kapitalstand, Veränderung seit dem Start in Prozent, Datum sowie den bisherigen Höchststand mit Abstand in Prozent; per Tastatur (Tab, Pfeiltasten, Home/Ende) ist dieselbe Anzeige erreichbar. Solange der Tastaturfokus im sichtbaren Lab-Detail liegt, pausiert der Auto-Refresh nur den Ansichts-Render, damit die Anzeige beim Ablesen nicht neu aufgebaut wird; Daten und Kopfzeile werden weiter aktualisiert. Ein Fokus auf der Lab-Liste oder einem anderen Lab-Element blockiert den Render nicht; ein ausgeblendetes Lab ebenfalls nicht. Dort und in der Strategien-Ansicht lässt sich zudem bei jedem Kandidaten die Liste der Walk-Forward-Fenster aufklappen: Trainings- und Testblock, gewählter Parameter, Trades, Profit Factor und Netto je Fenster.
+Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswahl einmal geöffnet; scheitert er, gibt es keinen Ersatzkandidaten. Im Lab zeigt ein Chart die aggregierte Kapitalkurve der Testfenster; beim Überfahren nennt ein Tooltip Kapitalstand, Veränderung seit dem Start in Prozent, Datum sowie den bisherigen Höchststand mit Abstand in Prozent; per Tastatur (Tab, Pfeiltasten, Home/Ende) ist dieselbe Anzeige erreichbar. Solange der Tastaturfokus im sichtbaren Lab-Detail liegt, pausiert der Auto-Refresh nur den Ansichts-Render, damit die Anzeige beim Ablesen nicht neu aufgebaut wird; Daten und Kopfzeile werden weiter aktualisiert; ein Status in der Listenkopfzeile (`#labNeu`, höfliche Live-Region) zeigt «Neue Daten verfügbar», und beim Verlassen des Details wird sofort neu gezeichnet statt auf den nächsten Takt zu warten. Ein Fokus auf der Lab-Liste oder einem anderen Lab-Element blockiert den Render nicht; ein ausgeblendetes Lab ebenfalls nicht. Der Refresh baut die Liste nicht neu auf: Vorhandene Einträge werden über eine stabile Kandidatenkennung in die neue Reihenfolge gebracht, Auswahl, Fokus und Scrollposition bleiben erhalten. Der Acht-Sekunden-Takt startet keinen zweiten Aufruf, solange eine Antwort läuft, pausiert im Hintergrundtab und lädt beim Zurückkehren sofort nach. Dort und in der Strategien-Ansicht lässt sich zudem bei jedem Kandidaten die Liste der Walk-Forward-Fenster aufklappen: Trainings- und Testblock, gewählter Parameter, Trades, Profit Factor und Netto je Fenster.
 
 ## Risikogrenzen (deine Vorgaben)
 
@@ -207,6 +272,15 @@ tests/           Risiko, Backtest, Daten, Bericht
 - Der Richter ist fest verdrahtet; keine KI ändert seine Regeln.
 - Jede Zahl im Dashboard stammt aus SQLite — nichts wird geschätzt oder erfunden.
 
+## Qualitätstor
+
+Drei eigene CI-Jobs prüfen den Code: `ruff` (blinde Fänge `BLE001`, stille
+Fehlerschlucker `S110`, Sicherheitsregeln `S`), `mypy` für den Handelskern
+(`paper`, `risk`, `backtest`, `judge`) und `Coverage Handelskern` mit einer
+Untergrenze von 85 % für dieselben vier Module. Regeln, Ausnahmen für den
+Altbestand und die lokalen Befehle stehen in
+[docs/QUALITAET.md](docs/QUALITAET.md).
+
 ## Doku-Prüfung
 
 `python scripts/pruefe_doku.py` prüft die versionierten Markdown-Dateien auf
@@ -251,6 +325,22 @@ git config core.hooksPath .githooks
 ```
 
 Ohne relevante Änderungen beendet sich der Hook sofort.
+
+## CI-Trigger für Feature-Branches
+
+Ein Pull Request führt den vollen Workflow `Tests` aus (`pull_request`); ein
+Push auf `main` ebenfalls, damit Railway sein "Wait for CI" erkennt.
+Feature-Branch-Pushes ohne offenen Pull Request starten den schlanken Workflow
+`Branch-Smoke`: Er prüft Python-Syntax, Doku-Links und die Syntax der
+Prüfskripte. Sobald ein Pull Request offen ist, überspringt `Branch-Smoke` seine
+Prüfschritte, weil der volle PR-Lauf übernimmt – pro Commit läuft damit genau
+ein vollständiger Satz Jobs.
+
+Bewusst keine Concurrency-Cancellation zwischen Push- und PR-Lauf: Ein
+abgebrochener Lauf hinterlässt `cancelled`-Check-Kontexte auf demselben
+Head-Commit, die als nicht erfolgreich gelten und den Pull Request blockieren.
+`Branch-Smoke` hat einen eigenen Check-Namen und ist kein Required Check; die
+Job-Namen und `needs`-Ketten aus `tests.yml` bleiben unverändert.
 
 ## Manuelle iPhone-Safari-Prüfung
 
@@ -640,8 +730,9 @@ Manifestprüfung aus.
 Zu den Pflichtfällen des Profils `voll` gehören die zwölf 240-px-Ansichten,
 die vier Claim-Breiten, der 114-Zeichen-Langhost ohne Punkt oder Bindestrich,
 der Lab-Auto-Refresh bei 360 und 280 px mit HTTP 200, sichtbarem Kopfmarker,
-unverändert gezeichneter Lab-Liste und erneutem Rendern nach Fokusverlust sowie
-die beiden Lab-Fokus-Varianten. Die Klartextzeilen im Laufprotokoll wie
+unverändert gezeichneter Lab-Liste und erneutem Rendern nach Fokusverlust, die
+beiden Lab-Fokus-Varianten sowie die direkte Guard-Prüfung, der Pausenhinweis,
+die Listen-Umsortierung und der Refresh-Takt. Die Klartextzeilen im Laufprotokoll wie
 `Claims 4×` oder `Refresh 2×` sind nur für Menschen lesbar und kein Gate.
 
 ### CI auf Feature-Branches ohne Pull Request

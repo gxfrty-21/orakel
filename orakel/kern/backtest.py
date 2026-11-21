@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from .config import Config, RisikoGrenzen
+from ..config import Config, RisikoGrenzen
 from .metrics import kennzahlen
 from .strategies import atr
 

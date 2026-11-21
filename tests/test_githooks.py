@@ -18,8 +18,8 @@ HOOK = PROJEKT / ".githooks" / "pre-commit"
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
+    return subprocess.run(  # noqa: S603 - Programmaufruf mit fester Argumentliste, ohne Shell
+        ["git", *args],  # noqa: S607 - Programmname und Argumente sind fest verdrahtet
         cwd=repo,
         check=True,
         capture_output=True,
@@ -57,7 +57,7 @@ def _hook_ausfuehren(repo: Path, cwd: Path, log: Path) -> subprocess.CompletedPr
     env = os.environ.copy()
     env["HOOK_LOG"] = str(log)
     env["HOOK_EXIT"] = "0"
-    return subprocess.run(
+    return subprocess.run(  # noqa: S603 - Programmaufruf mit fester Argumentliste, ohne Shell
         [str(repo / ".githooks" / "pre-commit")],
         cwd=cwd,
         env=env,

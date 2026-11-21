@@ -97,6 +97,7 @@ h2{font-size:17px;font-weight:500;margin:0}
 .ph{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line);font-size:13px;font-weight:500;flex-wrap:wrap}
 
 .ph .tag{color:var(--dim);font-weight:400;font-size:12px}
+.ph .labNeu{color:var(--amber);font-weight:400;font-size:12px;border:1px solid rgba(255,184,77,.4);border-radius:999px;padding:1px 8px;white-space:nowrap}
 
 .grid2{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;align-items:start}
 
