@@ -965,6 +965,10 @@
     {
       "quelle": "tests/test_kosten.py",
       "ziel": "dateien/tests/test_kosten.py"
+    },
+    {
+      "quelle": "tests/test_widerspruch_api_live.py",
+      "ziel": "dateien/tests/test_widerspruch_api_live.py"
     }
   ],
   "dokumente": [

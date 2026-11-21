@@ -397,7 +397,12 @@ Browser vergleicht Grund, Widerspruchssicherheit, Quellen und normalisierte
 bp-Werte mit der gerenderten Widerspruchskarte. Erwartungen und
 API-Vertragsprüfung liegen gemeinsam in `scripts/widerspruch-api-pruefung.mjs`;
 `tests/test_widerspruch_api_pruefung.py` prüft denselben Vertrag ohne Browser und
-schlägt bei fehlender, falscher oder doppelter Widerspruchszeile an.
+schlägt bei fehlender, falscher oder doppelter Widerspruchszeile an. Mit
+`--url http://127.0.0.1:3300` holt das Skript die Antwort selbst von der
+laufenden API; `tests/test_widerspruch_api_live.py` startet dafür eine
+geseedete Kopie und prüft einmal den angelegten Widerspruch und einmal dessen
+Fehlen in einer frischen Seed-Datenbank — Node genügt, Playwright ist nicht
+nötig.
 
 ```bash
 cp seed/orakel-seed.db /tmp/orakel-widerspruch.db
