@@ -281,6 +281,26 @@ Untergrenze von 85 % für dieselben vier Module. Regeln, Ausnahmen für den
 Altbestand und die lokalen Befehle stehen in
 [docs/QUALITAET.md](docs/QUALITAET.md).
 
+## Review-Paket
+
+`scripts/baue_review_paket.py` nimmt nur auf, was in
+`scripts/review-paket-freigabe.json` freigegeben ist. Ins Paket gehören Code
+(`orakel/`), Tests (`tests/`), Doku (`docs/`, `README.md`, `AGENTS.md`,
+`DEPLOY.md`, `RAILWAY.md`), Prüf- und Evidenzskripte (`scripts/`), die
+Konfiguration, die das Verhalten bestimmt (`config.toml`, `seed/`,
+`requirements*`), die Prüfregeln (`ruff.toml`, `mypy.ini`, `.importlinter`,
+`.githooks/pre-commit`), die CI-Workflows und die Deployment-Dateien
+(`Dockerfile`, `docker-compose.yml`, `docker-entrypoint.sh`, `deploy/`).
+
+Reine Meta-Dateien bleiben draußen: `.gitignore` und `.dockerignore` regeln
+Repository- und Build-Hygiene, `.env.example` ist eine Platzhalter-Vorlage (die
+wirksame Konfiguration steht in `config.toml`), `railway.json` beschreibt die
+Plattform und ist über `DEPLOY.md` und das Dockerfile abgedeckt. Sie stehen mit
+Begründung unter `ausnahmen`, und der Bericht des Pakets weist sie aus.
+`tests/test_review_paket.py` verlangt für jede Wurzeldatei entweder einen Platz
+im Paket oder eine begründete Ausnahme; Code, Tests, Doku, Skripte und CI
+lassen sich nicht ausnehmen.
+
 ## Doku-Prüfung
 
 `python scripts/pruefe_doku.py` prüft die versionierten Markdown-Dateien auf

@@ -1,6 +1,6 @@
 {
   "schema": "review-paket-freigabe.v1",
-  "beschreibung": "Freigegebene Pfade für das Review-Paket. Nur diese Einträge nimmt scripts/baue_review_paket.py auf; alles andere lehnt der Builder ab.",
+  "beschreibung": "Freigegebene Pfade für das Review-Paket. Nur diese Einträge nimmt scripts/baue_review_paket.py auf; alles andere lehnt der Builder ab. `ausnahmen` nennt Wurzeldateien, die bewusst nicht ins Paket gehören, jeweils mit Begründung; Code, Tests, Doku, Skripte und CI lassen sich nicht ausnehmen.",
   "quellen": [
     {
       "quelle": "AGENTS.md",
@@ -271,14 +271,6 @@
       "ziel": "dateien/tests/test_review_paket.py"
     },
     {
-      "quelle": ".dockerignore",
-      "ziel": "dateien/.dockerignore"
-    },
-    {
-      "quelle": ".env.example",
-      "ziel": "dateien/.env.example"
-    },
-    {
       "quelle": ".githooks/pre-commit",
       "ziel": "dateien/.githooks/pre-commit"
     },
@@ -293,10 +285,6 @@
     {
       "quelle": ".github/workflows/watchdog.yml",
       "ziel": "dateien/.github/workflows/watchdog.yml"
-    },
-    {
-      "quelle": ".gitignore",
-      "ziel": "dateien/.gitignore"
     },
     {
       "quelle": ".importlinter",
@@ -541,10 +529,6 @@
     {
       "quelle": "orakel/watchdog.py",
       "ziel": "dateien/orakel/watchdog.py"
-    },
-    {
-      "quelle": "railway.json",
-      "ziel": "dateien/railway.json"
     },
     {
       "quelle": "ruff.toml",
@@ -1018,6 +1002,24 @@
       "name": "scripts",
       "praefix": "dateien/scripts/",
       "zweck": "Prüf-, Evidenz- und Betriebsskripte, mit denen die Nachweise entstehen."
+    }
+  ],
+  "ausnahmen": [
+    {
+      "quelle": ".gitignore",
+      "grund": "Repository-Hygiene; ändert weder Laufzeitverhalten noch Nachweise."
+    },
+    {
+      "quelle": ".dockerignore",
+      "grund": "Build-Kontext des Containers; das Ergebnis prüft der docker-Job."
+    },
+    {
+      "quelle": ".env.example",
+      "grund": "Platzhalter-Vorlage; die wirksame Konfiguration steht in config.toml."
+    },
+    {
+      "quelle": "railway.json",
+      "grund": "Plattform-Deskriptor; Deployment beschreiben DEPLOY.md und das Dockerfile."
     }
   ]
 }

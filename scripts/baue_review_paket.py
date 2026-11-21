@@ -119,6 +119,19 @@ def lade_freigabe() -> dict:
             raise Abweichung(f'Quelle {quelle!r} ist doppelt freigegeben.')
         ziele.add(ziel)
         urspruenge.add(quelle)
+    ausnahmen: set[str] = set()
+    for eintrag in daten.get('ausnahmen') or []:
+        quelle = pruefe_pfad(eintrag.get('quelle', ''), 'Ausnahme')
+        if quelle in urspruenge:
+            raise Abweichung(f'Ausnahme {quelle!r} ist zugleich freigegeben.')
+        if quelle in ausnahmen:
+            raise Abweichung(f'Ausnahme {quelle!r} ist doppelt genannt.')
+        if not str(eintrag.get('grund') or '').strip():
+            raise Abweichung(f'Ausnahme {quelle!r} nennt keinen Grund.')
+        if '/' in quelle:
+            raise Abweichung(f'Ausnahme {quelle!r} liegt nicht im Wurzelverzeichnis; '
+                             'Code, Tests, Doku, Skripte und CI bleiben Pflicht.')
+        ausnahmen.add(quelle)
     for name in daten.get('dokumente') or []:
         pruefe_pfad(name, 'Dokument')
     for name in daten.get('belege') or []:
@@ -732,7 +745,8 @@ def pruefe_konsistenz(ausgabe: str, commit: str, evidenz: dict | None,
 def schreibe_pruefbericht(ausgabe: str, commit: str, branch: str,
                           eintraege: list[dict], evidenz: dict | None,
                           ci: dict | None = None,
-                          fehlend: list[str] | None = None) -> str:
+                          fehlend: list[str] | None = None,
+                          ausnahmen: list[dict] | None = None) -> str:
     """Schreibt einen kurzen Bericht ausschliesslich aus gemessenen Werten.
 
     Im CI gibt es kein ``artifacts/``-Verzeichnis mit Paketdokumenten; ohne
@@ -763,7 +777,12 @@ def schreibe_pruefbericht(ausgabe: str, commit: str, branch: str,
         zeilen += [f'- `{name}`' for name in sorted(fehlend)]
         zeilen += ['', 'Diese Belege und Dokumente lagen beim Bau nicht vor und '
                    'sind daher nicht Teil des Pakets.']
-    else:
+    if ausnahmen:
+        zeilen += [f'- `{eintrag["quelle"]}` – {eintrag["grund"]}'
+                   for eintrag in sorted(ausnahmen, key=lambda e: e['quelle'])]
+        zeilen += ['', 'Diese Wurzeldateien sind bewusst nicht im Paket: Sie ändern weder '
+                   'Laufzeitverhalten noch Nachweise.']
+    if not fehlend and not ausnahmen:
         zeilen.append('- Nichts.')
     zeilen += ['', 'Alle Angaben stammen aus MANIFEST.json und EVIDENZ.json; '
                'der Bericht enthält keine Schätzungen.', '']
@@ -1008,7 +1027,8 @@ def main() -> int:
                 schreibe_pruefbericht(temp, commit, branch, eintraege, evidenz, ci,
                                       fehlend=[name for name in
                                                (freigabe.get('belege') or []) + (freigabe.get('dokumente') or [])
-                                               if not os.path.exists(os.path.join(temp, name))])
+                                               if not os.path.exists(os.path.join(temp, name))],
+                                      ausnahmen=freigabe.get('ausnahmen'))
                 pruefe_hauptdokument(temp)
                 pruefe_dokumente(temp, commit, freigabe)
                 pruefe_konsistenz(temp, commit, evidenz,
