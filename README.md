@@ -207,7 +207,7 @@ der erzeugte Rohbericht liegt nach dem Lauf unter
 | Baustein | Zustand |
 |---|---|
 | Fakten-Datenbank (SQLite) | Kerzen, Validierungen, Trades, Entscheide, Ereignisse, Konto, Agentenläufe, Konferenzen |
-| Datenprüfung | Lücken, Doppelungen, unmögliche Hoch/Tief, Preissprünge, Mindestmenge |
+| Datenprüfung | Lücken, Doppelungen, unmögliche Hoch/Tief, Preissprünge, Mindestmenge, Zeitrahmen-Abstand |
 | Backtest | Kerze für Kerze, Ausführung zur Folge-Eröffnung, ATR-Stop, Gaps, Kommission, Slippage |
 | Richter | Rollierende Walk-Forward-Fenster, versiegelter Holdout, Monte-Carlo, Nachbar-Parameter, Zufallsvergleich |
 | Risiko | 1 % je Trade bis Stop, 10 % Not-Stop, max. 15 Positionen, Engagement, Bargeld, Korrelation |
@@ -324,15 +324,18 @@ Nach dem Import prüft der Befehl die **zusammengeführte** Reihe je Symbol und
 Zeitrahmen (einzelne Blöcke dürfen kürzer als `min_kerzen` sein): Mindestzahl
 Kerzen, doppelte oder unsortierte Zeitstempel, unmögliches Hoch/Tief, Preise
 ≤ 0, Lücken über dem Dreifachen des Median-Abstands und Sprünge über
-`max_sprung_pct`. Fehler und Warnungen stehen im Terminal und im Ereignisprotokoll;
+`max_sprung_pct`. Der Median-Abstand muss ausserdem zum angegebenen Zeitrahmen
+passen (M1/M5/M15/H1): Eine als M15 benannte H1-Datei wird mit Meldung
+abgelehnt, statt still als M15 zu gelten. Wochenenden, Feiertage und
+Handelspausen verschieben den Median nicht, gelten also nicht als Fehler. Fehler und Warnungen stehen im Terminal und im Ereignisprotokoll;
 bei einem Fehler endet der Befehl mit Exit-Code 1, importiert bleibt die Reihe
 trotzdem.
 
 Noch nicht unterstützt: die automatische Erkennung der Broker-Zeitzone (sie
 muss als IANA-Zone angegeben werden), der automatische Transport der
 Windows-Abfrage zum Server, Tick-Daten, Dezimalkommas und eine Bewertung anderer Zeitrahmen
-als M15 (dafür müssten `bars_pro_jahr` und die Frischegrenzen je Rahmen
-mitgeführt werden).
+als M15 im Paper-Takt; der Richter kann über `[basis] richter_zeitrahmen`
+auch H1 lesen, wobei `bars_pro_jahr` umgerechnet wird.
 
 ## Risikogrenzen (deine Vorgaben)
 

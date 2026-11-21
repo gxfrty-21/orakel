@@ -284,6 +284,18 @@ def pruefe_daten(df: pd.DataFrame, symbol: str, cfg: Any, timeframe: str = "M15"
 
     luecken = df["ts"].diff().dt.total_seconds().dropna()
     median = float(luecken.median()) if len(luecken) else 0.0
+    erwartet = ZEITRAHMEN_MINUTEN.get(timeframe.upper())
+    if erwartet and median > 0:
+        # Der Median ist robust gegen Wochenenden, Feiertage und Handelspausen:
+        # einzelne lange Abstände verschieben ihn nicht. Weicht er trotzdem vom
+        # angegebenen Raster ab, ist die Datei anders getaktet, als sie heisst —
+        # eine als M15 benannte H1-Datei würde sonst still als M15 gelten.
+        soll = erwartet * 60
+        if not 0.75 * soll <= median <= 1.5 * soll:
+            q.fehler.append(
+                f"Median-Abstand {median / 60:.0f} Min passt nicht zu {timeframe.upper()} "
+                f"(erwartet {erwartet} Min) — Datei im passenden Zeitrahmen ablegen?"
+            )
     if median > 0:
         anteil = float((luecken > median * 3).mean()) * 100
         if anteil > float(grenzen["max_luecke_pct"]):
