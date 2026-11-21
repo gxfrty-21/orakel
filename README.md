@@ -379,7 +379,10 @@ injizierten DOM-Daten, sondern am echten Weg: Der Seed legt zwei gegenläufige
 Meldungen über den Nexus-Pfad in einer Kopie der Seed-Datenbank an. Die
 Spider-Ansicht lädt anschließend den echten `/api/nexus/status`-Response; der
 Browser vergleicht Grund, Widerspruchssicherheit, Quellen und normalisierte
-bp-Werte mit der gerenderten Widerspruchskarte.
+bp-Werte mit der gerenderten Widerspruchskarte. Erwartungen und
+API-Vertragsprüfung liegen gemeinsam in `scripts/widerspruch-api-pruefung.mjs`;
+`tests/test_widerspruch_api_pruefung.py` prüft denselben Vertrag ohne Browser und
+schlägt bei fehlender, falscher oder doppelter Widerspruchszeile an.
 
 ```bash
 cp seed/orakel-seed.db /tmp/orakel-widerspruch.db

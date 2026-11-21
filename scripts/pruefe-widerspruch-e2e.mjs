@@ -15,20 +15,17 @@
  * ``--negativtest`` prüft zusätzlich, dass der Kartenprüfer eine im DOM
  * verfälschte und eine entfernte Widerspruchszeile als Fehler erkennt und
  * dass der API-Prüfer eine aus der API-Antwort entfernte Zeile ablehnt.
+ *
+ * Erwartungen und API-Vertragsprüfung liegen gemeinsam in
+ * ``widerspruch-api-pruefung.mjs``; derselbe Vertrag läuft browsorfrei in
+ * ``tests/test_widerspruch_api_pruefung.py``.
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { chromium } from 'playwright';
 
-const ERWARTET = {
-  grund: 'Richtung steigt gegen sinkt',
-  sicherheit: 0.8,
-  quelleA: 'e2e-a.example',
-  quelleB: 'e2e-b.example',
-  wertA: 450,
-  wertB: 400,
-};
+import { ERWARTET, apiBefund } from './widerspruch-api-pruefung.mjs';
 
 function argumente(argv) {
   const opts = {
@@ -51,40 +48,6 @@ function argumente(argv) {
   }
   opts.url = opts.url.replace(/\/$/, '');
   return opts;
-}
-
-function apiBefund(status) {
-  if (!status || status.ok !== true) {
-    throw new Error('API-Antwort ist nicht ok');
-  }
-  const claims = status.claims || {};
-  const widersprueche = claims.widersprueche || [];
-  const passend = widersprueche.find(w =>
-    w.grund === ERWARTET.grund &&
-    w.quelle_a === ERWARTET.quelleA &&
-    w.quelle_b === ERWARTET.quelleB &&
-    Number(w.wert_a_bp) === ERWARTET.wertA &&
-    Number(w.wert_b_bp) === ERWARTET.wertB
-  );
-  if (!passend) {
-    throw new Error(
-      'API enthält den erwarteten Widerspruch nicht: ' +
-      JSON.stringify(widersprueche)
-    );
-  }
-  if (Number(passend.sicherheit) !== ERWARTET.sicherheit) {
-    throw new Error(
-      `API-Widerspruchssicherheit ${passend.sicherheit} statt ${ERWARTET.sicherheit}`
-    );
-  }
-  const claim = (claims.top || []).find(c => Number(c.id) === Number(passend.claim_id));
-  if (!claim) {
-    throw new Error(`API-Claim ${passend.claim_id} fehlt in claims.top`);
-  }
-  if (claim.status !== 'widersprüchlich') {
-    throw new Error(`API-Claim ${claim.id} hat Status ${claim.status}`);
-  }
-  return { widerspruch: passend, claim };
 }
 
 async function leseWiderspruchKarte(page, claim) {
