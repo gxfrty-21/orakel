@@ -59,6 +59,36 @@ def test_gesunde_daten_sind_ok(cfg):
     assert q.kerzen == 2000
 
 
+def test_median_abstand_muss_zum_zeitrahmen_passen(cfg):
+    # H1-Takt, aber als M15 deklariert: der Median-Abstand ist 60 statt 15 Min.
+    h1 = synthetische_kerzen("X", kerzen=1300, seed=2, timeframe_minuten=60)
+    q = pruefe_daten(h1, "X", cfg, timeframe="M15")
+    assert not q.ok
+    assert any("Median-Abstand" in f and "M15" in f for f in q.fehler), q.fehler
+
+    # Umgekehrt ebenso: M15-Takt als H1 abgelegt (das war der stille Fehler).
+    m15 = synthetische_kerzen("X", kerzen=1300, seed=2)
+    q = pruefe_daten(m15, "X", cfg, timeframe="H1")
+    assert not q.ok
+    assert any("Median-Abstand" in f for f in q.fehler)
+
+    # M1 bleibt als M1 in Ordnung.
+    m1 = synthetische_kerzen("X", kerzen=1300, seed=2, timeframe_minuten=1)
+    assert pruefe_daten(m1, "X", cfg, timeframe="M1").ok
+
+
+def test_median_abstand_ignoriert_wochenende_und_handelspausen(cfg):
+    df = synthetische_kerzen("X", kerzen=2000, seed=2)
+    # Zwei Handelstage am Stück fehlen (Wochenende): nur ein langer Abstand,
+    # der Median bleibt beim M15-Raster.
+    luecke = df["ts"].iloc[500]
+    df = df[~((df["ts"] >= luecke) & (df["ts"] < luecke + pd.Timedelta(days=2)))].reset_index(
+        drop=True)
+    q = pruefe_daten(df, "X", cfg)
+    assert q.ok, q.fehler
+    assert not any("Median-Abstand" in f for f in q.fehler)
+
+
 def test_mt5_csv_mit_getrenntem_datum_und_zeit(tmp_path):
     # Format des MT5-Exports: <DATE> <TIME> <OPEN> ..., Datum als YYYY.MM.DD.
     inhalt = (
@@ -339,7 +369,7 @@ def test_zwei_bloecke_ergeben_eine_gepruefte_reihe(cfg, tmp_path):
 
 
 def test_zeitrahmen_aus_dateiname_wird_gespeichert_und_nicht_bewertet(cfg, tmp_path):
-    basis = synthetische_kerzen("X", kerzen=1300, seed=5)
+    basis = synthetische_kerzen("X", kerzen=1300, seed=5, timeframe_minuten=60)
     p = tmp_path / "EURUSD_H1.csv"
     p.write_text(_als_mt5(basis), encoding="utf-8")
     db = Facts(cfg.db_pfad)
@@ -347,6 +377,16 @@ def test_zeitrahmen_aus_dateiname_wird_gespeichert_und_nicht_bewertet(cfg, tmp_p
     assert _importiere_csv(cfg, db, _args(csv=[str(p)])) == 0
     assert len(db.kerzen("EURUSD", "H1")) == 1300
     assert db.kerzen("EURUSD", "M15") == []
+
+
+def test_als_m15_benannte_h1_datei_wird_beim_import_abgelehnt(cfg, tmp_path):
+    h1 = synthetische_kerzen("X", kerzen=1300, seed=5, timeframe_minuten=60)
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(_als_mt5(h1), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    # Der Import endet mit Fehler, statt die H1-Kerzen still als M15 abzulegen.
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)])) == 1
 
 
 def test_csv_mit_komma_trenner(tmp_path):
