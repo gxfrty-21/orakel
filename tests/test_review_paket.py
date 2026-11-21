@@ -452,7 +452,8 @@ PFLICHTDATEIEN = {
     ".dockerignore", ".env.example", ".gitignore", ".githooks/pre-commit", ".importlinter",
     "AGENTS.md", "DEPLOY.md", "Dockerfile", "RAILWAY.md", "README.md", "config.toml",
     "docker-compose.yml", "docker-entrypoint.sh", "mypy.ini", "railway.json",
-    "requirements-dev.txt", "requirements.txt", "ruff.toml", "seed/README.md",
+    "requirements-dev.in", "requirements-dev.txt", "requirements.in", "requirements.txt",
+    "ruff.toml", "seed/README.md",
 }
 
 

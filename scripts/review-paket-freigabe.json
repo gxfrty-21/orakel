@@ -857,6 +857,14 @@
     {
       "quelle": "tests/test_web.py",
       "ziel": "dateien/tests/test_web.py"
+    },
+    {
+      "quelle": "requirements.in",
+      "ziel": "dateien/requirements.in"
+    },
+    {
+      "quelle": "requirements-dev.in",
+      "ziel": "dateien/requirements-dev.in"
     }
   ],
   "dokumente": [

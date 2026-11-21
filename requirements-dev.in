@@ -1,0 +1,12 @@
+# Orakel Trading-Engine — Entwicklungs- und Testabhängigkeiten (lose)
+# Exakt gepinnte Fassung: requirements-dev.txt, aufgelöst aus dieser Datei.
+-r requirements.in
+# Tests
+pytest
+hypothesis
+httpx2
+# Werkzeuge: Fassungen bewusst gewählt (Bereich 4.6), nicht beiläufig anheben.
+pytest-cov==7.1.0
+ruff==0.17.6
+mypy==2.4.1
+import-linter==2.17
