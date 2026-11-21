@@ -17,7 +17,7 @@ orakel-umzug*
 seed/*.db-wal
 seed/*.db-shm
 
-node_modules/
+node_modules
 .playwright-local/
 
 # Coverage-Messung (pytest-cov)
