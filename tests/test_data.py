@@ -221,6 +221,27 @@ def test_herbst_umstellung_in_absteigender_datei(tmp_path):
     ]
 
 
+def test_sommerzeitluecke_meldet_deutschen_fehler(tmp_path):
+    # Europe/Athens springt am 30.03.2025 von 03:00 auf 04:00; 03:15 existiert
+    # dort nicht und darf nicht mit einer englischen pandas-Meldung abbrechen.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for zeit in ("02:45:00", "03:15:00", "04:00:00"):
+        zeilen.append(f"2025.03.30\t{zeit}\t1.0\t1.1\t0.9\t1.05\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError) as fehler:
+        lade_csv(p, server_zeitzone="Europe/Athens")
+
+    text = str(fehler.value)
+    assert "Sommerzeitlücke" in text
+    assert "Europe/Athens" in text
+    assert "2025-03-30 03:15:00" in text
+    assert "server_zeitzone" in text
+    assert "--server-versatz-stunden" in text
+    assert "nonexistent time" not in text
+
+
 def _herbst_datei(pfad):
     zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
     for zeit in ("02:45:00", "03:00:00", "03:15:00", "03:00:00", "03:15:00", "04:00:00"):

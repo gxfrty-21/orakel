@@ -152,7 +152,19 @@ def _nach_utc(geparst: pd.Series, zeitzone: str | None,
     # ist das Merkmal bedeutungslos.
     wiederholt = geparst.duplicated(keep="first").to_numpy()
     ambiguous = wiederholt if geparst.iloc[0] > geparst.iloc[-1] else ~wiederholt
-    return geparst.dt.tz_localize(zone, ambiguous=ambiguous).dt.tz_convert("UTC")
+    lokalisiert = geparst.dt.tz_localize(zone, ambiguous=ambiguous, nonexistent="NaT")
+    fehlt = lokalisiert.isna()
+    if fehlt.any():
+        beispiele = ", ".join(
+            geparst[fehlt].dt.strftime("%Y-%m-%d %H:%M:%S").head(3).tolist()
+        )
+        raise ValueError(
+            f"CSV: {int(fehlt.sum())} Zeitstempel liegen in der Sommerzeitlücke von "
+            f"«{zeitzone}» und existieren dort nicht ({beispiele}). Prüfe "
+            "server_zeitzone oder exportiere mit festem Broker-Versatz "
+            "(--server-versatz-stunden)."
+        )
+    return lokalisiert.dt.tz_convert("UTC")
 
 
 def zerlege_dateiname(pfad: str | Path) -> tuple[str, str]:
