@@ -55,7 +55,7 @@ def _status(
 def _pruefe(status: dict[str, Any], tmp_path: Path) -> subprocess.CompletedProcess[str]:
     datei = tmp_path / "status.json"
     datei.write_text(json.dumps(status, ensure_ascii=False), encoding="utf-8")
-    return subprocess.run(
+    return subprocess.run(  # noqa: S603 - Programmaufruf mit fester Argumentliste, ohne Shell
         [_node(), str(MODUL), "--status", str(datei)],
         capture_output=True,
         text=True,
