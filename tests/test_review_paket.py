@@ -443,3 +443,94 @@ def test_evidenz_lehnt_fehlgeschlagene_tests_ab(tmp_path, monkeypatch):
     with pytest.raises(modul.Abweichung, match="1 failed"):
         modul.fuehre_evidenz_aus(str(tmp_path / "paket"), "a" * 40, "main",
                                  pytest_log=str(log), pytest_exit_code=str(code))
+
+
+# Diese Dateien gehören zum Review-Paket, liegen aber nicht unter einem der
+# Pflichtpräfixe. Die Liste ist bewusst starr: Kommt eine Datei hinzu, muss sie
+# hier und in scripts/review-paket-freigabe.json auftauchen.
+PFLICHTDATEIEN = {
+    ".dockerignore", ".env.example", ".gitignore", ".githooks/pre-commit", ".importlinter",
+    "AGENTS.md", "DEPLOY.md", "Dockerfile", "RAILWAY.md", "README.md", "config.toml",
+    "docker-compose.yml", "docker-entrypoint.sh", "mypy.ini", "railway.json",
+    "requirements-dev.txt", "requirements.txt", "ruff.toml", "seed/README.md",
+}
+
+
+def _freigabe(quelle: str) -> dict:
+    return {"schema": "review-paket-freigabe.v1",
+            "quellen": [{"quelle": quelle, "ziel": f"dateien/{quelle}"}]}
+
+
+def _paketordner(tmp_path: Path) -> None:
+    (tmp_path / "dateien").mkdir()
+    (tmp_path / "dateien" / "README.md").write_text("x", encoding="utf-8")
+
+
+def test_freigabe_deckt_module_tests_doku_und_skripte_ab():
+    """Neue Dateien dürfen nicht still aus dem Paket fallen."""
+    modul = _modul()
+    freigegeben = {e["quelle"] for e in modul.lade_freigabe()["quellen"]}
+    dateien = modul.git('ls-files').decode().split()
+    pflicht = [p for p in dateien
+               if p.startswith(("orakel/", "tests/", "docs/", "scripts/", "deploy/",
+                                ".github/workflows/"))
+               or p in PFLICHTDATEIEN]
+
+    assert pflicht, "git ls-files lieferte keine Dateien"
+    fehlend = sorted(set(pflicht) - freigegeben)
+    assert not fehlend, f"Nicht in der Freigabeliste: {fehlend}"
+
+
+def test_hauptdokument_darf_keinen_fremden_commit_nennen(tmp_path):
+    modul = _modul()
+    _paketordner(tmp_path)
+    dokument = tmp_path / "ORAKEL-REVIEW-PAKET.md"
+
+    dokument.write_text(f"Review-Commit: `{'a' * 40}`\n", encoding="utf-8")
+    modul.pruefe_dokumente(str(tmp_path), "a" * 40, _freigabe("README.md"))
+
+    dokument.write_text("Review-Commit: `deadbeef1`\n", encoding="utf-8")
+    with pytest.raises(modul.Abweichung, match="fremden Commit"):
+        modul.pruefe_dokumente(str(tmp_path), "a" * 40, _freigabe("README.md"))
+
+
+def test_hauptdokument_nennt_nur_dateien_aus_dem_paket(tmp_path):
+    modul = _modul()
+    _paketordner(tmp_path)
+    dokument = tmp_path / "ORAKEL-REVIEW-PAKET.md"
+
+    dokument.write_text("Prüfen: `README.md` und `dateien/README.md`.\n", encoding="utf-8")
+    modul.pruefe_dokumente(str(tmp_path), "a" * 40, _freigabe("README.md"))
+
+    dokument.write_text("Prüfen: `orakel/kern/risk.py`.\n", encoding="utf-8")
+    with pytest.raises(modul.Abweichung, match="nicht im Paket"):
+        modul.pruefe_dokumente(str(tmp_path), "a" * 40, _freigabe("README.md"))
+
+    dokument.write_text("Prüfen: `dateien/fehlt.py`.\n", encoding="utf-8")
+    with pytest.raises(modul.Abweichung, match="fehlende Datei"):
+        modul.pruefe_dokumente(str(tmp_path), "a" * 40, _freigabe("README.md"))
+
+    # Nach "## Nicht im Paket" darf das Dokument Fehlendes ausdrücklich nennen.
+    dokument.write_text(f"Review-Commit: `{'a' * 40}`.\n\n## Nicht im Paket\n\n"
+                        "- `orakel/kern/risk.py`\n", encoding="utf-8")
+    modul.pruefe_dokumente(str(tmp_path), "a" * 40, _freigabe("README.md"))
+
+
+def test_pruefbericht_listet_fehlende_paketdateien(tmp_path):
+    """Der erzeugte Bericht nennt ausdrücklich, was im Paket fehlt."""
+    modul = _modul()
+    text = Path(modul.schreibe_pruefbericht(
+        str(tmp_path), "a" * 40, "main", [], None, None,
+        fehlend=["ORAKEL-REVIEW-PAKET.md", "belege/evidenz-pytest.log"],
+    )).read_text(encoding="utf-8")
+
+    assert "## Nicht im Paket" in text
+    assert "`belege/evidenz-pytest.log`" in text and "`ORAKEL-REVIEW-PAKET.md`" in text
+
+
+def test_fehlendes_hauptdokument_bricht_die_pruefung_nicht_ab(tmp_path):
+    """Ein nicht vorhandenes Dokument wird als fehlend ausgewiesen, nicht geprüft."""
+    modul = _modul()
+    _paketordner(tmp_path)
+
+    modul.pruefe_dokumente(str(tmp_path), "a" * 40, _freigabe("README.md"))
