@@ -878,6 +878,16 @@ body.nurAltBloecke .mtasks.ohneAlt{display:none}
   .musterTrades .trFilter input{width:18px;height:18px;flex:0 0 18px}
   .trKopf{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 8px;margin:4px 0 0 14px;padding:0 0 3px;color:var(--dim);font-size:9px;letter-spacing:.06em;text-transform:uppercase}
   .trKopf span:nth-child(2),.trKopf span:nth-child(3){text-align:right}
+  /* 250 % Textskalierung: Die Schrift wächst, der Viewport nicht. Inhalte müssen
+     deshalb umbrechen, statt aus Kacheln und Zellen zu laufen. */
+  .musterTrades ul{min-width:0;max-width:100%}
+  .musterTrades li,.musterTrades li>b,.musterTrades li>span{min-width:0;max-width:100%;overflow-wrap:anywhere}
+  .musterTrades .trSym,.musterTrades .trDatum,.musterTrades .trNet,
+  .musterTrades .trRend,.musterTrades .trDauer{white-space:normal;overflow-wrap:anywhere}
+  .trKopf span{min-width:0;overflow-wrap:anywhere;white-space:normal}
+  #mtgPanel,#mtgBody{min-width:0;max-width:100%}
+  #mtgBody *{min-width:0;max-width:100%;overflow-wrap:anywhere}
+  .protoTools input,.protoTools select{min-width:0;max-width:100%;flex:1 1 100%}
 }
 
 .mtgAltKopf{display:inline-flex;gap:6px;align-items:center}

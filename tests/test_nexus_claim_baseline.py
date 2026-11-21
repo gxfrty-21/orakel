@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import copy
 import importlib.util
 import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -16,14 +19,16 @@ def _modul(name: str, datei: Path):
     return modul
 
 
-def test_claim_korpus_hat_30_bis_50_eindeutige_meldungen():
+def test_allgemeiner_claim_korpus_hat_34_eindeutige_meldungen():
     modul = _modul("nexus_claim_korpus_test", ROOT / "scripts" / "nexus_claim_baseline.py")
     korpus = modul.lade_korpus()
 
     meldungen = korpus["meldungen"]
-    assert 30 <= len(meldungen) <= 50
+    assert korpus["typ"] == "claim"
+    assert len(meldungen) == 34
     assert len({m["id"] for m in meldungen}) == len(meldungen)
-    assert sum(bool(m["erwartet"]["claim"]) for m in meldungen) == 9
+    assert all(m["id"].startswith("seed-") for m in meldungen)
+    assert sum(bool(m["erwartet"]["claim"]) for m in meldungen) == 4
     for meldung in meldungen:
         assert meldung["quelle"]
         assert meldung["titel"]
@@ -35,7 +40,22 @@ def test_claim_korpus_hat_30_bis_50_eindeutige_meldungen():
         }
 
 
-def test_claim_baseline_ist_reproduzierbar_und_zeigt_die_luecken():
+def test_pp_probe_hat_fuenf_gezielte_pp_meldungen():
+    modul = _modul("nexus_pp_probe_korpus_test", ROOT / "scripts" / "nexus_claim_baseline.py")
+    korpus = modul.lade_korpus(modul.PP_PROBE_KORPUS)
+
+    meldungen = korpus["meldungen"]
+    assert korpus["typ"] == "pp_probe"
+    assert len(meldungen) == 5
+    assert [m["id"] for m in meldungen] == [
+        "rss-pp-001", "rss-pp-002", "rss-pp-003", "rss-pp-004", "rss-pp-005",
+    ]
+    assert all(m["erwartet"]["claim"] for m in meldungen)
+    assert all(m["erwartet"]["einheit"] == "pp" for m in meldungen)
+    assert all(m["erwartet"]["begruendung"] for m in meldungen)
+
+
+def test_allgemeine_baseline_ist_reproduzierbar_und_zeigt_die_luecken():
     modul = _modul("nexus_claim_baseline_test", ROOT / "scripts" / "nexus_claim_baseline.py")
     korpus = modul.lade_korpus()
 
@@ -43,26 +63,29 @@ def test_claim_baseline_ist_reproduzierbar_und_zeigt_die_luecken():
     zweiter = modul.bewerte(korpus)
 
     assert erster == zweiter
-    assert erster["meldungen"] == 39
-    assert erster["erwartete_claims"] == 9
-    assert erster["erkannte_claims"] == 7
-    assert erster["richtige_claims"] == 6
+    assert erster["meldungen"] == 34
+    assert erster["erwartete_claims"] == 4
+    assert erster["erkannte_claims"] == 2
+    assert erster["richtige_claims"] == 1
     assert erster["falsch_positive"] == 0
     assert erster["uebersehene_claims"] == 2
     assert erster["erkannt_aber_feldfehler"] == 1
-    assert erster["claim_precision"] == 0.8571
-    assert erster["claim_recall"] == 0.6667
-    assert erster["feldgesamt"]["thema"] == 9
-    assert erster["feldtreffer"]["thema"] == 7
-    assert erster["pp_erwartet"] == 5
-    assert erster["pp_vorhergesagt"] == 5
-    assert erster["pp_richtig"] == 5
-    assert erster["pp_precision"] == 1.0
-    assert erster["pp_recall"] == 1.0
-    assert [fall["id"] for fall in erster["pp_faelle"]] == [
-        "rss-pp-001", "rss-pp-002", "rss-pp-003", "rss-pp-004", "rss-pp-005",
-    ]
-    assert all(fall["erwartet_pp"] and fall["erkannt_pp"] for fall in erster["pp_faelle"])
+    assert erster["claim_precision"] == 0.5
+    assert erster["claim_recall"] == 0.25
+    assert erster["feldgesamt"]["thema"] == 4
+    assert erster["feldtreffer"]["thema"] == 2
+    assert erster["pp_erwartet"] == 0
+    assert erster["pp_vorhergesagt"] == 0
+    assert erster["pp_faelle"] == []
+    assert erster["pp_precision"] is None
+    assert erster["pp_recall"] is None
+    assert erster["pp_tp"] == 0
+    assert erster["pp_fp"] == 0
+    assert erster["pp_fn"] == 0
+    assert erster["pp_strict_precision"] is None
+    assert erster["pp_strict_recall"] is None
+    assert erster["pp_feldtreffer"] == {feld: 0 for feld in modul.PP_FELDER}
+    assert erster["pp_feldgesamt"] == {feld: 0 for feld in modul.PP_FELDER}
 
     abweichungen = {
         fall["id"]: "; ".join(fall["abweichungen"])
@@ -76,3 +99,158 @@ def test_claim_baseline_ist_reproduzierbar_und_zeigt_die_luecken():
     assert "seed-024" in abweichungen
     assert "Claim nicht erkannt" in abweichungen["seed-023"]
     assert "Claim nicht erkannt" in abweichungen["seed-024"]
+
+
+def test_pp_probe_baseline_ist_reproduzierbar_und_vollstaendig():
+    modul = _modul("nexus_pp_probe_baseline_test", ROOT / "scripts" / "nexus_claim_baseline.py")
+    korpus = modul.lade_korpus(modul.PP_PROBE_KORPUS)
+
+    erster = modul.bewerte(korpus)
+    zweiter = modul.bewerte(korpus)
+
+    assert erster == zweiter
+    assert erster["meldungen"] == 5
+    assert erster["erwartete_claims"] == 5
+    assert erster["erkannte_claims"] == 5
+    assert erster["richtige_claims"] == 5
+    assert erster["falsch_positive"] == 0
+    assert erster["uebersehene_claims"] == 0
+    assert erster["erkannt_aber_feldfehler"] == 0
+    assert erster["claim_precision"] == 1.0
+    assert erster["claim_recall"] == 1.0
+    assert erster["pp_erwartet"] == 5
+    assert erster["pp_vorhergesagt"] == 5
+    assert erster["pp_richtig"] == 5
+    assert erster["pp_precision"] == 1.0
+    assert erster["pp_recall"] == 1.0
+    assert erster["pp_tp"] == 5
+    assert erster["pp_fp"] == 0
+    assert erster["pp_fn"] == 0
+    assert erster["pp_strict_precision"] == 1.0
+    assert erster["pp_strict_recall"] == 1.0
+    assert [fall["id"] for fall in erster["pp_faelle"]] == [
+        "rss-pp-001", "rss-pp-002", "rss-pp-003", "rss-pp-004", "rss-pp-005",
+    ]
+    assert all(fall["erwartet_pp"] and fall["erkannt_pp"] for fall in erster["pp_faelle"])
+    assert all(fall["tp"] and not fall["fp"] and not fall["fn"]
+               for fall in erster["pp_faelle"])
+    assert all(
+        set(fall) == {
+            "id", "erwartet_pp", "erkannt_pp", "tp", "fp", "fn", "feldfehler",
+        }
+        for fall in erster["pp_faelle"]
+    )
+    assert modul.PP_FELDER == ("subjekt", "metrik", "richtung", "wert", "negiert")
+    assert all(erster["pp_feldtreffer"][feld] == 5 for feld in modul.PP_FELDER)
+    assert all(erster["pp_feldgesamt"][feld] == 5 for feld in modul.PP_FELDER)
+    assert all(erster["feldtreffer"][feld] == 5 for feld in modul.FELDER)
+    assert all(erster["feldgesamt"][feld] == 5 for feld in modul.FELDER)
+
+
+def test_gemischte_ansicht_ist_nur_optional():
+    modul = _modul("nexus_gemischt_test", ROOT / "scripts" / "nexus_claim_baseline.py")
+
+    assert len(modul.lade_korpus()["meldungen"]) == 34
+
+    gemischt = modul.lade_gemischten_korpus()
+    assert gemischt["typ"] == "gemischt"
+    assert len(gemischt["meldungen"]) == 39
+    assert len({m["id"] for m in gemischt["meldungen"]}) == 39
+
+    ergebnis = modul.bewerte(gemischt)
+    assert ergebnis["meldungen"] == 39
+    assert ergebnis["erwartete_claims"] == 9
+    assert ergebnis["erkannte_claims"] == 7
+    assert ergebnis["richtige_claims"] == 6
+    assert ergebnis["claim_precision"] == 0.8571
+    assert ergebnis["claim_recall"] == 0.6667
+    assert ergebnis["pp_erwartet"] == 5
+    assert ergebnis["pp_tp"] == 5
+    assert ergebnis["pp_fp"] == 0
+    assert ergebnis["pp_fn"] == 0
+
+
+@pytest.mark.parametrize(
+    ("feld", "falscher_wert"),
+    [
+        ("subjekt", "falsches subjekt"),
+        ("metrik", "falsche metrik"),
+        ("wert", 99.0),
+        ("richtung", "sinkt"),
+        ("negiert", True),
+    ],
+)
+def test_pp_strikte_feldfehler_zaehlen_als_fp_und_fn(feld, falscher_wert):
+    modul = _modul(
+        f"nexus_pp_strict_{feld}_test",
+        ROOT / "scripts" / "nexus_claim_baseline.py",
+    )
+    korpus = copy.deepcopy(modul.lade_korpus(modul.PP_PROBE_KORPUS))
+    fall = next(m for m in korpus["meldungen"] if m["id"] == "rss-pp-001")
+    fall["erwartet"][feld] = falscher_wert
+
+    ergebnis = modul.bewerte(korpus)
+
+    assert ergebnis["pp_erwartet"] == 5
+    assert ergebnis["pp_vorhergesagt"] == 5
+    assert ergebnis["pp_richtig"] == 5
+    assert ergebnis["pp_tp"] == 4
+    assert ergebnis["pp_fp"] == 1
+    assert ergebnis["pp_fn"] == 1
+    assert ergebnis["pp_strict_precision"] == 0.8
+    assert ergebnis["pp_strict_recall"] == 0.8
+    assert ergebnis["pp_feldtreffer"][feld] == 4
+    assert ergebnis["pp_feldgesamt"][feld] == 5
+    for anderes_feld in modul.PP_FELDER:
+        if anderes_feld != feld:
+            assert ergebnis["pp_feldtreffer"][anderes_feld] == 5
+
+    pp_fall = next(f for f in ergebnis["pp_faelle"] if f["id"] == "rss-pp-001")
+    assert pp_fall["tp"] is False
+    assert pp_fall["fp"] is True
+    assert pp_fall["fn"] is True
+    assert [fehler.split(":")[0] for fehler in pp_fall["feldfehler"]] == [feld]
+
+
+def test_pp_vorhersage_ohne_gold_zaehlt_als_fp():
+    modul = _modul(
+        "nexus_pp_strict_fp_test",
+        ROOT / "scripts" / "nexus_claim_baseline.py",
+    )
+    korpus = copy.deepcopy(modul.lade_korpus(modul.PP_PROBE_KORPUS))
+    fall = next(m for m in korpus["meldungen"] if m["id"] == "rss-pp-001")
+    fall["erwartet"]["einheit"] = "%"
+
+    ergebnis = modul.bewerte(korpus)
+
+    assert ergebnis["pp_erwartet"] == 4
+    assert ergebnis["pp_vorhergesagt"] == 5
+    assert ergebnis["pp_richtig"] == 4
+    assert ergebnis["pp_tp"] == 4
+    assert ergebnis["pp_fp"] == 1
+    assert ergebnis["pp_fn"] == 0
+    assert ergebnis["pp_strict_precision"] == 0.8
+    assert ergebnis["pp_strict_recall"] == 1.0
+
+    pp_fall = next(f for f in ergebnis["pp_faelle"] if f["id"] == "rss-pp-001")
+    assert pp_fall["erwartet_pp"] is False
+    assert pp_fall["erkannt_pp"] is True
+    assert pp_fall["tp"] is False
+    assert pp_fall["fp"] is True
+    assert pp_fall["fn"] is False
+    assert pp_fall["feldfehler"] == []
+    # Nur die vier erwarteten pp-Fälle mit erkannter Einheit werden verglichen.
+    assert all(wert == 4 for wert in ergebnis["pp_feldgesamt"].values())
+    assert all(wert == 4 for wert in ergebnis["pp_feldtreffer"].values())
+
+
+def test_feldvergleich_prueft_einheit_und_negation():
+    modul = _modul(
+        "nexus_pp_strict_felder_test",
+        ROOT / "scripts" / "nexus_claim_baseline.py",
+    )
+
+    assert modul._feld_passt("einheit", "pp", "pp") is True
+    assert modul._feld_passt("einheit", "pp", "%") is False
+    assert modul._feld_passt("negiert", False, False) is True
+    assert modul._feld_passt("negiert", True, False) is False

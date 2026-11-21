@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 
 from .backtest import BacktestErgebnis, backtest
-from .config import Config, RisikoGrenzen
+from ..config import Config, RisikoGrenzen
 from .metrics import kennzahlen, max_drawdown_pct
 from .strategies import Strategie, nachbarn
 
@@ -165,6 +165,11 @@ def _aufteilung(n: int, v: dict[str, Any]) -> tuple[int, int, int, list[int]] | 
     if any(b - a < min_fold_bars for a, b in zip(grenzen, grenzen[1:])):
         return None
     return dev_n, holdout_n, train_bars, grenzen
+
+
+def aufteilung(n: int, cfg: Config) -> tuple[int, int, int, list[int]] | None:
+    """Öffentliche Fassung der Zeitaufteilung für Berichte und Tests."""
+    return _aufteilung(n, cfg["validierung"])
 
 
 def _train_parameter(

@@ -129,8 +129,11 @@ gespeicherte Meldungen zu verlieren.
 Manuell neu berechnen:
 
 ```bash
-python -m orakel.nexus bewertung --db orakel.db
+python -m orakel.nexus bewertung
 ```
+
+Den Datenbankpfad nimmt der Befehl aus `config.toml` (`[basis] db_pfad`);
+`ORAKEL_DB_PFAD` sticht ihn. `--db` ist nur für einen anderen Bestand nötig.
 
 ---
 
@@ -167,8 +170,7 @@ python -m orakel.nexus bewertung --db orakel.db
   Navigationsleiste brechen kompakt um. Die zwölf Ansichten werden bei 240 px
   in normaler Schrift geprüft (`240px: 12/12`); der volle 250-%-Lauf bei
   240 px bleibt ausserhalb der Zusage, die CI prüft 250 % bei 360/320/280 px.
-  240 px ist die untere
-  geprüfte Breite und keine allgemeine Mindestbreite für alle anderen
+  240 px ist die untere geprüfte Breite und keine allgemeine Mindestbreite für alle anderen
   Ansichten; darunter gibt es keine Layoutzusage.
 - **Quellenreputation ist keine Trefferquote.** Sie startet mit einem Prior
   und wird nur durch echte Auftrags-Ergebnisse belastbar. Im breiten Lauf gab
@@ -213,21 +215,71 @@ anderem:
 - Quellenreputation aus echten Ergebnissen, sonst `vorläufig`,
 - Idempotenz und atomarer Rebuild.
 
-**pp-Baseline im echten Claim-Korpus:** Der versionierte Korpus enthält 39
-reale RSS-Meldungen, davon fünf gezielt ergänzte pp-Meldungen aus echten
+**Getrennte Claim- und pp-Baseline:** Der allgemeine Claim-Korpus enthält 34
+reale RSS-Meldungen aus dem Seed-Snapshot. Die fünf gezielten pp-Meldungen aus
+echten Google-News-RSS-Suchen liegen separat in
+`tests/fixtures/nexus_pp_probe_korpus.json`. Dadurch bleiben die
+34-Meldungen-Metriken mit der ursprünglichen Basis vergleichbar; pp-Werte
+werden nicht in die allgemeinen Precision-/Recall-Werte eingemischt.
+
+Allgemeiner Claim-Korpus (34 Meldungen):
+
+| Messwert | Ergebnis |
+|---|---:|
+| Erwartete Claims | 4 |
+| Erkannte Claims | 2 |
+| Vollständig richtige Claims | 1 |
+| Claim-Precision | 0.5 |
+| Claim-Recall | 0.25 |
+
+Die drei Abweichungen sind `seed-021` (BBC, „My mortgage is going up…“: Subjekt
+`uk` statt `mortgage going month how`, Metrik `interest rate` statt `rates`)
+sowie `seed-023` (BBC, „AI stocks climb…“) und `seed-024` (BBC, „Why the US
+midterms…“), bei denen der Claim nicht erkannt wurde. Reproduzierbar mit:
+
+```bash
+python scripts/nexus_claim_baseline.py \
+  --output-dir artifacts/nexus-claim-baseline
+```
+
+**pp_probe (5 Meldungen, getrennt):** Die fünf Fälle stammen aus echten
 Google-News-RSS-Suchen: zwei deutschsprachige Treffer nach „Prozentpunkte“
 (Tagesschau und Spiegel) sowie drei englischsprachige Treffer nach
 „percentage points“ (CBS News, ERR und Tax Foundation). Die Originalseiten
 wurden am 15. bzw. 16. November 2026 geprüft; alle fünf RSS-Titel enthalten
-einen konkreten pp-Wert. Die aktuelle Extraktion erkennt alle fünf Einheiten:
+einen konkreten pp-Wert. Die Extraktion erkennt alle fünf Einheiten. Für die
+strengen pp-Metriken ist die erkannte Einheit `pp` die Zulassungsbedingung;
+zusätzlich werden Subjekt, Metrik, Richtung, Wert und Negation einzeln
+verglichen. Die Einheit steht als eigene Zeile in der Feldtabelle, die strikte
+Quote hängt aber auch von den fünf weiteren Feldern ab. Ein nicht vollständig
+passender vorhergesagter pp-Claim zählt als FP, ein nicht vollständig passender
+erwarteter pp-Claim als FN; bei Feldfehlern kann derselbe Fall als FP und FN
+zählen. Der Bericht weist TP, FP und FN für jeden Fall einzeln aus
+(`tp`/`fp`/`fn` in `messwerte.json`).
 
 | Messwert | Ergebnis |
 |---|---:|
 | Erwartete pp-Claims | 5 |
 | Vorhergesagte pp-Claims | 5 |
-| Korrekte pp-Einheiten | 5 |
-| pp-Precision | 1.0 |
-| pp-Recall | 1.0 |
+| Korrekte pp-Einheiten (nur Einheit) | 5 |
+| TP (strikt) | 5 |
+| FP (strikt) | 0 |
+| FN (strikt) | 0 |
+| pp-Precision (nur Einheit) | 1.0 |
+| pp-Recall (nur Einheit) | 1.0 |
+| pp-Precision (strikt) | 1.0 |
+| pp-Recall (strikt) | 1.0 |
+
+Strikte Feldtreffer (jeweils 5 geprüft):
+
+| Feld | Treffer | Geprüft |
+|---|---:|---:|
+| `einheit` | 5 | 5 |
+| `subjekt` | 5 | 5 |
+| `metrik` | 5 | 5 |
+| `richtung` | 5 | 5 |
+| `wert` | 5 | 5 |
+| `negiert` | 5 | 5 |
 
 Die pp-Fälle sind `rss-pp-001` („US-Notenbank Fed erhöht den Leitzins um 0,25
 Prozentpunkte“), `rss-pp-002` („USA: Notenbank Fed senkt Leitzins um 0,25
@@ -238,15 +290,31 @@ Bank cuts key interest rates by 0.25 percentage points“) und `rss-pp-005`
 Supreme Court Ruling“). Die Stichprobe ist gezielt und klein (n=5); sie belegt,
 dass der Messpfad für deutsche und englische pp-Angaben funktioniert, ist aber
 **keine repräsentative Schätzung** der pp-Genauigkeit im gesamten
-Nachrichtenstrom. Es gibt in diesem Lauf keine pp-spezifischen False Positives
-oder False Negatives.
-Die allgemeinen Claim-Fehler sind `seed-021` (BBC, „My mortgage is going up…“:
-Subjekt `uk` statt `mortgage going month how`, Metrik `interest rate` statt
-`rates`) sowie `seed-023` (BBC, „AI stocks climb…“) und `seed-024` (BBC, „Why
-the US midterms…“), bei denen der Claim nicht erkannt wurde. Die Gesamtwerte
-liegen bei 9 erwarteten, 7 erkannten und 6 vollständig richtigen Claims
-(Precision 0.8571, Recall 0.6667). Reproduzierbar mit
-`python scripts/nexus_claim_baseline.py --output-dir artifacts/nexus-claim-baseline`.
+Nachrichtenstrom. In diesem Lauf gibt es weder auf der Einheiten- noch auf der
+strikten Feldebene pp-spezifische False Positives oder False Negatives.
+Reproduzierbar mit:
+
+```bash
+python scripts/nexus_claim_baseline.py \
+  --korpus tests/fixtures/nexus_pp_probe_korpus.json \
+  --output-dir artifacts/nexus-pp-probe
+```
+
+**Optional: gemischte Ansicht.** Wer die fünf pp-Meldungen bewusst zusammen
+mit den 34 Claim-Meldungen sehen will, schaltet die Diagnoseansicht explizit
+ein. Sie ist kein Standardlauf und ersetzt keine der beiden Baselines:
+
+```bash
+python scripts/nexus_claim_baseline.py --gemischt \
+  --output-dir artifacts/nexus-gemischt
+```
+
+Die Auswertung umfasst dann 39 Meldungen; die pp-Fälle beeinflussen
+Claim-Precision, Claim-Recall und Claim-Yield. Der Bericht kennzeichnet die
+Ansicht als `gemischt` und als „Nur Diagnose“.
+
+Die tatsächliche Abdeckung der 32 englischen Registerfeeds — Abruferfolg,
+Aktualität und pp-Ausbeute — steht als [Matrix in FEED-ABDECKUNG.md](FEED-ABDECKUNG.md).
 
 **Echter lokaler Lauf** mit zwölf produktiven Quellen (u. a. EZB, Fed, Bank of
 England, Bank of Japan, BBC, Guardian, WHO, UN):
@@ -278,8 +346,8 @@ Artikelbasis, keine gemessene Trefferquote.
 
 Ein lokaler 250-%-Lauf meldete 24 Befunde. Die Meldungen stammen aus
 **`360px/lab`**. Ein separater 240-px-Durchgang in normaler Schrift war mit
-`240px: 12/12` grün; er war kein 250-%-Lauf. Die Zuordnung zum 240-px-Lauf
-war falsch.
+`240px: 12/12` grün; er war kein 250-%-Lauf. Die Zuordnung zum 240-px-Lauf war
+falsch.
 
 | Gruppe | Anzahl | Befund |
 |---|---:|---|
@@ -297,35 +365,39 @@ neu auf und setzte Fokus, Tooltip und Live-Region zurück. Die 24 Meldungen sind
 Folge dieses einen Zustandsverlusts. Die App pausiert den Refresh jetzt bei
 Fokus im sichtbaren Lab-Detail (insbesondere auf der Kapitalkurve) nur den
 Ansichts-Render; Daten und Kopfzeile werden weiter aktualisiert. Ein Fokus auf
-der Lab-Liste, einem anderen Lab-Element oder in einem ausgeblendeten Lab
-blockiert den Render nicht. Der deterministische Test mit echter
-/api/report-Antwort (HTTP 200, Marker) ist ohne Befund; er belegt den Fall für
-die Lab-Liste und für ein weiteres Lab-Element (einen Lab-Tab). Ein
-ausgeblendetes Lab prüft er nicht über den Fokus, weil Chromium den Fokus beim
-Ausblenden auf body setzt. Stattdessen prüft `Lab-Guard 1× geprüft` die
-Guard-Regel direkt: Der Detail-Knoten wird explizit übergeben, während `#v-lab`
-hidden ist, und der Guard muss false liefern; `document.activeElement` bleibt
-dabei unangetastet. Dieselbe Prüfung belegt, dass Liste, Tab und body den
-Render nicht blockieren und dass die Regel am echten Fokus dasselbe Ergebnis
-liefert. Die Fokus-Tests werten den Datenmarker nur an sichtbaren Knoten und
-verlangen nach dem Refresh einen sichtbaren Fokus; bei Befunden legt der Lauf
-Screenshot und Playwright-Trace unter `artifacts/text250/` ab. Solange der
-Render wegen Fokus im sichtbaren Lab-Detail pausiert, zeigt `#labNeu` dezent
-«Neue Daten verfügbar» und ist eine höfliche Live-Region (`role="status"`,
-`aria-live="polite"`); beim Verlassen des Details (Fokuswechsel oder Klick ins
-Leere) wird sofort neu gezeichnet, statt den nächsten Takt abzuwarten.
-`Lab-Pause 1× geprüft` belegt Status und sofortiges Neuzeichnen samt
-Fokuserhalt. Die Kandidatenliste wird beim Refresh nicht neu aufgebaut,
-sondern über die Kandidatenkennung wiederverwendet und nur umsortiert;
-`Listen-Umsortierung 1× geprüft` kehrt die Reihenfolge um und verlangt
-denselben ausgewählten Kandidaten, denselben fokussierten DOM-Knoten und
-dieselbe Scrollposition. Der vollständige
-Standardlauf lief nach dieser Verschärfung erneut über alle zwölf Ansichten bei
-360, 320 und 280 px und endete ohne Befund; er meldete `Refresh 2× geprüft
-(HTTP 200, Marker)`, `Refresh-Negativ 1× geprüft`, `Lab-Fokus 2× geprüft`,
-`Listen-Refresh 1× geprüft`, `Lab-Guard 1× geprüft`, `Lab-Pause 1× geprüft`,
-`Listen-Umsortierung 1× geprüft` und `240px: 12/12 Ansichten ohne horizontalen
-Überlauf`. Ein voller 250-%-Lauf bei 240 px ist nicht belegt.
+einem Lab-Knopf in der Liste oder im ausgeblendeten Lab-Detail blockiert den
+Render nicht. Die drei Refresh-Fälle (sichtbare Kurve, Lab-Knopf,
+ausgeblendetes Lab-Detail) laufen als eigener deterministischer 360px/lab-Lauf
+mit echter /api/report-Antwort (HTTP 200, Marker); dieser Lauf ist ohne Befund.
+Der vollständige 12-Ansichten-Standardlauf wurde nach dieser Verschärfung
+nicht erneut ausgeführt.
+
+## 7a. Prüfungen zum pausierten Lab-Render
+
+Der 250-%-Lauf prüft das Verhalten beim pausierten Render mit eigenen
+Prüfungen. Sie laufen als Teil der Profile `voll` und `seed-tastatur` und sind
+im Check-Manifest als Pflichtfälle hinterlegt:
+
+- **Lab-Guard** (`text250.lab-guard`): Die Regel wird direkt über
+  `window.pausiertRenderWegenLabDetail` geprüft. Fokus auf Liste, Tab, `body`
+  und ein ausgeblendetes Lab dürfen den Render nicht blockieren, Fokus im
+  sichtbaren Lab-Detail muss es. Zusätzlich wird die Regel am echten Fokus
+  geprüft.
+- **Lab-Pause** (`text250.lab-pause`): Bei pausiertem Render müssen die neuen
+  Daten übernommen werden, der Status `#labNeu` sichtbar und als höfliche
+  Live-Region angekündigt sein, ohne dass die Liste neu gezeichnet wird. Beim
+  Verlassen des Details wird sofort neu gezeichnet, der Status verschwindet
+  und der Fokus bleibt in der Liste.
+- **Listen-Umsortierung** (`text250.listen-umsortierung`): Der Refresh dreht
+  die Kandidatenreihenfolge um. Derselbe Kandidat bleibt ausgewählt, der
+  fokussierte DOM-Knoten bleibt bestehen (Marke überlebt) und die
+  Scrollposition steht.
+- **Refresh-Takt** (`text250.refresh-takt`): Während eine Antwort offen ist,
+  startet der Takt keinen zweiten Aufruf; im Hintergrundtab lädt er nicht, beim
+  Zurückkehren sofort.
+
+Die Prüfungen sichern bei Befunden einen Screenshot und einen
+Playwright-Trace (`text250-*-trace.zip`) im Diagnose-Artefakt.
 
 Der erfolgreiche CI-Job `text250` aus Run `43811966526` verwendete denselben
 Seed und denselben Lab-Code, lief mit 74,39 s aber etwas schneller als der

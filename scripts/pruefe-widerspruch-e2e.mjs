@@ -17,6 +17,8 @@
  * dass der API-Prüfer eine aus der API-Antwort entfernte Zeile ablehnt.
  */
 
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { chromium } from 'playwright';
 
 const ERWARTET = {
@@ -32,13 +34,15 @@ function argumente(argv) {
   const opts = {
     url: process.env.ORAKEL_URL || 'http://127.0.0.1:3200',
     negativtest: false,
+    ergebnis: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--url') opts.url = argv[++i];
     else if (arg === '--negativtest') opts.negativtest = true;
+    else if (arg === '--ergebnis') opts.ergebnis = argv[++i];
     else if (arg === '--hilfe' || arg === '-h') {
-      console.log('Aufruf: node scripts/pruefe-widerspruch-e2e.mjs [--url URL] [--negativtest]');
+      console.log('Aufruf: node scripts/pruefe-widerspruch-e2e.mjs [--url URL] [--negativtest] [--ergebnis DATEI]');
       process.exit(0);
     } else {
       console.error(`Unbekannte Option: ${arg}`);
@@ -146,6 +150,7 @@ function erwarteFehler(funktion, teil) {
 }
 
 async function pruefeNegativfaelle(page, widerspruch, claim, status) {
+  const details = [];
   const falscheZeile = await page.evaluate(({ kernaussage }) => {
     const karten = [...document.querySelectorAll('#bewertungClaims .li')];
     const card = karten.find(k =>
@@ -160,6 +165,7 @@ async function pruefeNegativfaelle(page, widerspruch, claim, status) {
   if (!falscheZeile) throw new Error('Negativtest-Vorbereitung: Widerspruchszeile fehlt');
   const karteFalsch = await leseWiderspruchKarte(page, claim);
   erwarteFehler(() => pruefeWiderspruchKarte(karteFalsch, widerspruch, claim), 'Karten-Grund');
+  details.push('falsche DOM-Zeile');
 
   const entfernteZeile = await page.evaluate(({ kernaussage }) => {
     const karten = [...document.querySelectorAll('#bewertungClaims .li')];
@@ -175,6 +181,7 @@ async function pruefeNegativfaelle(page, widerspruch, claim, status) {
   const karteFehlt = await leseWiderspruchKarte(page, claim);
   erwarteFehler(() => pruefeWiderspruchKarte(karteFehlt, widerspruch, claim),
     'Widerspruchsdetail fehlt');
+  details.push('fehlende DOM-Zeile');
 
   const apiKopie = structuredClone(status);
   const apiClaims = apiKopie.claims || {};
@@ -191,11 +198,14 @@ async function pruefeNegativfaelle(page, widerspruch, claim, status) {
   }
   erwarteFehler(() => apiBefund(apiKopie),
     'API enthält den erwarteten Widerspruch nicht');
-
+  details.push('fehlende API-Zeile');
+  if (details.length !== 3) {
+    throw new Error(`Negativtest: ${details.length} statt 3 Fälle ausgeführt`);
+  }
   console.log(
-    'Widerspruch-E2E-Negativtest OK: 3/3 (falsche DOM-Zeile, fehlende DOM-Zeile ' +
-    'und fehlende API-Zeile erkannt)'
+    `Widerspruch-E2E-Negativtest OK: 3/3 (${details.join(', ')} erkannt)`
   );
+  return details;
 }
 
 async function main() {
@@ -246,7 +256,23 @@ async function main() {
       `${widerspruch.quelle_a} ↔ ${widerspruch.quelle_b}, ` +
       `${ERWARTET.wertA} bp ↔ ${ERWARTET.wertB} bp`
     );
-    if (opt.negativtest) await pruefeNegativfaelle(page, widerspruch, claim, status);
+    const ergebnis = {
+      ok: true,
+      positiv: { geprueft: 1, widersprueche: 1 },
+      negativ: null,
+    };
+    if (opt.negativtest) {
+      const details = await pruefeNegativfaelle(page, widerspruch, claim, status);
+      ergebnis.negativ = {
+        faelle: details.length,
+        erkannt: details.length,
+        details,
+      };
+    }
+    if (opt.ergebnis) {
+      mkdirSync(dirname(opt.ergebnis), { recursive: true });
+      writeFileSync(opt.ergebnis, JSON.stringify(ergebnis, null, 2) + '\n');
+    }
   } finally {
     await browser.close();
   }

@@ -25,20 +25,22 @@
  *   node scripts/pruefe-touch.mjs [--url http://127.0.0.1:3000] [--bilder artifacts/touch]
  */
 
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
 
 const opts = {
   url: 'http://127.0.0.1:3000',
   bilder: null,
+  ergebnis: null,
 };
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === '--url') opts.url = argv[++i];
   else if (argv[i] === '--bilder') opts.bilder = argv[++i];
+  else if (argv[i] === '--ergebnis') opts.ergebnis = argv[++i];
   else if (argv[i] === '--hilfe' || argv[i] === '-h') {
-    console.log('Aufruf: node scripts/pruefe-touch.mjs [--url URL] [--bilder VERZEICHNIS]');
+    console.log('Aufruf: node scripts/pruefe-touch.mjs [--url URL] [--bilder VERZEICHNIS] [--ergebnis DATEI]');
     process.exit(0);
   } else {
     console.error(`Unbekannte Option: ${argv[i]}`);
@@ -48,7 +50,14 @@ for (let i = 0; i < argv.length; i++) {
 opts.url = opts.url.replace(/\/$/, '');
 if (opts.bilder) mkdirSync(opts.bilder, { recursive: true });
 
+let pruefungen = 0;
+const geprueft = {
+  pan: false, pinch: false, tippen: false, legende: false,
+  filter: false, fit390: false, fit320: false,
+};
+
 function pruefe(bedingung, meldung) {
+  pruefungen += 1;
   if (!bedingung) throw new Error(meldung);
 }
 
@@ -354,6 +363,7 @@ async function main() {
     await ladeSchiff(page);
     // Mindestwerte knapp unter den gemessenen 24,4 × 25,5 px bei 390 px.
     const fit390 = await pruefeFit(page, 390, 24, 25);
+    geprueft.fit390 = true;
     const cluster = await pruefeCluster(page);
     pruefe(cluster.mehrfach.length === 0,
       `Agenten erscheinen in mehreren Schiffsclustern: ${cluster.mehrfach.join('; ')}`);
@@ -378,6 +388,7 @@ async function main() {
     pruefe(Math.abs(nachPan.x - vorPan.x) >= 20,
       `Pan hat das Schiff nicht verschoben (${vorPan.x} → ${nachPan.x})`);
     pruefe(Math.abs(nachPan.zoom - vorPan.zoom) < 0.001, 'Pan hat den Zoom verändert');
+    geprueft.pan = true;
 
     // Zwei Finger zoomen direkt nach dem Pan. Der Pinch startet in der
     // sichtbaren Viewport-Mitte und wird nach aussen geführt.
@@ -402,6 +413,7 @@ async function main() {
     const nachPinch = await schiffTransform(page);
     pruefe(nachPinch.zoom > vorPinch.zoom * 1.15,
       `Pinch hat nicht ausreichend gezoomt (${vorPinch.zoom} → ${nachPinch.zoom})`);
+    geprueft.pinch = true;
 
     // Frisch laden, damit der Tipp-Test wieder die volle Fit-Ansicht hat.
     await ladeSchiff(page);
@@ -431,6 +443,7 @@ async function main() {
     pruefe(auswahl.legendSchatten && auswahl.legendSchatten !== 'none',
       'Die markierte Abteilung hat keine sichtbare Hervorhebung');
     pruefe(auswahl.scrollW === auswahl.viewportW, 'Seite hat horizontalen Überlauf');
+    geprueft.tippen = true;
 
     // Die kompakte Legende muss sich per Tippen aufklappen lassen und dann
     // alle elf Abteilungen sichtbar machen.
@@ -451,6 +464,7 @@ async function main() {
     pruefe(sichtbareDepts === 11,
       `Aufgeklappte Legende zeigt ${sichtbareDepts} statt 11 Abteilungen`);
     await pruefeLegendeUeberlauf(page, 'Geöffnete Legende bei 390 px');
+    geprueft.legende = true;
 
     // Die Legende ist ein Filter: ein Tippen hebt die Räume der Abteilung
     // hervor, ohne den bereits geöffneten Agenten in der Seitenleiste zu ersetzen.
@@ -512,6 +526,7 @@ async function main() {
       'Auswahlmarkierung kehrt nach dem Lösen des Filters nicht zur gewählten Abteilung zurück');
     pruefe(filterAus.titel === 'Abteilung im Schiff hervorheben',
       `Gelöster Legendenfilter hat den Titel «${filterAus.titel}»`);
+    geprueft.filter = true;
 
     if (opts.bilder) {
       await page.screenshot({ path: join(opts.bilder, 'touch-final.png'), fullPage: true });
@@ -551,6 +566,7 @@ async function main() {
       await ladeSchiff(schmalPage);
       // Mindestwerte knapp unter den gemessenen 19,8 × 20,5 px bei 320 px.
       fit320 = await pruefeFit(schmalPage, 320, 19.5, 20);
+      geprueft.fit320 = true;
     } finally {
       await schmalContext.close();
     }
@@ -558,6 +574,17 @@ async function main() {
     erfolgreich = true;
     const fitText = (fit) => `${fit.zoom} · min. ${fit.raeume.minBreite.toFixed(1)}×${fit.raeume.minHoehe.toFixed(1)} px · ${fit.raeume.anzahl - fit.raeume.ausserhalb}/${fit.raeume.anzahl} sichtbar`;
     const zusatzText = mobilZusatz.map(z => `${z.label}${z.fit ? ' ' + fitText(z.fit) : ''}`).join(' · ');
+    const ergebnis = {
+      ok: true,
+      fehler: 0,
+      pruefungen,
+      ...geprueft,
+      viewports: 1 + mobilZusatz.length + 1,
+    };
+    if (opts.ergebnis) {
+      mkdirSync(dirname(opts.ergebnis), { recursive: true });
+      writeFileSync(opts.ergebnis, JSON.stringify(ergebnis, null, 2) + '\n');
+    }
     console.log(`Touch OK: Pan ${Math.round(Math.abs(nachPan.x - vorPan.x))} px · Pinch ${(vorPinch.zoom * 100).toFixed(0)} % → ${(nachPinch.zoom * 100).toFixed(0)} % · ${cluster.clusters} Cluster ohne Doppelung · Tippen öffnet ${raumName} · Filter A 10 Räume / gelöst · Fit 390 px ${fitText(fit390)} · ${zusatzText} · Fit 320 px ${fitText(fit320)}`);
   } catch (fehler) {
     fehlerText = fehler instanceof Error ? fehler.message : String(fehler);

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from orakel.db import Facts
+from orakel.kern.db import Facts
 from orakel.report import baue_bericht, schreibe_bericht
 
 

@@ -26,6 +26,7 @@
  *   Die Seite samt Kopf und Navigation wird zusätzlich bei 240 px auf Umbruch
  *   und horizontalen Überlauf geprüft.
  *   --bild-praefix <name>  Gibt Screenshots und HTML einen eindeutigen Namenspräfix
+ *   --ergebnis <json>      Schreibt das maschinenlesbare Text250-Ergebnis
  *   --selbsttest-cluster   Prüft mehrere gleichzeitige Cluster-Fehler und eindeutige Screenshotnamen
  *   --selbsttest-agent      Prüft einen fehlenden Agenten samt Screenshotpfad
  *
@@ -33,21 +34,73 @@
  * einen sichtbaren «Lauf starten»-Button geprüft. Bei 1440 px wird die
  * kompakte Abteilungslegende auf vollständige, überlauffreie Darstellung
  * geprüft. Der Auto-Refresh der Lab-Kurve wird über eine echte
- * /api/report-Antwort mit HTTP 200 und sichtbarem Datenmarker geprüft; Fokus,
- * Tooltip, Live-Region und Zeiger müssen dabei unverändert bleiben.
+ * /api/report-Antwort mit HTTP 200 und getrennten Kopf- und Datenmarkern
+ * geprüft; Fokus, Tooltip, Live-Region und Zeiger müssen unverändert bleiben.
+ * Ein Negativtest blockiert den Acht-Sekunden-Aufruf und erzwingt ein Re-Render:
+ * Beide Fehlerbilder muss der Guard melden, sonst ist er wirkungslos. Zusätzliche
+ * Regressionstests fokussieren einen Lab-Knopf und ein ausgeblendetes Lab; in
+ * beiden Fällen muss der Auto-Refresh weiter rendern.
  */
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
 
 const LANGS = 'Donaudampfschifffahrtsgesellschaftskapitänsmützenhalterungsverordnung';
 const LANGES_LABEL = 'Bevölkerungsentwicklungsprognoseberechnungsgrundlagenverordnung';
 const STANDARD_ANSICHTEN = ['overview', 'risk', 'lab', 'strat', 'research', 'globe', 'betrieb', 'ship', 'spider', 'kb', 'agents', 'konf'];
+// Der Lab-Refresh-Test läuft als eigener 360px/lab-Lauf, unabhängig von
+// Reihenfolge oder Inhalt von --breiten.
+const LAB_FOKUS_BREITE = 360;
 const WARTEZEIT = {
   overview: 300, risk: 350, lab: 400, strat: 500, research: 500, globe: 1300,
   betrieb: 750, ship: 1500, spider: 650, kb: 1500, agents: 500, konf: 500,
 };
+const ERGEBNIS_SCHEMA = 'text250-result.v2';
+const STEUER_SELECTOR = 'button, a[href], summary, select, textarea, input';
+const BAUSTEIN_SELECTOR = '.panel, .card, .kpi, .head, .tabs, .side, .top';
+const ergebnisFaelle = new Map();
+
+/**
+ * Hält das maschinenlesbare Ergebnis unabhängig von den Log-Zählern. Die IDs
+ * werden aus dem Pflichtmanifest in scripts/text250-required-checks.json
+ * referenziert; CI wertet diese IDs aus, nicht die Zeilen im Klartextlog.
+ */
+function meldeFall(id, bestanden, details = '') {
+  const status = bestanden === 'skipped' ? 'skipped' : bestanden ? 'passed' : 'failed';
+  const eintrag = { id, status };
+  if (status !== 'passed' && details) eintrag.details = details;
+  ergebnisFaelle.set(id, eintrag);
+}
+
+/**
+ * Schreibt Fälle und tatsächliche Zähler. Das Pflichtmanifest in
+ * scripts/text250-required-checks.json nennt die erwarteten Zähler je Profil;
+ * CI vergleicht beide Werte und scheitert auch an unerwarteten Skips.
+ */
+function schreibeErgebnis(opts, zaehler = {}) {
+  if (!opts.ergebnis) return;
+  const faelle = [...ergebnisFaelle.values()].sort((a, b) => a.id.localeCompare(b.id));
+  const daten = {
+    schema: ERGEBNIS_SCHEMA,
+    generated_at: new Date().toISOString(),
+    source_commit: process.env.GITHUB_SHA || null,
+    url: opts.url,
+    breiten: opts.breiten,
+    ansichten: opts.ansichten,
+    cases: faelle,
+    counters: zaehler,
+    summary: {
+      total: faelle.length,
+      passed: faelle.filter(fall => fall.status === 'passed').length,
+      failed: faelle.filter(fall => fall.status === 'failed').length,
+      skipped: faelle.filter(fall => fall.status === 'skipped').length,
+    },
+  };
+  mkdirSync(dirname(opts.ergebnis), { recursive: true });
+  writeFileSync(opts.ergebnis, JSON.stringify(daten, null, 2) + '\n');
+  console.log(`Ergebnis geschrieben: ${opts.ergebnis} (${daten.summary.passed}/${daten.summary.total} Fälle bestanden)`);
+}
 
 // Deterministische Browser-Testdaten für die Claim-Karte. Der Seed enthält
 // keine Claims; die Daten werden nur im Browser gerendert und nie in SQLite
@@ -108,6 +161,8 @@ const CLAIM_TESTDATEN = {
 // Zusätzliche Daten für den Umbruchtest mit bewusst überlangen Quellenhosts.
 // Sie werden ebenfalls nur im Browser gerendert; die normalen Claim-Erwartungen
 // bleiben unverändert.
+const LANGHOST_114 = 'quellenhostohnebindestrichundohnepunkt'.repeat(3);
+let langhost114Pruefungen = 0;
 const LANGE_QUELLEN_TESTDATEN = JSON.parse(JSON.stringify(CLAIM_TESTDATEN));
 for (const [index, widerspruch] of LANGE_QUELLEN_TESTDATEN.claims.widersprueche.entries()) {
   widerspruch.quelle_a = index === 0
@@ -131,7 +186,7 @@ LANGE_QUELLEN_TESTDATEN.claims.widersprueche.push({
   claim_id: 900001,
   grund: 'Host ohne Punkt oder Bindestrich gegen kurze Quelle',
   sicherheit: 0.6,
-  quelle_a: 'quellenhostohnebindestrichundohnepunkt'.repeat(3),
+  quelle_a: LANGHOST_114,
   quelle_b: 'kurz.example',
 });
 
@@ -148,10 +203,94 @@ async function pruefeClaimMetadaten(browser, url, breite) {
     );
     await page.locator('.nav[data-v="spider"]').click();
     await page.waitForTimeout(WARTEZEIT.spider);
-    return [...seitenfehler, ...await pruefeClaimMetadatenAufSeite(page)];
+    return [...seitenfehler, ...await pruefeClaimMetadatenAufSeite(page, breite)];
   } finally {
     await page.close();
   }
+}
+
+/**
+ * Geometrie-Prüfung ohne Screenshot-Goldens: Beschriftungen müssen in ihrem
+ * Steuerelement bleiben, statische Steuerelemente dürfen sich nicht
+ * überlappen, und der Tastaturfokus muss einen sichtbaren Ring zeigen.
+ */
+async function pruefeGeometrie(page, ansicht) {
+  // Ein Tastendruck schaltet Chromium auf die Tastatur-Modalität, damit
+  // :focus-visible auch bei programmatischem Fokus greift.
+  await page.keyboard.press('Tab');
+  return page.evaluate(({ ansicht, steuerSelector, bausteinSelector }) => {
+    const befunde = [];
+    const wurzel = document.querySelector(`#v-${ansicht}`);
+    if (!wurzel || wurzel.hidden) return [`Ansicht ${ansicht} ist nicht sichtbar`];
+    const sichtbar = el => {
+      const b = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return b.width > 0.5 && b.height > 0.5 && !el.disabled
+        && cs.visibility !== 'hidden' && cs.display !== 'none';
+    };
+    const name = el => {
+      const cls = String(el.className || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).join('.');
+      return `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${cls ? '.' + cls : ''}`;
+    };
+    const text = el => (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 45);
+    const rectText = r => [r.left, r.top, r.right, r.bottom].map(Math.round).join(',');
+    const steuerbar = [...wurzel.querySelectorAll(steuerSelector)].filter(sichtbar);
+    // Ansichten ohne Steuerelemente (etwa Übersicht oder Konferenz) haben
+    // nichts zu prüfen; der Zähler belegt trotzdem, dass die Prüfung lief.
+    if (!steuerbar.length) return [];
+
+    // 1. Clipping: Ein Steuerelement mit verstecktem Überlauf darf seinen
+    //    Inhalt nicht abschneiden. Scrollbare Felder und sichtbarer Überlauf
+    //    sind kein Clipping; sie werden an anderer Stelle geprüft.
+    for (const el of steuerbar) {
+      const cs = getComputedStyle(el);
+      if (!(/hidden|clip/.test(cs.overflowX) || /hidden|clip/.test(cs.overflowY))) continue;
+      if (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1) {
+        befunde.push(`Inhalt von ${name(el)} wird abgeschnitten (${el.scrollWidth}×${el.scrollHeight} in ${el.clientWidth}×${el.clientHeight})`);
+      }
+    }
+
+    // 2. Überlappung: Statisch positionierte Steuerelemente dürfen sich nicht
+    //    schneiden. Absolute Overlays sind bewusst positioniert und bleiben aus;
+    //    verglichen werden nur Steuerelemente im selben Baustein, weil getrennte
+    //    Panels auf schmalen Breiten absichtlich gestapelt werden.
+    const gruppe = el => el.closest(bausteinSelector) || wurzel;
+    const statisch = steuerbar.filter(el => getComputedStyle(el).position === 'static');
+    // Gruppe und Rechteck je Steuerelement nur einmal lesen; die Paarschleife
+    // braucht dieselben Werte sonst für jedes Paar erneut.
+    const baustein = new Map(statisch.map(el => [el, gruppe(el)]));
+    const kasten = new Map(statisch.map(el => [el, el.getBoundingClientRect()]));
+    for (let i = 0; i < statisch.length; i++) {
+      for (let j = i + 1; j < statisch.length; j++) {
+        const a = statisch[i], b = statisch[j];
+        if (a.contains(b) || b.contains(a)) continue;
+        if (baustein.get(a) !== baustein.get(b)) continue;
+        const ra = kasten.get(a), rb = kasten.get(b);
+        const x = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
+        const y = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
+        if (x > 2 && y > 2) {
+          befunde.push(`Steuerelemente überlappen: ${name(a)} [${rectText(ra)}] und ${name(b)} [${rectText(rb)}] (${Math.round(x)}×${Math.round(y)})`);
+        }
+      }
+    }
+
+    // 3. Fokusring: Nach dem Fokussieren muss sich der Ring gegenüber dem
+    //    unveränderten Zustand sichtbar ändern (Outline oder Box-Shadow).
+    for (const el of steuerbar.slice(0, 4)) {
+      if (document.activeElement === el) el.blur();
+      const vorher = getComputedStyle(el);
+      const vorherRing = `${vorher.outlineStyle}|${vorher.outlineWidth}|${vorher.outlineColor}|${vorher.boxShadow}`;
+      el.focus();
+      const cs = getComputedStyle(el);
+      const ring = (cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0
+        && cs.outlineColor !== 'rgba(0, 0, 0, 0)') || cs.boxShadow !== 'none';
+      const nachherRing = `${cs.outlineStyle}|${cs.outlineWidth}|${cs.outlineColor}|${cs.boxShadow}`;
+      if (!ring || nachherRing === vorherRing) {
+        befunde.push(`Fokusring fehlt bei ${name(el)} («${text(el)}»)`);
+      }
+    }
+    return befunde;
+  }, { ansicht, steuerSelector: STEUER_SELECTOR, bausteinSelector: BAUSTEIN_SELECTOR });
 }
 
 /** Prüft bei 240 px alle gewählten Ansichten in normaler Schrift. */
@@ -160,6 +299,8 @@ async function pruefe240Ansichten(browser, url, ansichten) {
   const befund = [];
   const ergebnisse = [];
   const seitenfehler = [];
+  const geometrieBefunde = [];
+  let geometrieAnzahl = 0;
   page.on('pageerror', err => seitenfehler.push(String(err)));
   try {
     await page.goto(`${url}/`, { waitUntil: 'domcontentloaded' });
@@ -214,6 +355,10 @@ async function pruefe240Ansichten(browser, url, ansichten) {
       if (stand.navAussen) {
         ansichtBefund.push(`Navigationspunkte ausserhalb ${stand.navAussen}`);
       }
+      const geometrie = await pruefeGeometrie(page, ansicht);
+      geometrieAnzahl++;
+      ansichtBefund.push(...geometrie);
+      if (geometrie.length) geometrieBefunde.push(...geometrie.map(text => `240px/${ansicht}: ${text}`));
       ergebnisse.push({ ansicht, ...stand, ok: ansichtBefund.length === 0 });
       if (ansichtBefund.length) {
         befund.push(`240px/${ansicht}: ${ansichtBefund.join(', ')}`);
@@ -224,7 +369,7 @@ async function pruefe240Ansichten(browser, url, ansichten) {
     if (seitenfehler.length) befund.push(`240px/Seitenfehler: ${seitenfehler.join('; ')}`);
     const ok = ergebnisse.filter(e => e.ok).length;
     console.log(`240px: ${ok}/${ergebnisse.length} Ansichten ohne horizontalen Überlauf`);
-    return { befund, ergebnisse };
+    return { befund, ergebnisse, geometrie: { anzahl: geometrieAnzahl, befunde: geometrieBefunde } };
   } finally {
     await page.close();
   }
@@ -252,11 +397,11 @@ async function pruefeClaimWiderspruchsdetails(page) {
 }
 
 /** Prüft den Umbruch der Quellenzeile mit sehr langen Hostnamen. */
-async function pruefeLangeQuellen(page) {
+async function pruefeLangeQuellen(page, breite) {
   await page.evaluate(daten => window.zeichneBewertung(daten), LANGE_QUELLEN_TESTDATEN);
   await page.waitForTimeout(80);
   const langhosts = LANGE_QUELLEN_TESTDATEN.claims.widersprueche.map(widerspruch => widerspruch.quelle_a);
-  return page.evaluate((erwarteteLanghosts) => {
+  const befund = await page.evaluate((erwarteteLanghosts) => {
     const befund = [];
     const liste = document.querySelector('#bewertungClaims');
     if (!liste) return ['Claim-Liste #bewertungClaims fehlt'];
@@ -301,10 +446,15 @@ async function pruefeLangeQuellen(page) {
     }
     return befund;
   }, langhosts);
+  const hat114 = langhosts.includes(LANGHOST_114);
+  if (hat114) langhost114Pruefungen++;
+  meldeFall(`text250.langhost114.${breite}`, hat114 && befund.length === 0,
+    hat114 ? befund.join('; ') : 'LANGHOST_114 fehlt in den Testdaten');
+  return befund;
 }
 
 /** Misst die bereits geöffnete Spider-Seite mit den Claim-Testdaten. */
-async function pruefeClaimMetadatenAufSeite(page) {
+async function pruefeClaimMetadatenAufSeite(page, breite) {
   if (!await page.evaluate(() => typeof window.zeichneBewertung === 'function')) {
     return ['Claim-Renderer zeichneBewertung fehlt'];
   }
@@ -436,7 +586,7 @@ async function pruefeClaimMetadatenAufSeite(page) {
     }
     return befund.slice(0, 20);
   });
-  return [...befund, ...await pruefeLangeQuellen(page)];
+  return [...befund, ...await pruefeLangeQuellen(page, breite)];
 }
 
 function argumente(argv) {
@@ -447,6 +597,7 @@ function argumente(argv) {
     tabellen: true,
     bilder: null,
     bildPraefix: '',
+    ergebnis: null,
     negativtest: false,
     selbsttestCluster: false,
     selbsttestAgent: false,
@@ -458,6 +609,7 @@ function argumente(argv) {
     else if (arg === '--ansichten') opts.ansichten = argv[++i].split(',').map(s => s.trim()).filter(Boolean);
     else if (arg === '--ohne-tabellen') opts.tabellen = false;
     else if (arg === '--bilder') opts.bilder = argv[++i];
+    else if (arg === '--ergebnis') opts.ergebnis = argv[++i];
     else if (arg === '--bild-praefix') {
       opts.bildPraefix = artefaktSlug(argv[++i] || '').slice(0, 40);
       if (!opts.bildPraefix) { console.error('--bild-praefix benötigt einen Namen.'); process.exit(2); }
@@ -468,7 +620,7 @@ function argumente(argv) {
     else if (arg === '--hilfe' || arg === '-h') {
       console.log('Aufruf: node scripts/pruefe-text250.mjs [--url URL] [--breiten 360,320,280]\n' +
         '       [--ansichten overview,risk,lab,strat,research,globe,betrieb,ship,spider,kb,agents,konf] [--ohne-tabellen]\n' +
-        '       [--bilder <verzeichnis>] [--bild-praefix <name>] [--negativtest] [--selbsttest-cluster] [--selbsttest-agent]\n' +
+        '       [--bilder <verzeichnis>] [--bild-praefix <name>] [--ergebnis <json>] [--negativtest] [--selbsttest-cluster] [--selbsttest-agent]\n' +
         '       Die Seite samt Kopf und Navigation wird zusätzlich bei 240 px geprüft.');
       process.exit(0);
     }
@@ -493,9 +645,12 @@ async function pruefeServer(url) {
   }
   if (!antwort.ok) throw new Error(`${url}/api/report antwortet mit HTTP ${antwort.status}`);
   const bericht = await antwort.json();
-  const validierungen = bericht.validierungen?.length ?? 0;
+  const validierungen = Array.isArray(bericht.validierungen) ? bericht.validierungen.length : 0;
   if (!validierungen) {
-    console.warn('Hinweis: Der Bericht enthält keine Validierungen. Die Prüfung deckt dann weniger Inhalte ab.');
+    // Ohne Validierungen würden die Inhaltsprüfungen null gegen null
+    // vergleichen und leer bestehen. Das ist ein harter Fehler, kein Hinweis.
+    throw new Error(`Der Bericht unter ${url}/api/report enthält keine Validierungen. `
+      + 'Die Inhaltsprüfung würde leer bestehen; Seed-Datenbank und ORAKEL_DB_PFAD prüfen.');
   }
   return { validierungen };
 }
@@ -1378,21 +1533,44 @@ async function pruefeKurvenTastatur(page, ansicht) {
   return befunde;
 }
 
+/** Eine frische Lab-Seite mit installierter Playwright-Uhr. */
+async function oeffneLabSeite(browser, url, breite, initSkript = null) {
+  const page = await browser.newPage({ viewport: { width: breite, height: 900 }, deviceScaleFactor: 1 });
+  const seitenfehler = [];
+  page.on('pageerror', err => seitenfehler.push(String(err)));
+  try {
+    await page.clock.install();
+    if (initSkript) await page.addInitScript(initSkript);
+    await page.goto(`${url}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(
+      () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
+      null, { timeout: 15000 },
+    );
+    await page.locator('.nav[data-v="lab"]').click();
+    await page.locator('#labList .li').first().waitFor({ state: 'visible', timeout: 5000 });
+    return { page, seitenfehler };
+  } catch (fehler) {
+    await page.close();
+    throw fehler;
+  }
+}
+
 /**
- * Der 8-Sekunden-Auto-Refresh darf eine fokussierte Lab-Kurve nicht neu
- * aufbauen: Sonst gehen Fokus, Tooltip und Live-Region mitten in der
- * Tastaturbedienung verloren. Der Test wartet deterministisch auf eine echte
- * /api/report-Antwort, verlangt HTTP 200 und einen kontrollierten Marker im
- * Kopfbereich. Damit ist belegt, dass der Refresh tatsächlich Daten verarbeitet
- * hat, ohne dass die fokussierte Kurve neu gerendert wurde.
+ * Der Auto-Refresh darf eine fokussierte Lab-Kurve nicht neu aufbauen: Sonst
+ * gehen Fokus, Tooltip und Live-Region mitten in der Tastaturbedienung
+ * verloren. Der echte 8-Sekunden-Callback wird unter der Playwright-Uhr
+ * gezielt ausgelöst; so hängt dieser Test nicht an einem echten Zeitfenster.
+ * Ein einziger Marker belegt beides: Er erscheint nach `R = neu` sichtbar in
+ * der Kopfzeile und darf in der fokussierten Lab-Liste nicht auftauchen.
  */
-async function pruefeLabAutoRefresh(page, ansicht, optionen = {}) {
+async function pruefeLabAutoRefreshAufSeite(page, ansicht, optionen = {}) {
   const befunde = [];
+  if (!await waehleKurvenKandidat(page)) return ['Auto-Refresh-Prüfung ohne Kapitalkurve'];
+
   const svg = page.locator(`#v-${ansicht} .wfoKurveFlaeche svg`);
   if (!(await svg.count())) return ['Auto-Refresh-Prüfung ohne Kapitalkurve'];
   await page.mouse.move(0, 0);
   await svg.evaluate(el => el.focus());
-  await page.waitForTimeout(100);
   const lese = () => page.evaluate((ansicht) => {
     const box = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche`);
     const svg = box.querySelector('svg');
@@ -1408,14 +1586,9 @@ async function pruefeLabAutoRefresh(page, ansicht, optionen = {}) {
     befunde.push('Auto-Refresh-Prüfung konnte die Kapitalkurve nicht fokussieren');
     return befunde;
   }
-  if (optionen.erzwingeRerender) {
-    // Negativfall: Fokus verlassen, damit der Guard den Ansichts-Render nicht
-    // mehr pausiert und die Kurve beim nächsten Refresh neu zeichnet.
-    await svg.evaluate(el => el.blur());
-    await page.mouse.move(0, 0);
-  }
 
-  const marker = `refresh-probe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const stempel = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const marker = `refresh-${stempel}`;
   const timeout = Symbol('refresh-timeout');
   let meldeRefresh;
   let routeFehler = null;
@@ -1432,6 +1605,12 @@ async function pruefeLabAutoRefresh(page, ansicht, optionen = {}) {
       if (!daten || typeof daten !== 'object' || Array.isArray(daten)) {
         throw new Error('Bericht ist kein JSON-Objekt');
       }
+      if (!Array.isArray(daten.validierungen) || daten.validierungen.length === 0) {
+        throw new Error('Bericht enthält keine Validierungen');
+      }
+      for (const kandidat of daten.validierungen) {
+        if (kandidat && typeof kandidat === 'object') kandidat.symbol = marker;
+      }
       daten.datenquelle = marker;
       await route.fulfill({ response: antwort, json: daten });
       meldeRefresh({ status: antwort.status(), ok: true });
@@ -1442,24 +1621,43 @@ async function pruefeLabAutoRefresh(page, ansicht, optionen = {}) {
     }
   };
   await page.route('**/api/report', handler);
+  if (optionen.erzwingeRerender) {
+    // Negativfall: Fokus verlassen, damit der Guard den Ansichts-Render nicht
+    // mehr pausiert und die Lab-Liste den Datenmarker sichtbar zeichnet.
+    await svg.evaluate(el => el.blur());
+    await page.mouse.move(0, 0);
+  }
+  await page.clock.runFor(8000);
   let timeoutId;
   const timeoutVersprechen = new Promise(resolve => {
-    timeoutId = setTimeout(() => resolve(timeout), 12000);
+    timeoutId = setTimeout(() => resolve(timeout), 5000);
   });
   const antwort = await Promise.race([antwortVersprechen, timeoutVersprechen]);
   clearTimeout(timeoutId);
   if (antwort === timeout) {
-    befunde.push('Auto-Refresh lieferte innerhalb von 12 Sekunden keine Antwort');
+    befunde.push('Auto-Refresh lieferte nach dem Vorspulen keine Antwort');
   } else if (!antwort) {
     befunde.push(`Auto-Refresh-Antwort konnte nicht geprüft werden${routeFehler ? ` (${routeFehler})` : ''}`);
   } else if (!antwort.ok || antwort.status !== 200) {
     befunde.push(`Auto-Refresh antwortet mit HTTP ${antwort.status}`);
   } else {
-    const markerSichtbar = await page.waitForFunction(
-      m => (document.querySelector('#banner')?.textContent || '').includes(m),
+    const kopfSichtbar = await page.waitForFunction(
+      m => {
+        const banner = document.querySelector('#banner');
+        if (!banner || !banner.textContent.includes(m)) return false;
+        const stil = getComputedStyle(banner);
+        const kasten = banner.getBoundingClientRect();
+        return stil.display !== 'none' && stil.visibility !== 'hidden'
+          && kasten.width > 0 && kasten.height > 0;
+      },
       marker, { timeout: 3000 },
     ).then(() => true).catch(() => false);
-    if (!markerSichtbar) befunde.push('Auto-Refresh-Daten wurden nicht gerendert');
+    if (!kopfSichtbar) befunde.push('Auto-Refresh zeigt den Kopfmarker nicht sichtbar in der Kopfzeile');
+
+    const listeNachher = await page.locator('#labList').innerText();
+    if (listeNachher.includes(marker)) {
+      befunde.push('Auto-Refresh zeichnet die Lab-Liste trotz fokussierter Kurve neu');
+    }
   }
   await page.unroute('**/api/report', handler).catch(() => {});
 
@@ -1468,36 +1666,93 @@ async function pruefeLabAutoRefresh(page, ansicht, optionen = {}) {
   if (nachher.text !== vorher.text) befunde.push(`Auto-Refresh verändert den Tooltip («${nachher.text || 'leer'}» statt «${vorher.text}»)`);
   if (nachher.live !== vorher.live) befunde.push(`Auto-Refresh verändert die Live-Region («${nachher.live || 'leer'}» statt «${vorher.live}»)`);
   if (nachher.zeiger !== vorher.zeiger) befunde.push(`Auto-Refresh verschiebt den Zeiger (${nachher.zeiger} statt ${vorher.zeiger})`);
+
+  // Nach dem Verlassen des Lab-Fokus muss der nächste Refresh die Kurve
+  // wieder rendern. Ein zweiter Marker belegt das, ohne den Nachweis der
+  // unveränderten Ansicht oben abzuschwächen.
+  if (!optionen.ohneNachFokus) {
+    const nachMarker = `refresh-nach-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    let meldeNach;
+    const nachAntwort = new Promise(resolve => { meldeNach = resolve; });
+    const nachHandler = async route => {
+      try {
+        const antwort = await route.fetch();
+        if (!antwort.ok()) {
+          await route.fulfill({ response: antwort });
+          meldeNach({ status: antwort.status(), ok: false });
+          return;
+        }
+        const daten = await antwort.json();
+        for (const kandidat of (Array.isArray(daten.validierungen) ? daten.validierungen : [])) {
+          if (kandidat && typeof kandidat === 'object') kandidat.symbol = nachMarker;
+        }
+        daten.datenquelle = nachMarker;
+        await route.fulfill({ response: antwort, json: daten });
+        meldeNach({ status: antwort.status(), ok: true });
+      } catch (fehler) {
+        routeFehler = fehler instanceof Error ? fehler.message : String(fehler);
+        await route.abort().catch(() => {});
+        meldeNach(null);
+      }
+    };
+    await page.route('**/api/report', nachHandler);
+    await svg.evaluate(el => el.blur());
+    await page.mouse.move(0, 0);
+    await page.clock.runFor(8000);
+    let nachTimeoutId;
+    const nachTimeout = new Promise(resolve => {
+      nachTimeoutId = setTimeout(() => resolve(timeout), 5000);
+    });
+    const nach = await Promise.race([nachAntwort, nachTimeout]);
+    clearTimeout(nachTimeoutId);
+    if (nach === timeout) {
+      befunde.push('Auto-Refresh nach dem Verlassen des Lab-Fokus lieferte keine Antwort');
+    } else if (!nach) {
+      befunde.push(`Auto-Refresh nach dem Verlassen des Lab-Fokus nicht prüfbar${routeFehler ? ` (${routeFehler})` : ''}`);
+    } else if (!nach.ok || nach.status !== 200) {
+      befunde.push(`Auto-Refresh nach dem Verlassen des Lab-Fokus antwortet mit HTTP ${nach.status}`);
+    } else {
+      const gerendert = await page.waitForFunction(
+        m => (document.querySelector('#labList')?.innerText || '').includes(m),
+        nachMarker, { timeout: 3000 },
+      ).then(() => true).catch(() => false);
+      if (!gerendert) befunde.push('Nach dem Verlassen des Lab-Fokus rendert der nächste Refresh die Kurve nicht');
+      const kurveSichtbar = await page.evaluate((ansicht) => {
+        const svg = document.querySelector(`#v-${ansicht} .wfoKurveFlaeche svg`);
+        const linie = svg?.querySelector('polyline');
+        const kasten = svg?.getBoundingClientRect();
+        return Boolean(linie && (linie.getAttribute('points') || '').trim()
+          && kasten && kasten.width > 0 && kasten.height > 0);
+      }, ansicht);
+      if (!kurveSichtbar) befunde.push('Nach dem Verlassen des Lab-Fokus ist die Kapitalkurve nicht sichtbar');
+    }
+    await page.unroute('**/api/report', nachHandler).catch(() => {});
+  }
   return befunde;
+}
+
+async function pruefeLabAutoRefresh(browser, url, ansicht, breite = LAB_FOKUS_BREITE) {
+  const { page, seitenfehler } = await oeffneLabSeite(browser, url, breite);
+  try {
+    const befunde = await pruefeLabAutoRefreshAufSeite(page, ansicht);
+    if (seitenfehler.length) befunde.push(`Lab-Seitenfehler: ${seitenfehler.join('; ')}`);
+    return befunde;
+  } finally {
+    await page.close();
+  }
 }
 
 /**
  * Negativtest für den Refresh-Guard: Er muss ausbleibenden Refresh und ein
- * erzwungenes Re-Render der Lab-Kurve als Befund erkennen. Beide Fehlerbilder
- * werden gezielt injiziert; nur wenn der Guard sie meldet, ist er wirksam.
+ * erzwungenes Re-Render der Lab-Liste erkennen. Beide Fehlerbilder werden
+ * gezielt injiziert; nur wenn der Guard sie meldet, ist er wirksam.
  */
 async function pruefeLabAutoRefreshNegativ(browser, url, breite) {
   const befunde = [];
-  const oeffne = async (initSkript = null) => {
-    const page = await browser.newPage({ viewport: { width: breite, height: 900 }, deviceScaleFactor: 1 });
-    if (initSkript) await page.addInitScript(initSkript);
-    await page.goto(`${url}/`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(
-      () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
-      null, { timeout: 15000 },
-    );
-    const nav = page.locator('.nav[data-v="lab"]');
-    if (await nav.count()) await nav.click();
-    else await page.evaluate(() => zeige('lab'));
-    await page.waitForTimeout(WARTEZEIT.lab);
-    await skaliere(page, 2.5);
-    await page.waitForTimeout(150);
-    return page;
-  };
 
   // 1. Ausbleibender Refresh: Der Acht-Sekunden-Aufruf wird vor dem Laden
   //    blockiert. Der Guard darf nicht stillschweigend bestehen.
-  const ohne = await oeffne(() => {
+  const ohne = await oeffneLabSeite(browser, url, breite, () => {
     const original = window.setInterval;
     window.setInterval = (fn, ms, ...rest) => {
       if (ms === 8000) return 0;
@@ -1505,141 +1760,110 @@ async function pruefeLabAutoRefreshNegativ(browser, url, breite) {
     };
   });
   try {
-    const ohneBefunde = await pruefeLabAutoRefresh(ohne, 'lab');
+    const ohneBefunde = await pruefeLabAutoRefreshAufSeite(ohne.page, 'lab', { ohneNachFokus: true });
     if (!ohneBefunde.some(text => /keine Antwort/.test(text))) {
       befunde.push(`Negativtest erkennt ausbleibenden Refresh nicht («${ohneBefunde.join('; ') || 'keine Befunde'}»)`);
     }
   } finally {
-    await ohne.close();
+    await ohne.page.close();
   }
 
-  // 2. Erzwungenes Re-Render: Nach dem Verlassen des Fokus muss der Guard den
-  //    Fokusverlust als Befund melden, statt den Refresh stillschweigend
-  //    durchzuwinken.
-  const mit = await oeffne();
+  // 2. Erzwungenes Re-Render: Der Guard muss den Datenmarker in der neu
+  //    gezeichneten Lab-Liste sehen.
+  const mit = await oeffneLabSeite(browser, url, breite);
   try {
-    const mitBefunde = await pruefeLabAutoRefresh(mit, 'lab', { erzwingeRerender: true });
-    if (mitBefunde.some(text => /nicht gerendert/.test(text))) {
-      befunde.push(`Erzwungenes Re-Render blieb aus («${mitBefunde.join('; ')}»)`);
-    } else if (!mitBefunde.some(text => /Fokus/.test(text))) {
+    const mitBefunde = await pruefeLabAutoRefreshAufSeite(mit.page, 'lab', { erzwingeRerender: true, ohneNachFokus: true });
+    if (!mitBefunde.some(text => /zeichnet die Lab-Liste/.test(text))) {
       befunde.push(`Negativtest erkennt erzwungenes Re-Render nicht («${mitBefunde.join('; ') || 'keine Befunde'}»)`);
     }
   } finally {
-    await mit.close();
+    await mit.page.close();
   }
 
   return befunde;
 }
 
 /**
- * Zwei Regressionstests für den Lab-Guard: Ein Fokus auf der Lab-Liste oder auf
- * einem Lab-Tab liegt in #v-lab, aber ausserhalb von #labDetail und darf den
- * Ansichts-Render nicht blockieren. Die API-Antwort erhält einen eindeutigen
- * Marker in allen Kandidatensymbolen; ein Rückfall auf einen breiten
- * #v-lab-Guard überspringt den Render und der Marker fehlt in #labList.
- *
- * Der frühere dritte Fall mit ausgeblendetem Lab entfällt: Chromium setzt den
- * Fokus beim Ausblenden auf body. Der Zustand «Fokus in #labDetail, während
- * #v-lab hidden ist» liesse sich nur durch Überschreiben von
- * document.activeElement herstellen und prüfte damit eine im Browser
- * unerreichbare Situation; einen Guard-Fehler, den die beiden echten
- * Fokustests nicht schon melden, erkennt er nicht.
+ * Zwei Regressionstests für den Lab-Guard: Fokus auf einem Lab-Knopf und in
+ * einem ausgeblendeten Lab darf den Ansichts-Render nicht blockieren. Die
+ * API-Antwort erhält einen eindeutigen Marker in allen Kandidatensymbolen; ein
+ * Rückfall auf den breiten #v-lab-Guard überspringt den Render und der Marker
+ * fehlt anschliessend in #labList.
  */
 const LAB_FOKUS_VARIANTEN = [
-  { id: 'liste', label: 'die Lab-Liste', element: 'Lab-Listeneintrag', selektor: '#labList .li' },
-  { id: 'tab', label: 'einen Lab-Tab', element: 'Lab-Tab', selektor: '#labTabs .tab' },
+  {
+    id: 'knopf',
+    label: 'einen Lab-Knopf',
+    fokussiere: async (page) => {
+      const eintrag = page.locator('#labList button.li').first();
+      if (!(await eintrag.count())) return ['Lab-Fokus-Prüfung ohne Lab-Knopf'];
+      await eintrag.focus();
+      const stand = await page.evaluate(() => {
+        const a = document.activeElement;
+        const li = a?.closest?.('#labList button.li');
+        return {
+          treffer: Boolean(li),
+          detail: Boolean(a?.closest?.('#labDetail')),
+          tag: a ? a.tagName : '',
+          text: li ? li.innerText.replace(/\s+/g, ' ').trim().slice(0, 60) : '',
+        };
+      });
+      if (!stand.treffer || stand.detail) {
+        return [`Lab-Fokus-Prüfung konnte keinen Lab-Knopf ausserhalb von #labDetail fokussieren (${stand.tag}, «${stand.text}»)`];
+      }
+      return [];
+    },
+  },
+  {
+    id: 'ausgeblendet',
+    label: 'das ausgeblendete Lab',
+    fokussiere: async (page) => {
+      const stand = await page.evaluate(() => {
+        const detail = document.querySelector('#labDetail');
+        if (!detail) return { fehlt: true };
+        // Der Fokus liegt direkt im Detail. Auch dann darf der Guard nur bei
+        // sichtbarem #v-lab blockieren.
+        detail.tabIndex = -1;
+        detail.focus();
+        const fokussiert = document.activeElement === detail;
+        const lab = document.querySelector('#v-lab');
+        lab.hidden = true;
+        // Chromium kann den Fokus beim Ausblenden asynchron auf body setzen.
+        // Der Guard soll aber auch dann nicht blockieren, wenn der Fokus im
+        // ausgeblendeten Lab verbleibt; diesen Zustand fixieren wir hier.
+        Object.defineProperty(document, 'activeElement', {
+          configurable: true,
+          get: () => detail,
+        });
+        return {
+          fokussiert,
+          hidden: lab.hidden === true,
+          imDetail: Boolean(document.activeElement?.closest?.('#labDetail')),
+          tag: detail.tagName,
+        };
+      });
+      if (stand.fehlt) return ['Lab-Fokus-Prüfung ohne #labDetail'];
+      if (!stand.fokussiert) return ['Lab-Fokus-Prüfung konnte das Lab-Detail nicht fokussieren'];
+      if (!stand.hidden) return ['Lab-Fokus-Prüfung konnte das Lab nicht ausblenden'];
+      if (!stand.imDetail) {
+        return [`Lab-Fokus-Prüfung verlor den Detail-Fokus beim Ausblenden des Labs (${stand.tag})`];
+      }
+      return [];
+    },
+  },
 ];
 
-/**
- * Fokussiert das erste Element der Variante und belegt, dass der Fokus in
- * #v-lab, aber ausserhalb von #labDetail liegt. Nur so unterscheidet der
- * Refresh-Test den schmalen Guard von einem breiten #v-lab-Guard.
- */
-async function fokussiereLabAusserhalbDetail(page, variante) {
-  const ziel = page.locator(variante.selektor).first();
-  if (!(await ziel.count())) return [`Lab-Fokus-Prüfung ohne ${variante.element}`];
-  // Nur sichtbare Knoten sind echte Fokusziele; ein ausgeblendeter Eintrag
-  // liesse sich nicht fokussieren und dürfte keinen Test bestehen.
-  const sichtbar = await ziel.evaluate(el => {
-    if (el.closest('[hidden]')) return false;
-    const r = el.getBoundingClientRect();
-    const s = getComputedStyle(el);
-    return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
-  });
-  if (!sichtbar) return [`Lab-Fokus-Prüfung: ${variante.element} ist nicht sichtbar`];
-  await ziel.focus();
-  const stand = await page.evaluate(selektor => {
-    const a = document.activeElement;
-    const treffer = a?.closest?.(selektor);
-    return {
-      imZiel: Boolean(treffer),
-      imDetail: Boolean(a?.closest?.('#labDetail')),
-      tag: a ? a.tagName : '',
-      text: treffer ? treffer.innerText.replace(/\s+/g, ' ').trim().slice(0, 60) : '',
-    };
-  }, variante.selektor);
-  if (!stand.imZiel || stand.imDetail) {
-    return [`Lab-Fokus-Prüfung konnte keinen ${variante.element} ausserhalb von #labDetail fokussieren (${stand.tag}, «${stand.text}»)`];
-  }
-  return [];
-}
-
-/**
- * Fokus, Scrollposition und Auswahl der Lab-Liste vor und nach dem Refresh.
- * `scrollen` setzt vorher eine mittlere Position; ist die Liste kürzer als ihr
- * Rahmen, bleibt es bei 0. Nach dem Neuaufbau müssen alle drei Werte gleich
- * sein, sonst springt die Liste beim Ablesen zurück oder verliert den Fokus.
- */
-async function erhebeLabListenzustand(page, selektor, scrollen = false) {
-  return page.evaluate(([sel, sc]) => {
-    const liste = document.querySelector('#labList');
-    if (liste && sc) liste.scrollTop = Math.min(120, Math.max(0, liste.scrollHeight - liste.clientHeight));
-    const a = document.activeElement;
-    const ziel = a?.closest?.(sel) || null;
-    const sichtbar = el => {
-      if (!el || el.closest('[hidden]')) return false;
-      const r = el.getBoundingClientRect();
-      const s = getComputedStyle(el);
-      return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
-    };
-    return {
-      fokus: ziel ? (ziel.dataset.k ?? ziel.textContent.trim()) : null,
-      fokusSichtbar: sichtbar(ziel),
-      scroll: liste ? liste.scrollTop : null,
-      auswahl: liste?.querySelector('.li.on')?.dataset.k ?? null,
-    };
-  }, [selektor, scrollen]);
-}
-
-async function pruefeLabFokusAutoRefresh(browser, url, breite, variante, bilderPfad = null) {
+async function pruefeLabFokusAutoRefresh(browser, url, breite, variante) {
   const befunde = [];
-  const seitenfehler = [];
-  const context = await browser.newContext({ viewport: { width: breite, height: 900 }, deviceScaleFactor: 1 });
-  const page = await context.newPage();
-  page.on('pageerror', err => seitenfehler.push(String(err)));
-  // Trace nur bei Befunden sichern; er hält Fokusverlauf und DOM-Snapshots fest.
-  await context.tracing.start({ screenshots: true, snapshots: true });
+  let page;
+  let seitenfehler = [];
   try {
-    // Die Playwright-Uhr wird vor dem Laden installiert. Damit lässt sich der
-    // echte 8-Sekunden-Interval-Callback gezielt auslösen, ohne auf den Takt
-    // zu warten oder zwischen Fokus und Refresh ein Zeitfenster zu öffnen.
-    await page.clock.install();
-    await page.goto(`${url}/`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(
-      () => (document.querySelector('#cMode')?.textContent || '').trim().length > 2,
-      null, { timeout: 15000 },
-    );
-    await page.locator('.nav[data-v="lab"]').click();
-    // Sichtbarkeit als eigene Bedingung melden; ein Timeout allein wäre nicht
-    // von einem fehlenden Element zu unterscheiden.
-    const listeSichtbar = await page.locator('#labList .li').first()
-      .waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
-    if (!listeSichtbar) return [`Lab-Fokus-Prüfung (${variante.label}): die Lab-Liste ist nicht sichtbar (versteckte Knoten zählen nicht)`];
-    if (!await waehleKurvenKandidat(page)) return [`Lab-Fokus-Prüfung (${variante.label}) ohne Kapitalkurve`];
+    const geoeffnet = await oeffneLabSeite(browser, url, breite);
+    page = geoeffnet.page;
+    seitenfehler = geoeffnet.seitenfehler;
 
-    const fokusBefunde = await fokussiereLabAusserhalbDetail(page, variante);
+    const fokusBefunde = await variante.fokussiere(page);
     if (fokusBefunde.length) return [...befunde, ...fokusBefunde];
-    const zustandVorher = await erhebeLabListenzustand(page, variante.selektor, true);
 
     const marker = `refresh-${variante.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const timeout = Symbol('lab-fokus-refresh-timeout');
@@ -1688,43 +1912,17 @@ async function pruefeLabFokusAutoRefresh(browser, url, breite, variante, bilderP
     } else if (!antwort.ok || antwort.status !== 200) {
       befunde.push(`Lab-Fokus-Auto-Refresh (${variante.label}) antwortet mit HTTP ${antwort.status}`);
     } else {
-      await page.waitForFunction(
+      const bannerSichtbar = await page.waitForFunction(
+        m => (document.querySelector('#banner')?.textContent || '').includes(m),
+        marker, { timeout: 3000 },
+      ).then(() => true).catch(() => false);
+      const listeSichtbar = await page.waitForFunction(
         m => (document.querySelector('#labList')?.textContent || '').includes(m),
         marker, { timeout: 3000 },
-      ).catch(() => {});
-      // Marker nur an sichtbaren Knoten werten: textContent allein zählt auch
-      // ausgeblendete Einträge und würde einen stummen Render verdecken.
-      const beleg = await page.evaluate(m => {
-        const sichtbar = el => {
-          if (!el || el.closest('[hidden]')) return false;
-          const r = el.getBoundingClientRect();
-          const s = getComputedStyle(el);
-          return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
-        };
-        const liste = [...document.querySelectorAll('#labList .li')]
-          .some(li => sichtbar(li) && (li.textContent || '').includes(m));
-        const banner = document.querySelector('#banner');
-        return { liste, banner: sichtbar(banner) && (banner.textContent || '').includes(m) };
-      }, marker);
-      if (!beleg.banner) befunde.push(`Lab-Fokus-Auto-Refresh-Daten (${variante.label}) wurden nicht sichtbar verarbeitet`);
-      if (!beleg.liste) {
-        befunde.push(`Auto-Refresh hält die Lab-Liste bei Fokus auf ${variante.label} an (breiter #v-lab-Guard?) oder der Marker steht nur in versteckten Knoten`);
-      } else {
-        // Der Neuaufbau ersetzt die Listeneinträge; Fokus, Scrollposition und
-        // Auswahl müssen ihn überstehen.
-        const zustandNachher = await erhebeLabListenzustand(page, variante.selektor);
-        if (zustandNachher.fokus !== zustandVorher.fokus) {
-          befunde.push(`Auto-Refresh verliert den Fokus auf ${variante.label} (${zustandVorher.fokus === null ? 'kein Fokus' : `«${zustandVorher.fokus}»`} → ${zustandNachher.fokus === null ? 'kein Fokus' : `«${zustandNachher.fokus}»`})`);
-        }
-        if (zustandNachher.scroll !== zustandVorher.scroll) {
-          befunde.push(`Auto-Refresh setzt die Scrollposition der Lab-Liste zurück (${zustandVorher.scroll} → ${zustandNachher.scroll})`);
-        }
-        if (zustandNachher.auswahl !== zustandVorher.auswahl) {
-          befunde.push(`Auto-Refresh verliert die Auswahl in der Lab-Liste (${zustandVorher.auswahl} → ${zustandNachher.auswahl})`);
-        }
-        if (zustandNachher.fokusSichtbar !== true) {
-          befunde.push(`Auto-Refresh lässt den Fokus auf ${variante.label} in einem unsichtbaren Knoten zurück`);
-        }
+      ).then(() => true).catch(() => false);
+      if (!bannerSichtbar) befunde.push(`Lab-Fokus-Auto-Refresh-Daten (${variante.label}) wurden nicht verarbeitet`);
+      if (!listeSichtbar) {
+        befunde.push(`Auto-Refresh hält die Lab-Liste bei Fokus auf ${variante.label} an (breiter #v-lab-Guard?)`);
       }
     }
     await page.unroute('**/api/report', handler).catch(() => {});
@@ -1732,8 +1930,7 @@ async function pruefeLabFokusAutoRefresh(browser, url, breite, variante, bilderP
     befunde.push(`Lab-Fokus-Prüfung (${variante.label}) fehlgeschlagen: ${fehler instanceof Error ? fehler.message : fehler}`);
   } finally {
     if (seitenfehler.length) befunde.push(`Lab-Fokus-Seitenfehler (${variante.label}): ${seitenfehler.join('; ')}`);
-    await schreibeFehlerbeleg(context, page, befunde, bilderPfad, `lab-fokus-${breite}px-${variante.id}`).catch(() => {});
-    await context.close();
+    if (page) await page.close();
   }
   return befunde;
 }
@@ -2646,11 +2843,66 @@ async function pruefeAgentenInhalte(page, runs) {
 }
 
 /**
+ * Injiziert genau einen Geometriefehler in die gewählte Ansicht. Die
+ * Selektor- und Bausteinwahl kommt aus denselben Konstanten wie
+ * `pruefeGeometrie`, damit Prüfung und Gegenprobe nicht auseinanderlaufen.
+ */
+async function mutiereGeometrie(page, ansicht, art) {
+  return page.evaluate(({ ansicht, art, steuerSelector, bausteinSelector }) => {
+    const wurzel = document.querySelector(`#v-${ansicht}`);
+    if (!wurzel) throw new Error(`Ansicht ${ansicht} nicht gefunden`);
+    const sichtbar = el => {
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return r.width > 0.5 && r.height > 0.5 && !el.disabled
+        && cs.visibility !== 'hidden' && cs.display !== 'none';
+    };
+    const steuerbar = [...wurzel.querySelectorAll(steuerSelector)].filter(sichtbar);
+    if (!steuerbar.length) throw new Error(`Keine sichtbaren Steuerelemente in ${ansicht}`);
+    const gruppe = el => el.closest(bausteinSelector) || wurzel;
+
+    if (art === 'abgeschnitten') {
+      const el = steuerbar[0];
+      el.style.setProperty('overflow', 'hidden', 'important');
+      el.style.setProperty('width', '1px', 'important');
+      el.style.setProperty('min-width', '0', 'important');
+      el.style.setProperty('max-width', '1px', 'important');
+      el.style.setProperty('white-space', 'nowrap', 'important');
+      el.textContent = 'ABGESCHNITTENER-INHALT-MIT-VIEL-TEXT';
+      return;
+    }
+
+    if (art === 'ueberlappung') {
+      const statisch = steuerbar.filter(el => getComputedStyle(el).position === 'static');
+      const gleicheGruppe = (a, b) => !a.contains(b) && !b.contains(a)
+        && gruppe(a) === gruppe(b);
+      const a = statisch.find(kandidat => statisch.some(other =>
+        other !== kandidat && gleicheGruppe(kandidat, other)));
+      const b = a && statisch.find(other => other !== a && gleicheGruppe(a, other));
+      if (!a || !b) throw new Error('Kein Paar statischer Steuerelemente für Überlappung gefunden');
+      const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+      b.style.transform = `translate(${ra.left - rb.left + 2}px, ${ra.top - rb.top + 2}px)`;
+      return;
+    }
+
+    if (art === 'fokusring') {
+      const el = steuerbar[0];
+      el.style.setProperty('outline', 'none', 'important');
+      el.style.setProperty('box-shadow', 'none', 'important');
+      return;
+    }
+
+    throw new Error(`Unbekannte Geometrie-Mutation: ${art}`);
+  }, { ansicht, art, steuerSelector: STEUER_SELECTOR, bausteinSelector: BAUSTEIN_SELECTOR });
+}
+
+/**
  * Schreibt absichtlich falsche Kerndaten ins DOM und verlangt, dass
  * pruefeInhalte sie erkennt. So kann die Inhaltsprüfung nicht stillschweigend
  * leer laufen, wenn eine Ansicht oder ein Selektor einmal wegfällt.
  */
-async function pruefeNegativtest(url) {
+async function pruefeNegativtest(opt) {
+  const url = opt.url;
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1 });
   const seitenfehler = [];
@@ -2667,6 +2919,7 @@ async function pruefeNegativtest(url) {
     const faelle = [
       {
         ansicht: 'strat',
+        id: 'text250.negativtest.strategie-kpi',
         name: 'Strategie-KPI',
         mutieren: () => page.evaluate(() => {
           const el = document.querySelector('#stratDetail .kpis .kpi .v');
@@ -2676,6 +2929,7 @@ async function pruefeNegativtest(url) {
       },
       {
         ansicht: 'research',
+        id: 'text250.negativtest.research-zahl',
         name: 'Research-Zahl',
         mutieren: () => page.evaluate(() => {
           const el = document.querySelector('#flow .station:nth-child(2) small');
@@ -2685,6 +2939,7 @@ async function pruefeNegativtest(url) {
       },
       {
         ansicht: 'agents',
+        id: 'text250.negativtest.agenten-kopfzahl',
         name: 'Agenten-Kopfzahl',
         mutieren: () => page.evaluate(() => {
           const el = document.querySelector('#agTag');
@@ -2694,6 +2949,7 @@ async function pruefeNegativtest(url) {
       },
       {
         ansicht: 'agents',
+        id: 'text250.negativtest.agenten-abteilungstab',
         name: 'Agenten-Abteilungstab',
         mutieren: () => page.evaluate(() => {
           const tabs = [...document.querySelectorAll('#depTabs .tab')];
@@ -2703,6 +2959,7 @@ async function pruefeNegativtest(url) {
       },
       {
         ansicht: 'ship',
+        id: 'text250.negativtest.raumschiff-abteilungscluster',
         name: 'Raumschiff-Abteilungscluster',
         mutieren: () => page.evaluate(() => {
           const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
@@ -2714,6 +2971,7 @@ async function pruefeNegativtest(url) {
       },
       {
         ansicht: 'ship',
+        id: 'text250.negativtest.raumschiff-abteilung-leer',
         name: 'Raumschiff-Abteilung leer',
         mutieren: () => page.evaluate(() => {
           const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
@@ -2726,6 +2984,7 @@ async function pruefeNegativtest(url) {
       },
       {
         ansicht: 'ship',
+        id: 'text250.negativtest.raumschiff-agent-fehlt',
         name: 'Raumschiff-Agent fehlt',
         mutieren: () => page.evaluate(() => {
           const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
@@ -2738,6 +2997,7 @@ async function pruefeNegativtest(url) {
       },
       {
         ansicht: 'ship',
+        id: 'text250.negativtest.raumschiff-agent-zusaetzlich',
         name: 'Raumschiff-Agent zusätzlich',
         mutieren: () => page.evaluate(() => {
           const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
@@ -2752,6 +3012,7 @@ async function pruefeNegativtest(url) {
       },
       {
         ansicht: 'ship',
+        id: 'text250.negativtest.raumschiff-agent-doppelt',
         name: 'Raumschiff-Agent doppelt',
         mutieren: () => page.evaluate(() => {
           const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
@@ -2770,6 +3031,7 @@ async function pruefeNegativtest(url) {
       },
       {
         ansicht: 'ship',
+        id: 'text250.negativtest.raumschiff-agent-doppelt-im-selben-cluster',
         name: 'Raumschiff-Agent doppelt im selben Cluster',
         mutieren: () => page.evaluate(() => {
           const cluster = [...document.querySelectorAll('#shipWorld .px-dept')];
@@ -2786,6 +3048,7 @@ async function pruefeNegativtest(url) {
       },
       {
         ansicht: 'konf',
+        id: 'text250.negativtest.konferenz-testplan',
         name: 'Konferenz-Testplan',
         mutieren: () => page.evaluate(() => {
           const el = document.querySelector('#konfBody table.tbl tbody tr td:nth-child(3)');
@@ -2797,6 +3060,7 @@ async function pruefeNegativtest(url) {
       // jeweils genau ein fehlendes Detail geprüft, nicht ein gemeinsamer Fehler.
       {
         ansicht: 'spider',
+        id: 'text250.negativtest.widerspruchsgrund-fehlt',
         name: 'Widerspruchsgrund fehlt',
         vorbereiten: () => page.evaluate(daten => window.zeichneBewertung(daten), CLAIM_TESTDATEN),
         pruefen: () => pruefeClaimWiderspruchsdetails(page),
@@ -2808,6 +3072,7 @@ async function pruefeNegativtest(url) {
       },
       {
         ansicht: 'spider',
+        id: 'text250.negativtest.widerspruchssicherheit-fehlt',
         name: 'Widerspruchssicherheit fehlt',
         vorbereiten: () => page.evaluate(daten => window.zeichneBewertung(daten), CLAIM_TESTDATEN),
         pruefen: () => pruefeClaimWiderspruchsdetails(page),
@@ -2817,11 +3082,52 @@ async function pruefeNegativtest(url) {
           el.remove();
         }),
       },
+      // Drei gezielte Gegenproben für die Geometrie-Prüfung. Sie injizieren
+      // je genau eines der drei Kriterien und verlangen den passenden Befund,
+      // nicht nur irgendeinen Geometriefehler.
+      {
+        ansicht: 'agents',
+        id: 'text250.negativtest.geometrie-abgeschnitten',
+        name: 'Geometrie abgeschnittener Inhalt',
+        erwarte: 'wird abgeschnitten',
+        pruefen: () => pruefeGeometrie(page, 'agents'),
+        mutieren: () => mutiereGeometrie(page, 'agents', 'abgeschnitten'),
+      },
+      {
+        ansicht: 'agents',
+        id: 'text250.negativtest.geometrie-ueberlappung',
+        name: 'Geometrie überlappende Steuerelemente',
+        erwarte: 'Steuerelemente überlappen',
+        pruefen: () => pruefeGeometrie(page, 'agents'),
+        mutieren: () => mutiereGeometrie(page, 'agents', 'ueberlappung'),
+      },
+      {
+        ansicht: 'agents',
+        id: 'text250.negativtest.geometrie-fokusring',
+        name: 'Geometrie fehlender Fokusring',
+        erwarte: 'Fokusring fehlt',
+        pruefen: () => pruefeGeometrie(page, 'agents'),
+        mutieren: () => mutiereGeometrie(page, 'agents', 'fokusring'),
+      },
     ];
 
     const erkannt = [];
+    const verfehlt = [];
+    let negativFehler = 0;
+    const fallIds = new Set();
+    for (const fall of faelle) {
+      if (typeof fall.id !== 'string' || !fall.id) {
+        throw new Error(`Negativtest: Fall «${fall.name || fall.ansicht || '?'}» ohne stabile Fall-ID`);
+      }
+      if (fallIds.has(fall.id)) {
+        throw new Error(`Negativtest: doppelte Fall-ID «${fall.id}»`);
+      }
+      fallIds.add(fall.id);
+    }
+
     for (const [index, fall] of faelle.entries()) {
       const fallName = fall.name || fall.ansicht;
+      const fallId = fall.id;
       // Jeder Fall startet auf einer frischen Seite: Der Acht-Sekunden-Refresh
       // darf eine absichtliche DOM-Mutation nicht zwischenzeitlich zurücksetzen.
       if (index > 0) {
@@ -2840,19 +3146,42 @@ async function pruefeNegativtest(url) {
       const pruefe = fall.pruefen || (() => pruefeInhalte(page, fall.ansicht));
       const sauber = await pruefe();
       if (!sauber || sauber.length) {
-        throw new Error(`${fallName}: sauberer Zustand meldet bereits Befunde: ${(sauber || []).join('; ')}`);
+        // Der unveränderte Zustand muss ohne Befund bleiben. Meldet der
+        // Prüfer hier etwas, ist das ein Fehler des Negativtests und wird
+        // separat gezählt, statt den Lauf stillschweigend zu beenden.
+        negativFehler += sauber.length;
+        const text = `${fallName}: unveränderter Zustand meldet Befunde: ${sauber.join('; ')}`;
+        verfehlt.push(text);
+        meldeFall(fallId, false, text);
+        continue;
       }
 
       await fall.mutieren();
       const befund = await pruefe();
       if (!befund || !befund.length) {
-        throw new Error(`${fallName}: absichtlich falscher Inhalt wurde nicht erkannt`);
+        const text = `${fallName}: absichtlich falscher Inhalt wurde nicht erkannt`;
+        verfehlt.push(text);
+        meldeFall(fallId, false, text);
+        continue;
       }
-      erkannt.push(fallName);
+      if (fall.erwarte && !befund.some(text => text.includes(fall.erwarte))) {
+        const text = `${fallName}: erwarteter Befund «${fall.erwarte}» fehlt `
+          + `(${befund.join('; ')})`;
+        verfehlt.push(text);
+        meldeFall(fallId, false, text);
+        continue;
+      }
+      erkannt.push(fallId);
+      meldeFall(fallId, true);
       console.log(`Negativtest ${fallName}: erkannt – ${befund[0]}`);
     }
 
-    if (seitenfehler.length) throw new Error(`Seitenfehler: ${seitenfehler.join('; ')}`);
+    schreibeErgebnis(opt, { negativtest: erkannt.length, negativFehler });
+    console.log(`Negativtest: ${erkannt.length}/${faelle.length} Fälle erkannt, `
+      + `${negativFehler} Befunde im unveränderten Zustand`);
+    if (seitenfehler.length || verfehlt.length) {
+      throw new Error([...seitenfehler, ...verfehlt].join('; '));
+    }
     console.log(`Negativtest OK: ${erkannt.length}/${faelle.length} falsche Inhalte erkannt`);
   } finally {
     await browser.close();
@@ -2937,7 +3266,7 @@ async function schreibeDiagnose(page, opt, breite, ansicht, neue) {
   return { bilder, html };
 }
 
-async function pruefeScreenshotSelbsttest(url, bilderPfad, bildPraefix = '') {
+async function pruefeScreenshotSelbsttest(url, bilderPfad, bildPraefix = '', opt = null) {
   if (!bilderPfad) throw new Error('--selbsttest-cluster benötigt --bilder <verzeichnis>');
   mkdirSync(bilderPfad, { recursive: true });
   writeFileSync(befundTextPfad({ bilder: bilderPfad, bildPraefix }), '');
@@ -3001,13 +3330,15 @@ async function pruefeScreenshotSelbsttest(url, bilderPfad, bildPraefix = '') {
         throw new Error(`Befunddatei enthält ${erwartet} nicht: ${befundDatei}`);
       }
     }
+    meldeFall('text250.selbsttest.cluster', true);
+    if (opt) schreibeErgebnis(opt, { selbsttestBefunde: befunde.length, selbsttestScreenshots: bilder.length });
     console.log(`Selbsttest OK: fehlender Schiffscluster S · ${bilder.length} gleichzeitige Cluster-Befunde · eindeutige Screenshotnamen · ${sBild} · ${befundDatei}`);
   } finally {
     await browser.close();
   }
 }
 
-async function pruefeAgentScreenshotSelbsttest(url, bilderPfad, bildPraefix = '') {
+async function pruefeAgentScreenshotSelbsttest(url, bilderPfad, bildPraefix = '', opt = null) {
   if (!bilderPfad) throw new Error('--selbsttest-agent benötigt --bilder <verzeichnis>');
   mkdirSync(bilderPfad, { recursive: true });
   writeFileSync(befundTextPfad({ bilder: bilderPfad, bildPraefix }), '');
@@ -3051,6 +3382,8 @@ async function pruefeAgentScreenshotSelbsttest(url, bilderPfad, bildPraefix = ''
     if (!existsSync(befundDatei) || !readFileSync(befundDatei, 'utf8').includes('Abteilung A hat 9 statt 10 Agenten')) {
       throw new Error(`Befunddatei enthält den fehlenden Agenten nicht: ${befundDatei}`);
     }
+    meldeFall('text250.selbsttest.agent', true);
+    if (opt) schreibeErgebnis(opt, { selbsttestAgentBefunde: befunde.length, selbsttestAgentScreenshots: bilder.length });
     console.log(`Selbsttest OK: fehlender Agent in Cluster A · ${erwartet} · ${befundDatei}`);
   } finally {
     await browser.close();
@@ -3145,15 +3478,15 @@ async function main() {
   const claimBreiten = [...new Set([...opt.breiten, 240])];
   const { validierungen } = await pruefeServer(opt.url);
   if (opt.selbsttestCluster) {
-    await pruefeScreenshotSelbsttest(opt.url, opt.bilder, opt.bildPraefix);
+    await pruefeScreenshotSelbsttest(opt.url, opt.bilder, opt.bildPraefix, opt);
     return;
   }
   if (opt.selbsttestAgent) {
-    await pruefeAgentScreenshotSelbsttest(opt.url, opt.bilder, opt.bildPraefix);
+    await pruefeAgentScreenshotSelbsttest(opt.url, opt.bilder, opt.bildPraefix, opt);
     return;
   }
   if (opt.negativtest) {
-    await pruefeNegativtest(opt.url);
+    await pruefeNegativtest(opt);
     return;
   }
   console.log(`250-%-Prüflauf: ${opt.ansichten.length} Ansichten × ${opt.breiten.length} Breiten · ${validierungen} Validierungen im Bericht`);
@@ -3165,25 +3498,63 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const fehler = [];
   const hinweise = new Set();
-  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, refreshGesamt = 0, refreshNegativGesamt = 0, labFokusGesamt = 0, listenRefreshGesamt = 0, labGuardGesamt = 0, labPauseGesamt = 0, listenUmsortierungGesamt = 0, taktGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, legendeDesktopGeprueft = 0, kopfGeprueft = 0, schmaleAnsichten = 0, schreibwegeGesamt = 0, claimPruefungen = 0;
+  let tabellenGesamt = 0, zellenGesamt = 0, bilderGesamt = 0, tooltipGesamt = 0, tastaturGesamt = 0, refreshGesamt = 0, refreshNegativGesamt = 0, labFokusGesamt = 0, inhaltGesamt = 0, agentenPruefungen = 0, legendeGesamt = 0, legendeDesktopGeprueft = 0, kopfGeprueft = 0, schmaleAnsichten = 0, schreibwegeGesamt = 0, claimPruefungen = 0, geometrieGesamt = 0, labGuardGesamt = 0, labPauseGesamt = 0, listenUmsortierungGesamt = 0, taktGesamt = 0;
+  const geometrieNachBreite = new Map([[240, []], [280, []], [360, []]]);
 
   try {
     const kopfBefunde = await pruefeKopfzeile(browser, opt.url);
-    if (kopfBefunde.length) {
-      for (const text of kopfBefunde) fehler.push(`1024px/kopf: ${text}`);
-    } else {
-      kopfGeprueft++;
-    }
+    meldeFall('text250.header.1024', kopfBefunde.length === 0, kopfBefunde.join('; '));
+    kopfGeprueft++;
+    for (const text of kopfBefunde) fehler.push(`1024px/kopf: ${text}`);
 
     const schmaleErgebnis = await pruefe240Ansichten(browser, opt.url, opt.ansichten);
     schmaleAnsichten = schmaleErgebnis.ergebnisse.length;
+    for (const eintrag of schmaleErgebnis.ergebnisse) {
+      meldeFall(`text250.240.${eintrag.ansicht}`, eintrag.ok);
+    }
+    geometrieGesamt += schmaleErgebnis.geometrie.anzahl;
+    geometrieNachBreite.get(240).push(...schmaleErgebnis.geometrie.befunde);
     for (const text of schmaleErgebnis.befund) fehler.push(text);
 
     const desktopLegendeBefunde = await pruefeLegendeDesktop(browser, opt.url);
-    if (desktopLegendeBefunde.length) {
-      for (const text of desktopLegendeBefunde) fehler.push(`1440px/legende: ${text}`);
-    } else {
-      legendeDesktopGeprueft++;
+    meldeFall('text250.legend.1440', desktopLegendeBefunde.length === 0, desktopLegendeBefunde.join('; '));
+    legendeDesktopGeprueft++;
+    for (const text of desktopLegendeBefunde) fehler.push(`1440px/legende: ${text}`);
+
+    if (opt.ansichten.includes('lab')) {
+      for (const breite of [LAB_FOKUS_BREITE, 280]) {
+        const refreshBefunde = await pruefeLabAutoRefresh(browser, opt.url, 'lab', breite);
+        const id = breite === LAB_FOKUS_BREITE ? 'text250.refresh' : `text250.refresh.${breite}`;
+        meldeFall(id, refreshBefunde.length === 0, refreshBefunde.join('; '));
+        refreshGesamt++;
+        for (const text of refreshBefunde) fehler.push(`${breite}px/lab: ${text}`);
+      }
+      const refreshNegativBefunde = await pruefeLabAutoRefreshNegativ(browser, opt.url, LAB_FOKUS_BREITE);
+      meldeFall('text250.refresh-negativ', refreshNegativBefunde.length === 0, refreshNegativBefunde.join('; '));
+      refreshNegativGesamt++;
+      for (const text of refreshNegativBefunde) fehler.push(`${LAB_FOKUS_BREITE}px/lab: ${text}`);
+      for (const variante of LAB_FOKUS_VARIANTEN) {
+        const labFokusBefunde = await pruefeLabFokusAutoRefresh(browser, opt.url, LAB_FOKUS_BREITE, variante);
+        meldeFall(`text250.lab-focus.${variante.id}`, labFokusBefunde.length === 0, labFokusBefunde.join('; '));
+        labFokusGesamt++;
+        for (const text of labFokusBefunde) fehler.push(`${LAB_FOKUS_BREITE}px/lab: ${text}`);
+      }
+      const labGuardBefunde = await pruefeLabGuardLogik(browser, opt.url, LAB_FOKUS_BREITE, opt.bilder);
+      meldeFall('text250.lab-guard', labGuardBefunde.length === 0, labGuardBefunde.join('; '));
+      labGuardGesamt++;
+      for (const text of labGuardBefunde) fehler.push(`${LAB_FOKUS_BREITE}px/lab: ${text}`);
+      const labPauseBefunde = await pruefeLabPauseHinweis(browser, opt.url, LAB_FOKUS_BREITE, opt.bilder);
+      meldeFall('text250.lab-pause', labPauseBefunde.length === 0, labPauseBefunde.join('; '));
+      labPauseGesamt++;
+      for (const text of labPauseBefunde) fehler.push(`${LAB_FOKUS_BREITE}px/lab: ${text}`);
+      const umsortierBefunde = await pruefeListenUmsortierung(browser, opt.url, LAB_FOKUS_BREITE, opt.bilder);
+      meldeFall('text250.listen-umsortierung', umsortierBefunde.length === 0, umsortierBefunde.join('; '));
+      listenUmsortierungGesamt++;
+      for (const text of umsortierBefunde) fehler.push(`${LAB_FOKUS_BREITE}px/lab: ${text}`);
+      const taktBefunde = await pruefeRefreshTakt(browser, opt.url, opt.breiten[0]);
+      meldeFall('text250.refresh-takt', taktBefunde.length === 0, taktBefunde.join('; '));
+      taktGesamt++;
+      for (const text of taktBefunde) fehler.push(`${opt.breiten[0]}px: ${text}`);
     }
 
     for (const breite of opt.breiten) {
@@ -3239,35 +3610,6 @@ async function main() {
             const tastaturBefunde = await pruefeKurvenTastatur(page, ansicht);
             if (tastaturBefunde) tastaturGesamt++;
             for (const text of tastaturBefunde || []) fehler.push(`${breite}px/${ansicht}: ${text}`);
-            // Der Refresh wird bei 360 und 280 px geprüft; das CI-Gate verlangt
-            // zwei erfolgreiche Prüfungen. Der Negativtest läuft einmal am
-            // ersten Breitenwert, weil er beide Fehlerbilder unabhängig von der
-            // Breite injiziert.
-            if (breite === 360 || breite === 280) {
-              const refreshBefunde = await pruefeLabAutoRefresh(page, ansicht);
-              if (refreshBefunde.length === 0) refreshGesamt++;
-              for (const text of refreshBefunde) fehler.push(`${breite}px/${ansicht}: ${text}`);
-            }
-            if (breite === opt.breiten[0]) {
-              const refreshNegativBefunde = await pruefeLabAutoRefreshNegativ(browser, opt.url, breite);
-              if (refreshNegativBefunde.length === 0) refreshNegativGesamt++;
-              for (const text of refreshNegativBefunde) fehler.push(`${breite}px/lab-negativ: ${text}`);
-              for (const variante of LAB_FOKUS_VARIANTEN) {
-                const labFokusBefunde = await pruefeLabFokusAutoRefresh(browser, opt.url, breite, variante, opt.bilder);
-                if (labFokusBefunde.length === 0) labFokusGesamt++;
-                if (variante.id === 'liste' && labFokusBefunde.length === 0) listenRefreshGesamt++;
-                for (const text of labFokusBefunde) fehler.push(`${breite}px/${ansicht}: ${text}`);
-              }
-              const labGuardBefunde = await pruefeLabGuardLogik(browser, opt.url, breite, opt.bilder);
-              if (labGuardBefunde.length === 0) labGuardGesamt++;
-              for (const text of labGuardBefunde) fehler.push(`${breite}px/lab-guard: ${text}`);
-              const labPauseBefunde = await pruefeLabPauseHinweis(browser, opt.url, breite, opt.bilder);
-              if (labPauseBefunde.length === 0) labPauseGesamt++;
-              for (const text of labPauseBefunde) fehler.push(`${breite}px/lab-pause: ${text}`);
-              const umsortierBefunde = await pruefeListenUmsortierung(browser, opt.url, breite, opt.bilder);
-              if (umsortierBefunde.length === 0) listenUmsortierungGesamt++;
-              for (const text of umsortierBefunde) fehler.push(`${breite}px/lab-liste: ${text}`);
-            }
           } else {
             hinweise.add('Keine Kapitalkurve im Lab gefunden – Tooltip und Tastatur nicht geprüft.');
           }
@@ -3281,6 +3623,15 @@ async function main() {
         }
         for (const text of await pruefeZoom(page, ansicht)) fehler.push(`${breite}px/${ansicht}: ${text}`);
 
+        if (breite === 280 || breite === 360) {
+          const geometrie = await pruefeGeometrie(page, ansicht);
+          geometrieGesamt++;
+          if (geometrie.length) {
+            geometrieNachBreite.get(breite).push(...geometrie.map(text => `${breite}px/${ansicht}: ${text}`));
+            for (const text of geometrie) fehler.push(`${breite}px/${ansicht}: ${text}`);
+          }
+        }
+
         if (opt.bilder && fehler.length > vorher) {
           const { bilder } = await schreibeDiagnose(page, opt, breite, ansicht, fehler.slice(vorher));
           bilderGesamt += bilder.length;
@@ -3290,20 +3641,19 @@ async function main() {
 
     }
 
+    for (const breite of [240, 280, 360]) {
+      const geometrie = geometrieNachBreite.get(breite);
+      meldeFall(`text250.geometrie.${breite}`, geometrie.length === 0, geometrie.join('; '));
+    }
+
     if (opt.ansichten.includes('spider')) {
       for (const breite of claimBreiten) {
         const claimBefunde = await pruefeClaimMetadaten(browser, opt.url, breite);
-        if (claimBefunde.length) {
-          for (const text of claimBefunde) fehler.push(`${breite}px/spider: ${text}`);
-        } else {
-          claimPruefungen++;
-        }
+        meldeFall(`text250.claims.${breite}`, claimBefunde.length === 0, claimBefunde.join('; '));
+        claimPruefungen++;
+        for (const text of claimBefunde) fehler.push(`${breite}px/spider: ${text}`);
       }
     }
-
-    const taktBefunde = await pruefeRefreshTakt(browser, opt.url, opt.breiten[0]);
-    if (taktBefunde.length === 0) taktGesamt++;
-    for (const text of taktBefunde) fehler.push(`takt: ${text}`);
 
     const schreibPage = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1 });
     schreibPage.on('pageerror', err => fehler.push(`schreibwege: ${err}`));
@@ -3318,13 +3668,62 @@ async function main() {
 
   for (const text of hinweise) console.warn(`Hinweis: ${text}`);
 
+  schreibeErgebnis(opt, {
+    kopf: kopfGeprueft,
+    schmaleAnsichten,
+    claims: claimPruefungen,
+    langhost114: langhost114Pruefungen,
+    refresh: refreshGesamt,
+    refreshNegativ: refreshNegativGesamt,
+    labFokus: labFokusGesamt,
+    tooltip: tooltipGesamt,
+    tastatur: tastaturGesamt,
+    inhalte: inhaltGesamt,
+    agenten: agentenPruefungen,
+    legende: legendeGesamt,
+    legendeDesktop: legendeDesktopGeprueft,
+    schreibwege: schreibwegeGesamt,
+    geometrie: geometrieGesamt,
+    labGuard: labGuardGesamt,
+    labPause: labPauseGesamt,
+    listenUmsortierung: listenUmsortierungGesamt,
+    takt: taktGesamt,
+  });
   if (fehler.length) {
     console.error(`\nBefunde: ${fehler.length}`);
     for (const zeile of fehler.slice(0, 120)) console.error(`  ✗ ${zeile}`);
     if (fehler.length > 120) console.error(`  … und ${fehler.length - 120} weitere`);
     process.exit(1);
   }
-  console.log(`OK: keine Überläufe${kopfGeprueft ? ` · Kopfzeile ${kopfGeprueft}× geprüft` : ''}${schmaleAnsichten ? ` · 240px ${schmaleAnsichten} Ansichten geprüft` : ''}${opt.tabellen ? ` · ${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft` : ''}${inhaltGesamt ? ` · Inhalte ${inhaltGesamt}× geprüft` : ''}${claimPruefungen ? ` · Claims ${claimPruefungen}× geprüft` : ''}${agentenPruefungen ? ` · Agenten ${agentenPruefungen}× geprüft` : ''}${legendeGesamt ? ` · Legende ${legendeGesamt}× geprüft` : ''}${legendeDesktopGeprueft ? ` · Desktop-Legende ${legendeDesktopGeprueft}× geprüft` : ''}${tooltipGesamt ? ` · Tooltip ${tooltipGesamt}× geprüft` : ''}${tastaturGesamt ? ` · Tastatur ${tastaturGesamt}× geprüft` : ''}${refreshGesamt ? ` · Refresh ${refreshGesamt}× geprüft (HTTP 200, Marker)` : ''}${refreshNegativGesamt ? ` · Refresh-Negativ ${refreshNegativGesamt}× geprüft` : ''}${labFokusGesamt ? ` · Lab-Fokus ${labFokusGesamt}× geprüft` : ''}${labGuardGesamt ? ` · Lab-Guard ${labGuardGesamt}× geprüft` : ''}${labPauseGesamt ? ` · Lab-Pause ${labPauseGesamt}× geprüft` : ''}${listenUmsortierungGesamt ? ` · Listen-Umsortierung ${listenUmsortierungGesamt}× geprüft` : ''}${listenRefreshGesamt ? ` · Listen-Refresh ${listenRefreshGesamt}× geprüft` : ''}${taktGesamt ? ` · Refresh-Takt ${taktGesamt}× geprüft` : ''}${schreibwegeGesamt ? ` · Schreibwege ${schreibwegeGesamt}× geprüft` : ''}${bilderGesamt ? ` · ${bilderGesamt} Screenshots` : ''}`);
+  // Ergebniszeile aus Teilen bauen: gleiche Reihenfolge und Wortlaute wie
+  // bisher, aber ohne verschachtelte Bedingung je Zähler. Der Langhost-Zähler
+  // steht wie die übrigen in dieser Zeile; die Zeichenzahl gehört zum Fall.
+  const teile = ['OK: keine Überläufe'];
+  const zaehle = (anzahl, beschriftung, zusatz = '') => {
+    if (anzahl) teile.push(`${beschriftung} ${anzahl}× geprüft${zusatz}`);
+  };
+  if (kopfGeprueft) teile.push(`Kopfzeile ${kopfGeprueft}× geprüft`);
+  if (schmaleAnsichten) teile.push(`240px ${schmaleAnsichten} Ansichten geprüft`);
+  if (opt.tabellen) teile.push(`${tabellenGesamt} Tabellen mit ${zellenGesamt} Zellen geprüft`);
+  zaehle(inhaltGesamt, 'Inhalte');
+  zaehle(claimPruefungen, 'Claims');
+  zaehle(langhost114Pruefungen, `Langhost 114 (${LANGHOST_114.length} Zeichen)`);
+  zaehle(agentenPruefungen, 'Agenten');
+  zaehle(legendeGesamt, 'Legende');
+  zaehle(legendeDesktopGeprueft, 'Desktop-Legende');
+  zaehle(tooltipGesamt, 'Tooltip');
+  zaehle(tastaturGesamt, 'Tastatur');
+  zaehle(refreshGesamt, 'Refresh', ' (HTTP 200, Kopf- und Datenmarker)');
+  zaehle(refreshNegativGesamt, 'Refresh-Negativ');
+  zaehle(labFokusGesamt, 'Lab-Fokus');
+  zaehle(labGuardGesamt, 'Lab-Guard');
+  zaehle(labPauseGesamt, 'Lab-Pause');
+  zaehle(listenUmsortierungGesamt, 'Listen-Umsortierung');
+  zaehle(taktGesamt, 'Refresh-Takt');
+  zaehle(schreibwegeGesamt, 'Schreibwege');
+  zaehle(geometrieGesamt, 'Geometrie');
+  if (bilderGesamt) teile.push(`${bilderGesamt} Screenshots`);
+  console.log(teile.join(' · '));
 }
 
 main().catch(fehler => {

@@ -141,13 +141,13 @@ def uebersicht(store: CompanyStore) -> dict[str, Any]:
               GROUP BY assigned_to
             ) o ON o.assigned_to = p.agent_id
             WHERE p.active=1
-            """,
+            """,  # noqa: S608 - SQL-Gerüst aus festen Feldnamen und Platzhaltern, Werte als Parameter
             OFFENE_STATES,
         ).fetchone()
         task_rows = list(c.execute(
             "SELECT state, COUNT(*) n FROM agent_tasks GROUP BY state"))
         dept_task_rows = list(c.execute(
-            f"SELECT dept, state, COUNT(*) n FROM agent_tasks"
+            f"SELECT dept, state, COUNT(*) n FROM agent_tasks"  # noqa: S608 - SQL-Gerüst aus festen Feldnamen und Platzhaltern, Werte als Parameter
             f" WHERE state IN ({platzhalter}) GROUP BY dept, state",
             OFFENE_STATES))
         offene_rows = list(c.execute(
@@ -157,7 +157,7 @@ def uebersicht(store: CompanyStore) -> dict[str, Any]:
             WHERE t.state IN ({platzhalter})
             ORDER BY t.priority DESC, t.due_at IS NULL, t.due_at, t.id
             LIMIT 10
-            """,
+            """,  # noqa: S608 - SQL-Gerüst aus festen Feldnamen und Platzhaltern, Werte als Parameter
             OFFENE_STATES))
         letzte_konferenz = c.execute(
             "SELECT id, scheduled_date, started_at, ended_at, phase, quorum, status"
@@ -244,7 +244,7 @@ def agenten(store: CompanyStore) -> dict[str, Any]:
         profile = list(c.execute(
             "SELECT * FROM agent_profiles ORDER BY dept, agent_id"))
         offene = list(c.execute(
-            f"SELECT * FROM agent_tasks WHERE state IN ({platzhalter})"
+            f"SELECT * FROM agent_tasks WHERE state IN ({platzhalter})"  # noqa: S608 - nur «?»-Platzhalter, Werte als Parameter
             " ORDER BY priority DESC, id", OFFENE_STATES))
         letzte = list(c.execute(
             """
@@ -611,7 +611,7 @@ def raeume(store: CompanyStore) -> dict[str, Any]:
     platzhalter = ",".join("?" for _ in OFFENE_STATES)
     with store.facts.conn() as c:
         aufgaben = list(c.execute(
-            f"SELECT * FROM agent_tasks WHERE state IN ({platzhalter})", OFFENE_STATES))
+            f"SELECT * FROM agent_tasks WHERE state IN ({platzhalter})", OFFENE_STATES))  # noqa: S608 - nur «?»-Platzhalter, Werte als Parameter
         status_rows = list(c.execute("SELECT * FROM room_state ORDER BY room_id"))
         letzte_konferenz = c.execute(
             "SELECT id, scheduled_date, phase, status FROM conference_sessions"
@@ -733,7 +733,7 @@ def aufgaben(
 
     with store.facts.conn() as c:
         gesamt = int(c.execute(
-            f"SELECT COUNT(*) n FROM agent_tasks t WHERE {filter_sql}",
+            f"SELECT COUNT(*) n FROM agent_tasks t WHERE {filter_sql}",  # noqa: S608 - SQL-Gerüst aus festen Feldnamen und Platzhaltern, Werte als Parameter
             parameter).fetchone()["n"])
         rows = list(c.execute(
             f"""
@@ -742,7 +742,7 @@ def aufgaben(
             WHERE {filter_sql}
             ORDER BY t.priority DESC, t.due_at IS NULL, t.due_at, t.id
             LIMIT ?
-            """,
+            """,  # noqa: S608 - SQL-Gerüst aus festen Feldnamen und Platzhaltern, Werte als Parameter
             [*parameter, grenze]))
         zaehlung = {r["state"]: int(r["n"]) for r in c.execute(
             "SELECT state, COUNT(*) n FROM agent_tasks GROUP BY state")}
