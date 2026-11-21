@@ -961,6 +961,10 @@
     {
       "quelle": "orakel/kern/kosten.py",
       "ziel": "dateien/orakel/kern/kosten.py"
+    },
+    {
+      "quelle": "tests/test_kosten.py",
+      "ziel": "dateien/tests/test_kosten.py"
     }
   ],
   "dokumente": [
