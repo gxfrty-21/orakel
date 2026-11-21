@@ -144,11 +144,14 @@ def _nach_utc(geparst: pd.Series, zeitzone: str | None,
             f"CSV: unbekannte Zeitzone «{zeitzone}». Erwartet wird eine IANA-Zone "
             "wie Europe/Athens."
         ) from exc
-    # Bei der Rückstellung im Herbst wiederholt MT5 die Uhrzeiten. Die erste
-    # Fassung ist die Sommerzeit-, jede weitere die Standardzeit-Stunde; so
-    # bleiben beide Stunden erhalten, statt als Dublette zusammenzufallen.
-    # Ausserhalb einer Wiederholung ist das Merkmal bedeutungslos.
-    ambiguous = (~geparst.duplicated(keep="first")).to_numpy()
+    # Bei der Rückstellung im Herbst wiederholt MT5 die Wandzeit. In
+    # Exportreihenfolge ist die frühere Fassung die Sommerzeit-, die spätere die
+    # Standardzeitstunde; so bleiben beide Stunden erhalten, statt als Dublette
+    # zusammenzufallen. Eine absteigend sortierte Datei dreht diese Reihenfolge —
+    # erkannt am ersten und letzten Zeitstempel. Ausserhalb einer Wiederholung
+    # ist das Merkmal bedeutungslos.
+    wiederholt = geparst.duplicated(keep="first").to_numpy()
+    ambiguous = wiederholt if geparst.iloc[0] > geparst.iloc[-1] else ~wiederholt
     return geparst.dt.tz_localize(zone, ambiguous=ambiguous).dt.tz_convert("UTC")
 
 

@@ -268,10 +268,12 @@ MT5 exportiert Serverzeit ohne Zeitzone; standardmässig gilt sie als UTC. Mit
 `--server-zeitzone Europe/Athens` (oder `[daten] server_zeitzone` in
 `config.toml`) wird sie als Ortszeit dieser IANA-Zone gelesen und nach UTC
 umgerechnet — inklusive Sommerzeitwechsel über mehrere Jahre. Bei der
-Rückstellung im Herbst wiederholen sich Uhrzeiten: Die erste Fassung gilt als
-Sommerzeit, die zweite als Standardzeit, sodass beide Stunden erhalten bleiben.
-Das gilt innerhalb einer Datei; wird die wiederholte Stunde über zwei Dateien
-verteilt, greift die Dublettenregel. Führt der Broker dauerhaft einen festen
+Rückstellung im Herbst wiederholen sich Uhrzeiten: Die frühere Fassung gilt als
+Sommerzeit, die spätere als Standardzeit, sodass beide Stunden erhalten bleiben.
+Eine absteigend sortierte Datei dreht diese Reihenfolge; der Import erkennt die
+Richtung am ersten und letzten Zeitstempel und ordnet die Fassungen entsprechend
+zu. Das gilt innerhalb einer Datei; wird die wiederholte Stunde über zwei
+Dateien verteilt, greift die Dublettenregel. Führt der Broker dauerhaft einen festen
 Versatz ohne Sommerzeit, verschiebt `--server-versatz-stunden 3` (oder
 `[daten] server_versatz_stunden` in `config.toml`) die Serverzeit um drei
 Stunden nach UTC; negative Werte sind erlaubt. Beide Angaben zusammen werden
