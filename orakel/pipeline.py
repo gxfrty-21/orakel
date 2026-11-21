@@ -27,7 +27,7 @@ SYMBOLE_STANDARD = ["EURUSD", "US500"]
 
 
 class DatenFehler(RuntimeError):
-    """Die konfigurierte CSV-Quelle liefert keine verwendbaren M15-Kerzen."""
+    """Die konfigurierte CSV-Quelle liefert keine verwendbaren Kerzen."""
 
 
 def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tuple[list[str], str]:
@@ -67,16 +67,32 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
         if symbole:
             db.zustand_setzen("datenquelle", "csv")
             return sorted(set(symbole)), "csv"
-        if gesehen:
-            # Eine bestückte Quelle, die nichts Verwertbares liefert, darf nicht
-            # still auf synthetische Kerzen ausweichen.
+        if not gesehen:
+            # Ein leerer, aber ausdrücklich als CSV-Quelle konfigurierter Ordner
+            # darf nicht still synthetische Kerzen erzeugen. Ein vorhandener
+            # Datenbestand bleibt nutzbar; sonst ist die Quelle nicht verfügbar.
+            vorhanden = db.symbole()
+            if vorhanden:
+                db.ereignis(
+                    "warnung", "Daten",
+                    f"Keine CSV-Datei in {ordner}; verwende vorhandene Datenbankkerzen.",
+                )
+                return vorhanden, str(db.zustand("datenquelle", "datenbank"))
             grund = (
-                f"Keine verwendbare M15-CSV in {ordner}: {len(gesehen)} Datei(en) "
-                f"({', '.join(sorted(gesehen)[:5])}), davon keine mit Zeitrahmen M15 "
-                "oder alle fehlerhaft. Es werden keine synthetischen Kerzen erzeugt."
+                f"Keine CSV-Datei in {ordner}, obwohl die Datenquelle \"csv\" "
+                "gewählt ist. Es werden keine synthetischen Kerzen erzeugt."
             )
             db.ereignis("fehler", "Daten", grund)
             raise DatenFehler(grund)
+        # Eine bestückte Quelle, die nichts Verwertbares liefert, darf nicht
+        # still auf synthetische Kerzen ausweichen.
+        grund = (
+            f"Keine verwendbare M15-CSV in {ordner}: {len(gesehen)} Datei(en) "
+            f"({', '.join(sorted(gesehen)[:5])}), davon keine mit Zeitrahmen M15 "
+            "oder alle fehlerhaft. Es werden keine synthetischen Kerzen erzeugt."
+        )
+        db.ereignis("fehler", "Daten", grund)
+        raise DatenFehler(grund)
 
     if db.symbole():
         # Herkunft der vorhandenen Kerzen — entscheidet über den Dashboard-Modus
