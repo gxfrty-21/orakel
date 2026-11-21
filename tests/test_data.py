@@ -5,7 +5,7 @@ import argparse
 import pandas as pd
 import pytest
 
-from orakel.__main__ import _importiere_csv
+from orakel.__main__ import _importiere_csv, _versatz
 from orakel.kern.data import (
     df_aus_db,
     lade_csv,
@@ -19,7 +19,7 @@ from orakel.kern.db import Facts
 
 def _args(**kwargs) -> argparse.Namespace:
     werte = {"symbol": None, "zeitrahmen": None, "server_zeitzone": None,
-             "server_versatz_stunden": None}
+             "server_versatz": None, "server_versatz_stunden": None}
     werte.update(kwargs)
     return argparse.Namespace(**werte)
 
@@ -75,6 +75,29 @@ def test_median_abstand_muss_zum_zeitrahmen_passen(cfg):
     # M1 bleibt als M1 in Ordnung.
     m1 = synthetische_kerzen("X", kerzen=1300, seed=2, timeframe_minuten=1)
     assert pruefe_daten(m1, "X", cfg, timeframe="M1").ok
+
+
+def test_jahresabdeckung_zaehlt_kerzen_je_jahr(cfg):
+    df = synthetische_kerzen("X", kerzen=2000, seed=2)
+    q = pruefe_daten(df, "X", cfg)
+
+    assert q.jahre == {"2024": 2000}
+    assert not any("Keine Kerzen in" in w for w in q.warnungen), q.warnungen
+
+
+def test_fehlendes_jahr_wird_als_warnung_gemeldet(cfg):
+    # 2023 und 2025 belegt, 2024 fehlt vollständig — der Fall einer
+    # abgeschnittenen Broker-Historie nach einem mehrjährigen Import.
+    anfang = synthetische_kerzen("X", kerzen=1200, seed=2, start="2023-01-01")
+    spaeter = synthetische_kerzen("X", kerzen=1200, seed=3, start="2025-01-01")
+    df = pd.concat([anfang, spaeter], ignore_index=True)
+
+    q = pruefe_daten(df, "X", cfg)
+
+    assert q.jahre == {"2023": 1200, "2025": 1200}
+    assert any("Keine Kerzen in 2024" in w for w in q.warnungen), q.warnungen
+    # Eine Lücke macht die Reihe nicht unbrauchbar; der Import bleibt erfolgreich.
+    assert q.ok, q.fehler
 
 
 def test_median_abstand_ignoriert_wochenende_und_handelspausen(cfg):
@@ -202,22 +225,33 @@ def test_herbst_umstellung_bei_gemischter_reihenfolge(tmp_path):
 
 def test_herbst_umstellung_in_absteigender_datei(tmp_path):
     # Dieselbe Rückstellung, aber absteigend exportiert: Die Standardzeitfassung
-    # steht zuerst in der Datei, die Sommerzeitfassung folgt später.
+    # steht zuerst in der Datei, die Sommerzeitfassung folgt später. Jede Zeile
+    # hat einen eigenen Preis, damit eine vertauschte Fassungs-Zuordnung auffällt.
     zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
-    for zeit in ("04:00:00", "03:15:00", "03:00:00", "03:15:00", "03:00:00", "02:45:00"):
-        zeilen.append(f"2025.10.26\t{zeit}\t1.0\t1.1\t0.9\t1.05\t10\t0\t2")
+    for zeit, preis in (
+        ("04:00:00", "1.40"),
+        ("03:15:00", "1.35"),  # Standardzeit
+        ("03:00:00", "1.30"),  # Standardzeit
+        ("03:15:00", "1.25"),  # Sommerzeit
+        ("03:00:00", "1.20"),  # Sommerzeit
+        ("02:45:00", "1.15"),
+    ):
+        zeilen.append(f"2025.10.26\t{zeit}\t{preis}\t{preis}\t{preis}\t{preis}\t10\t0\t2")
     p = tmp_path / "EURUSD_M15.csv"
     p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
 
     df = lade_csv(p, server_zeitzone="Europe/Athens")
 
-    assert [str(t) for t in df["ts"]] == [
-        "2025-10-25 23:45:00+00:00",
-        "2025-10-26 00:00:00+00:00",
-        "2025-10-26 00:15:00+00:00",
-        "2025-10-26 01:00:00+00:00",
-        "2025-10-26 01:15:00+00:00",
-        "2025-10-26 02:00:00+00:00",
+    # Der Preis bleibt an seiner Fassung: 03:00 Sommerzeit → 00:00 UTC (1.20),
+    # 03:00 Standardzeit → 01:00 UTC (1.30) usw. Eine Drehung der Zuordnung
+    # würde hier 1.30 und 1.20 vertauschen.
+    assert [(str(t), float(c)) for t, c in zip(df["ts"], df["close"])] == [
+        ("2025-10-25 23:45:00+00:00", 1.15),
+        ("2025-10-26 00:00:00+00:00", 1.20),
+        ("2025-10-26 00:15:00+00:00", 1.25),
+        ("2025-10-26 01:00:00+00:00", 1.30),
+        ("2025-10-26 01:15:00+00:00", 1.35),
+        ("2025-10-26 02:00:00+00:00", 1.40),
     ]
 
 
@@ -376,6 +410,33 @@ def test_cli_speichert_serverzeit_als_utc(cfg, tmp_path):
     assert db.kerzen("EURUSD", "M15")[0]["ts"] == "2023-12-31 22:00:00+00:00"
 
 
+def test_kurzform_server_versatz_wird_geparst():
+    assert _versatz("+03:00") == 3.0
+    assert _versatz("-05:30") == -5.5
+    with pytest.raises(argparse.ArgumentTypeError):
+        _versatz("3")
+    with pytest.raises(argparse.ArgumentTypeError):
+        _versatz("+14:30")
+
+
+def test_cli_kurzform_server_versatz_als_utc(cfg, tmp_path):
+    basis = synthetische_kerzen("X", kerzen=1300, seed=5)
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(_als_mt5(basis), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    # Kurzform, Zonenangabe und Stundenform schliessen sich gegenseitig aus.
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)], server_zeitzone="Europe/Athens",
+                                           server_versatz=3.0)) == 2
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)], server_versatz=3.0,
+                                           server_versatz_stunden=3)) == 2
+    assert db.kerzen("EURUSD", "M15") == []
+
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)], server_versatz=-5.5)) == 0
+    # 2024-01-01 00:00 Serverzeit (UTC-5:30) wird zu 05:30 UTC.
+    assert db.kerzen("EURUSD", "M15")[0]["ts"] == "2024-01-01 05:30:00+00:00"
+
+
 def test_cli_speichert_festen_versatz_als_utc(cfg, tmp_path):
     basis = synthetische_kerzen("X", kerzen=1300, seed=5)
     p = tmp_path / "EURUSD_M15.csv"
@@ -483,6 +544,20 @@ def test_zwei_bloecke_ergeben_eine_gepruefte_reihe(cfg, tmp_path):
     q = pruefe_daten(df, "EURUSD", cfg)
     assert q.ok, q.fehler
     assert q.von == "2024-01-01 00:00:00"
+
+
+def test_cli_zeigt_die_jahresabdeckung(cfg, tmp_path, capsys):
+    anfang = synthetische_kerzen("X", kerzen=1200, seed=2, start="2023-01-01")
+    spaeter = synthetische_kerzen("X", kerzen=1200, seed=3, start="2025-01-01")
+    df = pd.concat([anfang, spaeter], ignore_index=True)
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(_als_mt5(df), encoding="utf-8")
+
+    assert _importiere_csv(cfg, Facts(cfg.db_pfad), _args(csv=[str(p)])) == 0
+
+    ausgabe = capsys.readouterr().out
+    assert "Abdeckung: 2023: 1200, 2025: 1200" in ausgabe
+    assert "Keine Kerzen in 2024" in ausgabe
 
 
 def test_zeitrahmen_aus_dateiname_wird_gespeichert_und_nicht_bewertet(cfg, tmp_path):

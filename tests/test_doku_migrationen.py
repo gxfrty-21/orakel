@@ -57,7 +57,9 @@ def _fuehre_aus(befehl: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     assert teile[0] == ".venv/bin/python", befehl
     umgebung = {k: v for k, v in os.environ.items() if k != "ORAKEL_DB_PFAD"}
     umgebung["PYTHONPATH"] = str(WURZEL)
-    return subprocess.run([sys.executable, *teile[1:]], cwd=cwd, env=umgebung,
+    # Die Befehlszeile stammt aus docs/MIGRATIONEN.md im Repo; der Interpreter ist
+    # der laufende, die Argumentliste fest, und shell=True wird nicht verwendet.
+    return subprocess.run([sys.executable, *teile[1:]], cwd=cwd, env=umgebung,  # noqa: S603 - Repo-Doku, kein shell=True
                           capture_output=True, text=True, timeout=300)
 
 

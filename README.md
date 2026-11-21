@@ -276,8 +276,11 @@ zu. Das gilt innerhalb einer Datei; wird die wiederholte Stunde über zwei
 Dateien verteilt, greift die Dublettenregel. Führt der Broker dauerhaft einen festen
 Versatz ohne Sommerzeit, verschiebt `--server-versatz-stunden 3` (oder
 `[daten] server_versatz_stunden` in `config.toml`) die Serverzeit um drei
-Stunden nach UTC; negative Werte sind erlaubt. Beide Angaben zusammen werden
-mit einer Meldung abgelehnt, weil sonst unklar wäre, welche gilt. Preise brauchen einen Dezimalpunkt; `1,035` wird
+Stunden nach UTC; negative Werte sind erlaubt. Als Kurzform akzeptiert der
+Import auch `--server-versatz +03:00` (negative Werte als
+`--server-versatz=-05:00`); die Angabe schliesst `--server-zeitzone` und
+`--server-versatz-stunden` aus. Zone und fester Versatz zusammen werden mit
+einer Meldung abgelehnt, weil sonst unklar wäre, welche gilt. Preise brauchen einen Dezimalpunkt; `1,035` wird
 abgelehnt statt still zu fehlen. Doppelte Zeitstempel gewinnen mit der letzten
 Zeile, die Reihe wird aufsteigend sortiert. Kodierung: UTF-8 (auch mit BOM)
 oder cp1252. Grosse Dateien (mehrere Jahre M1) werden tageweise blockweise
@@ -315,7 +318,8 @@ Geschrieben wird `daten/EURUSD_M15.csv` im selben Format wie `Save as`
 und aufsteigend sortiert.
 Zusammengeführt wird nur, was in Zeit und Werten gleich ist — die doppelte
 Stunde der Herbst-Rückstellung bleibt deshalb vollständig erhalten.
-Danach wie oben importieren, inklusive `--server-zeitzone`. Voraussetzung: Das
+Danach wie oben importieren, inklusive `--server-zeitzone` oder
+`--server-versatz`. Voraussetzung: Das
 Terminal läuft, ist angemeldet und das Symbol steht im Market Watch;
 Zugangsdaten braucht das Skript nicht, und es gibt keinen Weg zu einer Order.
 
@@ -328,7 +332,12 @@ Nach dem Import prüft der Befehl die **zusammengeführte** Reihe je Symbol und
 Zeitrahmen (einzelne Blöcke dürfen kürzer als `min_kerzen` sein): Mindestzahl
 Kerzen, doppelte oder unsortierte Zeitstempel, unmögliches Hoch/Tief, Preise
 ≤ 0, Lücken über dem Dreifachen des Median-Abstands und Sprünge über
-`max_sprung_pct`. Der Median-Abstand muss ausserdem zum angegebenen Zeitrahmen
+`max_sprung_pct`. Bei mehreren Jahren zeigt der Import die Kerzen je
+Kalenderjahr (`Abdeckung: 2023: 24960, 2024: 24960, …`) und warnt, wenn
+zwischen erstem und letztem Jahr ein ganzes Jahr ohne Kerzen bleibt — etwa wenn
+die Broker-Historie abgeschnitten ist. Diese Warnung blockiert den Lauf nicht,
+weil die vorhandene Reihe weiter verwendbar ist; die Warnung erscheint auch im
+Datenqualitätsblock des Berichts. Der Median-Abstand muss ausserdem zum angegebenen Zeitrahmen
 passen (M1/M5/M15/H1): Eine als M15 benannte H1-Datei wird mit Meldung
 abgelehnt, statt still als M15 zu gelten. Wochenenden, Feiertage und
 Handelspausen verschieben den Median nicht, gelten also nicht als Fehler. Fehler und Warnungen stehen im Terminal und im Ereignisprotokoll;
@@ -336,7 +345,7 @@ bei einem Fehler endet der Befehl mit Exit-Code 1, importiert bleibt die Reihe
 trotzdem.
 
 Noch nicht unterstützt: die automatische Erkennung der Broker-Zeitzone (sie
-muss als IANA-Zone angegeben werden), der automatische Transport der
+muss als IANA-Zone oder fester Versatz angegeben werden), der automatische Transport der
 Windows-Abfrage zum Server, Tick-Daten, Dezimalkommas und eine Bewertung anderer Zeitrahmen
 als M15 im Paper-Takt; der Richter kann über `[basis] richter_zeitrahmen`
 auch H1 lesen, wobei `bars_pro_jahr` umgerechnet wird.

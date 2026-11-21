@@ -40,6 +40,3 @@ select = ["BLE001", "S110", "S"]
 "scripts/soak_auto_abnahme.py" = ["BLE001", "S110"]
 "scripts/soak_monitor.py" = ["BLE001", "S110"]
 "scripts/soak_probe.py" = ["BLE001", "S110"]
-# Dieser Test führt bewusst die in docs/MIGRATIONEN.md dokumentierten Befehle
-# als echten Unterprozess aus; die Argumente stammen aus der Doku im Repo.
-"tests/test_doku_migrationen.py" = ["S101", "S603"]
