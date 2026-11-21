@@ -232,6 +232,21 @@ max_open_positions = 15      # harter Deckel
 Zusätzlich konservativ: 3 % Tagesverlust, 100 % Gesamtengagement (kein Hebel),
 20 % max. Positionsgrösse, 10 % Mindest-Bargeld.
 
+## Kostenmodell
+
+`[kosten] modell` wählt, wie Kosten gebucht werden; Backtest und Paper-Takt
+nutzen dieselbe Formel aus `orakel/kern/kosten.py`:
+
+- `stueck` (Standard): Kommission je Stück, mindestens `min_commission` — für
+  Aktien und andere Stück-Instrumente.
+- `spread`: halber quotierter Spread je Seite, also `menge × spread_pips ×
+  pip_groesse / 2` — für Devisen und CFDs. Eine Kommission fällt dabei nicht an.
+
+Beispiel EURUSD: 1 Pip = 0.0001, Spread 1.0 Pip. Bei 18'500 Einheiten kostet
+eine Seite 0.93 USD. Das Stück-Modell mit 0.005 je Einheit verlangte 92.50 USD
+je Seite, rund 46 Basispunkte — damit wäre jede Forex-Strategie nach Kosten
+unrentabel. Welches Modell gilt, muss zum gehandelten Instrument passen.
+
 ## Aufbau
 
 ```

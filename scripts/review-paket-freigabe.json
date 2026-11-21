@@ -957,6 +957,10 @@
     {
       "quelle": "tests/test_widerspruch_api_pruefung.py",
       "ziel": "dateien/tests/test_widerspruch_api_pruefung.py"
+    },
+    {
+      "quelle": "orakel/kern/kosten.py",
+      "ziel": "dateien/orakel/kern/kosten.py"
     }
   ],
   "dokumente": [

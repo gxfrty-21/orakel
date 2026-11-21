@@ -20,7 +20,8 @@ erzwungen:
 |---|---|---|
 | Kern | `orakel/kern/data.py` | Kurse laden, DataFrame aus SQLite |
 | Kern | `orakel/kern/strategies.py` | Signale, ATR, Strategien |
-| Kern | `orakel/kern/backtest.py` | Backtest ohne Look-Ahead, Kosten, Slippage |
+| Kern | `orakel/kern/backtest.py` | Backtest ohne Look-Ahead, Slippage |
+| Kern | `orakel/kern/kosten.py` | Kosten je Seite: Kommission pro Stück oder halber Spread |
 | Kern | `orakel/kern/judge.py` | Walk-Forward, Holdout, Robustheit |
 | Kern | `orakel/kern/risk.py` | Positionsgrösse, Risikostopp |
 | Kern | `orakel/kern/paper.py` | Paper-Takt, Paper-Sperre |

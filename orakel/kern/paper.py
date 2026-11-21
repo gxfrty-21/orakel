@@ -17,7 +17,8 @@ Ausführungsmodell (identisch zum Backtest):
 - Stops werden innerhalb der laufenden Kerze geprüft; eine Lücke unter den Stop
   füllt zur Eröffnung (realistisch schlechter).
 - Kauf füllt mit Aufschlag (`+slippage_bps`), Verkauf mit Abschlag
-  (`-slippage_bps`); beide Seiten tragen die Kommission.
+  (`-slippage_bps`); beide Seiten tragen die Kosten je Seite aus
+  `kosten.py` (Kommission pro Stück oder halber Spread).
 
 Datenqualität: Fehlende, veraltete oder unmögliche Kerzen ersetzen keinen Kurs.
 Sie werden protokolliert, die betroffene Position gilt als nicht belastbar
@@ -37,6 +38,7 @@ import pandas as pd
 from ..config import Config, RisikoGrenzen
 from .data import df_aus_db
 from .db import Facts, jetzt
+from .kosten import kosten_je_seite
 from .markt import korrelation_max
 from .risk import KontoZustand, Order, Risikomanager, positionsgroesse
 from .strategies import atr, strategien
@@ -101,11 +103,6 @@ def _pruefe_paper_konfiguration(cfg: Config) -> None:
         )
 
 
-def _kosten(menge: float, cfg: Config) -> float:
-    k = cfg["kosten"]
-    return max(float(k["min_commission"]), menge * float(k["commission_per_share"]))
-
-
 def _fill(preis: float, richtung: float, cfg: Config) -> float:
     """Ausführungspreis inklusive adverser Slippage.
 
@@ -146,8 +143,8 @@ def _verkauf(db: Facts, cfg: Config, p: Any, preis: float, status: str,
     ganz geschlossen.
     """
     menge = float(p["menge"])
-    prov = _kosten(menge, cfg)
-    netto = menge * (preis - float(p["einstieg"])) - prov - _kosten(menge, cfg)
+    prov = kosten_je_seite(menge, cfg)
+    netto = menge * (preis - float(p["einstieg"])) - prov - kosten_je_seite(menge, cfg)
     db.position_loeschen(p["symbol"])
     db.entscheid_speichern(p["symbol"], "verkaufen", menge, preis, p["strategie"],
                            status, True, [grund, f"Netto {netto:.2f}"])
@@ -441,7 +438,7 @@ def tick(cfg: Config, db: Facts, zeitpunkt: datetime | None = None) -> dict[str,
         if menge <= 0:
             continue
 
-        prov = _kosten(menge, cfg)
+        prov = kosten_je_seite(menge, cfg)
         if menge * kurs + prov > cash:
             continue
         cash -= menge * kurs + prov
