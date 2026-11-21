@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import uuid
 from collections import Counter
 from dataclasses import replace
@@ -594,6 +595,32 @@ def test_company_lauf_verarbeitet_alle_103_aufgaben(cfg):
     store = CompanyStore(db)
     assert all(store.erinnerungen(p.agent_id, scope="working") for p in PROFILES)
     assert db.zustand("company_letzter_lauf")["tasks_verarbeitet"] == 103
+
+
+def test_lauf_bucht_den_versuch_vor_dem_abschluss(cfg, monkeypatch, caplog):
+    """Ein einmaliger Schreibfehler beim Lauf-Protokoll darf keinen Task
+    abschliessen, ohne dass der Agent in ``agenten_laeufe`` auftaucht."""
+    db = _db(cfg)
+    runtime = CompanyRuntime(cfg, db, max_workers=1)
+    echt = db.agenten_lauf
+    offen = {"J3": 1}
+
+    def wackelig(agent, *args, **kwargs):
+        if agent.startswith("J3:") and offen["J3"]:
+            offen["J3"] -= 1
+            raise sqlite3.OperationalError("database is locked")
+        return echt(agent, *args, **kwargs)
+
+    monkeypatch.setattr(db, "agenten_lauf", wackelig)
+    with caplog.at_level("WARNING", logger="orakel.company.runtime"):
+        ergebnis = runtime.run(tag="2026-11-09")
+
+    assert offen["J3"] == 0  # der Fehler wurde tatsächlich ausgelöst
+    assert "kann nicht fehlschlagen" not in caplog.text
+    assert sum(ergebnis["states"].values()) == 103
+    assert ergebnis["states"].get("done", 0) >= 1
+    laeufe = {r["agent"] for r in db.agenten_laeufe(limit=300)}
+    assert "J3:Datenintegritäts-Prüfer" in laeufe
 
 
 def test_audit_kette_erkennt_manipulation(cfg):
