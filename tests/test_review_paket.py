@@ -447,11 +447,12 @@ def test_evidenz_lehnt_fehlgeschlagene_tests_ab(tmp_path, monkeypatch):
 
 # Diese Dateien gehören zum Review-Paket, liegen aber nicht unter einem der
 # Pflichtpräfixe. Die Liste ist bewusst starr: Kommt eine Datei hinzu, muss sie
-# hier und in scripts/review-paket-freigabe.json auftauchen.
+# hier und in scripts/review-paket-freigabe.json auftauchen. Reine Meta-Dateien
+# der Wurzel stehen stattdessen mit Begründung unter "ausnahmen".
 PFLICHTDATEIEN = {
-    ".dockerignore", ".env.example", ".gitignore", ".githooks/pre-commit", ".importlinter",
+    ".githooks/pre-commit", ".importlinter",
     "AGENTS.md", "DEPLOY.md", "Dockerfile", "RAILWAY.md", "README.md", "config.toml",
-    "docker-compose.yml", "docker-entrypoint.sh", "mypy.ini", "railway.json",
+    "docker-compose.yml", "docker-entrypoint.sh", "mypy.ini",
     "requirements-dev.in", "requirements-dev.txt", "requirements.in", "requirements.txt",
     "ruff.toml", "seed/README.md",
 }
@@ -470,16 +471,29 @@ def _paketordner(tmp_path: Path) -> None:
 def test_freigabe_deckt_module_tests_doku_und_skripte_ab():
     """Neue Dateien dürfen nicht still aus dem Paket fallen."""
     modul = _modul()
-    freigegeben = {e["quelle"] for e in modul.lade_freigabe()["quellen"]}
+    freigabe = modul.lade_freigabe()
+    freigegeben = {e["quelle"] for e in freigabe["quellen"]}
+    ausnahmen = {e["quelle"]: e["grund"] for e in freigabe.get("ausnahmen") or []}
     dateien = modul.git('ls-files').decode().split()
     pflicht = [p for p in dateien
                if p.startswith(("orakel/", "tests/", "docs/", "scripts/", "deploy/",
                                 ".github/workflows/"))
-               or p in PFLICHTDATEIEN]
+               or p in PFLICHTDATEIEN
+               # Wurzeldateien erfasst kein Präfix: Sie brauchen entweder einen
+               # Platz im Paket oder eine begründete Ausnahme.
+               or "/" not in p]
 
     assert pflicht, "git ls-files lieferte keine Dateien"
-    fehlend = sorted(set(pflicht) - freigegeben)
-    assert not fehlend, f"Nicht in der Freigabeliste: {fehlend}"
+    fehlend = sorted(set(pflicht) - freigegeben - set(ausnahmen))
+    assert not fehlend, f"Weder im Paket noch begründet ausgenommen: {fehlend}"
+
+    # Ausnahmen gelten nur für Wurzeldateien und nie für etwas, das ohnehin im
+    # Paket liegt; Code, Tests, Doku, Skripte und CI lassen sich nicht ausnehmen.
+    assert freigegeben.isdisjoint(ausnahmen), sorted(freigegeben & set(ausnahmen))
+    assert not [name for name in ausnahmen if "/" in name], sorted(ausnahmen)
+    for name, grund in ausnahmen.items():
+        assert name in dateien, f"Ausnahme {name} existiert nicht"
+        assert grund.strip(), f"Ausnahme {name} nennt keinen Grund"
 
 
 def test_hauptdokument_darf_keinen_fremden_commit_nennen(tmp_path):
@@ -515,6 +529,46 @@ def test_hauptdokument_nennt_nur_dateien_aus_dem_paket(tmp_path):
     dokument.write_text(f"Review-Commit: `{'a' * 40}`.\n\n## Nicht im Paket\n\n"
                         "- `orakel/kern/risk.py`\n", encoding="utf-8")
     modul.pruefe_dokumente(str(tmp_path), "a" * 40, _freigabe("README.md"))
+
+
+def test_freigabe_lehnt_ausnahme_ohne_grund_und_doppelrolle_ab(tmp_path, monkeypatch):
+    """Eine Ausnahme braucht einen Grund und darf nicht zugleich im Paket sein."""
+    modul = _modul()
+    pfad = tmp_path / "freigabe.json"
+    monkeypatch.setattr(modul, "FREIGABE", str(pfad))
+
+    def schreibe(ausnahmen):
+        pfad.write_text(json.dumps({
+            "schema": "review-paket-freigabe.v1",
+            "quellen": [{"quelle": "README.md", "ziel": "dateien/README.md"}],
+            "ausnahmen": ausnahmen}, ensure_ascii=False), encoding="utf-8")
+
+    schreibe([{"quelle": ".gitignore", "grund": "Repository-Hygiene"}])
+    assert modul.lade_freigabe()["ausnahmen"][0]["quelle"] == ".gitignore"
+
+    schreibe([{"quelle": ".gitignore", "grund": "  "}])
+    with pytest.raises(modul.Abweichung, match="keinen Grund"):
+        modul.lade_freigabe()
+
+    schreibe([{"quelle": "README.md", "grund": "doppelt"}])
+    with pytest.raises(modul.Abweichung, match="zugleich freigegeben"):
+        modul.lade_freigabe()
+
+    schreibe([{"quelle": "orakel/web.py", "grund": "Code"}])
+    with pytest.raises(modul.Abweichung, match="Wurzelverzeichnis"):
+        modul.lade_freigabe()
+
+
+def test_pruefbericht_nennt_ausnahmen_mit_grund(tmp_path):
+    """Der Bericht weist bewusst ausgenommene Wurzeldateien mit Grund aus."""
+    modul = _modul()
+    text = Path(modul.schreibe_pruefbericht(
+        str(tmp_path), "a" * 40, "main", [], None, None,
+        ausnahmen=[{"quelle": ".gitignore", "grund": "Repository-Hygiene"}],
+    )).read_text(encoding="utf-8")
+
+    assert "## Nicht im Paket" in text
+    assert "`.gitignore` – Repository-Hygiene" in text
 
 
 def test_pruefbericht_listet_fehlende_paketdateien(tmp_path):
