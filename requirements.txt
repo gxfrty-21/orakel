@@ -1,9 +1,30 @@
-# Orakel Trading-Engine — Laufzeit-Abhängigkeiten
-# Installation: python -m venv .venv && .venv/bin/pip install -r requirements.txt
-fastapi>=0.115
-uvicorn[standard]>=0.30
-jinja2>=3.1
-pandas>=2.2
-numpy>=1.26
-# Tests
-pytest>=8.0
+# Orakel Trading-Engine — Laufzeit-Abhängigkeiten (exakt gepinnt)
+# Quelle: requirements.in, aufgelöst in einer sauberen venv (Python 3.12).
+# Neu erzeugen: pip install -r requirements.in && pip freeze > requirements.txt
+# Aktualisieren bewusst und mit grünem CI, nicht beiläufig.
+annotated-doc==0.0.7
+annotated-types==0.8.0
+anyio==4.16.0
+click==8.5.1
+fastapi==0.165.0
+h11==0.16.0
+httptools==0.9.0
+idna==3.20
+Jinja2==3.1.6
+MarkupSafe==3.0.4
+numpy==2.5.5
+opentelemetry-api==1.45.2
+pandas==3.1.1
+pydantic==2.14.4
+pydantic_core==2.50.5
+python-dateutil==4.0.0
+python-dotenv==1.2.4
+PyYAML==6.0.4
+starlette==1.10.0
+typing-inspection==0.4.5
+typing_extensions==4.16.0
+tzdata==2026.6
+uvicorn==0.54.0
+uvloop==0.23.0
+watchfiles==1.3.0
+websockets==17.4

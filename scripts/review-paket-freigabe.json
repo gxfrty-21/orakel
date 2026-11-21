@@ -851,6 +851,14 @@
       "ziel": "dateien/tests/test_web.py"
     },
     {
+      "quelle": "requirements.in",
+      "ziel": "dateien/requirements.in"
+    },
+    {
+      "quelle": "requirements-dev.in",
+      "ziel": "dateien/requirements-dev.in"
+    },
+    {
       "quelle": "orakel/web/static/css/basis.css",
       "ziel": "dateien/web/static/css/basis.css"
     },
