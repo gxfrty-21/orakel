@@ -199,6 +199,10 @@
       "ziel": "dateien/scripts/backoff_fehlerfall.py"
     },
     {
+      "quelle": "scripts/mt5_abruf.py",
+      "ziel": "dateien/scripts/mt5_abruf.py"
+    },
+    {
       "quelle": "scripts/nexus_claim_baseline.py",
       "ziel": "dateien/scripts/nexus_claim_baseline.py"
     },
@@ -721,6 +725,10 @@
     {
       "quelle": "tests/test_migrationen.py",
       "ziel": "dateien/tests/test_migrationen.py"
+    },
+    {
+      "quelle": "tests/test_mt5_abruf.py",
+      "ziel": "dateien/tests/test_mt5_abruf.py"
     },
     {
       "quelle": "tests/test_nexus_abruf.py",

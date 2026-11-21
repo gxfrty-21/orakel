@@ -279,6 +279,31 @@ gespeichert, aber nicht bewertet. Der Ordner-Import über `[basis]
 datenquelle = "csv"` liest `daten/*.csv` und überspringt andere Zeitrahmen mit
 Ereignis im Protokoll, statt sie als M15 abzulegen.
 
+### Direkter Abruf aus dem Terminal (Windows)
+
+Statt von Hand zu exportieren, holt `scripts/mt5_abruf.py` die Historie direkt
+aus dem laufenden Terminal. Das Paket `MetaTrader5` gibt es nur für Windows
+(64-Bit-Python), es spricht per IPC mit dem Terminal und steht deshalb bewusst
+nicht in `requirements.txt`:
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install MetaTrader5
+.\.venv\Scripts\python.exe scripts\mt5_abruf.py --symbol EURUSD --zeitrahmen M15 --von 2020-01-01
+```
+
+Geschrieben wird `daten/EURUSD_M15.csv` im selben Format wie `Save as`
+(`<DATE> <TIME> <OPEN> …`), standardmässig monatsweise abgefragt (`--abschnitte
+jahr` fragt gröber), überlappend zusammengeführt und aufsteigend sortiert.
+Danach wie oben importieren, inklusive `--server-zeitzone`. Voraussetzung: Das
+Terminal läuft, ist angemeldet und das Symbol steht im Market Watch;
+Zugangsdaten braucht das Skript nicht, und es gibt keinen Weg zu einer Order.
+
+Grenzen: Es kommen nur Kerzen, die das Terminal geladen hat — „Max. bars in
+chart" und die Broker-Historie begrenzen die Tiefe, fehlende Bereiche werden
+übersprungen statt erfunden. Broker-Symbole können abweichen (`EURUSD.a`), und
+der Transport zum Server bleibt manuell: Datei kopieren und dort importieren.
+
 Nach dem Import prüft der Befehl die **zusammengeführte** Reihe je Symbol und
 Zeitrahmen (einzelne Blöcke dürfen kürzer als `min_kerzen` sein): Mindestzahl
 Kerzen, doppelte oder unsortierte Zeitstempel, unmögliches Hoch/Tief, Preise
@@ -288,8 +313,8 @@ bei einem Fehler endet der Befehl mit Exit-Code 1, importiert bleibt die Reihe
 trotzdem.
 
 Noch nicht unterstützt: die automatische Erkennung der Broker-Zeitzone (sie
-muss als IANA-Zone angegeben werden), der direkte Abruf aus dem laufenden
-MT5-Terminal, Tick-Daten, Dezimalkommas und eine Bewertung anderer Zeitrahmen
+muss als IANA-Zone angegeben werden), der automatische Transport der
+Windows-Abfrage zum Server, Tick-Daten, Dezimalkommas und eine Bewertung anderer Zeitrahmen
 als M15 (dafür müssten `bars_pro_jahr` und die Frischegrenzen je Rahmen
 mitgeführt werden).
 
@@ -341,8 +366,9 @@ tests/           Risiko, Backtest, Daten, Bericht
 
 ## Noch offen (nächste Phasen)
 
-1. **Echte Daten**: CSV-Import aus MT5 steht (siehe [Kursdaten aus MT5](#kursdaten-aus-mt5));
-der direkte Abruf aus dem Terminal auf deinem Windows-Rechner fehlt noch.
+1. **Echte Daten**: CSV-Import und direkter Abruf aus dem Terminal auf deinem
+Windows-Rechner stehen (siehe [Kursdaten aus MT5](#kursdaten-aus-mt5)); der
+automatische Transport zum Server fehlt noch.
 2. **Spider Intelligence**: Netz-Recherche mit Quellenprüfung, robots.txt und Limits.
 3. **3D-Ausbau**: begehbare Decks und First-Person-Navigation sind zurückgestellt;
    die aktuelle 2D-Welt ist umgesetzt und an echte Daten gekoppelt.
