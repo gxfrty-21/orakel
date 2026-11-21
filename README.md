@@ -522,10 +522,18 @@ API-Vertragsprüfung liegen gemeinsam in `scripts/widerspruch-api-pruefung.mjs`;
 `tests/test_widerspruch_api_pruefung.py` prüft denselben Vertrag ohne Browser und
 schlägt bei fehlender, falscher oder doppelter Widerspruchszeile an. Mit
 `--url http://127.0.0.1:3300` holt das Skript die Antwort selbst von der
-laufenden API; `tests/test_widerspruch_api_live.py` startet dafür eine
+laufenden API; `tests/test_api_vertrag_live.py` startet dafür eine
 geseedete Kopie und prüft einmal den angelegten Widerspruch und einmal dessen
 Fehlen in einer frischen Seed-Datenbank — Node genügt, Playwright ist nicht
 nötig.
+
+Derselbe Modus deckt den Bericht ab: `scripts/report-api-pruefung.mjs --url
+http://127.0.0.1:3300` prüft, dass `/api/report` Cockpit (Konto,
+Gewinnfenster heute/7 T/1 M), Papier- und Spider-Abschnitt in der Form liefert,
+auf die die Ansichten zugreifen. Beträge und Equity dürfen `null` sein, die
+Struktur nicht; ohne erreichbare API schlägt der Prüfer anstatt still zu
+bestehen. `tests/test_api_vertrag_live.py` führt ihn gegen eine frische
+Seed-Kopie aus.
 
 ```bash
 cp seed/orakel-seed.db /tmp/orakel-widerspruch.db

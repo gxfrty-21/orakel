@@ -991,8 +991,12 @@
       "ziel": "dateien/tests/test_kosten.py"
     },
     {
-      "quelle": "tests/test_widerspruch_api_live.py",
-      "ziel": "dateien/tests/test_widerspruch_api_live.py"
+      "quelle": "scripts/report-api-pruefung.mjs",
+      "ziel": "dateien/scripts/report-api-pruefung.mjs"
+    },
+    {
+      "quelle": "tests/test_api_vertrag_live.py",
+      "ziel": "dateien/tests/test_api_vertrag_live.py"
     }
   ],
   "dokumente": [

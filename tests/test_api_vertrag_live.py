@@ -1,9 +1,10 @@
-"""API-Vertrag des Widerspruchs gegen eine laufende, geseedete API.
+"""API-Verträge gegen eine laufende, geseedete API.
 
-Die übrigen Fälle prüfen gespeicherte Status-Proben. Hier entscheidet das
-Skript über echte ``/api/nexus/status``-Antworten: einmal über eine frische
-Seed-Datenbank mit angelegtem Widerspruch, einmal über eine ohne. Browser und
-Playwright sind dafür nicht nötig.
+Die übrigen Fälle prüfen gespeicherte Status-Proben. Hier entscheiden die
+Skripte über echte Antworten: der Widerspruchsvertrag an
+``/api/nexus/status`` (einmal mit angelegtem Widerspruch, einmal ohne) und der
+Berichtsvertrag an ``/api/report``, aus dem Cockpit, Papier- und Spider-Ansicht
+ihre Kennzahlen ziehen. Browser und Playwright sind dafür nicht nötig.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ import pytest
 
 WURZEL = Path(__file__).resolve().parents[1]
 MODUL = WURZEL / "scripts" / "widerspruch-api-pruefung.mjs"
+REPORT_MODUL = WURZEL / "scripts" / "report-api-pruefung.mjs"
 SEED = WURZEL / "seed" / "orakel-seed.db"
 SEED_SKRIPT = WURZEL / "scripts" / "seed_widerspruch.py"
 
@@ -96,9 +98,9 @@ def _api(tmp_path: Path, *, seed: bool) -> Iterator[str]:
         log.close()
 
 
-def _pruefe(url: str) -> subprocess.CompletedProcess[str]:
+def _pruefe(url: str, modul: Path = MODUL) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603 - fester Programmaufruf ohne Shell
-        [_node(), str(MODUL), "--url", url],
+        [_node(), str(modul), "--url", url],
         capture_output=True, text=True, cwd=WURZEL, check=False,
     )
 
@@ -118,3 +120,20 @@ def test_live_api_lehnt_antwort_ohne_widerspruch_ab(tmp_path):
 
     assert lauf.returncode == 1, lauf.stdout
     assert "API enthält den erwarteten Widerspruch nicht" in lauf.stderr
+
+
+def test_live_api_liefert_bericht_mit_cockpit_vertrag(tmp_path):
+    """Der Bericht trägt Cockpit, Papier und Spider auch ohne Widerspruchs-Seed."""
+    with _api(tmp_path, seed=False) as url:
+        lauf = _pruefe(url, REPORT_MODUL)
+
+    assert lauf.returncode == 0, lauf.stderr
+    assert "Report-API OK" in lauf.stdout
+
+
+def test_bericht_pruefer_scheitert_ohne_erreichbare_api():
+    """Ein stiller Erfolg ist ohne Server ausgeschlossen."""
+    lauf = _pruefe("http://127.0.0.1:1", REPORT_MODUL)
+
+    assert lauf.returncode == 1, lauf.stdout
+    assert "Bericht-Abruf" in lauf.stderr
