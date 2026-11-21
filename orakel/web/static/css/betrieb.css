@@ -1,0 +1,27 @@
+/* Betrieb: Takt, Backoff, Grenzen.
+   Aus style.css ausgelagert; Kaskadenreihenfolge steht in style.css. */
+.betrieb-view{max-width:1280px}
+
+.betrieb-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+
+.betrieb-kicker{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--accent);margin-bottom:5px}
+
+.betrieb-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:start}
+
+.betrieb-res{gap:0;padding:0}
+
+.betrieb-res .tbl td:last-child{width:34%}
+
+.betrieb-res .bar{display:block;min-width:80px}
+
+.betrieb-view .tbl small{display:block;color:var(--dim);font-family:var(--mono);font-size:10px;margin-top:2px}
+
+.betrieb-note{display:flex;align-items:flex-start;gap:8px;padding:9px 0;border-bottom:1px solid var(--line);font-size:12px;line-height:1.45;color:var(--muted)}
+
+.betrieb-note:last-child{border-bottom:0}
+
+.betrieb-note .pill{flex:0 0 auto;margin-top:1px}
+
+.betrieb-note span:last-child{min-width:0;overflow-wrap:anywhere}
+
+.betrieb-fehler-mobil,.betrieb-mobil{display:none}

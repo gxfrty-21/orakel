@@ -239,10 +239,6 @@
       "ziel": "dateien/tests/fixtures/nexus_pp_probe_korpus.json"
     },
     {
-      "quelle": "orakel/web/static/app.js",
-      "ziel": "dateien/web/static/app.js"
-    },
-    {
       "quelle": "orakel/web/static/globe2d.js",
       "ziel": "dateien/web/static/globe2d.js"
     },
@@ -257,10 +253,6 @@
     {
       "quelle": "orakel/web/static/style.css",
       "ziel": "dateien/web/static/style.css"
-    },
-    {
-      "quelle": "orakel/web/static/vaultgraph.js",
-      "ziel": "dateien/web/static/vaultgraph.js"
     },
     {
       "quelle": "orakel/strategiebericht.py",
@@ -865,6 +857,114 @@
     {
       "quelle": "requirements-dev.in",
       "ziel": "dateien/requirements-dev.in"
+    },
+    {
+      "quelle": "orakel/web/static/css/basis.css",
+      "ziel": "dateien/web/static/css/basis.css"
+    },
+    {
+      "quelle": "orakel/web/static/css/betrieb.css",
+      "ziel": "dateien/web/static/css/betrieb.css"
+    },
+    {
+      "quelle": "orakel/web/static/css/globe.css",
+      "ziel": "dateien/web/static/css/globe.css"
+    },
+    {
+      "quelle": "orakel/web/static/css/lab.css",
+      "ziel": "dateien/web/static/css/lab.css"
+    },
+    {
+      "quelle": "orakel/web/static/css/mobil.css",
+      "ziel": "dateien/web/static/css/mobil.css"
+    },
+    {
+      "quelle": "orakel/web/static/css/raumschiff.css",
+      "ziel": "dateien/web/static/css/raumschiff.css"
+    },
+    {
+      "quelle": "orakel/web/static/css/sitzung.css",
+      "ziel": "dateien/web/static/css/sitzung.css"
+    },
+    {
+      "quelle": "orakel/web/static/css/spider.css",
+      "ziel": "dateien/web/static/css/spider.css"
+    },
+    {
+      "quelle": "orakel/web/static/css/wissen.css",
+      "ziel": "dateien/web/static/css/wissen.css"
+    },
+    {
+      "quelle": "orakel/web/static/js/ansichten/agenten.js",
+      "ziel": "dateien/web/static/js/ansichten/agenten.js"
+    },
+    {
+      "quelle": "orakel/web/static/js/ansichten/betrieb.js",
+      "ziel": "dateien/web/static/js/ansichten/betrieb.js"
+    },
+    {
+      "quelle": "orakel/web/static/js/ansichten/globe.js",
+      "ziel": "dateien/web/static/js/ansichten/globe.js"
+    },
+    {
+      "quelle": "orakel/web/static/js/ansichten/konferenz.js",
+      "ziel": "dateien/web/static/js/ansichten/konferenz.js"
+    },
+    {
+      "quelle": "orakel/web/static/js/ansichten/lab.js",
+      "ziel": "dateien/web/static/js/ansichten/lab.js"
+    },
+    {
+      "quelle": "orakel/web/static/js/ansichten/raumschiff.js",
+      "ziel": "dateien/web/static/js/ansichten/raumschiff.js"
+    },
+    {
+      "quelle": "orakel/web/static/js/ansichten/research.js",
+      "ziel": "dateien/web/static/js/ansichten/research.js"
+    },
+    {
+      "quelle": "orakel/web/static/js/ansichten/risiko.js",
+      "ziel": "dateien/web/static/js/ansichten/risiko.js"
+    },
+    {
+      "quelle": "orakel/web/static/js/ansichten/sitzung.js",
+      "ziel": "dateien/web/static/js/ansichten/sitzung.js"
+    },
+    {
+      "quelle": "orakel/web/static/js/ansichten/spider.js",
+      "ziel": "dateien/web/static/js/ansichten/spider.js"
+    },
+    {
+      "quelle": "orakel/web/static/js/ansichten/strategien.js",
+      "ziel": "dateien/web/static/js/ansichten/strategien.js"
+    },
+    {
+      "quelle": "orakel/web/static/js/ansichten/uebersicht.js",
+      "ziel": "dateien/web/static/js/ansichten/uebersicht.js"
+    },
+    {
+      "quelle": "orakel/web/static/js/ansichten/wissen.js",
+      "ziel": "dateien/web/static/js/ansichten/wissen.js"
+    },
+    {
+      "quelle": "orakel/web/static/js/kern/daten.js",
+      "ziel": "dateien/web/static/js/kern/daten.js"
+    },
+    {
+      "quelle": "orakel/web/static/js/kern/helfer.js",
+      "ziel": "dateien/web/static/js/kern/helfer.js"
+    },
+    {
+      "quelle": "orakel/web/static/js/kern/navigation.js",
+      "ziel": "dateien/web/static/js/kern/navigation.js"
+    },
+    {
+      "quelle": "orakel/web/static/js/main.js",
+      "ziel": "dateien/web/static/js/main.js"
+    },
+    {
+      "quelle": "orakel/web/static/js/vaultgraph.js",
+      "ziel": "dateien/web/static/js/vaultgraph.js"
     }
   ],
   "dokumente": [
