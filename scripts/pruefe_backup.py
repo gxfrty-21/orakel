@@ -15,6 +15,7 @@ Standard-Aufbewahrung: 7 Tagesstände und 4 Wochenstände.
 from __future__ import annotations
 
 import argparse
+import re
 import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
@@ -37,14 +38,23 @@ def _tabellen(c: sqlite3.Connection) -> list[str]:
         "AND name NOT LIKE 'sqlite_%' ORDER BY name")]
 
 
+# Tabellennamen lassen sich in SQLite nicht als Parameter binden. Deshalb wird
+# jede Kennung vor dem Einsetzen gegen ein reines Bezeichner-Muster geprüft:
+# Buchstaben, Ziffern und Unterstriche, kein Anführungszeichen, kein Semikolon.
+KENNUNG = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
+
+
+def _zaehle(c: sqlite3.Connection, name: str) -> int:
+    if not KENNUNG.match(name):
+        raise ValueError(f"unerwarteter Tabellenname: {name!r}")
+    return int(c.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0])  # noqa: S608 - Kennung oben geprüft, kein Nutzertext
+
+
 def zeilenzahlen(pfad: Path) -> dict[str, int]:
     """Zeilenzahl je Tabelle; fehlende Tabellen fehlen auch im Ergebnis."""
     c = _verbinde(pfad)
     try:
-        # Tabellennamen lassen sich nicht als Parameter binden; sie stammen aus
-        # ``sqlite_master`` derselben Datei und werden ausschliesslich gelesen.
-        return {name: int(c.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0])  # noqa: S608
-                for name in _tabellen(c)}
+        return {name: _zaehle(c, name) for name in _tabellen(c)}
     finally:
         c.close()
 

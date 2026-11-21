@@ -4,6 +4,7 @@ import base64
 import hashlib
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -161,7 +162,8 @@ def test_serve_ohne_zugangsdaten_nur_auf_loopback(monkeypatch):
     for host in ("127.0.0.1", "localhost", "::1"):
         web.create_app(host=host)  # darf nicht werfen
 
-    for host in ("0.0.0.0", "192.168.0.10", "::"):
+    # Die Adressen werden hier nur übergeben; gebunden wird nichts (S104).
+    for host in ("0.0.0.0", "192.168.0.10", "::"):  # noqa: S104 - Testdaten, kein Bind
         with pytest.raises(RuntimeError):
             web.create_app(host=host)
 
@@ -171,14 +173,16 @@ def test_serve_ohne_zugangsdaten_nur_mit_ausnahme_extern(monkeypatch):
     monkeypatch.delenv("ORAKEL_AUTH_PASS", raising=False)
     monkeypatch.setenv("ORAKEL_ALLOW_NO_AUTH", "1")
 
-    web.create_app(host="0.0.0.0")  # bewusste Ausnahme
+    # Testabsicht: ohne Zugangsdaten erlaubt nur die gesetzte Ausnahme extern.
+    web.create_app(host="0.0.0.0")  # noqa: S104 - geprüft wird die Freigabe, kein Bind
 
 
 def test_serve_mit_zugangsdaten_auf_externer_adresse(monkeypatch):
     monkeypatch.setenv("ORAKEL_AUTH_USER", "orakel")
     monkeypatch.setenv("ORAKEL_AUTH_PASS", "geheim")
 
-    web.create_app(host="0.0.0.0")  # Login vorhanden: erlaubt
+    # Testabsicht: mit Zugangsdaten ist die externe Adresse erlaubt.
+    web.create_app(host="0.0.0.0")  # noqa: S104 - geprüft wird die Freigabe, kein Bind
 
 
 def test_alle_post_routen_verlangen_anmeldung(cfg, monkeypatch):
@@ -248,9 +252,11 @@ def test_container_entrypoint_bricht_ohne_zugangsdaten_ab():
         }
     }
 
-    lauf = subprocess.run(
-        ["sh", str(skript)], env=umgebung, capture_output=True, text=True,
-    )
+    # Voller Pfad zur Shell, damit kein Eintrag aus PATH aufgelöst wird (S607).
+    shell = shutil.which("sh")
+    assert shell is not None
+    lauf = subprocess.run([shell, str(skript)], env=umgebung,  # noqa: S603 - fester Programmaufruf mit Argumentliste, ohne Shell
+                          capture_output=True, text=True)
 
     assert lauf.returncode == 1
     assert "ORAKEL_AUTH_USER" in lauf.stderr
