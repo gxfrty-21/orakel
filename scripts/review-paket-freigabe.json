@@ -949,6 +949,14 @@
     {
       "quelle": "orakel/web/static/js/vaultgraph.js",
       "ziel": "dateien/web/static/js/vaultgraph.js"
+    },
+    {
+      "quelle": "scripts/widerspruch-api-pruefung.mjs",
+      "ziel": "dateien/scripts/widerspruch-api-pruefung.mjs"
+    },
+    {
+      "quelle": "tests/test_widerspruch_api_pruefung.py",
+      "ziel": "dateien/tests/test_widerspruch_api_pruefung.py"
     }
   ],
   "dokumente": [
