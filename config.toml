@@ -32,15 +32,18 @@ atr_stop_multiple = 2.0
 risiko_stopp_freigabe_takte = 2
 
 [kosten]
-# Kostenmodell für Backtest und Paper-Takt (gleiche Formel, orakel/kern/kosten.py):
-#   "stueck" = Kommission je Stück, mindestens min_commission (Aktien)
-#   "spread" = halber quotierter Spread je Seite in Pips (Devisen/CFDs)
+# Kostenmodell für Backtest und Paper-Takt (gleiche Formel, orakel/kern/kosten.py).
+# Bekannte Instrumente bringen ihr Profil mit: Devisen 1 Pip = 0.0001,
+# JPY-Paare 0.01, Indizes 1.0 Punkt; dort gilt der halbe quotierte Spread.
+# Die Werte hier sind der Rückfall für unbekannte Symbole (z. B. Aktien):
+#   "stueck" = Kommission je Stück, mindestens min_commission
+#   "spread" = halber quotierter Spread je Seite in Pips
 modell = "stueck"
 commission_per_share = 0.005
 min_commission = 1.0
 slippage_bps = 2.0
-# Nur für modell = "spread": quotierter Spread und Grösse eines Pips.
-# EURUSD: 1 Pip = 0.0001, typischer Spread 1.0 Pip → 0.5 Pip je Seite.
+# Nur für unbekannte Symbole mit modell = "spread": Spread und Pip-Grösse.
+# EURUSD und USDJPY brauchen diese Werte nicht — sie kommen aus dem Profil.
 spread_pips = 1.0
 pip_groesse = 0.0001
 

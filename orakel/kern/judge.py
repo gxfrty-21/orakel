@@ -82,6 +82,7 @@ class Urteil:
 def _zufallstest(
     df: pd.DataFrame, strategie: Strategie, parameter: dict[str, Any], cfg: Config,
     grenzen: RisikoGrenzen, von: int, bis: int, laeufe: int, seed: int = 11,
+    symbol: str = "",
 ) -> float | None:
     """Zerstört die zeitliche Struktur (permutierte Renditen) und misst den Profit Factor.
 
@@ -96,7 +97,8 @@ def _zufallstest(
     if np.any(close <= 0):
         return None
     logret = np.diff(np.log(close), prepend=np.log(close[0]))
-    echt = backtest(df, strategie.signale(df, parameter), cfg, grenzen, start=von, ende=bis)
+    echt = backtest(df, strategie.signale(df, parameter), cfg, grenzen, start=von, ende=bis,
+                    symbol=symbol)
     pf_echt = echt.kennzahlen.get("profit_factor") or 0.0
     besser = 0
     for _ in range(laeufe):
@@ -106,7 +108,8 @@ def _zufallstest(
         df2 = df.copy()
         for spalte in ("open", "high", "low", "close"):
             df2[spalte] = df[spalte].to_numpy() * faktor
-        erg = backtest(df2, strategie.signale(df2, parameter), cfg, grenzen, start=von, ende=bis)
+        erg = backtest(df2, strategie.signale(df2, parameter), cfg, grenzen, start=von, ende=bis,
+                       symbol=symbol)
         if (erg.kennzahlen.get("profit_factor") or 0.0) >= pf_echt:
             besser += 1
     return round(besser / laeufe, 4)
@@ -128,7 +131,7 @@ def _monte_carlo(trades: list[dict[str, Any]], laeufe: int, seed: int = 5) -> fl
 
 def _robustheit(
     df: pd.DataFrame, strategie: Strategie, parameter: dict[str, Any], cfg: Config,
-    grenzen: RisikoGrenzen,
+    grenzen: RisikoGrenzen, symbol: str = "",
 ) -> float | None:
     """Anteil der Nachbar-Parameter, die im Entwicklungsteil profitabel sind."""
     if not parameter or not strategie.grid:
@@ -138,7 +141,7 @@ def _robustheit(
         return None
     profitabel = 0
     for kandidat in liste:
-        erg = backtest(df, strategie.signale(df, kandidat), cfg, grenzen)
+        erg = backtest(df, strategie.signale(df, kandidat), cfg, grenzen, symbol=symbol)
         pf = erg.kennzahlen.get("profit_factor")
         if pf is not None and float(pf) > 1.0 and float(erg.kennzahlen.get("netto", 0.0)) > 0:
             profitabel += 1
@@ -174,7 +177,7 @@ def aufteilung(n: int, cfg: Config) -> tuple[int, int, int, list[int]] | None:
 
 def _train_parameter(
     df: pd.DataFrame, strategie: Strategie, cfg: Config, grenzen: RisikoGrenzen,
-    train_start: int, train_end: int,
+    train_start: int, train_end: int, symbol: str = "",
 ) -> tuple[dict[str, Any], dict[str, Any]] | None:
     """Wählt den Parameter ausschliesslich anhand des Trainingsfensters."""
     v = cfg["validierung"]
@@ -187,7 +190,7 @@ def _train_parameter(
     for parameter in strategie.grid:
         erg = backtest(
             prefix, strategie.signale(prefix, parameter), cfg, grenzen,
-            start=train_start, ende=train_end,
+            start=train_start, ende=train_end, symbol=symbol,
         )
         k = erg.kennzahlen
         if int(k.get("trades", 0)) < min_trades:
@@ -206,7 +209,7 @@ def _train_parameter(
 
 def _wfo_fenster(
     df: pd.DataFrame, strategie: Strategie, cfg: Config, grenzen: RisikoGrenzen,
-    grenzen_idx: list[int], train_bars: int,
+    grenzen_idx: list[int], train_bars: int, symbol: str = "",
 ) -> tuple[list[dict[str, Any]], list[BacktestErgebnis | None]]:
     details: list[dict[str, Any]] = []
     ergebnisse: list[BacktestErgebnis | None] = []
@@ -214,7 +217,8 @@ def _wfo_fenster(
     for nr, (test_start, test_end) in enumerate(zip(grenzen_idx, grenzen_idx[1:]), start=1):
         train_end = int(test_start)
         train_start = max(0, train_end - train_bars)
-        gewaehlt = _train_parameter(df, strategie, cfg, grenzen, train_start, train_end)
+        gewaehlt = _train_parameter(df, strategie, cfg, grenzen, train_start, train_end,
+                                    symbol=symbol)
         if gewaehlt is None:
             details.append({
                 "nr": nr,
@@ -235,7 +239,7 @@ def _wfo_fenster(
         prefix = df.iloc[:test_end].reset_index(drop=True)
         erg = backtest(
             prefix, strategie.signale(prefix, parameter), cfg, grenzen,
-            start=int(test_start), ende=int(test_end),
+            start=int(test_start), ende=int(test_end), symbol=symbol,
         )
         pf = erg.kennzahlen.get("profit_factor") or 0.0
         netto = float(erg.kennzahlen.get("netto", 0.0))
@@ -333,7 +337,8 @@ def _pruefe_entwicklung(
 
     # Diese Prüfungen sehen ausschliesslich den Entwicklungsteil, nie den Holdout.
     u.robustheit_anteil = _robustheit(
-        df.iloc[:dev_n].reset_index(drop=True), strategie, u.parameter, cfg, grenzen
+        df.iloc[:dev_n].reset_index(drop=True), strategie, u.parameter, cfg, grenzen,
+        symbol=u.symbol,
     )
     if u.robustheit_anteil is not None and u.robustheit_anteil < float(v["min_robustheit"]):
         u.gruende.append(
@@ -350,7 +355,7 @@ def _pruefe_entwicklung(
 
     u.zufall_p_wert = _zufallstest(
         df.iloc[:dev_n].reset_index(drop=True), strategie, u.parameter, cfg, grenzen,
-        first_test_start, dev_n, int(v["zufallslaeufe"]),
+        first_test_start, dev_n, int(v["zufallslaeufe"]), symbol=u.symbol,
     )
     if u.zufall_p_wert is not None and u.zufall_p_wert > float(v["max_zufall_p"]):
         u.gruende.append(
@@ -389,14 +394,15 @@ def beurteile_walk_forward(
     u.holdout_ab = str(df["ts"].iloc[dev_n])[:19]
 
     final_start = max(0, dev_n - train_bars)
-    final = _train_parameter(df, strategie, cfg, grenzen, final_start, dev_n)
+    final = _train_parameter(df, strategie, cfg, grenzen, final_start, dev_n, symbol=symbol)
     if final is None:
         u.gruende.append("Im finalen Trainingsfenster erfüllte kein Parameter die Mindestzahl an Trades")
         return u
     u.parameter, u.in_sample = final
     u.schluessel = strategie.schluessel(u.parameter)
 
-    details, ergebnisse = _wfo_fenster(df, strategie, cfg, grenzen, grenzen_idx, train_bars)
+    details, ergebnisse = _wfo_fenster(df, strategie, cfg, grenzen, grenzen_idx, train_bars,
+                                       symbol=symbol)
     u.walk_forward_folds = details
     erfolgreich = sum(1 for d in details if d.get("profitable"))
     u.walk_forward_bestanden = round(erfolgreich / len(details), 2) if details else 0.0
@@ -414,7 +420,8 @@ def beurteile_walk_forward(
 
     prefix = df.iloc[:dev_n].reset_index(drop=True)
     gesamt = backtest(
-        prefix, strategie.signale(prefix, u.parameter), cfg, grenzen, start=0, ende=dev_n
+        prefix, strategie.signale(prefix, u.parameter), cfg, grenzen, start=0, ende=dev_n,
+        symbol=symbol,
     )
     u.gesamt = gesamt.kennzahlen
 
@@ -446,7 +453,7 @@ def pruefe_holdout(
     u.holdout_ab = str(df["ts"].iloc[dev_n])[:19]
     erg = backtest(
         df, strategie.signale(df, u.parameter), cfg, grenzen,
-        start=dev_n, ende=len(df),
+        start=dev_n, ende=len(df), symbol=u.symbol,
     )
     oos = erg.kennzahlen
     min_trades = int(v.get("min_holdout_trades", 10))

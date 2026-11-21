@@ -350,8 +350,11 @@ Zusätzlich konservativ: 3 % Tagesverlust, 100 % Gesamtengagement (kein Hebel),
 
 ## Kostenmodell
 
-`[kosten] modell` wählt, wie Kosten gebucht werden; Backtest und Paper-Takt
-nutzen dieselbe Formel aus `orakel/kern/kosten.py`:
+Das Instrument wählt Modell und Pip-Grösse: `orakel/kern/kosten.py` leitet die
+Klasse aus dem Symbol ab (Devisenpaare sechs Buchstaben, JPY-Paare enden auf
+`JPY`, Indizes wie `US500`/`US30`/`NAS100`/`GER40`/`UK100`/`JP225`). EURUSD
+rechnet mit 0.0001 je Pip, USDJPY mit 0.01, Indizes mit 1.0 Punkt und 0.5
+Punkten Spread. Backtest und Paper-Takt nutzen dieselbe Formel:
 
 - `stueck` (Standard): Kommission je Stück, mindestens `min_commission` — für
   Aktien und andere Stück-Instrumente.
@@ -361,7 +364,9 @@ nutzen dieselbe Formel aus `orakel/kern/kosten.py`:
 Beispiel EURUSD: 1 Pip = 0.0001, Spread 1.0 Pip. Bei 18'500 Einheiten kostet
 eine Seite 0.93 USD. Das Stück-Modell mit 0.005 je Einheit verlangte 92.50 USD
 je Seite, rund 46 Basispunkte — damit wäre jede Forex-Strategie nach Kosten
-unrentabel. Welches Modell gilt, muss zum gehandelten Instrument passen.
+unrentabel. `[kosten]` (inklusive `modell`) gilt nur noch als Rückfall für
+unbekannte Symbole wie Aktien; für Devisen und Indizes muss in `config.toml`
+nichts je Symbol eingestellt werden.
 
 ## Aufbau
 

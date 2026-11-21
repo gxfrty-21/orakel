@@ -12,7 +12,7 @@ import pytest
 
 from orakel.config import Config, RisikoGrenzen, validiere_config
 from orakel.kern.backtest import backtest
-from orakel.kern.kosten import kosten_je_seite, kostenmodell
+from orakel.kern.kosten import instrument, kosten_je_seite, kostenmodell
 
 WURZEL = Path(__file__).resolve().parents[1]
 
@@ -38,6 +38,46 @@ def _reihe(n: int = 60, kurs: float = 1.1) -> pd.DataFrame:
 
 def test_standardmodell_ist_stueck(tmp_path):
     assert kostenmodell(_cfg(tmp_path)) == "stueck"
+
+
+def test_instrumentenklasse_wird_aus_dem_symbol_abgeleitet():
+    assert instrument("EURUSD").pip_groesse == pytest.approx(0.0001)
+    assert instrument("usdjpy").pip_groesse == pytest.approx(0.01)
+    assert instrument("EURUSD").klasse == "fx"
+    assert instrument("USDJPY").klasse == "fx_jpy"
+    # Broker-Zusätze hinter einem Punkt ändern die Klasse nicht.
+    assert instrument("EURUSD.a").klasse == "fx"
+    assert instrument("US500").klasse == "index"
+    # Unbekannte Symbole (Aktien) haben kein Profil und nutzen [kosten].
+    assert instrument("AAPL") is None
+    assert instrument(None) is None
+
+
+def test_kosten_je_symbol_nutzen_das_instrumentprofil(tmp_path):
+    # config.toml bleibt bewusst auf dem Stück-Modell; das Symbol entscheidet.
+    cfg = _cfg(tmp_path, modell="stueck")
+
+    # EURUSD: 18'500 × 1 Pip × 0.0001 / 2
+    assert kosten_je_seite(18_500, cfg, "EURUSD") == pytest.approx(0.925)
+    # USDJPY: gleiche Menge, aber 1 Pip = 0.01
+    assert kosten_je_seite(18_500, cfg, "USDJPY") == pytest.approx(92.5)
+    # US500: 0.5 Punkte Spread, 1 Punkt je Pip → 10 × 0.5 × 1.0 / 2
+    assert kosten_je_seite(10, cfg, "US500") == pytest.approx(2.5)
+    # Unbekanntes Symbol: Stück-Modell mit Mindestkommission wie bisher.
+    assert kosten_je_seite(10, cfg, "AAPL") == pytest.approx(1.0)
+
+
+def test_backtest_rechnet_mit_dem_pip_des_symbols(tmp_path):
+    cfg = _cfg(tmp_path, modell="stueck", slippage_bps=0.0)
+    signale = np.zeros(60)
+    signale[30:45] = 1.0
+
+    for symbol, kurs in (("EURUSD", 1.1), ("USDJPY", 150.0)):
+        erg = backtest(_reihe(kurs=kurs), signale, cfg, RisikoGrenzen.aus_config(cfg),
+                       symbol=symbol)
+        assert erg.trades, f"{symbol}: Es muss ein Trade entstanden sein"
+        erwartet = 2 * kosten_je_seite(erg.trades[0]["stueck"], cfg, symbol)
+        assert erg.kennzahlen["gebuehren"] == pytest.approx(erwartet, abs=0.01)
 
 
 def test_stueck_modell_nutzt_kommission_und_minimum(tmp_path):
