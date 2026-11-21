@@ -3,8 +3,10 @@
 
 Der Builder nimmt ausschliesslich Pfade aus ``scripts/review-paket-freigabe.json``
 auf, liest sie über ``git show <commit>:<pfad>`` (nicht aus dem Arbeitsbaum),
-schreibt die Kopien und prüft sie anschliessend byteweise per SHA-256. ZIP und
-Manifest entstehen deterministisch (sortiert, feste mtime, Deflate 9). Jede
+schreibt die Kopien und prüft sie anschliessend byteweise per SHA-256. Das
+Hauptdokument darf nur den geprüften Commit und nur Pfade nennen, die im Paket
+liegen. ZIP und Manifest entstehen deterministisch (sortiert, feste mtime,
+Deflate 9). Jede
 Abweichung — fremde Datei, fehlende Freigabe, Hash-Differenz, Manifest- oder
 ZIP-Lücke — beendet den Lauf mit Exit-Code 1.
 
@@ -54,6 +56,9 @@ MUSTER_RUN = re.compile(r'/actions/runs/(\d+)')
 # Lauf-IDs stehen in Berichten auch als Zahl ("CI-Lauf 123456789"), nicht nur
 # als URL. Ab sechs Ziffern, damit Jahreszahlen und kurze Nummern auffallen.
 MUSTER_RUN_NUMMER = re.compile(r'\b(?:CI-Lauf|Lauf(?:-ID)?|Run(?:-ID)?)[ \t:#]*(\d{6,})\b')
+# Commit-Angaben im Hauptdokument stehen in Backticks; nur dort wird geprüft.
+MUSTER_COMMIT = re.compile(r'`([0-9a-f]{7,40})`')
+MUSTER_PFAD = re.compile(r'`([\w./-]+\.(?:py|mjs|js|json|ya?ml|toml|sql|sh|ps1|md|css|html))`|`(Dockerfile)`')
 HAUPTDOKUMENT = 'ORAKEL-REVIEW-PAKET.md'
 MAX_HAUPTDOKUMENT_ZEILEN = 200
 API_BASIS = 'https://api.github.com'
@@ -726,7 +731,8 @@ def pruefe_konsistenz(ausgabe: str, commit: str, evidenz: dict | None,
 
 def schreibe_pruefbericht(ausgabe: str, commit: str, branch: str,
                           eintraege: list[dict], evidenz: dict | None,
-                          ci: dict | None = None) -> str:
+                          ci: dict | None = None,
+                          fehlend: list[str] | None = None) -> str:
     """Schreibt einen kurzen Bericht ausschliesslich aus gemessenen Werten.
 
     Im CI gibt es kein ``artifacts/``-Verzeichnis mit Paketdokumenten; ohne
@@ -752,6 +758,13 @@ def schreibe_pruefbericht(ausgabe: str, commit: str, branch: str,
     zeilen += ['', '## Quellen (Auszug)', '']
     for eintrag in sorted(quellen, key=lambda e: e['target'])[:10]:
         zeilen.append(f'- `{eintrag["target"]}` (`{eintrag["sha256"][:16]}`).')
+    zeilen += ['', '## Nicht im Paket', '']
+    if fehlend:
+        zeilen += [f'- `{name}`' for name in sorted(fehlend)]
+        zeilen += ['', 'Diese Belege und Dokumente lagen beim Bau nicht vor und '
+                   'sind daher nicht Teil des Pakets.']
+    else:
+        zeilen.append('- Nichts.')
     zeilen += ['', 'Alle Angaben stammen aus MANIFEST.json und EVIDENZ.json; '
                'der Bericht enthält keine Schätzungen.', '']
     pfad = os.path.join(ausgabe, HAUPTDOKUMENT)
@@ -771,6 +784,38 @@ def pruefe_hauptdokument(ausgabe: str) -> None:
         raise Abweichung(f'{HAUPTDOKUMENT} hat {zeilen} Zeilen; erlaubt sind höchstens '
                          f'{MAX_HAUPTDOKUMENT_ZEILEN}.')
     print(f'Hauptdokument: {zeilen} Zeilen (Grenze {MAX_HAUPTDOKUMENT_ZEILEN}).')
+
+
+def pruefe_dokumente(ausgabe: str, commit: str, freigabe: dict) -> None:
+    """Das Hauptdokument nennt nur den Review-Commit und nur Pfade im Paket.
+
+    Geprüft wird ausschliesslich der Teil vor ``## Nicht im Paket``: Was dort
+    ausdrücklich als fehlend aufgeführt ist, muss nicht im Paket liegen.
+    """
+    pfad = os.path.join(ausgabe, HAUPTDOKUMENT)
+    if not os.path.exists(pfad):
+        # Wie pruefe_hauptdokument: ein fehlendes Dokument ist ein Hinweis, kein
+        # Abbruch; das Paket weist es unter den fehlenden Dokumenten aus.
+        print(f'Hinweis: {HAUPTDOKUMENT} fehlt und wird nicht geprüft.', file=sys.stderr)
+        return
+    text = open(pfad, encoding='utf-8').read()
+    for zeile in text.splitlines():
+        if 'SHA-256' in zeile or 'belege/' in zeile or 'dateien/' in zeile:
+            continue  # Dateinamen und Protokoll-Hashes sind keine Commit-Angaben
+        for token in MUSTER_COMMIT.findall(zeile):
+            if not commit.startswith(token):
+                raise Abweichung(f'{HAUPTDOKUMENT} nennt fremden Commit {token}.')
+    hauptteil = text.partition('## Nicht im Paket')[0]
+    ziele = {q['quelle']: q['ziel'] for q in freigabe['quellen']}
+    for treffer in MUSTER_PFAD.finditer(hauptteil):
+        name = treffer.group(1) or treffer.group(2)
+        if name.startswith('dateien/'):
+            if not os.path.exists(os.path.join(ausgabe, name)):
+                raise Abweichung(f'{HAUPTDOKUMENT} nennt fehlende Datei {name}.')
+            continue
+        ziel = ziele.get(name)
+        if ziel is None or not os.path.exists(os.path.join(ausgabe, ziel)):
+            raise Abweichung(f'{HAUPTDOKUMENT} nennt {name}, das nicht im Paket liegt.')
 
 
 def pruefe_evidenz_dateien(ausgabe: str, evidenz: dict) -> None:
@@ -860,6 +905,7 @@ def baue(freigabe: dict, commit: str, branch: str, ausgabe: str,
         f.write(f'{zip_sha}  {ZIP_NAME}\n')
     pruefe_zip(eintraege + [manifest_eintrag], ausgabe)
     pruefe_hauptdokument(ausgabe)
+    pruefe_dokumente(ausgabe, commit, freigabe)
     pruefe_konsistenz(ausgabe, commit, evidenz,
                       {e['target']: e['sha256'] for e in quellen})
     return eintraege, zip_sha
@@ -908,6 +954,7 @@ def pruefe(freigabe: dict, commit: str, ausgabe: str) -> tuple[list[dict], str]:
     if manifest.get('testzahl') != evidenz.get('testzahl'):
         raise Abweichung('Manifest-Testzahl weicht von EVIDENZ.json ab.')
     pruefe_hauptdokument(ausgabe)
+    pruefe_dokumente(ausgabe, commit, freigabe)
     pruefe_konsistenz(ausgabe, commit, evidenz,
                       {e['target']: e['sha256'] for e in quellen})
     return eintraege, zip_sha
@@ -958,8 +1005,12 @@ def main() -> int:
                 # anschliessend mit denselben Prüfungen wie ein echtes Paket geprüft.
                 evidenz = json.load(open(os.path.join(temp, 'EVIDENZ.json'),
                                          encoding='utf-8'))
-                schreibe_pruefbericht(temp, commit, branch, eintraege, evidenz, ci)
+                schreibe_pruefbericht(temp, commit, branch, eintraege, evidenz, ci,
+                                      fehlend=[name for name in
+                                               (freigabe.get('belege') or []) + (freigabe.get('dokumente') or [])
+                                               if not os.path.exists(os.path.join(temp, name))])
                 pruefe_hauptdokument(temp)
+                pruefe_dokumente(temp, commit, freigabe)
                 pruefe_konsistenz(temp, commit, evidenz,
                                   {e['target']: e['sha256'] for e in eintraege
                                    if e.get('herkunft') == 'commit'})
