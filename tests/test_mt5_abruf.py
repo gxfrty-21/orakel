@@ -99,6 +99,8 @@ def test_schreibt_mt5_csv_und_fuehrt_bloecke_zusammen(tmp_path, monkeypatch):
     ]
     assert [z.split("\t")[2] for z in zeilen[1:3]] == ["1.035", "1.9"]
     assert zeilen[1].split("\t")[6:] == ["42", "0", "2"]
+    assert all(len(z.split("\t")) == 9 for z in zeilen[1:])
+    assert "," not in datei.read_text(encoding="utf-8")
     assert len(fake.aufrufe) == 2
     assert fake.aufrufe[0][1] == fake.TIMEFRAME_M15
     assert fake.aufrufe[0][2] == _stamp("2025-01-01T00:00:00")
@@ -118,8 +120,11 @@ def test_geschriebene_datei_liest_der_import(tmp_path, monkeypatch):
 
     df = lade_csv(tmp_path / "EURUSD_M15.csv", server_zeitzone="Europe/Athens")
     assert str(df["ts"].iloc[0]) == "2025-01-02 07:00:00+00:00"
-    assert df["volume"].iloc[0] == 42
+    assert df["open"].iloc[0] == 1.035
+    assert abs(df["high"].iloc[0] - 1.036) < 1e-12
+    assert abs(df["low"].iloc[0] - 1.034) < 1e-12
     assert df["close"].iloc[0] == 1.035
+    assert df["volume"].iloc[0] == 42
 
 
 def test_herbst_stunde_und_ueberlappung_gehen_nicht_verloren(tmp_path, monkeypatch):
@@ -156,20 +161,21 @@ def test_herbst_stunde_und_ueberlappung_gehen_nicht_verloren(tmp_path, monkeypat
     ]
 
 
-def test_jahresraster_und_zeitrahmen_werden_uebergeben(tmp_path, monkeypatch):
+def test_monatsfenster_und_zeitrahmen_werden_uebergeben(tmp_path, monkeypatch):
     modul = _modul()
     fake = FakeMT5()
     monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
 
     code = modul.main([
-        "--symbol", "XAUUSD", "--zeitrahmen", "H1", "--abschnitte", "jahr",
-        "--von", "2024-03-01", "--bis", "2025-02-01", "--ausgabe", str(tmp_path),
+        "--symbol", "XAUUSD", "--zeitrahmen", "H1",
+        "--von", "2024-12-15", "--bis", "2025-02-10", "--ausgabe", str(tmp_path),
     ])
 
-    assert code == 1  # keine Kerzen, aber die Aufrufe sind geprüft
+    assert code == 1  # keine Kerzen, aber die Fenster sind geprüft
     assert [(a[2], a[3]) for a in fake.aufrufe] == [
-        (_stamp("2024-03-01T00:00:00"), _stamp("2024-12-31T23:59:59")),
-        (_stamp("2025-01-01T00:00:00"), _stamp("2025-02-01T23:59:59")),
+        (_stamp("2024-12-15T00:00:00"), _stamp("2024-12-31T23:59:59")),
+        (_stamp("2025-01-01T00:00:00"), _stamp("2025-01-31T23:59:59")),
+        (_stamp("2025-02-01T00:00:00"), _stamp("2025-02-10T23:59:59")),
     ]
     assert {a[1] for a in fake.aufrufe} == {fake.TIMEFRAME_H1}
 
@@ -203,6 +209,24 @@ def test_abbruch_bei_terminalfehler(tmp_path, monkeypatch, capsys):
     assert code == 1
     assert "testfehler" in capsys.readouterr().err
     assert fake.beendet is True
+
+
+def test_nicht_schreibbares_ziel_meldet_deutsch(tmp_path, monkeypatch, capsys):
+    modul = _modul()
+    fake = FakeMT5({(_stamp("2025-01-01T00:00:00"), _stamp("2025-01-31T23:59:59")):
+                    _bars(("2025-01-02T09:00:00", 1.0))})
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
+    (tmp_path / "EURUSD_M15.csv").mkdir()
+
+    code = modul.main([
+        "--symbol", "EURUSD", "--von", "2025-01-01", "--bis", "2025-01-31",
+        "--ausgabe", str(tmp_path),
+    ])
+
+    assert code == 1
+    fehler = capsys.readouterr().err
+    assert "nicht schreibbar" in fehler
+    assert "EURUSD_M15.csv" in fehler
 
 
 def test_unbekanntes_symbol_bricht_ab(tmp_path, monkeypatch, capsys):

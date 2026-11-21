@@ -309,8 +309,8 @@ py -m venv .venv
 ```
 
 Geschrieben wird `daten/EURUSD_M15.csv` im selben Format wie `Save as`
-(`<DATE> <TIME> <OPEN> …`), standardmässig monatsweise abgefragt (`--abschnitte
-jahr` fragt gröber), überlappend zusammengeführt und aufsteigend sortiert.
+(`<DATE> <TIME> <OPEN> …`), monatsweise abgefragt, überlappend zusammengeführt
+und aufsteigend sortiert.
 Zusammengeführt wird nur, was in Zeit und Werten gleich ist — die doppelte
 Stunde der Herbst-Rückstellung bleibt deshalb vollständig erhalten.
 Danach wie oben importieren, inklusive `--server-zeitzone`. Voraussetzung: Das
