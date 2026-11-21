@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -24,6 +25,22 @@ from .knowledge import Vault
 
 def _cfg(pfad: str):
     return load_config(pfad)
+
+
+def _versatz(text: str) -> float:
+    """Parst einen festen Broker-Versatz wie ``+03:00`` oder ``-05:00``."""
+    treffer = re.fullmatch(r"([+-])(\d{2}):(\d{2})", text.strip())
+    if not treffer:
+        raise argparse.ArgumentTypeError(
+            "Erwartet wird ein Versatz wie +03:00 oder -05:00."
+        )
+    stunden, minuten = int(treffer.group(2)), int(treffer.group(3))
+    if minuten > 59 or stunden > 14 or (stunden == 14 and minuten):
+        raise argparse.ArgumentTypeError(
+            "Der Versatz muss zwischen -14:00 und +14:00 liegen."
+        )
+    wert = stunden + minuten / 60
+    return -wert if treffer.group(1) == "-" else wert
 
 
 def _schema_pruefen(konfig) -> int | None:
@@ -56,12 +73,19 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
     """
     dateien = [Path(p) for p in args.csv]
     zeitzone = args.server_zeitzone or cfg["daten"].get("server_zeitzone") or None
-    versatz = args.server_versatz_stunden
+    if args.server_versatz is not None and args.server_versatz_stunden is not None:
+        print("FEHLER --server-versatz und --server-versatz-stunden schliessen sich aus — "
+              "nur eine Versatzangabe.", file=sys.stderr)
+        return 2
+    versatz = args.server_versatz
+    if versatz is None:
+        versatz = args.server_versatz_stunden
     if versatz is None:
         versatz = cfg["daten"].get("server_versatz_stunden")
     if zeitzone and versatz is not None:
-        print("FEHLER server_zeitzone und server_versatz_stunden schliessen sich aus — "
-              "entweder eine IANA-Zone oder ein fester Broker-Versatz.", file=sys.stderr)
+        print("FEHLER server_zeitzone und ein fester Broker-Versatz schliessen sich aus — "
+              "entweder eine IANA-Zone oder --server-versatz/--server-versatz-stunden.",
+              file=sys.stderr)
         return 2
     vorgabe = args.symbol[0].upper() if args.symbol else None
     if vorgabe and len(dateien) > 1:
@@ -108,6 +132,9 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
         q = pruefe_daten(df, symbol, cfg, timeframe=zeitrahmen)
         print(f"{'OK' if q.ok else 'FEHLER'} {symbol} {zeitrahmen}: {q.kerzen} Kerzen, "
               f"{q.von or '–'} bis {q.bis or '–'}")
+        if len(q.jahre) > 1:
+            print("  Abdeckung: " + ", ".join(
+                f"{jahr}: {anzahl}" for jahr, anzahl in q.jahre.items()))
         for text in q.fehler:
             print("  Fehler: " + text)
         for text in q.warnungen:
@@ -477,9 +504,12 @@ def main(argv: list[str] | None = None) -> int:
                    help="Standard: aus dem Dateinamen (z. B. EURUSD_M15.csv), sonst M15")
     d.add_argument("--server-zeitzone", default=None, metavar="IANA-ZONE",
                    help="Zeitzone der MT5-Serverzeit, z. B. Europe/Athens; Standard: UTC")
+    d.add_argument("--server-versatz", type=_versatz, default=None, metavar="±HH:MM",
+                   help="fester Broker-Versatz als +03:00 (negativ: --server-versatz=-05:00); "
+                        "Alternative zu --server-zeitzone und --server-versatz-stunden")
     d.add_argument("--server-versatz-stunden", type=float, default=None, metavar="STUNDEN",
                    help="fester Broker-Versatz der MT5-Serverzeit in Stunden, z. B. 3 oder -5; "
-                        "Alternative zu --server-zeitzone")
+                        "Alternative zu --server-zeitzone und --server-versatz")
     d.add_argument("--kerzen", type=int, default=6000)
     d.set_defaults(func=cmd_daten)
 
