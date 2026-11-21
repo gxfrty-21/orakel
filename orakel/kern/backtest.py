@@ -31,6 +31,7 @@ def backtest(
     ende: int | None = None,
     startkapital: float | None = None,
     stop_art: str = "atr",
+    symbol: str = "",
 ) -> BacktestErgebnis:
     """Long-only, ein Instrument, Kerze für Kerze.
 
@@ -39,7 +40,8 @@ def backtest(
     - Stop liegt beim Einstieg fest (ATR-Abstand) und wird innerhalb der Kerze geprüft.
     - Lücke unter den Stop -> Ausführung zur Eröffnung (realistisch schlechter).
     - Kosten: Kommission pro Stück oder halber Spread (``kosten.py``) plus
-      Slippage in Basispunkten.
+      Slippage in Basispunkten; Pip-Grösse und Spread kommen aus dem
+      Instrumentenprofil des Symbols.
     """
     if len(df) < 3:
         return BacktestErgebnis(kennzahlen={}, warnungen=["Zu wenig Kerzen"])
@@ -70,10 +72,10 @@ def backtest(
         nonlocal cash, stueck, gebuehren
         if stueck <= 0:
             return
-        prov = kosten_je_seite(stueck, cfg)
+        prov = kosten_je_seite(stueck, cfg, symbol)
         cash += stueck * preis - prov
         gebuehren += prov
-        netto = stueck * (preis - einstieg) - prov - kosten_je_seite(stueck, cfg)
+        netto = stueck * (preis - einstieg) - prov - kosten_je_seite(stueck, cfg, symbol)
         basis = stueck * einstieg
         trades.append({
             "einstieg": einstieg_ts[:19],
@@ -101,7 +103,7 @@ def backtest(
                     nach_cash = max(0.0, cash * (1 - grenzen.min_cash_pct / 100.0)) / preis
                     menge = float(np.floor(min(nach_risiko, nach_deckel, nach_cash)))
                     if menge > 0:
-                        prov = kosten_je_seite(menge, cfg)
+                        prov = kosten_je_seite(menge, cfg, symbol)
                         if menge * preis + prov <= cash:
                             cash -= menge * preis + prov
                             gebuehren += prov

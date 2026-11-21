@@ -143,8 +143,9 @@ def _verkauf(db: Facts, cfg: Config, p: Any, preis: float, status: str,
     ganz geschlossen.
     """
     menge = float(p["menge"])
-    prov = kosten_je_seite(menge, cfg)
-    netto = menge * (preis - float(p["einstieg"])) - prov - kosten_je_seite(menge, cfg)
+    prov = kosten_je_seite(menge, cfg, p["symbol"])
+    netto = (menge * (preis - float(p["einstieg"])) - prov
+             - kosten_je_seite(menge, cfg, p["symbol"]))
     db.position_loeschen(p["symbol"])
     db.entscheid_speichern(p["symbol"], "verkaufen", menge, preis, p["strategie"],
                            status, True, [grund, f"Netto {netto:.2f}"])
@@ -438,7 +439,7 @@ def tick(cfg: Config, db: Facts, zeitpunkt: datetime | None = None) -> dict[str,
         if menge <= 0:
             continue
 
-        prov = kosten_je_seite(menge, cfg)
+        prov = kosten_je_seite(menge, cfg, symbol)
         if menge * kurs + prov > cash:
             continue
         cash -= menge * kurs + prov
