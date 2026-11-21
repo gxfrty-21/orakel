@@ -11,8 +11,9 @@ from .config import RisikoGrenzen, load_config
 from .kern.data import (
     ZEITRAHMEN,
     ZEITRAHMEN_MINUTEN,
+    df_aus_bloecken,
     df_aus_db,
-    lade_csv,
+    lade_csv_bloecke,
     pruefe_daten,
     synthetische_kerzen,
     zerlege_dateiname,
@@ -55,6 +56,13 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
     """
     dateien = [Path(p) for p in args.csv]
     zeitzone = args.server_zeitzone or cfg["daten"].get("server_zeitzone") or None
+    versatz = args.server_versatz_stunden
+    if versatz is None:
+        versatz = cfg["daten"].get("server_versatz_stunden")
+    if zeitzone and versatz is not None:
+        print("FEHLER server_zeitzone und server_versatz_stunden schliessen sich aus — "
+              "entweder eine IANA-Zone oder ein fester Broker-Versatz.", file=sys.stderr)
+        return 2
     vorgabe = args.symbol[0].upper() if args.symbol else None
     if vorgabe and len(dateien) > 1:
         print("--symbol gilt nur bei einer Datei; sonst kommt das Symbol aus dem Dateinamen.",
@@ -68,27 +76,35 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
         symbol = vorgabe or symbol
         zeitrahmen = args.zeitrahmen or zeitrahmen
         try:
-            df = lade_csv(datei, server_zeitzone=zeitzone)
+            # Blockweise lesen und schreiben: auch Millionen Zeilen bleiben flach
+            # im Speicher, und ein Fehler in einem Block rollt die Datei zurück.
+            n = db.kerzen_speichern_bloecke(
+                symbol, zeitrahmen,
+                lade_csv_bloecke(datei, server_zeitzone=zeitzone,
+                                 server_versatz_stunden=versatz))
+            if not n:
+                raise ValueError(f"CSV: {datei.name} enthält keine vollständigen Kerzen.")
         except (OSError, ValueError) as exc:
             print(f"FEHLER {datei.name}: {exc}", file=sys.stderr)
             db.ereignis("fehler", "Daten", f"{datei.name}: {exc}")
             fehler += 1
             continue
-        n = db.kerzen_speichern(symbol, zeitrahmen, df.to_dict("records"))
         db.ereignis("info", "Daten", f"{datei.name}: {n} Kerzen für {symbol} {zeitrahmen} importiert")
-        print(f"{datei.name}: {n} Kerzen gelesen ({df['ts'].iloc[0]} bis {df['ts'].iloc[-1]})")
+        print(f"{datei.name}: {n} Kerzen gelesen")
         if (symbol, zeitrahmen) not in geprueft:
             geprueft.append((symbol, zeitrahmen))
 
     if not geprueft:
         print("Nichts importiert.", file=sys.stderr)
         return 1
-    if zeitzone:
+    if versatz is not None:
+        print(f"Serverzeit UTC{versatz:+g} h → UTC")
+    elif zeitzone:
         print(f"Serverzeit {zeitzone} → UTC")
     db.zustand_setzen("datenquelle", "csv")
 
     for symbol, zeitrahmen in geprueft:
-        df = df_aus_db(db.kerzen(symbol, zeitrahmen))
+        df = df_aus_bloecken(db.kerzen_bloecke(symbol, zeitrahmen))
         q = pruefe_daten(df, symbol, cfg, timeframe=zeitrahmen)
         print(f"{'OK' if q.ok else 'FEHLER'} {symbol} {zeitrahmen}: {q.kerzen} Kerzen, "
               f"{q.von or '–'} bis {q.bis or '–'}")
@@ -98,9 +114,9 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
             print("  Warnung: " + text)
         if not q.ok:
             fehler += 1
-        if zeitrahmen != "M15":
-            print(f"  Hinweis: Richter und Paper lesen M15; {zeitrahmen} wird gespeichert, "
-                  "aber nicht bewertet.")
+        if zeitrahmen not in {"M15", cfg.richter_zeitrahmen}:
+            print(f"  Hinweis: Paper liest M15, der Richter {cfg.richter_zeitrahmen}; "
+                  f"{zeitrahmen} wird gespeichert, aber nicht bewertet.")
     return 1 if fehler else 0
 
 
@@ -118,7 +134,7 @@ def cmd_daten(args: argparse.Namespace) -> int:
     for i, symbol in enumerate(args.symbol or ["EURUSD", "US500"]):
         df = synthetische_kerzen(symbol, kerzen=args.kerzen, seed=7 + i * 13,
                                  timeframe_minuten=ZEITRAHMEN_MINUTEN[zeitrahmen])
-        n = db.kerzen_speichern(symbol, zeitrahmen, df.to_dict("records"))
+        n = db.kerzen_speichern_df(symbol, zeitrahmen, df)
         print(f"{n} synthetische Kerzen erzeugt: {symbol}")
     db.zustand_setzen("datenquelle", "synthetisch")
     db.ereignis("warnung", "Daten", "Synthetische Kerzen erzeugt — nur zum Testen der Abläufe")
@@ -126,13 +142,17 @@ def cmd_daten(args: argparse.Namespace) -> int:
 
 
 def cmd_pruefen(args: argparse.Namespace) -> int:
-    from .pipeline import lauf
+    from .pipeline import DatenFehler, lauf
 
     if (code := _schema_pruefen(_cfg(args.config))) is not None:
         return code
-    bericht = lauf(cfg_pfad=args.config, modus=args.modus, quelle=args.quelle,
-                   bericht_pfad=args.bericht, mit_konferenz=not args.ohne_konferenz,
-                   mit_spider=args.mit_spider)
+    try:
+        bericht = lauf(cfg_pfad=args.config, modus=args.modus, quelle=args.quelle,
+                       bericht_pfad=args.bericht, mit_konferenz=not args.ohne_konferenz,
+                       mit_spider=args.mit_spider)
+    except DatenFehler as exc:
+        print(f"FEHLER {exc}", file=sys.stderr)
+        return 1
     bestanden = sum(1 for v in bericht["validierungen"] if v["urteil"] == "bestanden")
     print(f"Modus: {bericht['modus']} · Datenquelle: {bericht['datenquelle']}")
     print(f"Geprüft: {len(bericht['validierungen'])} · bestanden: {bestanden} · "
@@ -202,11 +222,15 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 def cmd_konferenz(args: argparse.Namespace) -> int:
     from . import agents
-    from .pipeline import lauf
+    from .pipeline import DatenFehler, lauf
 
     if (code := _schema_pruefen(_cfg(args.config))) is not None:
         return code
-    bericht = lauf(cfg_pfad=args.config, modus="backtest", mit_konferenz=True)
+    try:
+        bericht = lauf(cfg_pfad=args.config, modus="backtest", mit_konferenz=True)
+    except DatenFehler as exc:
+        print(f"FEHLER {exc}", file=sys.stderr)
+        return 1
     protokoll = bericht.get("konferenz") or {}
     print(protokoll.get("beschluss", "Keine Konferenz erzeugt"))
     for m in protokoll.get("massnahmen", []):
@@ -453,6 +477,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="Standard: aus dem Dateinamen (z. B. EURUSD_M15.csv), sonst M15")
     d.add_argument("--server-zeitzone", default=None, metavar="IANA-ZONE",
                    help="Zeitzone der MT5-Serverzeit, z. B. Europe/Athens; Standard: UTC")
+    d.add_argument("--server-versatz-stunden", type=float, default=None, metavar="STUNDEN",
+                   help="fester Broker-Versatz der MT5-Serverzeit in Stunden, z. B. 3 oder -5; "
+                        "Alternative zu --server-zeitzone")
     d.add_argument("--kerzen", type=int, default=6000)
     d.set_defaults(func=cmd_daten)
 

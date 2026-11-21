@@ -80,11 +80,16 @@ def _zeile(kerze: Any) -> str:
     ])
 
 
+def _inhalt(kerze: Any) -> tuple[float, ...]:
+    return tuple(float(kerze[feld]) for feld in
+                 ("open", "high", "low", "close", "tick_volume", "real_volume", "spread"))
+
+
 def _hole(mt5: Any, symbol: str, rahmen: str, von: date, bis: date, raster: str) -> list[str]:
     konstante = getattr(mt5, f"TIMEFRAME_{rahmen}", None)
     if konstante is None:
         raise AbrufFehler(f"Zeitrahmen {rahmen} kennt das Terminal nicht.")
-    kerzen: dict[int, Any] = {}
+    kerzen: dict[tuple[int, tuple[float, ...]], Any] = {}
     for anfang, ende in _zeitraeume(von, bis, raster):
         roh = mt5.copy_rates_range(symbol, konstante, anfang, ende)
         if roh is None:
@@ -92,8 +97,15 @@ def _hole(mt5: Any, symbol: str, rahmen: str, von: date, bis: date, raster: str)
                 f"copy_rates_range({symbol}, {rahmen}) lieferte nichts: {_letzter_fehler(mt5)}"
             )
         for kerze in roh:
-            kerzen[int(kerze["time"])] = kerze
-    return [_zeile(kerzen[stamp]) for stamp in sorted(kerzen)]
+            # Beide Fassungen der Herbststunde tragen dieselbe Serverzeit; nur
+            # gleiche Zeit *und* gleiche Werte sind dieselbe Kerze aus einem
+            # überlappenden Block.
+            kerzen[(int(kerze["time"]), _inhalt(kerze))] = kerze
+    # Stabil nach Serverzeit sortiert; innerhalb gleicher Zeitstempel bleibt die
+    # Reihenfolge des Terminals: Bei der Herbst-Rückstellung steht so die
+    # Sommerzeit-Fassung vor der Standardzeit-Fassung.
+    reihenfolge = sorted(kerzen.values(), key=lambda kerze: int(kerze["time"]))
+    return [_zeile(kerze) for kerze in reihenfolge]
 
 
 def main(argv: list[str] | None = None) -> int:

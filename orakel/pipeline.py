@@ -10,7 +10,10 @@ import pandas as pd
 
 from . import agents as agenten
 from .config import Config, RisikoGrenzen, load_config
-from .kern.data import df_aus_db, lade_csv, pruefe_daten, synthetische_kerzen, zerlege_dateiname
+from .kern.data import (
+    ZEITRAHMEN_MINUTEN, df_aus_db, lade_csv_bloecke, pruefe_daten, synthetische_kerzen,
+    zerlege_dateiname,
+)
 from .kern.db import Facts, jetzt
 from .intel import IntelNetz
 from .kern.judge import beurteile_walk_forward, pruefe_holdout
@@ -23,6 +26,10 @@ from .kern.strategies import atr, strategien
 SYMBOLE_STANDARD = ["EURUSD", "US500"]
 
 
+class DatenFehler(RuntimeError):
+    """Die konfigurierte CSV-Quelle liefert keine verwendbaren M15-Kerzen."""
+
+
 def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tuple[list[str], str]:
     """Lädt CSV-Dateien aus daten/ oder erzeugt synthetische Kerzen."""
     quelle = quelle or str(cfg["basis"].get("datenquelle", "synthetisch"))
@@ -30,34 +37,56 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
     ordner.mkdir(parents=True, exist_ok=True)
     symbole: list[str] = []
 
+    gebraucht = {"M15", cfg.richter_zeitrahmen}
     if quelle == "csv":
         zeitzone = cfg["daten"].get("server_zeitzone") or None
+        versatz = cfg["daten"].get("server_versatz_stunden")
+        gesehen: list[str] = []
         for datei in sorted(ordner.glob("*.csv")):
+            gesehen.append(datei.name)
             symbol, zeitrahmen = zerlege_dateiname(datei)
-            if zeitrahmen != "M15":
-                # Nicht als M15 ablegen: das würde Zeitrahmen und Kennzahlen verfälschen.
-                db.ereignis("warnung", "Daten",
-                            f"{datei.name}: {zeitrahmen} übersprungen — Richter und Paper lesen M15")
+            if zeitrahmen not in gebraucht:
+                # Gebraucht werden M15 (Paper) und der Richter-Zeitrahmen; alles
+                # andere als M15 abzulegen würde Zeitrahmen und Kennzahlen verfälschen.
+                db.ereignis(
+                    "warnung", "Daten",
+                    f"{datei.name}: {zeitrahmen} übersprungen — gebraucht werden "
+                    f"M15 und {cfg.richter_zeitrahmen}",
+                )
                 continue
             try:
-                df = lade_csv(datei, server_zeitzone=zeitzone)
-            except Exception as exc:
+                n = db.kerzen_speichern_bloecke(
+                    symbol, zeitrahmen,
+                    lade_csv_bloecke(datei, server_zeitzone=zeitzone,
+                                     server_versatz_stunden=versatz))
+            except (OSError, ValueError) as exc:
                 db.ereignis("fehler", "Daten", f"{datei.name}: {exc}")
                 continue
-            db.kerzen_speichern(symbol, zeitrahmen, df.to_dict("records"))
             symbole.append(symbol)
-            db.ereignis("info", "Daten", f"{datei.name}: {len(df)} Kerzen importiert")
+            db.ereignis("info", "Daten", f"{datei.name}: {n} Kerzen importiert")
         if symbole:
             db.zustand_setzen("datenquelle", "csv")
             return sorted(set(symbole)), "csv"
+        if gesehen:
+            # Eine bestückte Quelle, die nichts Verwertbares liefert, darf nicht
+            # still auf synthetische Kerzen ausweichen.
+            grund = (
+                f"Keine verwendbare M15-CSV in {ordner}: {len(gesehen)} Datei(en) "
+                f"({', '.join(sorted(gesehen)[:5])}), davon keine mit Zeitrahmen M15 "
+                "oder alle fehlerhaft. Es werden keine synthetischen Kerzen erzeugt."
+            )
+            db.ereignis("fehler", "Daten", grund)
+            raise DatenFehler(grund)
 
     if db.symbole():
         # Herkunft der vorhandenen Kerzen — entscheidet über den Dashboard-Modus
         return db.symbole(), str(db.zustand("datenquelle", "datenbank"))
 
     for i, symbol in enumerate(SYMBOLE_STANDARD):
-        df = synthetische_kerzen(symbol, kerzen=12000, seed=7 + i * 13)
-        db.kerzen_speichern(symbol, "M15", df.to_dict("records"))
+        for zeitrahmen in sorted(gebraucht):
+            df = synthetische_kerzen(symbol, kerzen=12000, seed=7 + i * 13,
+                                     timeframe_minuten=ZEITRAHMEN_MINUTEN[zeitrahmen])
+            db.kerzen_speichern_df(symbol, zeitrahmen, df)
         symbole.append(symbol)
     db.zustand_setzen("datenquelle", "synthetisch")
     db.ereignis("warnung", "Daten", "Synthetische Kerzen erzeugt — keine Aussage über echte Märkte")
@@ -81,14 +110,21 @@ def lauf(
     vault = Vault(cfg.vault_ordner)
     fehler: list[str] = []
 
+    zeitrahmen = cfg.richter_zeitrahmen
+    # Sharpe skaliert mit der Kerzenzahl pro Jahr; die Basis in [basis] gilt für M15.
+    urteil_cfg = cfg.mit_bars_pro_jahr(cfg.bars_pro_jahr_fuer(zeitrahmen))
+    if zeitrahmen != "M15":
+        db.ereignis("info", "Daten",
+                    f"Richter bewertet {zeitrahmen}; der Paper-Takt liest weiterhin M15")
+
     symbole, datenquelle = sicherstellen_daten(cfg, db, quelle)
     qualitaet: list[dict[str, Any]] = []
     daten: dict[str, pd.DataFrame] = {}
 
     for symbol in symbole:
-        df = df_aus_db(db.kerzen(symbol, "M15"))
+        df = df_aus_db(db.kerzen(symbol, zeitrahmen))
         daten[symbol] = df
-        q = pruefe_daten(df, symbol, cfg)
+        q = pruefe_daten(df, symbol, cfg, timeframe=zeitrahmen)
         qualitaet.append(q.als_dict())
         if not q.ok:
             db.ereignis("fehler", "Daten", f"{symbol}: {'; '.join(q.fehler)}")
@@ -111,7 +147,7 @@ def lauf(
             continue
         for strategie in strategien(cfg).values():
             try:
-                u = beurteile_walk_forward(df, symbol, strategie, cfg, grenzen)
+                u = beurteile_walk_forward(df, symbol, strategie, urteil_cfg, grenzen)
             except Exception as exc:
                 db.ereignis("fehler", "Richter", f"{symbol} {strategie.name}: {exc}")
                 fehler.append(f"{symbol} {strategie.name}: {exc}")
@@ -132,7 +168,7 @@ def lauf(
             ),
         )
         try:
-            pruefe_holdout(bester, daten[symbol], strategie, cfg, grenzen)
+            pruefe_holdout(bester, daten[symbol], strategie, urteil_cfg, grenzen)
         except Exception as exc:
             bester.urteil = "abgelehnt"
             bester.gruende.append(f"Versiegelter Holdout konnte nicht geprüft werden: {exc}")

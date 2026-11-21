@@ -91,11 +91,13 @@ def test_schreibt_mt5_csv_und_fuehrt_bloecke_zusammen(tmp_path, monkeypatch):
     datei = tmp_path / "EURUSD_M15.csv"
     zeilen = datei.read_text(encoding="utf-8").splitlines()
     assert zeilen[0] == "<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"
-    # drei verschiedene Zeitstempel, aufsteigend, überlappende Zeile gewinnt zuletzt
+    # aufsteigend; gleiche Zeit mit anderen Werten bleibt als zweite Zeile stehen,
+    # der Import führt sie mit «letzte gewinnt» zusammen.
     assert [z.split("\t")[0] + " " + z.split("\t")[1] for z in zeilen[1:]] == [
-        "2025.01.02 09:00:00", "2025.01.02 09:15:00", "2025.02.03 08:00:00",
+        "2025.01.02 09:00:00", "2025.01.02 09:00:00",
+        "2025.01.02 09:15:00", "2025.02.03 08:00:00",
     ]
-    assert zeilen[1].split("\t")[2] == "1.9"
+    assert [z.split("\t")[2] for z in zeilen[1:3]] == ["1.035", "1.9"]
     assert zeilen[1].split("\t")[6:] == ["42", "0", "2"]
     assert len(fake.aufrufe) == 2
     assert fake.aufrufe[0][1] == fake.TIMEFRAME_M15
@@ -118,6 +120,40 @@ def test_geschriebene_datei_liest_der_import(tmp_path, monkeypatch):
     assert str(df["ts"].iloc[0]) == "2025-01-02 07:00:00+00:00"
     assert df["volume"].iloc[0] == 42
     assert df["close"].iloc[0] == 1.035
+
+
+def test_herbst_stunde_und_ueberlappung_gehen_nicht_verloren(tmp_path, monkeypatch):
+    modul = _modul()
+    # Beide Fassungen der Stunde 03:00 tragen in MT5 dieselbe Serverzeit.
+    herbst = np.concatenate([
+        _bars(("2025-10-26T03:00:00", 1.0), ("2025-10-26T03:15:00", 1.1)),
+        _bars(("2025-10-26T03:00:00", 2.0), ("2025-10-26T03:15:00", 2.1)),
+        _bars(("2025-10-26T04:00:00", 3.0)),
+    ])
+    fake = FakeMT5({
+        (_stamp("2025-09-01T00:00:00"), _stamp("2025-09-30T23:59:59")): herbst,
+        (_stamp("2025-10-01T00:00:00"), _stamp("2025-10-31T23:59:59")): herbst,
+    })
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
+
+    assert modul.main(["--symbol", "EURUSD", "--von", "2025-09-01", "--bis", "2025-10-31",
+                       "--ausgabe", str(tmp_path)]) == 0
+
+    zeilen = (tmp_path / "EURUSD_M15.csv").read_text(encoding="utf-8").splitlines()
+    # fünf Kerzen, obwohl derselbe Block zweimal geliefert wurde; je Zeitstempel
+    # steht die erste Fassung vor der zweiten, der Import trennt sie nach Zone.
+    assert [z.split("\t")[1] + " " + z.split("\t")[2] for z in zeilen[1:]] == [
+        "03:00:00 1.0", "03:00:00 2.0", "03:15:00 1.1", "03:15:00 2.1", "04:00:00 3.0",
+    ]
+
+    from orakel.kern.data import lade_csv
+
+    df = lade_csv(tmp_path / "EURUSD_M15.csv", server_zeitzone="Europe/Athens")
+    assert [str(t) for t in df["ts"]] == [
+        "2025-10-26 00:00:00+00:00", "2025-10-26 00:15:00+00:00",
+        "2025-10-26 01:00:00+00:00", "2025-10-26 01:15:00+00:00",
+        "2025-10-26 02:00:00+00:00",
+    ]
 
 
 def test_jahresraster_und_zeitrahmen_werden_uebergeben(tmp_path, monkeypatch):

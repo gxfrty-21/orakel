@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import os
 import tomllib
 from dataclasses import dataclass
@@ -46,6 +47,25 @@ class Config:
     @property
     def bars_pro_jahr(self) -> int:
         return int(self._d["basis"].get("bars_pro_jahr", 24960))
+
+    @property
+    def richter_zeitrahmen(self) -> str:
+        """Zeitrahmen, den der Richter bewertet; der Paper-Takt bleibt bei M15."""
+        return str(self._d["basis"].get("richter_zeitrahmen", "M15")).upper()
+
+    def bars_pro_jahr_fuer(self, zeitrahmen: str) -> int:
+        """Skaliert die M15-Basis aus [basis] auf den bewerteten Zeitrahmen."""
+        from .kern.data import ZEITRAHMEN_MINUTEN
+        minuten = ZEITRAHMEN_MINUTEN.get(zeitrahmen.upper())
+        if minuten is None:
+            raise ValueError(f"Unbekannter Zeitrahmen: {zeitrahmen}")
+        return int(self.bars_pro_jahr * 15 / minuten)
+
+    def mit_bars_pro_jahr(self, bars: int) -> Config:
+        """Kopie mit angepasster Jahresbasis, ohne die geladene Konfiguration zu ändern."""
+        daten = copy.deepcopy(self._d)
+        daten.setdefault("basis", {})["bars_pro_jahr"] = bars
+        return Config(daten, self.pfad)
 
     @property
     def waehrung(self) -> str:
@@ -110,6 +130,11 @@ def validiere_config(daten: dict[str, Any]) -> None:
     if not isinstance(basis.get('db_pfad'), str) or not basis['db_pfad'].strip():
         raise ValueError('config.toml: [basis] db_pfad muss ein nicht-leerer Pfad sein')
     _zahl(daten, 'basis', 'bars_pro_jahr', minimum=1, ganzzahl=True, standard=24960)
+    richter_tf = str(basis.get('richter_zeitrahmen', 'M15')).upper()
+    from .kern.data import ZEITRAHMEN
+    if richter_tf not in ZEITRAHMEN:
+        raise ValueError(f"config.toml: [basis] richter_zeitrahmen muss einer von "
+                         f"{', '.join(ZEITRAHMEN)} sein, ist aber {richter_tf!r}")
 
     _zahl(daten, 'risiko', 'risk_per_trade_pct', minimum=0.000001, maximum=100.0)
     _zahl(daten, 'risiko', 'max_drawdown_pct', minimum=0.000001, maximum=100.0)
@@ -146,6 +171,12 @@ def validiere_config(daten: dict[str, Any]) -> None:
         _zahl(daten, 'daten', 'max_luecke_pct', minimum=0.0, maximum=100.0, standard=5.0)
         _zahl(daten, 'daten', 'max_sprung_pct', minimum=0.0, standard=25.0)
         _zahl(daten, 'daten', 'max_alter_tage', minimum=0.000001, standard=5.0)
+        daten_abschnitt = daten.get('daten') or {}
+        if daten_abschnitt.get('server_versatz_stunden') is not None:
+            _zahl(daten, 'daten', 'server_versatz_stunden', minimum=-24.0, maximum=24.0)
+            if daten_abschnitt.get('server_zeitzone'):
+                raise ValueError('config.toml: [daten] server_zeitzone und '
+                                 'server_versatz_stunden schliessen sich aus')
         for schluessel in ('max_kurs_alter_stunden', 'max_kurs_alter_stunden_m1',
                            'max_kurs_alter_stunden_m5', 'max_kurs_alter_stunden_m15',
                            'max_kurs_alter_stunden_h1'):
