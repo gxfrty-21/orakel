@@ -296,7 +296,10 @@ oder `--zeitrahmen`). **Paper liest M15**; der Richter bewertet
 für M15 und wird für andere Zeitrahmen umgerechnet (H1: 6240 statt 24 960). Der
 Ordner-Import über `[basis] datenquelle = "csv"` liest `daten/*.csv`,
 importiert M15 und den Richter-Zeitrahmen und überspringt alles andere mit
-Ereignis im Protokoll, statt es als M15 abzulegen. Die Frischegrenzen bleiben
+Ereignis im Protokoll, statt es als M15 abzulegen. Ist der Ordner leer, bricht
+der Lauf ohne vorhandene Datenbankkerzen mit Meldung ab, statt synthetische
+Kerzen zu erzeugen; vorhandene Datenbankkerzen werden mit einer Warnung
+weiterverwendet. Die Frischegrenzen bleiben
 je Zeitrahmen getrennt (`max_kurs_alter_stunden_h1` usw.), auch wenn der
 Paper-Takt M15 liest.
 

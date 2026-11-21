@@ -36,6 +36,22 @@ def test_bars_pro_jahr_folgt_dem_zeitrahmen(cfg):
     assert cfg.richter_zeitrahmen == "H1"
 
 
+def test_leerer_csv_ordner_bricht_ab_statt_synthetisch(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    db = Facts(cfg.db_pfad)
+
+    with pytest.raises(DatenFehler) as fehler:
+        sicherstellen_daten(cfg, db)
+
+    meldung = str(fehler.value)
+    assert "Keine CSV-Datei" in meldung
+    assert "synthetischen Kerzen" in meldung
+    # kein stiller Rückfall auf synthetische Kerzen
+    assert db.symbole() == []
+    assert db.kerzen("EURUSD", "M15") == []
+    assert any("Keine CSV-Datei" in zeile["text"] for zeile in db.ereignisse())
+
+
 def test_nur_nicht_m15_dateien_brechen_ab_statt_synthetisch(cfg):
     cfg._d["basis"]["datenquelle"] = "csv"
     ordner = cfg.daten_ordner

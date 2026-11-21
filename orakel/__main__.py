@@ -63,6 +63,17 @@ def _schema_pruefen(konfig) -> int | None:
     return None
 
 
+def _pipeline_lauf(**kwargs) -> dict | None:
+    """Führt die Pipeline aus und übersetzt einen DatenFehler in Exit-Code 1."""
+    from .pipeline import DatenFehler, lauf
+
+    try:
+        return lauf(**kwargs)
+    except DatenFehler as exc:
+        print(f"FEHLER {exc}", file=sys.stderr)
+        return None
+
+
 def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
     """Importiert beliebig viele MT5-Dateien und prüft danach die ganze Reihe.
 
@@ -169,16 +180,13 @@ def cmd_daten(args: argparse.Namespace) -> int:
 
 
 def cmd_pruefen(args: argparse.Namespace) -> int:
-    from .pipeline import DatenFehler, lauf
-
     if (code := _schema_pruefen(_cfg(args.config))) is not None:
         return code
-    try:
-        bericht = lauf(cfg_pfad=args.config, modus=args.modus, quelle=args.quelle,
-                       bericht_pfad=args.bericht, mit_konferenz=not args.ohne_konferenz,
-                       mit_spider=args.mit_spider)
-    except DatenFehler as exc:
-        print(f"FEHLER {exc}", file=sys.stderr)
+    bericht = _pipeline_lauf(cfg_pfad=args.config, modus=args.modus, quelle=args.quelle,
+                             bericht_pfad=args.bericht,
+                             mit_konferenz=not args.ohne_konferenz,
+                             mit_spider=args.mit_spider)
+    if bericht is None:
         return 1
     bestanden = sum(1 for v in bericht["validierungen"] if v["urteil"] == "bestanden")
     print(f"Modus: {bericht['modus']} · Datenquelle: {bericht['datenquelle']}")
@@ -248,15 +256,10 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 
 def cmd_konferenz(args: argparse.Namespace) -> int:
-    from . import agents
-    from .pipeline import DatenFehler, lauf
-
     if (code := _schema_pruefen(_cfg(args.config))) is not None:
         return code
-    try:
-        bericht = lauf(cfg_pfad=args.config, modus="backtest", mit_konferenz=True)
-    except DatenFehler as exc:
-        print(f"FEHLER {exc}", file=sys.stderr)
+    bericht = _pipeline_lauf(cfg_pfad=args.config, modus="backtest", mit_konferenz=True)
+    if bericht is None:
         return 1
     protokoll = bericht.get("konferenz") or {}
     print(protokoll.get("beschluss", "Keine Konferenz erzeugt"))
