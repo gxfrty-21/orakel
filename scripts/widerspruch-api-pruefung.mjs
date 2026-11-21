@@ -16,6 +16,11 @@
  * Aufruf (CLI, für Tests und Proben):
  *   node scripts/widerspruch-api-pruefung.mjs --status status.json
  *   node scripts/widerspruch-api-pruefung.mjs --status status.json --erwartet erwartet.json
+ *   node scripts/widerspruch-api-pruefung.mjs --url http://127.0.0.1:3300
+ *
+ * ``--url`` holt die Antwort selbst von ``/api/nexus/status`` und prüft sie
+ * ohne Browser. Damit muss derselbe Vertrag auch eine echte Antwort der
+ * laufenden API bestätigen oder ablehnen, nicht nur gespeicherte Proben.
  */
 
 import { readFileSync } from 'node:fs';
@@ -82,20 +87,21 @@ export function apiBefund(status, erwartet = ERWARTET) {
 }
 
 function argumente(argv) {
-  const opts = { status: '', erwartet: '' };
+  const opts = { status: '', erwartet: '', url: '' };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--status') opts.status = argv[++i];
     else if (arg === '--erwartet') opts.erwartet = argv[++i];
+    else if (arg === '--url') opts.url = argv[++i];
     else if (arg === '--hilfe' || arg === '-h') {
       console.log('Aufruf: node scripts/widerspruch-api-pruefung.mjs ' +
-        '--status PFAD [--erwartet PFAD]');
+        '(--status PFAD | --url URL) [--erwartet PFAD]');
       process.exit(0);
     } else {
       throw new Error(`Unbekannte Option: ${arg}`);
     }
   }
-  if (!opts.status) throw new Error('--status fehlt');
+  if (!opts.status && !opts.url) throw new Error('--status oder --url fehlt');
   return opts;
 }
 
@@ -107,9 +113,30 @@ function lies(pfad, bezeichnung) {
   }
 }
 
-function main() {
+async function ladeStatus(opt) {
+  if (opt.status) return lies(opt.status, 'Status');
+  const basis = String(opt.url).replace(/\/$/, '');
+  let antwort;
+  try {
+    antwort = await fetch(`${basis}/api/nexus/status`, { cache: 'no-store' });
+  } catch (fehler) {
+    throw new Error(`Status-Abruf ${basis} fehlgeschlagen: ${fehler.message}`);
+  }
+  if (!antwort.ok) {
+    throw new Error(
+      `Status-Abruf ${basis}/api/nexus/status lieferte HTTP ${antwort.status}`
+    );
+  }
+  try {
+    return await antwort.json();
+  } catch (fehler) {
+    throw new Error(`Status-Antwort von ${basis} ist kein JSON: ${fehler.message}`);
+  }
+}
+
+async function main() {
   const opt = argumente(process.argv.slice(2));
-  const status = lies(opt.status, 'Status');
+  const status = await ladeStatus(opt);
   const erwartet = opt.erwartet ? lies(opt.erwartet, 'Erwartung') : ERWARTET;
   const { widerspruch, claim } = apiBefund(status, erwartet);
   console.log(
@@ -121,7 +148,7 @@ function main() {
 
 if (resolve(process.argv[1] || '') === fileURLToPath(import.meta.url)) {
   try {
-    main();
+    await main();
   } catch (fehler) {
     console.error(fehler instanceof Error ? fehler.message : fehler);
     process.exit(1);

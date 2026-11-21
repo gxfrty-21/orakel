@@ -63,6 +63,14 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
 
+      # Der API-Vertrag des Widerspruchs läuft zusätzlich gegen eine laufende,
+      # frisch geseedete API. Das Prüfskript ist JavaScript, braucht aber keinen
+      # Browser: Node genügt, Playwright installiert dieser Job bewusst nicht.
+      - name: Node einrichten
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
       # Als Modul aufrufen, damit das Repo-Root für "import orakel" im Pfad liegt.
       # Protokoll und JUnit-XML werden als Artefakt an den Review-Job gegeben,
       # damit die Suite nur einmal läuft.
