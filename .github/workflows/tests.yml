@@ -526,6 +526,7 @@ jobs:
             artifacts/text250/*.png
             artifacts/text250/*.html
             artifacts/text250/*.txt
+            artifacts/text250/*-trace.zip
             artifacts/text250/ergebnis.json
             artifacts/text250/*-ergebnis.json
             artifacts/text250/selbsttest/*.png

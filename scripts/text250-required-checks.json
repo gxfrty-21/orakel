@@ -19,7 +19,11 @@
         "legende": 3,
         "legendeDesktop": 1,
         "schreibwege": 3,
-        "geometrie": 36
+        "geometrie": 36,
+        "labGuard": 1,
+        "labPause": 1,
+        "listenUmsortierung": 1,
+        "takt": 1
       },
       "checks": [
         {
@@ -141,6 +145,22 @@
         {
           "id": "text250.geometrie.360",
           "description": "Geometrie bei 360 px: keine abgeschnittenen Beschriftungen, keine überlappenden statischen Steuerelemente, sichtbarer Fokusring."
+        },
+        {
+          "id": "text250.lab-guard",
+          "description": "Lab-Guard: Render-Pause nur bei Fokus im sichtbaren Lab-Detail (Liste, Tab, body und ausgeblendetes Lab blockieren nicht)."
+        },
+        {
+          "id": "text250.lab-pause",
+          "description": "Lab-Pause: Bei pausiertem Render zeigen sichtbarer Status (#labNeu als höfliche Live-Region) und sofortiges Neuzeichnen nach Fokusverlust."
+        },
+        {
+          "id": "text250.listen-umsortierung",
+          "description": "Listen-Umsortierung: Neuer Refresh sortiert die Lab-Liste um, ohne Kandidaten, Fokus, Auswahl und Scrollposition zu verlieren."
+        },
+        {
+          "id": "text250.refresh-takt",
+          "description": "Refresh-Takt: Kein überlappender Aufruf, kein Laden im Hintergrundtab und sofortiges Nachladen beim Zurückkehren."
         }
       ],
       "allow_skips": []
@@ -162,7 +182,11 @@
         "legende": 3,
         "legendeDesktop": 1,
         "schreibwege": 3,
-        "geometrie": 6
+        "geometrie": 6,
+        "labGuard": 1,
+        "labPause": 1,
+        "listenUmsortierung": 1,
+        "takt": 1
       },
       "checks": [
         {
@@ -211,6 +235,22 @@
         {
           "id": "text250.geometrie.360",
           "description": "Geometrie bei 360 px: keine abgeschnittenen Beschriftungen, keine überlappenden statischen Steuerelemente, sichtbarer Fokusring."
+        },
+        {
+          "id": "text250.lab-guard",
+          "description": "Lab-Guard: Render-Pause nur bei Fokus im sichtbaren Lab-Detail (Liste, Tab, body und ausgeblendetes Lab blockieren nicht)."
+        },
+        {
+          "id": "text250.lab-pause",
+          "description": "Lab-Pause: Bei pausiertem Render zeigen sichtbarer Status (#labNeu als höfliche Live-Region) und sofortiges Neuzeichnen nach Fokusverlust."
+        },
+        {
+          "id": "text250.listen-umsortierung",
+          "description": "Listen-Umsortierung: Neuer Refresh sortiert die Lab-Liste um, ohne Kandidaten, Fokus, Auswahl und Scrollposition zu verlieren."
+        },
+        {
+          "id": "text250.refresh-takt",
+          "description": "Refresh-Takt: Kein überlappender Aufruf, kein Laden im Hintergrundtab und sofortiges Nachladen beim Zurückkehren."
         }
       ],
       "allow_skips": []
