@@ -1,16 +1,17 @@
-/* Übersicht: Modus, Risiko, Validierung, Konto und Entscheide auf einen Blick. */
+/* Übersicht: Cockpit, Modus, Risiko, Validierung und Entscheide auf einen Blick. */
 import { R } from '../kern/daten.js';
-import { $, MODE, esc, money, num, params, pct } from '../kern/helfer.js';
+import { $, MODE, esc, num, params, pct } from '../kern/helfer.js';
+import { renderCockpit } from './cockpit.js';
 
 function renderOverview(){
+  renderCockpit();
   const v = R.validierungen||[], best = v.filter(x=>x.urteil==='bestanden');
-  const k = R.konto, a = R.risiko?.auslastung||{}, L = R.risiko_grenzen||{};
+  const a = R.risiko?.auslastung||{}, L = R.risiko_grenzen||{};
   const kp = [
     ['Modus', MODE[R.modus]?.[0]||'–', `${v.length} Kandidaten geprüft`],
     ['Risiko', R.risiko?.status==='gestoppt' ? '<span class="dn">GESTOPPT</span>' : '<span class="up">aktiv</span>',
       R.risiko?.status==='gestoppt' ? esc(R.risiko.grund) : `Drawdown ${pct(a.drawdown_pct,2)} von max. ${L.max_drawdown_pct} %`],
     ['Validierung', `${best.length} / ${v.length}`, 'bestanden, nach Gebühren und Slippage'],
-    ['Kontowert', k ? money(k.equity) : '–', k ? `Bargeld ${money(k.cash)}` : 'kein Broker im Lauf (Backtest)'],
   ];
   $('#ovKpis').innerHTML = kp.map(q=>`<div class="kpi"><div class="l">${q[0]}</div><div class="v">${q[1]}</div><div class="n">${q[2]}</div></div>`).join('');
 

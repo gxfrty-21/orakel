@@ -23,6 +23,10 @@
       "ziel": "dateien/code/betrieb.py"
     },
     {
+      "quelle": "orakel/cockpit.py",
+      "ziel": "dateien/code/cockpit.py"
+    },
+    {
       "quelle": "orakel/company/__init__.py",
       "ziel": "dateien/code/company/__init__.py"
     },
@@ -795,6 +799,10 @@
       "ziel": "dateien/tests/test_paper_strategies.py"
     },
     {
+      "quelle": "tests/test_cockpit.py",
+      "ziel": "dateien/tests/test_cockpit.py"
+    },
+    {
       "quelle": "tests/test_report.py",
       "ziel": "dateien/tests/test_report.py"
     },
@@ -885,6 +893,10 @@
     {
       "quelle": "orakel/web/static/js/ansichten/betrieb.js",
       "ziel": "dateien/web/static/js/ansichten/betrieb.js"
+    },
+    {
+      "quelle": "orakel/web/static/js/ansichten/cockpit.js",
+      "ziel": "dateien/web/static/js/ansichten/cockpit.js"
     },
     {
       "quelle": "orakel/web/static/js/ansichten/globe.js",

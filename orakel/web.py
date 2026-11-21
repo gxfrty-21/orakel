@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import agents
 from .betrieb import betrieb_health, betrieb_status
+from .cockpit import cockpit_block
 from .company.api import agent_detail as company_agent_detail
 from .company.api import agenten as company_agenten
 from .company.api import aufgaben as company_aufgaben
@@ -144,6 +145,7 @@ def _bericht(cfg: Config) -> dict[str, Any]:
         "positionen": [dict(p) for p in db.positionen()],
         "konto": db.zustand("paper_konto"),
     }
+    bericht["cockpit"] = cockpit_block(cfg, db)
     return bericht
 
 
