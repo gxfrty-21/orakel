@@ -45,18 +45,15 @@ def _sekunden(tag: date, *, tagesende: bool = False) -> int:
     return int(datetime.combine(tag, zeit, tzinfo=timezone.utc).timestamp())
 
 
-def _zeitraeume(von: date, bis: date, raster: str) -> Iterator[tuple[int, int]]:
-    """Zerlegt den Bereich in Monats- oder Jahresfenster.
+def _zeitraeume(von: date, bis: date) -> Iterator[tuple[int, int]]:
+    """Zerlegt den Bereich in Monatsfenster.
 
     Das Terminal liefert nur geladene Kerzen; kleinere Fenster fragen weniger
     auf einmal ab und umgehen die Grenze aus «Max. bars in chart».
     """
-    lauf = date(von.year, von.month, 1) if raster == "monat" else date(von.year, 1, 1)
+    lauf = date(von.year, von.month, 1)
     while lauf <= bis:
-        if raster == "monat":
-            naechster = date(lauf.year + lauf.month // 12, lauf.month % 12 + 1, 1)
-        else:
-            naechster = date(lauf.year + 1, 1, 1)
+        naechster = date(lauf.year + lauf.month // 12, lauf.month % 12 + 1, 1)
         anfang = max(lauf, von)
         ende = min(naechster - timedelta(days=1), bis)
         yield _sekunden(anfang), _sekunden(ende, tagesende=True)
@@ -85,12 +82,12 @@ def _inhalt(kerze: Any) -> tuple[float, ...]:
                  ("open", "high", "low", "close", "tick_volume", "real_volume", "spread"))
 
 
-def _hole(mt5: Any, symbol: str, rahmen: str, von: date, bis: date, raster: str) -> list[str]:
+def _hole(mt5: Any, symbol: str, rahmen: str, von: date, bis: date) -> list[str]:
     konstante = getattr(mt5, f"TIMEFRAME_{rahmen}", None)
     if konstante is None:
         raise AbrufFehler(f"Zeitrahmen {rahmen} kennt das Terminal nicht.")
     kerzen: dict[tuple[int, tuple[float, ...]], Any] = {}
-    for anfang, ende in _zeitraeume(von, bis, raster):
+    for anfang, ende in _zeitraeume(von, bis):
         roh = mt5.copy_rates_range(symbol, konstante, anfang, ende)
         if roh is None:
             raise AbrufFehler(
@@ -117,8 +114,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--von", required=True, type=date.fromisoformat, metavar="JJJJ-MM-TT")
     parser.add_argument("--bis", type=date.fromisoformat, metavar="JJJJ-MM-TT",
                         help="Standard: heute (UTC)")
-    parser.add_argument("--abschnitte", choices=("monat", "jahr"), default="monat",
-                        help="Abfragefenster; kleinere Fenster umgehen die Terminal-Historie")
     parser.add_argument("--ausgabe", default=str(WURZEL / "daten"),
                         help="Zielordner (Standard: daten/ im Repository)")
     parser.add_argument("--terminal-pfad", metavar="PFAD",
@@ -145,14 +140,17 @@ def main(argv: list[str] | None = None) -> int:
             raise AbrufFehler(
                 f"Symbol {args.symbol} nicht im Market Watch: {_letzter_fehler(mt5)}"
             )
-        zeilen = _hole(mt5, args.symbol, args.zeitrahmen, args.von, bis, args.abschnitte)
+        zeilen = _hole(mt5, args.symbol, args.zeitrahmen, args.von, bis)
         if not zeilen:
             raise AbrufFehler(
                 f"keine Kerzen für {args.symbol} {args.zeitrahmen} zwischen {args.von} und {bis}"
             )
         ziel = Path(args.ausgabe) / f"{args.symbol.upper()}_{args.zeitrahmen}.csv"
         ziel.parent.mkdir(parents=True, exist_ok=True)
-        ziel.write_text("\n".join([KOPFZEILE, *zeilen]) + "\n", encoding="utf-8")
+        try:
+            ziel.write_text("\n".join([KOPFZEILE, *zeilen]) + "\n", encoding="utf-8")
+        except OSError as exc:
+            raise AbrufFehler(f"{ziel} nicht schreibbar: {exc}") from exc
         print(f"{ziel}: {len(zeilen)} Kerzen ({args.von} bis {bis})")
         return 0
     except AbrufFehler as exc:
