@@ -265,6 +265,61 @@ def test_bloecke_zerteilen_die_herbststunde_nicht(tmp_path):
     ]
 
 
+def test_absteigende_tage_bleiben_blockweise_zusammen(tmp_path):
+    # Zwei absteigend exportierte Tage; die Blockgrenze darf den Herbsttag nicht
+    # zerteilen, sonst würde eine der beiden 03:00-Fassungen falsch umgerechnet.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for zeit, preis in (
+        ("04:00:00", "1.40"), ("03:15:00", "1.35"), ("03:00:00", "1.30"),
+        ("03:15:00", "1.25"), ("03:00:00", "1.20"), ("02:45:00", "1.15"),
+    ):
+        zeilen.append(f"2025.10.26\t{zeit}\t{preis}\t{preis}\t{preis}\t{preis}\t10\t0\t2")
+    for zeit in ("09:15:00", "09:00:00"):
+        zeilen.append(f"2025.10.25\t{zeit}\t1.0\t1.0\t1.0\t1.0\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    bloecke = list(lade_csv_bloecke(p, server_zeitzone="Europe/Athens", block=4))
+
+    assert [len(b) for b in bloecke] == [6, 2]
+    assert [str(t) for t in bloecke[0]["ts"]] == [
+        "2025-10-25 23:45:00+00:00", "2025-10-26 00:00:00+00:00",
+        "2025-10-26 00:15:00+00:00", "2025-10-26 01:00:00+00:00",
+        "2025-10-26 01:15:00+00:00", "2025-10-26 02:00:00+00:00",
+    ]
+    assert [str(t) for t in bloecke[1]["ts"]] == [
+        "2025-10-25 06:00:00+00:00", "2025-10-25 06:15:00+00:00",
+    ]
+
+
+def test_verschraenkte_tage_brechen_ab_statt_herbststunden_zu_trennen(cfg, tmp_path):
+    # Der Herbsttag ist mit einem anderen Tag verschränkt. Blockweises Lesen
+    # würde die beiden 03:00-Fassungen trennen; der Import muss stattdessen
+    # abbrechen und die Transaktion zurückrollen.
+    db = Facts(cfg.db_pfad)
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for tag, zeit, preis in (
+        ("2025.10.26", "03:00:00", "1.20"),  # Sommerzeitfassung
+        ("2025.10.26", "03:15:00", "1.25"),
+        ("2025.10.25", "09:00:00", "1.10"),
+        ("2025.10.25", "09:15:00", "1.11"),
+        ("2025.10.26", "03:00:00", "1.30"),  # Standardzeitfassung
+        ("2025.10.26", "03:15:00", "1.35"),
+        ("2025.10.25", "09:30:00", "1.12"),
+        ("2025.10.25", "09:45:00", "1.13"),
+    ):
+        zeilen.append(f"{tag}\t{zeit}\t{preis}\t{preis}\t{preis}\t{preis}\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="nach Datum sortiert"):
+        db.kerzen_speichern_bloecke(
+            "EURUSD", "M15",
+            lade_csv_bloecke(p, server_zeitzone="Europe/Athens", block=4))
+
+    assert db.kerzen("EURUSD", "M15") == []
+
+
 def test_fehlzeile_im_zweiten_block_rollt_die_datei_zurueck(cfg, tmp_path):
     db = Facts(cfg.db_pfad)
     zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]

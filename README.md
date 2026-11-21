@@ -281,9 +281,11 @@ mit einer Meldung abgelehnt, weil sonst unklar wäre, welche gilt. Preise brauch
 abgelehnt statt still zu fehlen. Doppelte Zeitstempel gewinnen mit der letzten
 Zeile, die Reihe wird aufsteigend sortiert. Kodierung: UTF-8 (auch mit BOM)
 oder cp1252. Grosse Dateien (mehrere Jahre M1) werden tageweise blockweise
-gelesen und in einer Transaktion geschrieben: Der Speicherbedarf bleibt flach,
-bei einem Fehler bleibt die Datei unverändert, und geprüft wird weiterhin die
-zusammengeführte Reihe.
+gelesen und in einer Transaktion geschrieben: Der Speicherbedarf beim Lesen und
+Schreiben bleibt flach, bei einem Fehler bleibt die Datei unverändert, und
+geprüft wird weiterhin die zusammengeführte Reihe. Die Datei muss nach Datum
+sortiert sein (auf- oder absteigend); verschränkte Tage brechen mit einer
+Meldung ab, statt die Herbststunden zu trennen.
 
 Zeitrahmen: importiert werden `M1`, `M5`, `M15`, `H1` (Suffix im Dateinamen
 oder `--zeitrahmen`). **Paper liest M15**; der Richter bewertet
