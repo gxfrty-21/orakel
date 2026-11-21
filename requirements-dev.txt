@@ -1,15 +1,28 @@
 # Orakel Trading-Engine — Entwicklungs- und Testabhängigkeiten (exakt gepinnt)
+# Quelle: requirements-dev.in, aufgelöst in einer sauberen venv (Python 3.12).
 # Installation: python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
-# Quelle: requirements-dev.in, aufgelöst in einer sauberen venv.
+# Neu erzeugen: pip install -r requirements-dev.in && pip freeze > requirements-dev.txt
 -r requirements.txt
-# Nur für Tests und Entwicklung:
-Pygments==2.21.0
+ast_serialize==0.13.1
+coverage==7.17.4
+grimp==3.20
 httpcore2==2.16.2
 httpx2==2.16.2
-hypothesis==6.170.16
+hypothesis==6.170.17
+import-linter==2.17
 iniconfig==2.3.1
+librt==0.17.0
+markdown-it-py==4.3.0
+mdurl==0.1.2
+mypy==2.4.1
+mypy_extensions==1.2.0
 packaging==26.3
+pathspec==1.1.1
 pluggy==1.7.0
+Pygments==2.21.0
 pytest==9.2.0
+pytest-cov==7.1.0
+rich==15.0.0
+ruff==0.17.6
 sortedcontainers==2.4.0
 truststore==0.10.5

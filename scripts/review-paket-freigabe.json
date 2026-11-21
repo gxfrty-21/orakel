@@ -63,7 +63,7 @@
       "ziel": "dateien/code/config.py"
     },
     {
-      "quelle": "orakel/db.py",
+      "quelle": "orakel/kern/db.py",
       "ziel": "dateien/code/db.py"
     },
     {
@@ -143,7 +143,7 @@
       "ziel": "dateien/code/nexus/status.py"
     },
     {
-      "quelle": "orakel/paper.py",
+      "quelle": "orakel/kern/paper.py",
       "ziel": "dateien/code/paper.py"
     },
     {
@@ -261,6 +261,610 @@
     {
       "quelle": "orakel/web/static/vaultgraph.js",
       "ziel": "dateien/web/static/vaultgraph.js"
+    },
+    {
+      "quelle": "orakel/strategiebericht.py",
+      "ziel": "dateien/orakel/strategiebericht.py"
+    },
+    {
+      "quelle": "tests/test_strategiebericht.py",
+      "ziel": "dateien/tests/test_strategiebericht.py"
+    },
+    {
+      "quelle": "scripts/baue_review_paket.py",
+      "ziel": "dateien/scripts/baue_review_paket.py"
+    },
+    {
+      "quelle": "tests/test_review_paket.py",
+      "ziel": "dateien/tests/test_review_paket.py"
+    },
+    {
+      "quelle": ".dockerignore",
+      "ziel": "dateien/.dockerignore"
+    },
+    {
+      "quelle": ".env.example",
+      "ziel": "dateien/.env.example"
+    },
+    {
+      "quelle": ".githooks/pre-commit",
+      "ziel": "dateien/.githooks/pre-commit"
+    },
+    {
+      "quelle": ".github/workflows/branch-smoke.yml",
+      "ziel": "dateien/.github/workflows/branch-smoke.yml"
+    },
+    {
+      "quelle": ".github/workflows/deploy-check.yml",
+      "ziel": "dateien/.github/workflows/deploy-check.yml"
+    },
+    {
+      "quelle": ".github/workflows/watchdog.yml",
+      "ziel": "dateien/.github/workflows/watchdog.yml"
+    },
+    {
+      "quelle": ".gitignore",
+      "ziel": "dateien/.gitignore"
+    },
+    {
+      "quelle": ".importlinter",
+      "ziel": "dateien/.importlinter"
+    },
+    {
+      "quelle": "DEPLOY.md",
+      "ziel": "dateien/DEPLOY.md"
+    },
+    {
+      "quelle": "Dockerfile",
+      "ziel": "dateien/Dockerfile"
+    },
+    {
+      "quelle": "RAILWAY.md",
+      "ziel": "dateien/RAILWAY.md"
+    },
+    {
+      "quelle": "config.toml",
+      "ziel": "dateien/config.toml"
+    },
+    {
+      "quelle": "deploy/Caddyfile",
+      "ziel": "dateien/deploy/Caddyfile"
+    },
+    {
+      "quelle": "deploy/orakel-nacht-fail.service",
+      "ziel": "dateien/deploy/orakel-nacht-fail.service"
+    },
+    {
+      "quelle": "deploy/orakel-nacht-fail.sh",
+      "ziel": "dateien/deploy/orakel-nacht-fail.sh"
+    },
+    {
+      "quelle": "deploy/orakel-nacht.service",
+      "ziel": "dateien/deploy/orakel-nacht.service"
+    },
+    {
+      "quelle": "deploy/orakel-nacht.timer",
+      "ziel": "dateien/deploy/orakel-nacht.timer"
+    },
+    {
+      "quelle": "docker-compose.yml",
+      "ziel": "dateien/docker-compose.yml"
+    },
+    {
+      "quelle": "docker-entrypoint.sh",
+      "ziel": "dateien/docker-entrypoint.sh"
+    },
+    {
+      "quelle": "docs/ARCHITEKTUR-KERN.md",
+      "ziel": "dateien/docs/ARCHITEKTUR-KERN.md"
+    },
+    {
+      "quelle": "docs/MIGRATIONEN.md",
+      "ziel": "dateien/docs/MIGRATIONEN.md"
+    },
+    {
+      "quelle": "docs/QUALITAET.md",
+      "ziel": "dateien/docs/QUALITAET.md"
+    },
+    {
+      "quelle": "docs/pr-schutz.md",
+      "ziel": "dateien/docs/pr-schutz.md"
+    },
+    {
+      "quelle": "docs/raumschiff/MASTERPLAN.md",
+      "ziel": "dateien/docs/raumschiff/MASTERPLAN.md"
+    },
+    {
+      "quelle": "docs/raumschiff/RAUMBUCH.md",
+      "ziel": "dateien/docs/raumschiff/RAUMBUCH.md"
+    },
+    {
+      "quelle": "docs/spider/FEED-ABDECKUNG.md",
+      "ziel": "dateien/docs/spider/FEED-ABDECKUNG.md"
+    },
+    {
+      "quelle": "docs/spider/NEXUS-PLAN.md",
+      "ziel": "dateien/docs/spider/NEXUS-PLAN.md"
+    },
+    {
+      "quelle": "docs/spider/ORACLE-MIGRATION.md",
+      "ziel": "dateien/docs/spider/ORACLE-MIGRATION.md"
+    },
+    {
+      "quelle": "docs/spider/PHASE-0-PLAN.md",
+      "ziel": "dateien/docs/spider/PHASE-0-PLAN.md"
+    },
+    {
+      "quelle": "docs/spider/PHASE-1.md",
+      "ziel": "dateien/docs/spider/PHASE-1.md"
+    },
+    {
+      "quelle": "docs/spider/PHASE-2.md",
+      "ziel": "dateien/docs/spider/PHASE-2.md"
+    },
+    {
+      "quelle": "docs/spider/PHASE-4.md",
+      "ziel": "dateien/docs/spider/PHASE-4.md"
+    },
+    {
+      "quelle": "docs/spider/PHASE-5.md",
+      "ziel": "dateien/docs/spider/PHASE-5.md"
+    },
+    {
+      "quelle": "docs/spider/PHASE-6.md",
+      "ziel": "dateien/docs/spider/PHASE-6.md"
+    },
+    {
+      "quelle": "docs/spider/PHASE-7.md",
+      "ziel": "dateien/docs/spider/PHASE-7.md"
+    },
+    {
+      "quelle": "mypy.ini",
+      "ziel": "dateien/mypy.ini"
+    },
+    {
+      "quelle": "orakel/__init__.py",
+      "ziel": "dateien/orakel/__init__.py"
+    },
+    {
+      "quelle": "orakel/__main__.py",
+      "ziel": "dateien/orakel/__main__.py"
+    },
+    {
+      "quelle": "orakel/globe.py",
+      "ziel": "dateien/orakel/globe.py"
+    },
+    {
+      "quelle": "orakel/intel.py",
+      "ziel": "dateien/orakel/intel.py"
+    },
+    {
+      "quelle": "orakel/kern/__init__.py",
+      "ziel": "dateien/orakel/kern/__init__.py"
+    },
+    {
+      "quelle": "orakel/kern/backtest.py",
+      "ziel": "dateien/orakel/kern/backtest.py"
+    },
+    {
+      "quelle": "orakel/kern/data.py",
+      "ziel": "dateien/orakel/kern/data.py"
+    },
+    {
+      "quelle": "orakel/kern/judge.py",
+      "ziel": "dateien/orakel/kern/judge.py"
+    },
+    {
+      "quelle": "orakel/kern/markt.py",
+      "ziel": "dateien/orakel/kern/markt.py"
+    },
+    {
+      "quelle": "orakel/kern/metrics.py",
+      "ziel": "dateien/orakel/kern/metrics.py"
+    },
+    {
+      "quelle": "orakel/kern/migrationen.py",
+      "ziel": "dateien/orakel/kern/migrationen.py"
+    },
+    {
+      "quelle": "orakel/kern/risk.py",
+      "ziel": "dateien/orakel/kern/risk.py"
+    },
+    {
+      "quelle": "orakel/kern/strategies.py",
+      "ziel": "dateien/orakel/kern/strategies.py"
+    },
+    {
+      "quelle": "orakel/knowledge.py",
+      "ziel": "dateien/orakel/knowledge.py"
+    },
+    {
+      "quelle": "orakel/lauf_queue.py",
+      "ziel": "dateien/orakel/lauf_queue.py"
+    },
+    {
+      "quelle": "orakel/migrations/0001_basis.down.sql",
+      "ziel": "dateien/orakel/migrations/0001_basis.down.sql"
+    },
+    {
+      "quelle": "orakel/migrations/0001_basis.sql",
+      "ziel": "dateien/orakel/migrations/0001_basis.sql"
+    },
+    {
+      "quelle": "orakel/migrations/0002_company.down.sql",
+      "ziel": "dateien/orakel/migrations/0002_company.down.sql"
+    },
+    {
+      "quelle": "orakel/migrations/0002_company.sql",
+      "ziel": "dateien/orakel/migrations/0002_company.sql"
+    },
+    {
+      "quelle": "orakel/migrations/0003_spalten_nachziehen.down.sql",
+      "ziel": "dateien/orakel/migrations/0003_spalten_nachziehen.down.sql"
+    },
+    {
+      "quelle": "orakel/migrations/0003_spalten_nachziehen.sql",
+      "ziel": "dateien/orakel/migrations/0003_spalten_nachziehen.sql"
+    },
+    {
+      "quelle": "orakel/migrations/0004_laeufe.down.sql",
+      "ziel": "dateien/orakel/migrations/0004_laeufe.down.sql"
+    },
+    {
+      "quelle": "orakel/migrations/0004_laeufe.sql",
+      "ziel": "dateien/orakel/migrations/0004_laeufe.sql"
+    },
+    {
+      "quelle": "orakel/migrations/0005_laeufe_versuche.down.sql",
+      "ziel": "dateien/orakel/migrations/0005_laeufe_versuche.down.sql"
+    },
+    {
+      "quelle": "orakel/migrations/0005_laeufe_versuche.sql",
+      "ziel": "dateien/orakel/migrations/0005_laeufe_versuche.sql"
+    },
+    {
+      "quelle": "orakel/pipeline.py",
+      "ziel": "dateien/orakel/pipeline.py"
+    },
+    {
+      "quelle": "orakel/report.py",
+      "ziel": "dateien/orakel/report.py"
+    },
+    {
+      "quelle": "orakel/scheduler.py",
+      "ziel": "dateien/orakel/scheduler.py"
+    },
+    {
+      "quelle": "orakel/seed.py",
+      "ziel": "dateien/orakel/seed.py"
+    },
+    {
+      "quelle": "orakel/sekretariat.py",
+      "ziel": "dateien/orakel/sekretariat.py"
+    },
+    {
+      "quelle": "orakel/spider.py",
+      "ziel": "dateien/orakel/spider.py"
+    },
+    {
+      "quelle": "orakel/watchdog.py",
+      "ziel": "dateien/orakel/watchdog.py"
+    },
+    {
+      "quelle": "railway.json",
+      "ziel": "dateien/railway.json"
+    },
+    {
+      "quelle": "ruff.toml",
+      "ziel": "dateien/ruff.toml"
+    },
+    {
+      "quelle": "scripts/ermittle-doku-aenderungen.sh",
+      "ziel": "dateien/scripts/ermittle-doku-aenderungen.sh"
+    },
+    {
+      "quelle": "scripts/oracle-bootstrap.sh",
+      "ziel": "dateien/scripts/oracle-bootstrap.sh"
+    },
+    {
+      "quelle": "scripts/oracle-nacht-install.sh",
+      "ziel": "dateien/scripts/oracle-nacht-install.sh"
+    },
+    {
+      "quelle": "scripts/oracle-restore.sh",
+      "ziel": "dateien/scripts/oracle-restore.sh"
+    },
+    {
+      "quelle": "scripts/package-lock.json",
+      "ziel": "dateien/scripts/package-lock.json"
+    },
+    {
+      "quelle": "scripts/package.json",
+      "ziel": "dateien/scripts/package.json"
+    },
+    {
+      "quelle": "scripts/pruefe-cluster-screenshotnamen.sh",
+      "ziel": "dateien/scripts/pruefe-cluster-screenshotnamen.sh"
+    },
+    {
+      "quelle": "scripts/pruefe-json-erwartung.mjs",
+      "ziel": "dateien/scripts/pruefe-json-erwartung.mjs"
+    },
+    {
+      "quelle": "scripts/pruefe-text250-ergebnis.mjs",
+      "ziel": "dateien/scripts/pruefe-text250-ergebnis.mjs"
+    },
+    {
+      "quelle": "scripts/pruefe-touch.mjs",
+      "ziel": "dateien/scripts/pruefe-touch.mjs"
+    },
+    {
+      "quelle": "scripts/pruefe_backup.py",
+      "ziel": "dateien/scripts/pruefe_backup.py"
+    },
+    {
+      "quelle": "scripts/pruefe_doku.py",
+      "ziel": "dateien/scripts/pruefe_doku.py"
+    },
+    {
+      "quelle": "scripts/railway-export.sh",
+      "ziel": "dateien/scripts/railway-export.sh"
+    },
+    {
+      "quelle": "scripts/review-paket-freigabe.json",
+      "ziel": "dateien/scripts/review-paket-freigabe.json"
+    },
+    {
+      "quelle": "scripts/seed_widerspruch.py",
+      "ziel": "dateien/scripts/seed_widerspruch.py"
+    },
+    {
+      "quelle": "scripts/systemcheck.ps1",
+      "ziel": "dateien/scripts/systemcheck.ps1"
+    },
+    {
+      "quelle": "scripts/systemcheck.sh",
+      "ziel": "dateien/scripts/systemcheck.sh"
+    },
+    {
+      "quelle": "scripts/text250-required-checks.json",
+      "ziel": "dateien/scripts/text250-required-checks.json"
+    },
+    {
+      "quelle": "seed/README.md",
+      "ziel": "dateien/seed/README.md"
+    },
+    {
+      "quelle": "tests/conftest.py",
+      "ziel": "dateien/tests/conftest.py"
+    },
+    {
+      "quelle": "tests/paper_strategies.py",
+      "ziel": "dateien/tests/paper_strategies.py"
+    },
+    {
+      "quelle": "tests/test_architektur.py",
+      "ziel": "dateien/tests/test_architektur.py"
+    },
+    {
+      "quelle": "tests/test_backtest.py",
+      "ziel": "dateien/tests/test_backtest.py"
+    },
+    {
+      "quelle": "tests/test_backup.py",
+      "ziel": "dateien/tests/test_backup.py"
+    },
+    {
+      "quelle": "tests/test_betrieb.py",
+      "ziel": "dateien/tests/test_betrieb.py"
+    },
+    {
+      "quelle": "tests/test_company.py",
+      "ziel": "dateien/tests/test_company.py"
+    },
+    {
+      "quelle": "tests/test_company_api.py",
+      "ziel": "dateien/tests/test_company_api.py"
+    },
+    {
+      "quelle": "tests/test_company_communication.py",
+      "ziel": "dateien/tests/test_company_communication.py"
+    },
+    {
+      "quelle": "tests/test_config.py",
+      "ziel": "dateien/tests/test_config.py"
+    },
+    {
+      "quelle": "tests/test_config_guards.py",
+      "ziel": "dateien/tests/test_config_guards.py"
+    },
+    {
+      "quelle": "tests/test_data.py",
+      "ziel": "dateien/tests/test_data.py"
+    },
+    {
+      "quelle": "tests/test_db_init.py",
+      "ziel": "dateien/tests/test_db_init.py"
+    },
+    {
+      "quelle": "tests/test_doku_aenderungen.py",
+      "ziel": "dateien/tests/test_doku_aenderungen.py"
+    },
+    {
+      "quelle": "tests/test_doku_migrationen.py",
+      "ziel": "dateien/tests/test_doku_migrationen.py"
+    },
+    {
+      "quelle": "tests/test_doku_pflichtverweis.py",
+      "ziel": "dateien/tests/test_doku_pflichtverweis.py"
+    },
+    {
+      "quelle": "tests/test_engine_vergleich.py",
+      "ziel": "dateien/tests/test_engine_vergleich.py"
+    },
+    {
+      "quelle": "tests/test_fehlerhygiene.py",
+      "ziel": "dateien/tests/test_fehlerhygiene.py"
+    },
+    {
+      "quelle": "tests/test_githooks.py",
+      "ziel": "dateien/tests/test_githooks.py"
+    },
+    {
+      "quelle": "tests/test_globe.py",
+      "ziel": "dateien/tests/test_globe.py"
+    },
+    {
+      "quelle": "tests/test_intel.py",
+      "ziel": "dateien/tests/test_intel.py"
+    },
+    {
+      "quelle": "tests/test_judge.py",
+      "ziel": "dateien/tests/test_judge.py"
+    },
+    {
+      "quelle": "tests/test_knowledge.py",
+      "ziel": "dateien/tests/test_knowledge.py"
+    },
+    {
+      "quelle": "tests/test_lauf_queue.py",
+      "ziel": "dateien/tests/test_lauf_queue.py"
+    },
+    {
+      "quelle": "tests/test_markt.py",
+      "ziel": "dateien/tests/test_markt.py"
+    },
+    {
+      "quelle": "tests/test_migration_befehl.py",
+      "ziel": "dateien/tests/test_migration_befehl.py"
+    },
+    {
+      "quelle": "tests/test_migrationen.py",
+      "ziel": "dateien/tests/test_migrationen.py"
+    },
+    {
+      "quelle": "tests/test_nexus_abruf.py",
+      "ziel": "dateien/tests/test_nexus_abruf.py"
+    },
+    {
+      "quelle": "tests/test_nexus_bewertung.py",
+      "ziel": "dateien/tests/test_nexus_bewertung.py"
+    },
+    {
+      "quelle": "tests/test_nexus_claim_baseline.py",
+      "ziel": "dateien/tests/test_nexus_claim_baseline.py"
+    },
+    {
+      "quelle": "tests/test_nexus_cli.py",
+      "ziel": "dateien/tests/test_nexus_cli.py"
+    },
+    {
+      "quelle": "tests/test_nexus_dedup.py",
+      "ziel": "dateien/tests/test_nexus_dedup.py"
+    },
+    {
+      "quelle": "tests/test_nexus_feeds.py",
+      "ziel": "dateien/tests/test_nexus_feeds.py"
+    },
+    {
+      "quelle": "tests/test_nexus_graph.py",
+      "ziel": "dateien/tests/test_nexus_graph.py"
+    },
+    {
+      "quelle": "tests/test_nexus_hn.py",
+      "ziel": "dateien/tests/test_nexus_hn.py"
+    },
+    {
+      "quelle": "tests/test_nexus_kalibrierung.py",
+      "ziel": "dateien/tests/test_nexus_kalibrierung.py"
+    },
+    {
+      "quelle": "tests/test_nexus_missionen.py",
+      "ziel": "dateien/tests/test_nexus_missionen.py"
+    },
+    {
+      "quelle": "tests/test_nexus_nacht.py",
+      "ziel": "dateien/tests/test_nexus_nacht.py"
+    },
+    {
+      "quelle": "tests/test_nexus_quellen.py",
+      "ziel": "dateien/tests/test_nexus_quellen.py"
+    },
+    {
+      "quelle": "tests/test_nexus_raum.py",
+      "ziel": "dateien/tests/test_nexus_raum.py"
+    },
+    {
+      "quelle": "tests/test_nexus_speicher.py",
+      "ziel": "dateien/tests/test_nexus_speicher.py"
+    },
+    {
+      "quelle": "tests/test_nexus_sprache.py",
+      "ziel": "dateien/tests/test_nexus_sprache.py"
+    },
+    {
+      "quelle": "tests/test_paper.py",
+      "ziel": "dateien/tests/test_paper.py"
+    },
+    {
+      "quelle": "tests/test_paper_datenqualitaet.py",
+      "ziel": "dateien/tests/test_paper_datenqualitaet.py"
+    },
+    {
+      "quelle": "tests/test_paper_long_short.py",
+      "ziel": "dateien/tests/test_paper_long_short.py"
+    },
+    {
+      "quelle": "tests/test_paper_strategies.py",
+      "ziel": "dateien/tests/test_paper_strategies.py"
+    },
+    {
+      "quelle": "tests/test_report.py",
+      "ziel": "dateien/tests/test_report.py"
+    },
+    {
+      "quelle": "tests/test_risiko_freigabe.py",
+      "ziel": "dateien/tests/test_risiko_freigabe.py"
+    },
+    {
+      "quelle": "tests/test_risk.py",
+      "ziel": "dateien/tests/test_risk.py"
+    },
+    {
+      "quelle": "tests/test_seed.py",
+      "ziel": "dateien/tests/test_seed.py"
+    },
+    {
+      "quelle": "tests/test_sekretariat.py",
+      "ziel": "dateien/tests/test_sekretariat.py"
+    },
+    {
+      "quelle": "tests/test_soak_abnahme.py",
+      "ziel": "dateien/tests/test_soak_abnahme.py"
+    },
+    {
+      "quelle": "tests/test_soak_auto_abnahme.py",
+      "ziel": "dateien/tests/test_soak_auto_abnahme.py"
+    },
+    {
+      "quelle": "tests/test_spider.py",
+      "ziel": "dateien/tests/test_spider.py"
+    },
+    {
+      "quelle": "tests/test_watchdog.py",
+      "ziel": "dateien/tests/test_watchdog.py"
+    },
+    {
+      "quelle": "tests/test_web.py",
+      "ziel": "dateien/tests/test_web.py"
+    },
+    {
+      "quelle": "requirements.in",
+      "ziel": "dateien/requirements.in"
+    },
+    {
+      "quelle": "requirements-dev.in",
+      "ziel": "dateien/requirements-dev.in"
     }
   ],
   "dokumente": [
@@ -272,6 +876,9 @@
     "QUICKSTART.md"
   ],
   "belege": [
+    "belege/evidenz-strategie.log",
+    "belege/strategie-bericht.json",
+    "belege/strategie-bericht.md",
     "belege/240px-kernaussagen-karte.png",
     "belege/240px-test.log",
     "belege/280px-langhost-quellenzeile.png",
@@ -296,6 +903,21 @@
       "name": "orakel/web/static",
       "praefix": "dateien/web/static/",
       "zweck": "Dashboard, Tooltip, Tastaturbedienung, Lab-Fokus und 240/360-Layout"
+    },
+    {
+      "name": "orakel/kern",
+      "praefix": "dateien/orakel/kern/",
+      "zweck": "Handelskern: Backtest, Richter, Risiko, Daten, Strategien, Migrationen."
+    },
+    {
+      "name": "tests",
+      "praefix": "dateien/tests/",
+      "zweck": "Vollständige Testsuite samt Fixtures, auf der die Testzahl beruht."
+    },
+    {
+      "name": "scripts",
+      "praefix": "dateien/scripts/",
+      "zweck": "Prüf-, Evidenz- und Betriebsskripte, mit denen die Nachweise entstehen."
     }
   ]
 }

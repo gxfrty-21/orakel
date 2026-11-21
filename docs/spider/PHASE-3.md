@@ -129,8 +129,11 @@ gespeicherte Meldungen zu verlieren.
 Manuell neu berechnen:
 
 ```bash
-python -m orakel.nexus bewertung --db orakel.db
+python -m orakel.nexus bewertung
 ```
+
+Den Datenbankpfad nimmt der Befehl aus `config.toml` (`[basis] db_pfad`);
+`ORAKEL_DB_PFAD` sticht ihn. `--db` ist nur für einen anderen Bestand nötig.
 
 ---
 
@@ -368,6 +371,33 @@ ausgeblendetes Lab-Detail) laufen als eigener deterministischer 360px/lab-Lauf
 mit echter /api/report-Antwort (HTTP 200, Marker); dieser Lauf ist ohne Befund.
 Der vollständige 12-Ansichten-Standardlauf wurde nach dieser Verschärfung
 nicht erneut ausgeführt.
+
+## 7a. Prüfungen zum pausierten Lab-Render
+
+Der 250-%-Lauf prüft das Verhalten beim pausierten Render mit eigenen
+Prüfungen. Sie laufen als Teil der Profile `voll` und `seed-tastatur` und sind
+im Check-Manifest als Pflichtfälle hinterlegt:
+
+- **Lab-Guard** (`text250.lab-guard`): Die Regel wird direkt über
+  `window.pausiertRenderWegenLabDetail` geprüft. Fokus auf Liste, Tab, `body`
+  und ein ausgeblendetes Lab dürfen den Render nicht blockieren, Fokus im
+  sichtbaren Lab-Detail muss es. Zusätzlich wird die Regel am echten Fokus
+  geprüft.
+- **Lab-Pause** (`text250.lab-pause`): Bei pausiertem Render müssen die neuen
+  Daten übernommen werden, der Status `#labNeu` sichtbar und als höfliche
+  Live-Region angekündigt sein, ohne dass die Liste neu gezeichnet wird. Beim
+  Verlassen des Details wird sofort neu gezeichnet, der Status verschwindet
+  und der Fokus bleibt in der Liste.
+- **Listen-Umsortierung** (`text250.listen-umsortierung`): Der Refresh dreht
+  die Kandidatenreihenfolge um. Derselbe Kandidat bleibt ausgewählt, der
+  fokussierte DOM-Knoten bleibt bestehen (Marke überlebt) und die
+  Scrollposition steht.
+- **Refresh-Takt** (`text250.refresh-takt`): Während eine Antwort offen ist,
+  startet der Takt keinen zweiten Aufruf; im Hintergrundtab lädt er nicht, beim
+  Zurückkehren sofort.
+
+Die Prüfungen sichern bei Befunden einen Screenshot und einen
+Playwright-Trace (`text250-*-trace.zip`) im Diagnose-Artefakt.
 
 Der erfolgreiche CI-Job `text250` aus Run `43811966526` verwendete denselben
 Seed und denselben Lab-Code, lief mit 74,39 s aber etwas schneller als der

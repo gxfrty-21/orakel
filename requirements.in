@@ -1,5 +1,5 @@
 # Orakel Trading-Engine — Laufzeit-Abhängigkeiten (lose)
-# Gepinnte Fassung: requirements.txt, erzeugt aus einer sauberen venv.
+# Exakt gepinnte Fassung: requirements.txt, aufgelöst aus dieser Datei.
 fastapi
 uvicorn[standard]
 jinja2
