@@ -82,6 +82,28 @@ h2{font-size:17px;font-weight:500;margin:0}
 
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 
+/* Cockpit (Übersicht oben): Bot, Konto, Gewinn/Verlust, offene Positionen. */
+.cockpit{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.cpKachel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;min-width:0;display:flex;flex-direction:column;gap:4px}
+.cpKachel .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;overflow-wrap:anywhere;min-width:0}
+.cpKachel .v{font-family:var(--mono);font-size:26px;font-variant-numeric:tabular-nums;line-height:1.2;overflow-wrap:anywhere;display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 8px}
+.cpKachel .v small{font-size:14px}
+.cpKachel .n{font-size:12px;color:var(--dim);overflow-wrap:anywhere}
+.cpDot{width:12px;height:12px;border-radius:50%;flex:0 0 auto;align-self:center}
+.cpBot.cp-g{border-color:color-mix(in srgb,var(--good) 45%,var(--line))}
+.cpBot.cp-w{border-color:color-mix(in srgb,var(--amber) 55%,var(--line))}
+.cpBot.cp-r{border-color:color-mix(in srgb,var(--bad) 60%,var(--line))}
+.cpBot.cp-g .cpDot{box-shadow:0 0 0 4px color-mix(in srgb,var(--good) 20%,transparent)}
+.cpKopf{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px}
+.cpKopf .tab{padding:2px 7px;font-size:11px}
+.cpSpark{display:block;width:100%;height:36px;margin:2px 0}
+.cpSpark.leer{font-size:11px;color:var(--dim);display:flex;align-items:center}
+#cpPosPanel{margin-top:0}
+#ovKpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:1200px){ .cockpit{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@media (max-width:900px){ #ovKpis{grid-template-columns:minmax(0,1fr)} }
+@media (max-width:600px){ .cockpit{grid-template-columns:minmax(0,1fr)} .cpKachel .v{font-size:22px} }
+
 .kpi{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 14px;min-width:0}
 
 .kpi .l{font-size:12px;color:var(--muted)}
