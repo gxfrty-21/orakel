@@ -9,6 +9,21 @@ import pandas as pd
 
 SPALTEN = ["ts", "open", "high", "low", "close", "volume"]
 
+# Importiert werden nur Zeitrahmen, die auch anderswo vorkommen. Bewertet
+# (Richter, Paper) wird M15; die anderen liegen für spätere Auswertungen bereit.
+ZEITRAHMEN_MINUTEN = {"M1": 1, "M5": 5, "M15": 15, "H1": 60}
+ZEITRAHMEN = tuple(ZEITRAHMEN_MINUTEN)
+
+# MT5 exportiert Datum als YYYY.MM.DD; ISO-Dateien kommen zusätzlich vor (das
+# «T» wird vor dem Parsen zum Leerzeichen). Bewusst nur diese Formen: eine
+# Tag/Monat-Vertauschung soll nicht still passieren. Reine Datumsangaben fehlen
+# absichtlich: daraus würde eine Mitternachtskerze, und ein Tagesexport landete
+# unbemerkt als M15 in der Datenbank.
+ZEITFORMATE = (
+    "%Y.%m.%d %H:%M:%S", "%Y.%m.%d %H:%M",
+    "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
+)
+
 # MT5 exportiert je nach Sprache/Klickpfad unterschiedliche Kopfzeilen.
 # Datum und Zeit können getrennt sein (MT5-Standard) und werden zusammengeführt.
 ALIASE: dict[str, str] = {
@@ -54,9 +69,8 @@ def _normalisiere_spalten(df: pd.DataFrame) -> pd.DataFrame:
     if "_datum" in df.columns and "_zeit" in df.columns:
         df["ts"] = df["_datum"].astype(str).str.strip() + " " + df["_zeit"].astype(str).str.strip()
     elif "_datum" in df.columns and "ts" not in df.columns:
+        # MT5 kann Datum und Uhrzeit auch in einer Spalte liefern.
         df["ts"] = df["_datum"]
-    elif "_zeit" in df.columns and "ts" not in df.columns:
-        df["ts"] = df["_zeit"]
     df = df.drop(columns=[c for c in ("_datum", "_zeit") if c in df.columns])
     fehlend = [s for s in ("ts", "open", "high", "low", "close") if s not in df.columns]
     if fehlend:
@@ -66,27 +80,91 @@ def _normalisiere_spalten(df: pd.DataFrame) -> pd.DataFrame:
     return df[SPALTEN].copy()
 
 
-def lade_csv(pfad: str | Path, trenner: str | None = None) -> pd.DataFrame:
-    """Liest einen MT5-Export. Erkennt Komma- und Semikolon-Trenner."""
-    p = Path(pfad)
-    text = p.read_text(encoding="utf-8-sig", errors="replace")
-    if trenner is None:
-        kopf = text.splitlines()[0] if text.splitlines() else ""
-        trenner = ";" if kopf.count(";") > kopf.count(",") else ("," if "," in kopf else "\t")
-    from io import StringIO
+def _trenner(kopf: str) -> str:
+    """Trenner aus der Kopfzeile; MT5 schreibt Tabulatoren, andere Komma/Semikolon."""
+    if "\t" in kopf:
+        return "\t"
+    if kopf.count(";") > kopf.count(","):
+        return ";"
+    if "," in kopf:
+        return ","
+    raise ValueError("CSV: Trennzeichen nicht erkannt (Tabulator, Semikolon oder Komma nötig).")
 
-    roh = pd.read_csv(StringIO(text), sep=trenner)
+
+def _zeitstempel(reihen: pd.Series) -> pd.Series:
+    """Parst MT5- und ISO-Zeitstempel zeilenweise mit festen Formaten.
+
+    Zeilenweise, weil ein zusammengeführter Export mit und ohne Sekunden
+    vorkommen kann; geraten wird trotzdem nichts.
+    """
+    text = (reihen.astype(str).str.strip()
+            .str.replace(r"\s+", " ", regex=True)
+            .str.replace("T", " ", regex=False))
+    geparst = pd.Series(pd.NaT, index=reihen.index, dtype="datetime64[ns, UTC]")
+    for format_ in ZEITFORMATE:
+        offen = geparst.isna()
+        if not offen.any():
+            break
+        geparst[offen] = pd.to_datetime(text[offen], format=format_, errors="coerce", utc=True)
+    schlecht = geparst.isna()
+    if schlecht.any():
+        beispiele = ", ".join(text[schlecht].head(3).tolist())
+        raise ValueError(
+            f"CSV: {int(schlecht.sum())} Zeitstempel nicht lesbar ({beispiele}). "
+            "Erwartet wird YYYY.MM.DD HH:MM[:SS] oder ISO 8601 mit Uhrzeit, in einer "
+            "Spalte oder getrennt in Datum und Zeit."
+        )
+    return geparst
+
+
+def zerlege_dateiname(pfad: str | Path) -> tuple[str, str]:
+    """Symbol und Zeitrahmen aus einem Namen wie ``EURUSD_M15.csv``.
+
+    Ohne bekannten Zeitrahmen im Namen gilt M15; das ist der Zeitrahmen, den
+    Richter und Paper lesen.
+    """
+    stamm = Path(pfad).stem
+    vorne, _, hinten = stamm.rpartition("_")
+    if vorne and hinten.upper() in ZEITRAHMEN:
+        return vorne.upper(), hinten.upper()
+    return stamm.split("_")[0].upper(), "M15"
+
+
+def lade_csv(pfad: str | Path, trenner: str | None = None) -> pd.DataFrame:
+    """Liest einen MT5-Export mit Tabulator, Komma oder Semikolon.
+
+    Kopfzeilen dürfen englisch oder deutsch sein (siehe ``ALIASE``); ``<VOL>``
+    und ``<SPREAD>`` werden ignoriert, ``<TICKVOL>`` wird zu ``volume``. Fehlt
+    eine Volumenspalte, steht 0. Zeilen mit unlesbaren Preisen führen zu einem
+    Fehler statt zu stillschweigend fehlenden Kerzen; doppelte Zeitstempel
+    werden zusammengeführt (der letzte gewinnt), die Reihe wird sortiert.
+    """
+    p = Path(pfad)
+    with p.open("r", encoding="utf-8-sig", errors="replace") as datei:
+        kopf = datei.readline()
+    if not kopf.strip():
+        raise ValueError(f"CSV: {p.name} ist leer.")
+    sep = trenner or _trenner(kopf)
+    try:
+        roh = pd.read_csv(p, sep=sep, encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        # Ältere MT5-Installationen schreiben ANSI (cp1252), z. B. «Eröffnung».
+        roh = pd.read_csv(p, sep=sep, encoding="cp1252")
     df = _normalisiere_spalten(roh)
-    # MT5 kann Datum und Zeit in einer oder zwei Spalten liefern; _normalisiere_spalten
-    # behält die erste "ts"-Spalte, daher hier robust parsen.
-    df["ts"] = pd.to_datetime(df["ts"], utc=True, errors="coerce", format="mixed")
-    if df["ts"].isna().any():
-        # Zweispaltige Variante: Datum + Uhrzeit wurden als eigene Spalten gelesen.
-        raise ValueError("CSV: Zeitstempel nicht lesbar. Bitte als eine Spalte exportieren.")
+    df["ts"] = _zeitstempel(df["ts"])
     for spalte in ("open", "high", "low", "close", "volume"):
         df[spalte] = pd.to_numeric(df[spalte], errors="coerce")
-    df = df.dropna(subset=["ts", "open", "high", "low", "close"])
+
+    unlesbar = df[["open", "high", "low", "close"]].isna().any(axis=1)
+    if unlesbar.any():
+        raise ValueError(
+            f"CSV: {int(unlesbar.sum())} Kerzen mit unlesbaren Preisen. "
+            "Erwartet werden Zahlen mit Dezimalpunkt, z. B. 1.03500."
+        )
+    df["volume"] = df["volume"].fillna(0.0)
     df = df.drop_duplicates(subset="ts", keep="last").sort_values("ts").reset_index(drop=True)
+    if df.empty:
+        raise ValueError(f"CSV: {p.name} enthält keine vollständigen Kerzen.")
     return df
 
 

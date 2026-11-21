@@ -25,8 +25,8 @@ python -m venv .venv
 
 # 1) Daten: synthetisch (Test der Abläufe) ...
 .venv/bin/python -m orakel daten --kerzen 6000
-# ... oder echte MT5-Historie importieren:
-.venv/bin/python -m orakel daten --csv daten/EURUSD_M15.csv --symbol EURUSD
+# ... oder echte MT5-Historie importieren (mehrere Dateien und Blöcke erlaubt):
+.venv/bin/python -m orakel daten --csv daten/EURUSD_M15_2020.csv daten/EURUSD_M15_2021.csv
 
 # 2) Vollständiger Lauf: Daten → Research → Richter → Risiko → Plan → Bericht
 .venv/bin/python -m orakel pruefen
@@ -224,6 +224,62 @@ Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswah
 
 Das Cockpit oben in der Übersicht zeigt vier Zahlen aus derselben Datenbank: Bot-Zustand (letzter Paper-Takt, Risikostopp), Kontostand, Gewinn/Verlust und offene Positionen. Der Zeitraum lässt sich zwischen heute, 7 Tagen und 1 Monat umschalten; «heute» beginnt um 00:00 Uhr Europe/Zurich, und der Verlauf ist auf 120 Punkte ausgedünnt. Fehlt eine Grundlage, steht «–», und ein leerer Verlauf wird als solcher benannt. Als «steht» gilt der Bot, wenn seit drei Takten (mindestens drei Minuten) kein Paper-Takt mehr lief; ein gesetzter Risikostopp hat Vorrang und zeigt seinen Grund. Die offenen Positionen erscheinen darunter mit Einstieg, letztem M15-Kurs, Stop und unrealisiertem Ergebnis.
 
+## Kursdaten aus MT5
+
+In MT5 das Symbol im gewünschten Chart öffnen, `Bars` (Strg+B) → `Save as`
+und als CSV speichern. Der Import erkennt Tabulator, Semikolon und Komma;
+mehrere Dateien dürfen Teilzeiträume sein:
+
+```bash
+# ein Block, Symbol und Zeitrahmen aus dem Dateinamen (EURUSD_M15.csv)
+.venv/bin/python -m orakel daten --csv daten/EURUSD_M15.csv
+
+# mehrere Jahre in Blöcken; überlappende Zeitstempel werden ersetzt, nicht doppelt gezählt
+.venv/bin/python -m orakel daten --csv daten/EURUSD_M15_2020.csv daten/EURUSD_M15_2021.csv daten/EURUSD_M15_2022.csv
+
+# ohne Zeitrahmen im Dateinamen: Symbol und Rahmen vorgeben (nur bei einer Datei)
+.venv/bin/python -m orakel daten --csv daten/export.csv --symbol EURUSD --zeitrahmen M15
+
+# danach der vollständige Lauf: Research → Richter → Risiko → Plan
+.venv/bin/python -m orakel pruefen
+```
+
+Unterstützte Spalten (Groß-/Kleinschreibung egal, mit oder ohne spitze Klammern):
+
+| MT5-Kopfzeile | Bedeutung | Pflicht |
+|---|---|---|
+| `<DATE>` + `<TIME>` (auch `date` + `time`, `datum` + `zeit`) | Zeitstempel, getrennt oder in einer Spalte (`datetime`) | ja |
+| `<OPEN>` `<HIGH>` `<LOW>` `<CLOSE>` (auch `open`, `high`, `low`, `close`, `eröffnung`, `hoch`, `tief`, `schluss`) | Kurse | ja |
+| `<TICKVOL>` (auch `tickvol`, `volume`, `volumen`, `vol`) | Volumen; fehlt die Spalte, steht 0 | nein |
+| `<VOL>`, `<SPREAD>` | echtes Volumen und Spread | werden ignoriert |
+
+Zeitstempel: MT5 schreibt `YYYY.MM.DD HH:MM[:SS]`, zusätzlich wird ISO 8601 mit
+Uhrzeit gelesen. Eine Tag/Monat-Vertauschung wird nicht geraten, und ein Datum
+ohne Uhrzeit wird abgelehnt (daraus würde eine falsche Mitternachtskerze) —
+unbekannte Formen brechen mit Meldung ab. Preise brauchen einen Dezimalpunkt; `1,035` wird
+abgelehnt statt still zu fehlen. Doppelte Zeitstempel gewinnen mit der letzten
+Zeile, die Reihe wird aufsteigend sortiert. Kodierung: UTF-8 (auch mit BOM)
+oder cp1252.
+
+Zeitrahmen: importiert werden `M1`, `M5`, `M15`, `H1` (Suffix im Dateinamen
+oder `--zeitrahmen`). **Richter und Paper lesen M15**; andere Zeitrahmen werden
+gespeichert, aber nicht bewertet. Der Ordner-Import über `[basis]
+datenquelle = "csv"` liest `daten/*.csv` und überspringt andere Zeitrahmen mit
+Ereignis im Protokoll, statt sie als M15 abzulegen.
+
+Nach dem Import prüft der Befehl die **zusammengeführte** Reihe je Symbol und
+Zeitrahmen (einzelne Blöcke dürfen kürzer als `min_kerzen` sein): Mindestzahl
+Kerzen, doppelte oder unsortierte Zeitstempel, unmögliches Hoch/Tief, Preise
+≤ 0, Lücken über dem Dreifachen des Median-Abstands und Sprünge über
+`max_sprung_pct`. Fehler und Warnungen stehen im Terminal und im Ereignisprotokoll;
+bei einem Fehler endet der Befehl mit Exit-Code 1, importiert bleibt die Reihe
+trotzdem.
+
+Noch nicht unterstützt: eine Zeitzonen-Umrechnung der MT5-Serverzeit (sie gilt
+als UTC), der direkte Abruf aus dem laufenden MT5-Terminal, Tick-Daten,
+Dezimalkommas und eine Bewertung anderer Zeitrahmen als M15 (dafür müssten
+`bars_pro_jahr` und die Frischegrenzen je Rahmen mitgeführt werden).
+
 ## Risikogrenzen (deine Vorgaben)
 
 ```toml
@@ -272,7 +328,8 @@ tests/           Risiko, Backtest, Daten, Bericht
 
 ## Noch offen (nächste Phasen)
 
-1. **Echte Daten**: MT5-Export oder direkter Abruf auf deinem Windows-Rechner.
+1. **Echte Daten**: CSV-Import aus MT5 steht (siehe [Kursdaten aus MT5](#kursdaten-aus-mt5));
+der direkte Abruf aus dem Terminal auf deinem Windows-Rechner fehlt noch.
 2. **Spider Intelligence**: Netz-Recherche mit Quellenprüfung, robots.txt und Limits.
 3. **3D-Ausbau**: begehbare Decks und First-Person-Navigation sind zurückgestellt;
    die aktuelle 2D-Welt ist umgesetzt und an echte Daten gekoppelt.

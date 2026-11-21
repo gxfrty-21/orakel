@@ -8,7 +8,15 @@ import time
 from pathlib import Path
 
 from .config import RisikoGrenzen, load_config
-from .kern.data import df_aus_db, lade_csv, synthetische_kerzen
+from .kern.data import (
+    ZEITRAHMEN,
+    ZEITRAHMEN_MINUTEN,
+    df_aus_db,
+    lade_csv,
+    pruefe_daten,
+    synthetische_kerzen,
+    zerlege_dateiname,
+)
 from .kern.db import Facts
 from .knowledge import Vault
 
@@ -37,6 +45,62 @@ def _schema_pruefen(konfig) -> int | None:
     return None
 
 
+def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
+    """Importiert beliebig viele MT5-Dateien und prüft danach die ganze Reihe.
+
+    Jede Datei darf ein Teilzeitraum sein (MT5 exportiert oft blockweise);
+    doppelte Zeitstempel ersetzt die Datenbank. Geprüft wird die
+    zusammengeführte Reihe, sonst würde jeder kleine Block als «zu wenig
+    Kerzen» gelten.
+    """
+    dateien = [Path(p) for p in args.csv]
+    vorgabe = args.symbol[0].upper() if args.symbol else None
+    if vorgabe and len(dateien) > 1:
+        print("--symbol gilt nur bei einer Datei; sonst kommt das Symbol aus dem Dateinamen.",
+              file=sys.stderr)
+        return 2
+
+    fehler = 0
+    geprueft: list[tuple[str, str]] = []
+    for datei in dateien:
+        symbol, zeitrahmen = zerlege_dateiname(datei)
+        symbol = vorgabe or symbol
+        zeitrahmen = args.zeitrahmen or zeitrahmen
+        try:
+            df = lade_csv(datei)
+        except (OSError, ValueError) as exc:
+            print(f"FEHLER {datei.name}: {exc}", file=sys.stderr)
+            db.ereignis("fehler", "Daten", f"{datei.name}: {exc}")
+            fehler += 1
+            continue
+        n = db.kerzen_speichern(symbol, zeitrahmen, df.to_dict("records"))
+        db.ereignis("info", "Daten", f"{datei.name}: {n} Kerzen für {symbol} {zeitrahmen} importiert")
+        print(f"{datei.name}: {n} Kerzen gelesen ({df['ts'].iloc[0]} bis {df['ts'].iloc[-1]})")
+        if (symbol, zeitrahmen) not in geprueft:
+            geprueft.append((symbol, zeitrahmen))
+
+    if not geprueft:
+        print("Nichts importiert.", file=sys.stderr)
+        return 1
+    db.zustand_setzen("datenquelle", "csv")
+
+    for symbol, zeitrahmen in geprueft:
+        df = df_aus_db(db.kerzen(symbol, zeitrahmen))
+        q = pruefe_daten(df, symbol, cfg, timeframe=zeitrahmen)
+        print(f"{'OK' if q.ok else 'FEHLER'} {symbol} {zeitrahmen}: {q.kerzen} Kerzen, "
+              f"{q.von or '–'} bis {q.bis or '–'}")
+        for text in q.fehler:
+            print("  Fehler: " + text)
+        for text in q.warnungen:
+            print("  Warnung: " + text)
+        if not q.ok:
+            fehler += 1
+        if zeitrahmen != "M15":
+            print(f"  Hinweis: Richter und Paper lesen M15; {zeitrahmen} wird gespeichert, "
+                  "aber nicht bewertet.")
+    return 1 if fehler else 0
+
+
 def cmd_daten(args: argparse.Namespace) -> int:
     cfg = _cfg(args.config)
     if (code := _schema_pruefen(cfg)) is not None:
@@ -45,18 +109,13 @@ def cmd_daten(args: argparse.Namespace) -> int:
     cfg.daten_ordner.mkdir(parents=True, exist_ok=True)
 
     if args.csv:
-        datei = Path(args.csv)
-        df = lade_csv(datei)
-        symbol = args.symbol or datei.stem.split("_")[0].upper()
-        n = db.kerzen_speichern(symbol, args.zeitrahmen, df.to_dict("records"))
-        db.zustand_setzen("datenquelle", "csv")
-        db.ereignis("info", "Daten", f"{datei.name}: {n} Kerzen für {symbol} importiert")
-        print(f"{n} Kerzen importiert: {symbol} ({df['ts'].iloc[0]} bis {df['ts'].iloc[-1]})")
-        return 0
+        return _importiere_csv(cfg, db, args)
 
+    zeitrahmen = args.zeitrahmen or "M15"
     for i, symbol in enumerate(args.symbol or ["EURUSD", "US500"]):
-        df = synthetische_kerzen(symbol, kerzen=args.kerzen, seed=7 + i * 13)
-        n = db.kerzen_speichern(symbol, args.zeitrahmen, df.to_dict("records"))
+        df = synthetische_kerzen(symbol, kerzen=args.kerzen, seed=7 + i * 13,
+                                 timeframe_minuten=ZEITRAHMEN_MINUTEN[zeitrahmen])
+        n = db.kerzen_speichern(symbol, zeitrahmen, df.to_dict("records"))
         print(f"{n} synthetische Kerzen erzeugt: {symbol}")
     db.zustand_setzen("datenquelle", "synthetisch")
     db.ereignis("warnung", "Daten", "Synthetische Kerzen erzeugt — nur zum Testen der Abläufe")
@@ -385,9 +444,10 @@ def main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="befehl", required=True)
 
     d = sub.add_parser("daten", help="CSV importieren oder synthetische Kerzen erzeugen")
-    d.add_argument("--csv")
+    d.add_argument("--csv", nargs="+", help="eine oder mehrere MT5-CSV-Dateien")
     d.add_argument("--symbol", nargs="*")
-    d.add_argument("--zeitrahmen", default="M15")
+    d.add_argument("--zeitrahmen", choices=ZEITRAHMEN, default=None,
+                   help="Standard: aus dem Dateinamen (z. B. EURUSD_M15.csv), sonst M15")
     d.add_argument("--kerzen", type=int, default=6000)
     d.set_defaults(func=cmd_daten)
 
