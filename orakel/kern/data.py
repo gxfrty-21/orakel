@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import numpy as np
 import pandas as pd
@@ -91,21 +92,22 @@ def _trenner(kopf: str) -> str:
     raise ValueError("CSV: Trennzeichen nicht erkannt (Tabulator, Semikolon oder Komma nötig).")
 
 
-def _zeitstempel(reihen: pd.Series) -> pd.Series:
+def _zeitstempel(reihen: pd.Series, zeitzone: str | None = None) -> pd.Series:
     """Parst MT5- und ISO-Zeitstempel zeilenweise mit festen Formaten.
 
     Zeilenweise, weil ein zusammengeführter Export mit und ohne Sekunden
-    vorkommen kann; geraten wird trotzdem nichts.
+    vorkommen kann; geraten wird trotzdem nichts. Ohne ``zeitzone`` gilt die
+    Serverzeit als UTC, sonst als Ortszeit dieser IANA-Zone (inkl. Sommerzeit).
     """
     text = (reihen.astype(str).str.strip()
             .str.replace(r"\s+", " ", regex=True)
             .str.replace("T", " ", regex=False))
-    geparst = pd.Series(pd.NaT, index=reihen.index, dtype="datetime64[ns, UTC]")
+    geparst = pd.Series(pd.NaT, index=reihen.index, dtype="datetime64[ns]")
     for format_ in ZEITFORMATE:
         offen = geparst.isna()
         if not offen.any():
             break
-        geparst[offen] = pd.to_datetime(text[offen], format=format_, errors="coerce", utc=True)
+        geparst[offen] = pd.to_datetime(text[offen], format=format_, errors="coerce")
     schlecht = geparst.isna()
     if schlecht.any():
         beispiele = ", ".join(text[schlecht].head(3).tolist())
@@ -114,7 +116,31 @@ def _zeitstempel(reihen: pd.Series) -> pd.Series:
             "Erwartet wird YYYY.MM.DD HH:MM[:SS] oder ISO 8601 mit Uhrzeit, in einer "
             "Spalte oder getrennt in Datum und Zeit."
         )
-    return geparst
+    return _nach_utc(geparst, zeitzone)
+
+
+def _nach_utc(geparst: pd.Series, zeitzone: str | None) -> pd.Series:
+    """Wandelt naive Serverzeit in UTC um; ohne Zone bleibt sie unverändert (UTC)."""
+    if not zeitzone:
+        return geparst.dt.tz_localize("UTC")
+    try:
+        zone = ZoneInfo(zeitzone)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ValueError(
+            f"CSV: unbekannte Zeitzone «{zeitzone}». Erwartet wird eine IANA-Zone "
+            "wie Europe/Athens."
+        ) from exc
+    # Bei der Rückstellung im Herbst wiederholt MT5 die Uhrzeiten. Die erste
+    # Fassung ist die Sommerzeit-, die zweite die Standardzeit-Stunde; so bleiben
+    # beide Stunden erhalten, statt als Dublette zusammenzufallen. Ausserhalb
+    # einer solchen Wiederholung ist das Merkmal bedeutungslos.
+    wiederholt = geparst.duplicated(keep=False)
+    if wiederholt.any():
+        fassung = geparst.groupby(geparst).cumcount()
+        ambiguous = fassung.eq(0).to_numpy()
+    else:
+        ambiguous = True
+    return geparst.dt.tz_localize(zone, ambiguous=ambiguous).dt.tz_convert("UTC")
 
 
 def zerlege_dateiname(pfad: str | Path) -> tuple[str, str]:
@@ -130,14 +156,17 @@ def zerlege_dateiname(pfad: str | Path) -> tuple[str, str]:
     return stamm.split("_")[0].upper(), "M15"
 
 
-def lade_csv(pfad: str | Path, trenner: str | None = None) -> pd.DataFrame:
+def lade_csv(pfad: str | Path, trenner: str | None = None,
+             server_zeitzone: str | None = None) -> pd.DataFrame:
     """Liest einen MT5-Export mit Tabulator, Komma oder Semikolon.
 
     Kopfzeilen dürfen englisch oder deutsch sein (siehe ``ALIASE``); ``<VOL>``
     und ``<SPREAD>`` werden ignoriert, ``<TICKVOL>`` wird zu ``volume``. Fehlt
-    eine Volumenspalte, steht 0. Zeilen mit unlesbaren Preisen führen zu einem
-    Fehler statt zu stillschweigend fehlenden Kerzen; doppelte Zeitstempel
-    werden zusammengeführt (der letzte gewinnt), die Reihe wird sortiert.
+    eine Volumenspalte, steht 0. Ohne ``server_zeitzone`` gilt die Serverzeit
+    als UTC, sonst als Ortszeit dieser IANA-Zone. Zeilen mit unlesbaren Preisen
+    führen zu einem Fehler statt zu stillschweigend fehlenden Kerzen; doppelte
+    Zeitstempel werden zusammengeführt (der letzte gewinnt), die Reihe wird
+    sortiert.
     """
     p = Path(pfad)
     with p.open("r", encoding="utf-8-sig", errors="replace") as datei:
@@ -151,7 +180,7 @@ def lade_csv(pfad: str | Path, trenner: str | None = None) -> pd.DataFrame:
         # Ältere MT5-Installationen schreiben ANSI (cp1252), z. B. «Eröffnung».
         roh = pd.read_csv(p, sep=sep, encoding="cp1252")
     df = _normalisiere_spalten(roh)
-    df["ts"] = _zeitstempel(df["ts"])
+    df["ts"] = _zeitstempel(df["ts"], server_zeitzone)
     for spalte in ("open", "high", "low", "close", "volume"):
         df[spalte] = pd.to_numeric(df[spalte], errors="coerce")
 

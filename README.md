@@ -237,6 +237,9 @@ mehrere Dateien dürfen Teilzeiträume sein:
 # mehrere Jahre in Blöcken; überlappende Zeitstempel werden ersetzt, nicht doppelt gezählt
 .venv/bin/python -m orakel daten --csv daten/EURUSD_M15_2020.csv daten/EURUSD_M15_2021.csv daten/EURUSD_M15_2022.csv
 
+# Serverzeit des Brokers nach UTC umrechnen (Sommerzeit inklusive)
+.venv/bin/python -m orakel daten --csv daten/EURUSD_M15.csv --server-zeitzone Europe/Athens
+
 # ohne Zeitrahmen im Dateinamen: Symbol und Rahmen vorgeben (nur bei einer Datei)
 .venv/bin/python -m orakel daten --csv daten/export.csv --symbol EURUSD --zeitrahmen M15
 
@@ -256,7 +259,16 @@ Unterstützte Spalten (Groß-/Kleinschreibung egal, mit oder ohne spitze Klammer
 Zeitstempel: MT5 schreibt `YYYY.MM.DD HH:MM[:SS]`, zusätzlich wird ISO 8601 mit
 Uhrzeit gelesen. Eine Tag/Monat-Vertauschung wird nicht geraten, und ein Datum
 ohne Uhrzeit wird abgelehnt (daraus würde eine falsche Mitternachtskerze) —
-unbekannte Formen brechen mit Meldung ab. Preise brauchen einen Dezimalpunkt; `1,035` wird
+unbekannte Formen brechen mit Meldung ab.
+
+MT5 exportiert Serverzeit ohne Zeitzone; standardmässig gilt sie als UTC. Mit
+`--server-zeitzone Europe/Athens` (oder `[daten] server_zeitzone` in
+`config.toml`) wird sie als Ortszeit dieser IANA-Zone gelesen und nach UTC
+umgerechnet — inklusive Sommerzeitwechsel über mehrere Jahre. Bei der
+Rückstellung im Herbst wiederholen sich Uhrzeiten: Die erste Fassung gilt als
+Sommerzeit, die zweite als Standardzeit, sodass beide Stunden erhalten bleiben.
+Das gilt innerhalb einer Datei; wird die wiederholte Stunde über zwei Dateien
+verteilt, greift die Dublettenregel. Preise brauchen einen Dezimalpunkt; `1,035` wird
 abgelehnt statt still zu fehlen. Doppelte Zeitstempel gewinnen mit der letzten
 Zeile, die Reihe wird aufsteigend sortiert. Kodierung: UTF-8 (auch mit BOM)
 oder cp1252.
@@ -275,10 +287,11 @@ Kerzen, doppelte oder unsortierte Zeitstempel, unmögliches Hoch/Tief, Preise
 bei einem Fehler endet der Befehl mit Exit-Code 1, importiert bleibt die Reihe
 trotzdem.
 
-Noch nicht unterstützt: eine Zeitzonen-Umrechnung der MT5-Serverzeit (sie gilt
-als UTC), der direkte Abruf aus dem laufenden MT5-Terminal, Tick-Daten,
-Dezimalkommas und eine Bewertung anderer Zeitrahmen als M15 (dafür müssten
-`bars_pro_jahr` und die Frischegrenzen je Rahmen mitgeführt werden).
+Noch nicht unterstützt: die automatische Erkennung der Broker-Zeitzone (sie
+muss als IANA-Zone angegeben werden), der direkte Abruf aus dem laufenden
+MT5-Terminal, Tick-Daten, Dezimalkommas und eine Bewertung anderer Zeitrahmen
+als M15 (dafür müssten `bars_pro_jahr` und die Frischegrenzen je Rahmen
+mitgeführt werden).
 
 ## Risikogrenzen (deine Vorgaben)
 

@@ -16,6 +16,12 @@ from orakel.kern.data import (
 from orakel.kern.db import Facts
 
 
+def _args(**kwargs) -> argparse.Namespace:
+    werte = {"symbol": None, "zeitrahmen": None, "server_zeitzone": None}
+    werte.update(kwargs)
+    return argparse.Namespace(**werte)
+
+
 def _als_mt5(df: pd.DataFrame) -> str:
     """Schreibt eine Reihe im MT5-Tabformat mit getrenntem Datum und Zeit."""
     zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
@@ -70,6 +76,64 @@ def test_mt5_csv_mit_getrenntem_datum_und_zeit(tmp_path):
     assert df["ts"].iloc[1] == pd.Timestamp("2025-01-02 09:00", tz="UTC")
     assert df["close"].iloc[2] == 1.0365
     assert df["volume"].iloc[1] == 120
+
+
+def test_server_zeitzone_wird_mit_sommerzeit_nach_utc_umgerechnet(tmp_path):
+    # Europe/Athens: UTC+2 im Winter, UTC+3 im Sommer.
+    inhalt = (
+        "<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>\n"
+        "2025.01.02\t09:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n"
+        "2025.07.01\t09:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n"
+    )
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(inhalt, encoding="utf-8")
+
+    df = lade_csv(p, server_zeitzone="Europe/Athens")
+    assert df["ts"].iloc[0] == pd.Timestamp("2025-01-02 07:00", tz="UTC")
+    assert df["ts"].iloc[1] == pd.Timestamp("2025-07-01 06:00", tz="UTC")
+
+
+def test_herbst_umstellung_behaelt_beide_stunden(tmp_path):
+    # Europe/Athens am 26.10.2025: 04:00 Sommerzeit wird zu 03:00 Standardzeit,
+    # die Stunde 03:00–03:59 kommt also zweimal vor.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for zeit in ("02:45:00", "03:00:00", "03:15:00", "03:00:00", "03:15:00", "04:00:00"):
+        zeilen.append(f"2025.10.26\t{zeit}\t1.0\t1.1\t0.9\t1.05\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    df = lade_csv(p, server_zeitzone="Europe/Athens")
+    # Erste Fassung = Sommerzeit (+3), zweite Fassung = Standardzeit (+2).
+    assert [str(t) for t in df["ts"]] == [
+        "2025-10-25 23:45:00+00:00",
+        "2025-10-26 00:00:00+00:00",
+        "2025-10-26 00:15:00+00:00",
+        "2025-10-26 01:00:00+00:00",
+        "2025-10-26 01:15:00+00:00",
+        "2025-10-26 02:00:00+00:00",
+    ]
+    assert len(df) == 6  # keine der beiden Stunden fällt als Dublette weg
+
+
+def test_unbekannte_zeitzone_wird_abgelehnt(tmp_path):
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(
+        "date,open,high,low,close,volume\n2025-01-02 09:00:00,1,1,1,1,1\n", encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="unbekannte Zeitzone"):
+        lade_csv(p, server_zeitzone="Bogus/Zone")
+
+
+def test_cli_speichert_serverzeit_als_utc(cfg, tmp_path):
+    basis = synthetische_kerzen("X", kerzen=1300, seed=5)
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(_als_mt5(basis), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)], server_zeitzone="Europe/Athens")) == 0
+    # 2024-01-01 00:00 Ortszeit (Winter, +2) wird zu 2023-12-31 22:00 UTC.
+    assert db.kerzen("EURUSD", "M15")[0]["ts"] == "2023-12-31 22:00:00+00:00"
 
 
 def test_cp1252_mit_deutschem_kopf(tmp_path):
@@ -148,14 +212,14 @@ def test_zwei_bloecke_ergeben_eine_gepruefte_reihe(cfg, tmp_path):
     a.write_text(_als_mt5(basis.iloc[:800]), encoding="utf-8")
     b.write_text(_als_mt5(basis.iloc[700:]), encoding="utf-8")
     db = Facts(cfg.db_pfad)
-    args = argparse.Namespace(csv=[str(a), str(b)], symbol=None, zeitrahmen=None)
+    args = _args(csv=[str(a), str(b)])
 
     assert _importiere_csv(cfg, db, args) == 0
     # 100 überlappende Kerzen werden zusammengeführt statt doppelt gespeichert.
     assert len(db.kerzen("EURUSD", "M15")) == 1500
 
     # Erneuter Import desselben Blocks ändert die Reihe nicht.
-    assert _importiere_csv(cfg, db, argparse.Namespace(csv=[str(a)], symbol=None, zeitrahmen=None)) == 0
+    assert _importiere_csv(cfg, db, _args(csv=[str(a)])) == 0
     assert len(db.kerzen("EURUSD", "M15")) == 1500
 
     df = df_aus_db(db.kerzen("EURUSD", "M15"))
@@ -170,7 +234,7 @@ def test_zeitrahmen_aus_dateiname_wird_gespeichert_und_nicht_bewertet(cfg, tmp_p
     p.write_text(_als_mt5(basis), encoding="utf-8")
     db = Facts(cfg.db_pfad)
 
-    assert _importiere_csv(cfg, db, argparse.Namespace(csv=[str(p)], symbol=None, zeitrahmen=None)) == 0
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)])) == 0
     assert len(db.kerzen("EURUSD", "H1")) == 1300
     assert db.kerzen("EURUSD", "M15") == []
 

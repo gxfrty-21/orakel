@@ -48,6 +48,10 @@ min_kerzen = 1200
 max_luecke_pct = 5.0
 max_sprung_pct = 25.0
 max_alter_tage = 5
+# MT5 exportiert Serverzeit ohne Zone. Leer = UTC annehmen. Für mehrjährige
+# Historie eine IANA-Zone angeben (z. B. "Europe/Athens"); die Sommerzeit wird
+# korrekt umgerechnet.
+server_zeitzone = ""
 # Paper-Takt: Kurse, die älter sind, gelten als nicht belastbar. Neue
 # Einstiege sind dann gesperrt; offene Positionen werden konservativ bewertet.
 # Der Takt liest M15-Kerzen; 4 h sind für Daytrading die relevante Grenze.
