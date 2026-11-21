@@ -180,6 +180,47 @@ def test_herbst_umstellung_behaelt_beide_stunden(tmp_path):
     assert len(df) == 6  # keine der beiden Stunden fällt als Dublette weg
 
 
+def test_herbst_umstellung_bei_gemischter_reihenfolge(tmp_path):
+    # Die beiden Fassungen wechseln sich je Viertelstunde ab, statt blockweise
+    # zu stehen; die Richtung bleibt trotzdem aufsteigend.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for zeit in ("03:00:00", "03:00:00", "03:15:00", "03:15:00"):
+        zeilen.append(f"2025.10.26\t{zeit}\t1.0\t1.1\t0.9\t1.05\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    df = lade_csv(p, server_zeitzone="Europe/Athens")
+
+    # Erste Fassung je Uhrzeit = Sommerzeit (+3), zweite = Standardzeit (+2).
+    assert [str(t) for t in df["ts"]] == [
+        "2025-10-26 00:00:00+00:00",
+        "2025-10-26 00:15:00+00:00",
+        "2025-10-26 01:00:00+00:00",
+        "2025-10-26 01:15:00+00:00",
+    ]
+
+
+def test_herbst_umstellung_in_absteigender_datei(tmp_path):
+    # Dieselbe Rückstellung, aber absteigend exportiert: Die Standardzeitfassung
+    # steht zuerst in der Datei, die Sommerzeitfassung folgt später.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for zeit in ("04:00:00", "03:15:00", "03:00:00", "03:15:00", "03:00:00", "02:45:00"):
+        zeilen.append(f"2025.10.26\t{zeit}\t1.0\t1.1\t0.9\t1.05\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    df = lade_csv(p, server_zeitzone="Europe/Athens")
+
+    assert [str(t) for t in df["ts"]] == [
+        "2025-10-25 23:45:00+00:00",
+        "2025-10-26 00:00:00+00:00",
+        "2025-10-26 00:15:00+00:00",
+        "2025-10-26 01:00:00+00:00",
+        "2025-10-26 01:15:00+00:00",
+        "2025-10-26 02:00:00+00:00",
+    ]
+
+
 def _herbst_datei(pfad):
     zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
     for zeit in ("02:45:00", "03:00:00", "03:15:00", "03:00:00", "03:15:00", "04:00:00"):
