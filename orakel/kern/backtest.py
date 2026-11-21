@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from ..config import Config, RisikoGrenzen
+from .kosten import kosten_je_seite
 from .metrics import kennzahlen
 from .strategies import atr
 
@@ -19,11 +20,6 @@ class BacktestErgebnis:
     kennzahlen: dict[str, Any] = field(default_factory=dict)
     zeit_im_markt_pct: float = 0.0
     warnungen: list[str] = field(default_factory=list)
-
-
-def _kosten(stueck: float, cfg: Config) -> float:
-    k = cfg["kosten"]
-    return max(float(k["min_commission"]), stueck * float(k["commission_per_share"]))
 
 
 def backtest(
@@ -42,7 +38,8 @@ def backtest(
     - Signal an Kerze i -> Ausführung zur Eröffnung von Kerze i+1 (kein Look-Ahead).
     - Stop liegt beim Einstieg fest (ATR-Abstand) und wird innerhalb der Kerze geprüft.
     - Lücke unter den Stop -> Ausführung zur Eröffnung (realistisch schlechter).
-    - Kosten: Kommission pro Stück (mind. Minimum) + Slippage in Basispunkten.
+    - Kosten: Kommission pro Stück oder halber Spread (``kosten.py``) plus
+      Slippage in Basispunkten.
     """
     if len(df) < 3:
         return BacktestErgebnis(kennzahlen={}, warnungen=["Zu wenig Kerzen"])
@@ -73,10 +70,10 @@ def backtest(
         nonlocal cash, stueck, gebuehren
         if stueck <= 0:
             return
-        prov = _kosten(stueck, cfg)
+        prov = kosten_je_seite(stueck, cfg)
         cash += stueck * preis - prov
         gebuehren += prov
-        netto = stueck * (preis - einstieg) - prov - _kosten(stueck, cfg)
+        netto = stueck * (preis - einstieg) - prov - kosten_je_seite(stueck, cfg)
         basis = stueck * einstieg
         trades.append({
             "einstieg": einstieg_ts[:19],
@@ -104,7 +101,7 @@ def backtest(
                     nach_cash = max(0.0, cash * (1 - grenzen.min_cash_pct / 100.0)) / preis
                     menge = float(np.floor(min(nach_risiko, nach_deckel, nach_cash)))
                     if menge > 0:
-                        prov = _kosten(menge, cfg)
+                        prov = kosten_je_seite(menge, cfg)
                         if menge * preis + prov <= cash:
                             cash -= menge * preis + prov
                             gebuehren += prov

@@ -16,7 +16,8 @@ import pytest
 
 from orakel.kern.backtest import backtest
 from orakel.config import RisikoGrenzen
-from orakel.kern.paper import _fill, _kosten
+from orakel.kern.kosten import kosten_je_seite
+from orakel.kern.paper import _fill
 
 
 def kerzen() -> pd.DataFrame:
@@ -51,7 +52,8 @@ def test_backtest_und_paper_nutzen_dieselben_fill_preise(cfg):
     einstieg = _fill(float(df["open"].iloc[21]), 1.0, cfg)
     ausstieg = _fill(min(float(df["open"].iloc[22]), 96.5), -1.0, cfg)
     stueck = trade["stueck"]
-    erwartet = stueck * (ausstieg - einstieg) - _kosten(stueck, cfg) - _kosten(stueck, cfg)
+    erwartet = (stueck * (ausstieg - einstieg)
+                - kosten_je_seite(stueck, cfg) - kosten_je_seite(stueck, cfg))
 
     assert einstieg == pytest.approx(100.0 * 1.005)
     assert ausstieg == pytest.approx(95.0 * 0.995)

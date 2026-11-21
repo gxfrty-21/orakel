@@ -129,9 +129,17 @@ def validiere_config(daten: dict[str, Any]) -> None:
     _zahl(daten, 'risiko', 'risiko_stopp_freigabe_takte', minimum=1, ganzzahl=True,
           standard=2.0)
 
+    kosten = daten.get('kosten') or {}
+    modell = kosten.get('modell', 'stueck')
+    if modell not in ('stueck', 'spread'):
+        raise ValueError("config.toml: [kosten] modell muss 'stueck' oder 'spread' "
+                         f'sein, ist aber {modell!r}')
     _zahl(daten, 'kosten', 'commission_per_share', minimum=0.0)
     _zahl(daten, 'kosten', 'min_commission', minimum=0.0)
     _zahl(daten, 'kosten', 'slippage_bps', minimum=0.0, maximum=9999.999999)
+    # Nur für modell = "spread": quotierter Spread in Pips und Pip-Grösse.
+    _zahl(daten, 'kosten', 'spread_pips', minimum=0.0, standard=0.0)
+    _zahl(daten, 'kosten', 'pip_groesse', minimum=0.000000001, standard=0.0001)
 
     if 'daten' in daten:
         _zahl(daten, 'daten', 'min_kerzen', minimum=1, ganzzahl=True, standard=1.0)

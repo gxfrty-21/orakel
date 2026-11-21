@@ -31,9 +31,17 @@ atr_stop_multiple = 2.0
 risiko_stopp_freigabe_takte = 2
 
 [kosten]
+# Kostenmodell für Backtest und Paper-Takt (gleiche Formel, orakel/kern/kosten.py):
+#   "stueck" = Kommission je Stück, mindestens min_commission (Aktien)
+#   "spread" = halber quotierter Spread je Seite in Pips (Devisen/CFDs)
+modell = "stueck"
 commission_per_share = 0.005
 min_commission = 1.0
 slippage_bps = 2.0
+# Nur für modell = "spread": quotierter Spread und Grösse eines Pips.
+# EURUSD: 1 Pip = 0.0001, typischer Spread 1.0 Pip → 0.5 Pip je Seite.
+spread_pips = 1.0
+pip_groesse = 0.0001
 
 [daten]
 min_kerzen = 1200
