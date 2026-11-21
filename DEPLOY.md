@@ -16,7 +16,7 @@ gleichzeitig schreibenden Maschinen; nicht horizontal skalieren.
 
 - Docker Engine und Compose v2
 - Eine Domain, deren A/AAAA-Eintrag auf den Server zeigt; Ports 80 und 443 offen
-- Kein weiterer Dienst nötig: alle Daten bleiben im Volume
+- Keine externe Datenbank: alle Daten bleiben im Volume
 
 ## Einrichten
 
@@ -52,9 +52,8 @@ gleichzeitig schreibenden Maschinen; nicht horizontal skalieren.
    curl -s https://DEINE-DOMAIN/api/health
    ```
 
-   `/api/health` ist absichtlich ohne Login erreichbar. Alles andere fragt nach
-   Benutzer und Passwort. Das erste TLS-Zertifikat holt Caddy automatisch,
-   sobald die Domain korrekt zeigt.
+   Das erste TLS-Zertifikat holt Caddy automatisch, sobald die Domain korrekt
+   zeigt.
 
 ### Dauerbetrieb aktivieren
 
@@ -64,10 +63,15 @@ Der Hintergrund-Takt ist standardmäßig aus. In `.env`:
 ORAKEL_TAKT=1
 ```
 
-Danach `docker compose up -d --force-recreate orakel`. Der Takt plant Paper,
-Konferenz, Spider, Intelligence und Missionen; Fehler bekommen persistenten
-Backoff. Grenzen und Intervalle stehen in `[betrieb]` in `config.toml`.
-Status im Container:
+Danach den App-Container neu erzeugen, damit die Variable greift:
+
+```bash
+docker compose up -d --force-recreate orakel
+```
+
+Der Takt plant Paper, Konferenz, Spider, Intelligence und Missionen; Fehler
+bekommen persistenten Backoff. Grenzen und Intervalle stehen in `[betrieb]` in
+`config.toml`. Status im Container:
 
 ```bash
 docker compose exec -T orakel python -m orakel betrieb
@@ -84,18 +88,28 @@ Im Volume `orakel_data`, im Container unter `/data`:
 | `/data/vault/` | Obsidian-Vault |
 | `/data/daten/` | Kerzen und CSV-Importe |
 
-Der Entrypoint setzt dafür `ORAKEL_DB_PFAD`, `ORAKEL_DATEN_ORDNER` und
-`ORAKEL_VAULT_ORDNER`. Die eingecheckte `config.toml` bleibt unverändert.
+Der Entrypoint setzt `ORAKEL_DB_PFAD=/data/orakel.db`,
+`ORAKEL_DATEN_ORDNER=/data/daten` und `ORAKEL_VAULT_ORDNER=/data/vault`, sofern
+die Variablen nicht schon gesetzt sind. Diese Variablen haben Vorrang vor
+`[basis] db_pfad`, `daten_ordner` und `vault_ordner` in `config.toml`; die
+eingecheckte `config.toml` bleibt unverändert. Massgeblich ist damit
+`ORAKEL_DB_PFAD`: Im Container zeigt er ohne eigene Angabe auf
+`/data/orakel.db`; ausserhalb des Containers ohne gesetzte Variable gilt der
+Pfad aus `config.toml`.
 
 ## Bestehende Daten übernehmen
 
-Die Quelle vorher stoppen, damit SQLite keine offene WAL-Datei hat.
+Die Quelle vorher stoppen, damit SQLite keine offene WAL-Datei hat; den
+Ziel-Container hält der Import unten an. Der Datenbankpfad ist
+`[basis] db_pfad` aus `config.toml`, `ORAKEL_DB_PFAD` hat Vorrang. Im Archiv
+muss die Datei `orakel.db` heissen (Standardpfad des Containers); bei einem
+abweichenden `ORAKEL_DB_PFAD` entsprechend anpassen.
 
 ```bash
-# im bisherigen Projektordner: Pfad aus config.toml ([basis] db_pfad),
-# ORAKEL_DB_PFAD sticht ihn. Im Archiv heisst die Datei wie im Container.
+# im bisherigen Projektordner
 DB=$(python3 -c "from orakel.config import load_config; print(load_config('config.toml').db_pfad)")
-[ "$DB" = orakel.db ] || cp "$DB" orakel.db
+DB="${ORAKEL_DB_PFAD:-$DB}"
+if [ "$DB" != "orakel.db" ]; then cp "$DB" orakel.db; fi
 tar czf orakel-umzug.tar.gz orakel.db vault daten
 ```
 
@@ -114,7 +128,9 @@ sind.
 
 Die Datenbank läuft im WAL-Modus. Eine einfache Dateikopie kann deshalb
 unvollständig sein; das Skript nutzt den Online-Backup von SQLite, der auch
-bei laufender App konsistent ist:
+bei laufender App konsistent ist. Die Sicherungen liegen unter
+`/data/backups` im Volume; für einen Serververlust zusätzlich regelmässig auf
+den Host kopieren.
 
 ```bash
 docker compose run --rm -T --entrypoint python orakel \
@@ -138,25 +154,22 @@ docker compose run --rm -T --entrypoint python orakel \
   /app/scripts/pruefe_backup.py --db /data/orakel.db --ordner /data/backups --pruefen
 ```
 
-Exit 0 heisst: Integrität `ok` und alle Zeilenzahlen stimmen überein. Für den
-Umzug auf einen anderen Server weiterhin das komplette Volume archivieren
-(bei gestoppter App):
+Exit 0 heisst: Integrität `ok` und alle Zeilenzahlen stimmen überein.
+
+Für den Umzug auf einen anderen Server das komplette Volume archivieren — bei
+gestoppter App, damit die WAL-Datei nicht offen ist. Das Archiv enthält auch
+die Sicherungen aus `/data/backups`:
 
 ```bash
+mkdir -p backups
 docker compose stop orakel
 docker compose run --rm --no-deps -T --entrypoint sh orakel \
   -c "tar czf - -C /data ." > "backups/orakel-$(date +%F-%H%M).tar.gz"
 docker compose start orakel
 ```
 
-Wiederherstellen:
-
-```bash
-docker compose stop orakel
-docker compose run --rm --no-deps -T --entrypoint sh orakel \
-  -c "tar xzf - -C /data" < backups/orakel-2026-11-08-1200.tar.gz
-docker compose start orakel
-```
+Ein solches Volume-Archiv wird wie ein Umzugsarchiv eingespielt; die Befehle
+stehen unter «Bestehende Daten übernehmen».
 
 Das Volume `caddy_data` enthält nur die TLS-Zertifikate; Caddy erneuert sie
 selbst.
@@ -172,12 +185,9 @@ Das Basis-Image im `Dockerfile` ist auf einen Digest gepinnt. Ein
 Python-Update ist damit eine bewusste Änderung im `Dockerfile`, kein
 Zufallsergebnis des nächsten Builds.
 
-Das Daten-Volume bleibt erhalten. Nach Änderungen an der `.env` den App-Container
-neu erzeugen:
-
-```bash
-docker compose up -d --force-recreate orakel
-```
+Das Daten-Volume bleibt erhalten. Nach Änderungen an der `.env` genügt
+derselbe Neustart wie beim Dauerbetrieb:
+`docker compose up -d --force-recreate orakel`.
 
 ## Sicherheit
 
@@ -186,15 +196,19 @@ docker compose up -d --force-recreate orakel
   der `.env` ab (`:?` in `docker-compose.yml`), der Entrypoint meldet es
   zusätzlich und beendet sich mit Exit 1. Nur für die lokale Entwicklung
   erlaubt `ORAKEL_ALLOW_NO_AUTH=1` einen Start ohne Login.
+- Schreibende Anfragen mit fremder Herkunft lehnt die App mit 403
+  `herkunft_abgelehnt` ab. Erlaubt sind die eigene Adresse sowie die
+  kommagetrennten Einträge in `ORAKEL_ERLAUBTE_ORIGINS`; `GET`, `HEAD` und
+  `OPTIONS` prüfen die Herkunft nicht.
 - Basic-Auth nur über HTTPS. Port 3000 wird nicht nach außen veröffentlicht;
   erreichbar sind ausschließlich Caddy auf 80/443.
 - Es gibt genau ein Login, keine Rollen und keine Zwei-Faktor-Anmeldung. Für
   mehrere Benutzer gehört eine Identity-Aware-Proxy-Schicht davor.
-- `/api/health` ist ohne Login erreichbar und nennt Laufzeitstatus, Artikelzahl
-  und eine kompakte Betriebszeile. Der vollständige Plan liegt hinter dem Login
-  unter `/api/betrieb`.
+- `/api/health` ist absichtlich ohne Login erreichbar und nennt Laufzeitstatus,
+  Artikelzahl und eine kompakte Betriebszeile. Der vollständige Plan liegt
+  hinter dem Login unter `/api/betrieb`.
 - `.env` niemals committen oder weitergeben. Passwortwechsel: `.env` ändern,
-  `docker compose up -d --force-recreate orakel`.
+  App-Container neu erzeugen (wie oben).
 - Das Projekt bleibt **Paper-Trading**. Es existiert kein Codepfad zu einer
   echten Broker-Order.
 
