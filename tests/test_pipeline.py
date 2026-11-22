@@ -114,9 +114,37 @@ def test_falsch_getaktete_datei_landet_nicht_im_ordner_import(cfg):
     with pytest.raises(DatenFehler):
         sicherstellen_daten(cfg, db)
 
-    assert len(db.kerzen("EURUSD", "H1")) == 200
+    # Der Fehler in der zweiten Datei rollt auch die bereits gelesene H1-Datei zurück.
+    assert db.kerzen("EURUSD", "H1") == []
     assert db.kerzen("EURUSD", "M15") == []
+    assert db.zustand("datenquelle") is None
     assert any("Häufigster Abstand" in zeile["text"] for zeile in db.ereignisse())
+
+
+def test_kaputte_zweite_datei_laesst_keine_daten_oder_zustand(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    (ordner / "EURUSD_M15.csv").write_text(
+        KOPF + "2025.01.02\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n",
+        encoding="utf-8",
+    )
+    # Zweite Datei ist kaputt, nachdem die erste bereits in der Transaktion liegt.
+    (ordner / "US500_M15.csv").write_text(
+        KOPF + "2025.01.02\t09:00:00\tkaputt\t1.1\t0.9\t1.05\t10\t0\t2\n",
+        encoding="utf-8",
+    )
+    db = Facts(cfg.db_pfad)
+    db.zustand_setzen("datenquelle", "datenbank")
+
+    with pytest.raises(DatenFehler, match="US500_M15.csv"):
+        sicherstellen_daten(cfg, db)
+
+    assert db.symbole() == []
+    assert db.kerzen("EURUSD", "M15") == []
+    assert db.kerzen("US500", "M15") == []
+    assert db.zustand("datenquelle") == "datenbank"
+    assert not any("Kerzen importiert" in zeile["text"] for zeile in db.ereignisse())
 
 
 def test_leerer_csv_ordner_bricht_ab_statt_synthetisch(cfg):
