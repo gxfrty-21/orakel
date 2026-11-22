@@ -623,6 +623,38 @@ def test_lauf_bucht_den_versuch_vor_dem_abschluss(cfg, monkeypatch, caplog):
     assert "J3:Datenintegritäts-Prüfer" in laeufe
 
 
+@pytest.mark.parametrize("aktion", ["complete", "fail", "block"])
+def test_lauf_und_task_status_werden_gemeinsam_zurueckgerollt(cfg, monkeypatch, aktion):
+    """Ein Audit-Fehler darf weder den Task-Status noch den Lauf-Eintrag
+    stehen lassen; beide Schreibungen gehören in dieselbe Transaktion."""
+    db, store = _store(cfg)
+    task_id = store.enqueue(
+        task_key=f"test:atomic:{aktion}", assigned_to="A1", dept="A", title="Atomar",
+    )
+    assert store.claim_next("worker-atomic")["id"] == task_id
+    lauf = {
+        "agent": "A1:Koordinator", "abteilung": "A", "aufgabe": "Atomar",
+        "ergebnis": "Testlauf", "ok": aktion == "complete",
+    }
+    _audit_kaputt(monkeypatch, store)
+
+    with pytest.raises(RuntimeError, match="Audit nicht erreichbar"):
+        if aktion == "complete":
+            store.complete(task_id, result="belegt", evidence=["task:atomic"], lauf=lauf)
+        elif aktion == "fail":
+            store.fail(task_id, "Testfehler", lauf=lauf)
+        else:
+            store.block(task_id, "Testblockade", lauf=lauf)
+
+    task = store.task(task_id)
+    assert task is not None
+    assert task["state"] == "running"
+    assert db.agenten_laeufe() == []
+    assert not any(e["kind"] in {"task_done", "task_failed", "task_blocked"}
+                   for e in store.events(task_id))
+    assert store.audit_chain_ok()
+
+
 def test_audit_kette_erkennt_manipulation(cfg):
     db, store = _store(cfg)
     store.enqueue(task_key="test:audit:1", assigned_to="A1", dept="A",
