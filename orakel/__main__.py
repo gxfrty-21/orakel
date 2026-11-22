@@ -15,6 +15,7 @@ from .kern.data import (
     df_aus_bloecken,
     df_aus_db,
     lade_csv_bloecke,
+    mit_taktpruefung,
     pruefe_daten,
     synthetische_kerzen,
     zerlege_dateiname,
@@ -115,8 +116,10 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
             # im Speicher, und ein Fehler in einem Block rollt die Datei zurück.
             n = db.kerzen_speichern_bloecke(
                 symbol, zeitrahmen,
-                lade_csv_bloecke(datei, server_zeitzone=zeitzone,
-                                 server_versatz_stunden=versatz))
+                mit_taktpruefung(
+                    lade_csv_bloecke(datei, server_zeitzone=zeitzone,
+                                     server_versatz_stunden=versatz),
+                    zeitrahmen))
             if not n:
                 raise ValueError(f"CSV: {datei.name} enthält keine vollständigen Kerzen.")
         except (OSError, ValueError) as exc:

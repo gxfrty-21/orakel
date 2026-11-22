@@ -95,6 +95,21 @@ def test_mindestkerzen_folgen_dem_zeitrahmen(cfg):
     assert not pruefe_daten(m15, "X", cfg).ok
 
 
+def test_falsch_getaktete_datei_wird_vor_dem_schreiben_abgelehnt(cfg, tmp_path):
+    # H1-Takt unter M15-Dateinamen: die Zeilen dürfen gar nicht erst in die
+    # Tabelle gehen, statt erst nach dem Import als Median-Fehler aufzufallen.
+    h1 = synthetische_kerzen("X", kerzen=200, seed=2, timeframe_minuten=60)
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(_als_mt5(h1), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)])) == 1
+
+    assert db.kerzen("EURUSD", "M15") == []
+    assert any("Median-Abstand" in zeile["text"] and "EURUSD_M15.csv" in zeile["text"]
+               for zeile in db.ereignisse())
+
+
 def test_jahresabdeckung_zaehlt_kerzen_je_jahr(cfg):
     df = synthetische_kerzen("X", kerzen=2000, seed=2)
     q = pruefe_daten(df, "X", cfg)
