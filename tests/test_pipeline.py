@@ -121,6 +121,27 @@ def test_falsch_getaktete_datei_landet_nicht_im_ordner_import(cfg):
     assert any("Häufigster Abstand" in zeile["text"] for zeile in db.ereignisse())
 
 
+def test_fehlende_reihe_rollt_import_zurueck_und_setzt_quelle_nicht(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    (ordner / "EURUSD_M15.csv").write_text(
+        KOPF + "2025.01.02\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n",
+        encoding="utf-8",
+    )
+    # Kopf ohne Kerzen: Die Datei ist lesbar, liefert aber keine Reihe.
+    (ordner / "US500_M15.csv").write_text(KOPF, encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    with pytest.raises(DatenFehler) as fehler:
+        sicherstellen_daten(cfg, db)
+
+    assert "US500_M15.csv" in str(fehler.value)
+    assert db.symbole() == []
+    assert db.kerzen("EURUSD", "M15") == []
+    assert db.zustand("datenquelle") is None
+
+
 def test_kaputte_zweite_datei_laesst_keine_daten_oder_zustand(cfg):
     cfg._d["basis"]["datenquelle"] = "csv"
     ordner = cfg.daten_ordner

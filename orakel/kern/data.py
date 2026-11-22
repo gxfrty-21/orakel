@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Sequence
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -418,6 +419,8 @@ def lade_csv_bloecke(pfad: str | Path, server_zeitzone: str | None = None,
         df = _normalisiere_spalten(roh)
         if puffer is not None:
             df = pd.concat([puffer, df], ignore_index=True)
+        if df.empty:
+            continue
         # Nur der Datumsteil, nicht die ersten zehn Zeichen: ISO-Daten dürfen
         # ohne führende Nullen kommen, und Leerzeichen vor dem Zeitstempel sind
         # erlaubt. Sonst würde ein Tag je nach Stunde zerteilt oder mit einem
@@ -450,7 +453,9 @@ def lade_csv_bloecke(pfad: str | Path, server_zeitzone: str | None = None,
             gesamt_aufsteigend = _pruefe_blockrichtung(
                 verarbeitet, p.name, gesamt_aufsteigend)
             yield verarbeitet
-    if puffer is not None and len(puffer):
+    if puffer is None:
+        raise ValueError(f"CSV: {p.name} enthält keine vollständigen Kerzen.")
+    if len(puffer):
         verarbeitet = _verarbeite(puffer, server_zeitzone, p.name, server_versatz_stunden)
         _pruefe_blockrichtung(verarbeitet, p.name, gesamt_aufsteigend)
         yield verarbeitet
@@ -537,7 +542,49 @@ def mit_taktpruefung(bloecke: Iterable[pd.DataFrame], zeitrahmen: str) -> Iterat
         yield from puffer
 
 
-def pruefe_daten(df: pd.DataFrame, symbol: str, cfg: Any, timeframe: str = "M15") -> Datenqualitaet:
+def frische_grenze_stunden(daten_cfg: dict[str, Any] | None, timeframe: str) -> float:
+    """Höchstalter der jüngsten Kerze für einen Zeitrahmen.
+
+    Eine zeitrahmen-spezifische ``max_kurs_alter_stunden_<tf>`` hat Vorrang,
+    danach gilt der globale ``max_kurs_alter_stunden``. Fehlen beide, dient
+    das allgemeine ``max_alter_tage`` als Rückfall (in Stunden umgerechnet).
+    """
+    cfg = daten_cfg or {}
+    tf = timeframe.upper()
+    spezifisch = cfg.get(f"max_kurs_alter_stunden_{tf.lower()}")
+    if spezifisch is not None:
+        return float(spezifisch)
+    global_wert = cfg.get("max_kurs_alter_stunden")
+    if global_wert is not None:
+        return float(global_wert)
+    return float(cfg.get("max_alter_tage", 5.0)) * 24.0
+
+
+def frische_kennzahl(juengste: Any, daten_cfg: dict[str, Any] | None,
+                     timeframe: str, jetzt: datetime | None = None) -> dict[str, Any] | None:
+    """Alter der jüngsten Kerze und die passende Grenze als Kennzahl."""
+    try:
+        ts = pd.Timestamp(juengste)
+        if pd.isna(ts):
+            return None
+        ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+        jetzt_ts = pd.Timestamp(jetzt or datetime.now(timezone.utc))
+        jetzt_ts = (jetzt_ts.tz_localize("UTC") if jetzt_ts.tzinfo is None
+                    else jetzt_ts.tz_convert("UTC"))
+        alter = max(0.0, (jetzt_ts - ts).total_seconds() / 3600.0)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    grenze = frische_grenze_stunden(daten_cfg, timeframe)
+    return {
+        "juengste": str(juengste),
+        "alter_stunden": round(alter, 2),
+        "max_alter_stunden": round(grenze, 2),
+        "frisch": alter <= grenze,
+    }
+
+
+def pruefe_daten(df: pd.DataFrame, symbol: str, cfg: Any, timeframe: str = "M15",
+                 jetzt: datetime | None = None) -> Datenqualitaet:
     """Prüft Kerzen auf die Fehler, die Backtests systematisch verfälschen."""
     grenzen = cfg["daten"]
     q = Datenqualitaet(symbol=symbol, ok=True, kerzen=len(df), timeframe=timeframe)
@@ -548,6 +595,12 @@ def pruefe_daten(df: pd.DataFrame, symbol: str, cfg: Any, timeframe: str = "M15"
 
     q.von = str(df["ts"].iloc[0])[:19]
     q.bis = str(df["ts"].iloc[-1])[:19]
+    frische = frische_kennzahl(df["ts"].iloc[-1], grenzen, timeframe, jetzt=jetzt)
+    if frische and not frische["frisch"]:
+        q.warnungen.append(
+            f"Jüngste Kerze {frische['alter_stunden']:.1f} h alt "
+            f"(Grenze {frische['max_alter_stunden']:.1f} h) — Daten veraltet"
+        )
 
     # Jahre zählen (UTC-Zeitstempel, wie in der Datenbank) und vollständig
     # fehlende Jahre benennen. Ein fehlendes Jahr fällt sonst durch alle

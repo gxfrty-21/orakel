@@ -11,6 +11,7 @@ from orakel.kern import data
 from orakel.kern.data import (
     df_aus_db,
     lade_csv,
+    frische_grenze_stunden,
     lade_csv_bloecke,
     mit_taktpruefung,
     pruefe_daten,
@@ -113,7 +114,7 @@ def test_kurze_reihe_meldet_keinen_falschen_zeitrahmen(cfg):
         "close": [1.05, 1.05], "volume": [10.0, 10.0],
     })
 
-    q = pruefe_daten(df, "X", cfg)
+    q = pruefe_daten(df, "X", cfg, jetzt=pd.Timestamp("2024-01-08 01:00", tz="UTC"))
 
     assert not q.ok
     assert any("mindestens" in f for f in q.fehler)
@@ -951,6 +952,14 @@ def test_unbekannte_zeitrahmen_im_dateinamen_werden_abgelehnt():
     for name in ("EURUSD_H4.csv", "EURUSD_H4_2020.csv", "EURUSD_M15_H4.csv"):
         with pytest.raises(ValueError, match="Unbekannter Zeitrahmen"):
             zerlege_dateiname(name)
+
+
+def test_frischegrenze_nutzt_zeitrahmenlimit_und_max_alter_tage(cfg):
+    daten = cfg["daten"]
+    assert frische_grenze_stunden(daten, "M15") == 120.0
+    daten["max_kurs_alter_stunden_m15"] = 4.0
+    assert frische_grenze_stunden(daten, "M15") == 4.0
+    assert frische_grenze_stunden(daten, "H1") == 120.0
 
 
 def test_zwei_bloecke_ergeben_eine_gepruefte_reihe(cfg, tmp_path):
