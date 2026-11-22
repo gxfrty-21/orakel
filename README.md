@@ -461,6 +461,13 @@ Untergrenze von 85 % für dieselben vier Module. Regeln, Ausnahmen für den
 Altbestand und die lokalen Befehle stehen in
 [docs/QUALITAET.md](docs/QUALITAET.md).
 
+## Reproduzierbare Synthetik-Messung
+
+`scripts/messe_synthetisch.py` erzeugt eine deterministische Fünfjahresreihe
+und misst Import und Richterlauf getrennt (Wanduhrzeit und Spitzen-RSS) in einer
+eigenen, isolierten SQLite-Datenbank. Aufruf, Isolationsgarantie und Grenzen:
+[docs/BENCHMARK.md](docs/BENCHMARK.md).
+
 ## Review-Paket
 
 `scripts/baue_review_paket.py` nimmt nur auf, was in
