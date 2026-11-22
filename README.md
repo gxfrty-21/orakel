@@ -214,7 +214,7 @@ der erzeugte Rohbericht liegt nach dem Lauf unter
 | Datenprüfung | Lücken, Doppelungen, unmögliche Hoch/Tief, Preissprünge, Mindestmenge, Zeitrahmen-Abstand |
 | Backtest | Kerze für Kerze, Ausführung zur Folge-Eröffnung, ATR-Stop, Gaps, Kommission, Slippage |
 | Richter | Rollierende Walk-Forward-Fenster, versiegelter Holdout, Monte-Carlo, Nachbar-Parameter, Zufallsvergleich |
-| Risiko | 1 % je Trade bis Stop, 10 % Not-Stop, max. 15 Positionen, Hebelgrenze mit Margin-Buchung, Korrelation |
+| Risiko | 1 % je Trade bis Stop, 10 % Not-Stop, max. 15 Positionen, Engagement, Bargeld, Korrelation |
 | Paper-Takt | direkte SQLite-Simulation aus Kerzen; kein Broker-Aufruf, keine echten Orders |
 | Agenten | 80 bestehende Agenten in 8 Abteilungen, jeder mit echter Aufgabe und Ergebnis in der DB |
 | Company-Schicht | Phase 1: 103 Profile, SQLite-Queue mit Lease/Retry, Policy-Engine, Audit-Kette; Company-API für Übersicht, Agenten, Aufgaben, Details, Nachrichten, Räume und Konferenz; Agentenkommunikation mit Threads/Ack und persönliche Gedächtnisse; 2D-Agenten-Querschnitt mit 103 Räumen; 3D noch nicht |
@@ -379,14 +379,14 @@ max_drawdown_pct   = 10.0    # Not-Stop
 max_open_positions = 15      # harter Deckel
 ```
 
-Zusätzlich konservativ: 10 % Tagesverlust, 10 % freies Mindest-Bargeld und eine
-explizite Hebelgrenze von 5× (`max_leverage`). Die Position wird nicht mehr
-voll aus dem Bargeld bezahlt: Es wird nur die Margin (Nominal / `max_leverage`)
-gebucht. Damit schöpft die Risikomenge die 1 % bis zum Stop auch bei engen
-Stops aus — bei 100'000 Konto und 0.5 % Stop-Abstand sind das 200'000 Nominal
-und 40'000 Margin; bei 2 % Abstand 50'000 Nominal und 10'000 Margin. Mehr als
-5× Konto wird nie gehandelt, und das freie Bargeld fällt nie unter 10 % der
-Equity.
+Zusätzlich konservativ: 10 % Tagesverlust, 100 % Gesamtengagement (kein Hebel),
+20 % max. Positionsgrösse und 10 % Mindest-Bargeld. Die 1 % sind eine
+**Obergrenze**, keine Zielgrösse: Bei einem engen Stop erlaubte das Risikobudget
+deutlich mehr Stück, der 20-%-Deckel lässt aber höchstens ein Fünftel des
+Kontos als Nominal zu. Ohne Hebel hängt die tatsächliche Risikohöhe deshalb am
+Stop: 0.5 % Stop-Abstand ergeben 0.1 %, 1 % ergibt 0.2 %, 2 % ergeben 0.4 % des
+Kontos. Die vollen 1 % erreicht eine Position erst ab etwa 5 % Stop-Abstand;
+mehr als 1 % sind nie möglich.
 
 ## Kostenmodell
 
