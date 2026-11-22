@@ -218,14 +218,18 @@ def cmd_strategie_bericht(args: argparse.Namespace) -> int:
     grenzen = RisikoGrenzen.aus_config(cfg)
     symbole = args.symbol or db.symbole()
     mindestens = int(cfg["daten"]["min_kerzen"])
-    daten = {symbol: df_aus_db(db.kerzen(symbol, "M15")) for symbol in symbole}
+    zeitrahmen = cfg.richter_zeitrahmen
+    # Dieselbe Reihe und dieselbe Jahresbasis wie im Richter, nicht fest M15.
+    urteil_cfg = cfg.mit_bars_pro_jahr(cfg.bars_pro_jahr_fuer(zeitrahmen))
+    daten = {symbol: df_aus_db(db.kerzen(symbol, zeitrahmen)) for symbol in symbole}
     daten = {symbol: df for symbol, df in daten.items() if len(df) >= mindestens}
     if not daten:
-        print(f"Keine Kerzen mit mindestens {mindestens} Bars — Bericht nicht erstellt.")
+        print(f"Keine {zeitrahmen}-Kerzen mit mindestens {mindestens} Bars — "
+              "Bericht nicht erstellt.")
         return 1
 
     quelle = args.quelle or (f"{args.db} (Datenbank)" if args.db else str(cfg.db_pfad))
-    bericht = erstelle_bericht(daten, cfg, grenzen, quelle=quelle, commit=_commit())
+    bericht = erstelle_bericht(daten, urteil_cfg, grenzen, quelle=quelle, commit=_commit())
     json_pfad, md_pfad = schreibe_bericht(bericht, args.ausgabe)
     z = bericht["zusammenfassung"]
     print(f"Strategie-Bericht: {z['kandidaten']} Kandidaten · bestanden {z['bestanden']} · "

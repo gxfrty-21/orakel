@@ -53,6 +53,46 @@ def bericht():
     )
 
 
+def test_strategie_bericht_liest_den_richter_zeitrahmen(cfg, tmp_path, monkeypatch):
+    import argparse
+
+    from orakel import __main__ as cli
+    from orakel.kern.data import synthetische_kerzen
+    from orakel.kern.db import Facts
+    import orakel.strategiebericht as strategiebericht
+
+    cfg._d["basis"]["richter_zeitrahmen"] = "H1"
+    db = Facts(cfg.db_pfad)
+    db.kerzen_speichern_df(
+        "TEST", "H1",
+        synthetische_kerzen("TEST", kerzen=1300, seed=2, timeframe_minuten=60),
+    )
+    db.kerzen_speichern_df("TEST", "M15", synthetische_kerzen("TEST", kerzen=700, seed=3))
+    aufruf = {}
+
+    def fake_bericht(daten, config, grenzen, *, quelle, commit):
+        aufruf["daten"] = daten
+        aufruf["config"] = config
+        return {"zusammenfassung": {
+            "kandidaten": 0, "bestanden": 0, "abgelehnt": 0,
+            "ohne_ausreichende_daten": 0,
+        }}
+
+    monkeypatch.setattr(cli, "_cfg", lambda _pfad: cfg)
+    monkeypatch.setattr(strategiebericht, "erstelle_bericht", fake_bericht)
+    monkeypatch.setattr(
+        strategiebericht, "schreibe_bericht",
+        lambda _bericht, _ordner: (tmp_path / "out.json", tmp_path / "out.md"),
+    )
+    args = argparse.Namespace(config="unbenutzt", db=None, quelle="Test",
+                              symbol=None, ausgabe=str(tmp_path / "out"))
+
+    assert cli.cmd_strategie_bericht(args) == 0
+    assert len(aufruf["daten"]["TEST"]) == 1300  # H1, nicht die kürzere M15-Reihe
+    assert aufruf["config"].bars_pro_jahr == 6240
+    assert cfg.bars_pro_jahr == 24960
+
+
 def test_kaufen_halten_rechnet_ueber_den_zeitraum():
     df = pd.DataFrame({"ts": ["a", "b", "c"], "close": [100.0, 110.0, 120.0]})
 
