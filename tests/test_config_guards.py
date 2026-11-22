@@ -19,7 +19,7 @@ def basis_config() -> dict:
                   "datenquelle": "synthetisch", "bars_pro_jahr": 24960},
         "risiko": {"risk_per_trade_pct": 1.0, "max_drawdown_pct": 10.0,
                    "max_open_positions": 15, "max_daily_loss_pct": 10.0,
-                   "max_leverage": 5.0,
+                   "max_gross_exposure_pct": 100.0, "max_position_pct": 20.0,
                    "min_cash_pct": 10.0, "max_korrelation": 0.85,
                    "correlation_lookback": 500, "atr_stop_multiple": 2.0},
         "kosten": {"commission_per_share": 0.005, "min_commission": 1.0,
@@ -131,7 +131,7 @@ def test_slippage_grenzwerte():
 def test_ungueltige_risikoparameter():
     faelle = [
         ("risk_per_trade_pct", 101.0),
-        ("max_leverage", 0.5),
+        ("max_position_pct", 100.1),
         ("min_cash_pct", 100.0),
         ("max_correlation", 1.1),
         ("max_correlation", -0.1),

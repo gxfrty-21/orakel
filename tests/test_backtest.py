@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from orakel.kern.backtest import backtest
 from orakel.config import RisikoGrenzen
@@ -56,20 +55,6 @@ def test_luecke_unter_stop_fuellt_zur_eroeffnung(cfg):
     assert erg.trades[0]["netto"] < -3 * 100
 
 
-def test_hebel_erlaubt_die_volle_risikomenge_und_bucht_margin(cfg):
-    """1 % Risiko bei 4 Punkten Stop ergibt 250 Stück; die Margin wird reserviert."""
-    df = reihe(60)
-    signale = np.zeros(60)
-    signale[30:40] = 1.0
-    erg = backtest(df, signale, cfg, RisikoGrenzen.aus_config(cfg))
-
-    assert erg.trades[0]["stueck"] == 250
-    # Nominal 25'000, Margin bei 5x 5'000: Die Equity bleibt nach dem Kauf
-    # 100'000 (kein Doppelabzug des Nominals).
-    assert erg.kapital[31] == pytest.approx(100_000.0)
-    assert erg.kapitalkurve[31][1] == pytest.approx(100_000.0)
-
-
 def test_kosten_werden_abgezogen(tmp_path):
     from orakel.config import Config
 
@@ -90,8 +75,8 @@ def cfg_daten(tmp_path) -> dict:
                   "db_pfad": str(tmp_path / "o.db"), "datenquelle": "synthetisch",
                   "bars_pro_jahr": 24960},
         "risiko": {"risk_per_trade_pct": 1.0, "max_drawdown_pct": 10.0, "max_open_positions": 15,
-                   "max_daily_loss_pct": 3.0, "max_leverage": 5.0,
-                   "min_cash_pct": 10.0, "max_correlation": 0.85,
+                   "max_daily_loss_pct": 3.0, "max_gross_exposure_pct": 100.0,
+                   "max_position_pct": 20.0, "min_cash_pct": 10.0, "max_correlation": 0.85,
                    "correlation_lookback": 60, "atr_stop_multiple": 2.0},
         "kosten": {"commission_per_share": 0.0, "min_commission": 0.0, "slippage_bps": 0.0},
         "daten": {"min_kerzen": 100, "max_luecke_pct": 5.0, "max_sprung_pct": 25.0, "max_alter_tage": 5},

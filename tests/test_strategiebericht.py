@@ -25,8 +25,8 @@ def bericht():
         },
         "risiko": {
             "risk_per_trade_pct": 1.0, "max_drawdown_pct": 10.0, "max_open_positions": 15,
-            "max_daily_loss_pct": 10.0, "max_leverage": 5.0,
-            "min_cash_pct": 10.0, "max_correlation": 0.85,
+            "max_daily_loss_pct": 10.0, "max_gross_exposure_pct": 100.0,
+            "max_position_pct": 20.0, "min_cash_pct": 10.0, "max_correlation": 0.85,
             "correlation_lookback": 60, "atr_stop_multiple": 2.0,
         },
         "kosten": {"commission_per_share": 0.0, "min_commission": 0.0, "slippage_bps": 0.0},
