@@ -23,7 +23,7 @@ from .memory import AgentMemory
 from .messaging import MessagingService
 from .policy import CompanyPolicy, PolicyError
 from .roster import Profile, PROFILES, profile_by_id
-from .store import CompanyStore
+from .store import CompanyStore, LaufEintrag
 
 LOGGER = logging.getLogger(__name__)
 
@@ -156,7 +156,7 @@ class CompanyRuntime:
                 self._verarbeitet -= 1
         return task
 
-    def _lauf_eintrag(self, profile: Profile, ergebnis: str, ok: bool) -> dict[str, Any]:
+    def _lauf_eintrag(self, profile: Profile, ergebnis: str, ok: bool) -> LaufEintrag:
         """Daten für den Agentenlauf, der mit dem Task-Status committet wird."""
         return {
             "agent": f"{profile.agent_id}:{profile.role}",
@@ -320,8 +320,14 @@ class CompanyRuntime:
                 self._merke_task(task, zustand)
             except Exception as exc:
                 # Ein einzelner kaputter Handler darf die anderen 102 nicht stoppen.
+                # Bei bekanntem Profil gehört der Lauf-Eintrag in dieselbe
+                # Transaktion wie der Fehlschlag; sonst fehlt er im Audit.
                 try:
-                    self.store.fail(int(task["id"]), f"Runtime-Fehler: {exc}")
+                    profil = profile_by_id(str(task["assigned_to"]))
+                    lauf = (self._lauf_eintrag(profil, f"Fehler: {exc}", False)
+                            if profil is not None else None)
+                    self.store.fail(int(task["id"]), f"Runtime-Fehler: {exc}",
+                                    lauf=lauf)
                 except Exception:  # noqa: BLE001 - der Fehler steht bereits am Task
                     LOGGER.warning("Task %s nicht als fehlgeschlagen markiert", task["id"],
                                    exc_info=True)

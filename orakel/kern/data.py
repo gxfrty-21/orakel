@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Sequence
@@ -69,6 +70,7 @@ class Datenqualitaet:
             "symbol": self.symbol, "ok": self.ok, "kerzen": self.kerzen,
             "von": self.von, "bis": self.bis,
             "fehler": list(self.fehler), "warnungen": list(self.warnungen),
+            "jahre": dict(self.jahre),
         }
 
 
@@ -106,8 +108,67 @@ def _trenner(kopf: str) -> str:
     raise ValueError("CSV: Trennzeichen nicht erkannt (Tabulator, Semikolon oder Komma nötig).")
 
 
+def _pruefe_tagesreihenfolge(geparst: pd.Series, name: str) -> None:
+    """Prüft die Reihenfolge jedes Tageslaufs.
+
+    Jeder Tageslauf muss für sich chronologisch auf- oder absteigend sein. Die
+    Herbst-Rückstellung ist die einzige erlaubte Umkehr: Sie erzeugt genau
+    einen Sprung an einer doppelt vorkommenden Uhrzeit. Zusätzlich müssen alle
+    Tagesläufe dieselbe Richtung wie der Block haben; sonst würde die
+    Herbst-Richtung des Blocks auf einen entgegengesetzten Tag angewendet und
+    Sommer-/Standardzeitfassung vertauscht.
+    """
+    if len(geparst) < 2:
+        return
+    # Der Normalfall ist mit einem C-Level-Vergleich erledigt; die
+    # Gruppenprüfung läuft nur bei der Herbst-Rückstellung oder gemischten
+    # Zeilen.
+    if geparst.is_monotonic_increasing or geparst.is_monotonic_decreasing:
+        return
+    tage = geparst.dt.normalize()
+    block_aufsteigend = geparst.iloc[0] <= geparst.iloc[-1]
+    starts = np.flatnonzero(tage.ne(tage.shift()).to_numpy())
+    enden = np.append(starts[1:], len(geparst))
+    for start, ende in zip(starts, enden):
+        lauf = geparst.iloc[int(start):int(ende)]
+        tag = tage.iloc[int(start)]
+        if len(lauf) < 2:
+            continue
+        if lauf.iloc[0] < lauf.iloc[-1]:
+            aufsteigend = True
+        elif lauf.iloc[0] > lauf.iloc[-1]:
+            aufsteigend = False
+        else:
+            # Nur ein Herbstpaar: keine eigene Richtung erkennbar. Die
+            # Blockrichtung gilt, damit die Fassungen konsistent bleiben.
+            aufsteigend = block_aufsteigend
+        if aufsteigend != block_aufsteigend:
+            raise ValueError(
+                f"CSV: {name or 'Datei'}: Tagesläufe haben gemischte Richtungen: "
+                f"Tag {tag:%Y-%m-%d} ist {'aufsteigend' if aufsteigend else 'absteigend'}, "
+                f"der Block insgesamt {'aufsteigend' if block_aufsteigend else 'absteigend'} "
+                "sortiert. Bitte alle Tage einheitlich auf- oder absteigend sortieren; "
+                "sonst würden die Herbststunden falsch zugeordnet."
+            )
+        sekunden = (lauf - tag).dt.total_seconds()
+        delta = sekunden.diff()
+        verletzt = delta < 0 if aufsteigend else delta > 0
+        if not verletzt.any():
+            continue
+        doppelt = lauf.duplicated(keep=False).to_numpy()
+        # Nur eine Umkehr an einer wiederholten Uhrzeit ist die Herbst-Rückstellung.
+        if int(verletzt.sum()) == 1 and bool((verletzt.to_numpy() & doppelt).any()):
+            continue
+        raise ValueError(
+            f"CSV: {name or 'Datei'}: Tag {tag:%Y-%m-%d} ist innerhalb des "
+            f"Tages nicht {'aufsteigend' if aufsteigend else 'absteigend'} "
+            "sortiert. Bitte die Zeilen eines Tages chronologisch sortieren; "
+            "sonst würden die Herbststunden falsch zugeordnet."
+        )
+
+
 def _zeitstempel(reihen: pd.Series, zeitzone: str | None = None,
-                 versatz_stunden: float | None = None) -> pd.Series:
+                 versatz_stunden: float | None = None, *, name: str = "") -> pd.Series:
     """Parst MT5- und ISO-Zeitstempel zeilenweise mit festen Formaten.
 
     Zeilenweise, weil ein zusammengeführter Export mit und ohne Sekunden
@@ -133,6 +194,7 @@ def _zeitstempel(reihen: pd.Series, zeitzone: str | None = None,
             "Erwartet wird YYYY.MM.DD HH:MM[:SS] oder ISO 8601 mit Uhrzeit, in einer "
             "Spalte oder getrennt in Datum und Zeit."
         )
+    _pruefe_tagesreihenfolge(geparst, name)
     return _nach_utc(geparst, zeitzone, versatz_stunden)
 
 
@@ -164,8 +226,9 @@ def _nach_utc(geparst: pd.Series, zeitzone: str | None,
     # Exportreihenfolge ist die frühere Fassung die Sommerzeit-, die spätere die
     # Standardzeitstunde; so bleiben beide Stunden erhalten, statt als Dublette
     # zusammenzufallen. Eine absteigend sortierte Datei dreht diese Reihenfolge —
-    # erkannt am ersten und letzten Zeitstempel. Ausserhalb einer Wiederholung
-    # ist das Merkmal bedeutungslos.
+    # erkannt am ersten und letzten Zeitstempel. Sind beide gleich (nur das
+    # Herbstpaar), ist keine Richtung erkennbar; dann gilt aufsteigend.
+    # Ausserhalb einer Wiederholung ist das Merkmal bedeutungslos.
     wiederholt = geparst.duplicated(keep="first").to_numpy()
     ambiguous = wiederholt if geparst.iloc[0] > geparst.iloc[-1] else ~wiederholt
     lokalisiert = geparst.dt.tz_localize(zone, ambiguous=ambiguous, nonexistent="NaT")
@@ -183,16 +246,46 @@ def _nach_utc(geparst: pd.Series, zeitzone: str | None,
     return lokalisiert.dt.tz_convert("UTC")
 
 
+ZEITRAHMEN_MUSTER = re.compile(r"^(?:M\d+|H\d+|D\d+|W\d+|MN\d*)$")
+JAHR_MUSTER = re.compile(r"^(?:19|20)\d{2}$")
+
+
 def zerlege_dateiname(pfad: str | Path) -> tuple[str, str]:
     """Symbol und Zeitrahmen aus einem Namen wie ``EURUSD_M15.csv``.
 
-    Ohne bekannten Zeitrahmen im Namen gilt M15; das ist der Zeitrahmen, den
-    Richter und Paper lesen.
+    Ein Zeitrahmen-Token darf an jeder Position stehen; ein Jahres-Token wie
+    ``2020`` wird dabei ignoriert. Unbekannte Zeitrahmen-Tokens (etwa ``H4``)
+    werden abgelehnt, statt still als M15 gelesen zu werden. Ohne Zeitrahmen
+    gilt M15; das ist der Zeitrahmen, den Richter und Paper lesen.
     """
     stamm = Path(pfad).stem
-    vorne, _, hinten = stamm.rpartition("_")
-    if vorne and hinten.upper() in ZEITRAHMEN:
-        return vorne.upper(), hinten.upper()
+    teile = stamm.split("_")
+    gefunden: list[tuple[int, str]] = []
+    for nummer, teil in enumerate(teile):
+        token = teil.upper()
+        if token in ZEITRAHMEN:
+            gefunden.append((nummer, token))
+        elif ZEITRAHMEN_MUSTER.fullmatch(token):
+            raise ValueError(
+                f"CSV: Unbekannter Zeitrahmen «{token}» in {Path(pfad).name}. "
+                f"Unterstützt werden {', '.join(ZEITRAHMEN)}."
+            )
+    if len(gefunden) > 1:
+        raise ValueError(
+            f"CSV: Mehrere Zeitrahmen in {Path(pfad).name}; der Zeitrahmen "
+            "muss eindeutig sein."
+        )
+    if gefunden:
+        nummer, zeitraum = gefunden[0]
+        symbol_teile = [teil for teil in teile[:nummer]
+                        if not JAHR_MUSTER.fullmatch(teil)]
+        if not symbol_teile:
+            # Zeitrahmen am Anfang: der Rest des Namens bildet das Symbol.
+            symbol_teile = [teil for teil in teile[nummer + 1:]
+                            if not JAHR_MUSTER.fullmatch(teil)]
+        if symbol_teile:
+            return "_".join(symbol_teile).upper(), zeitraum
+        raise ValueError(f"CSV: Kein Symbol in {Path(pfad).name}.")
     return stamm.split("_")[0].upper(), "M15"
 
 
@@ -238,7 +331,7 @@ def _kodierung(p: Path) -> str:
 def _verarbeite(df: pd.DataFrame, zeitzone: str | None, name: str,
                 versatz_stunden: float | None = None) -> pd.DataFrame:
     """Prüft und normalisiert einen Block; unlesbare Zeilen brechen ab."""
-    df["ts"] = _zeitstempel(df["ts"], zeitzone, versatz_stunden)
+    df["ts"] = _zeitstempel(df["ts"], zeitzone, versatz_stunden, name=name)
     for spalte in ("open", "high", "low", "close", "volume"):
         df[spalte] = pd.to_numeric(df[spalte], errors="coerce")
 
@@ -276,20 +369,30 @@ def lade_csv_bloecke(pfad: str | Path, server_zeitzone: str | None = None,
         df = _normalisiere_spalten(roh)
         if puffer is not None:
             df = pd.concat([puffer, df], ignore_index=True)
-        tage = df["ts"].astype(str).str[:10]
+        # Nur der Datumsteil, nicht die ersten zehn Zeichen: ISO-Daten dürfen
+        # ohne führende Nullen kommen, und Leerzeichen vor dem Zeitstempel sind
+        # erlaubt. Sonst würde ein Tag je nach Stunde zerteilt oder mit einem
+        # anderen Tag verwechselt.
+        tage = (df["ts"].astype(str).str.strip()
+                .str.split(r"[ T]", n=1, regex=True).str[0])
         # Jeder Tag darf nur einen zusammenhängenden Lauf bilden; sonst könnte
         # die Blockgrenze die beiden Fassungen der Herbststunde trennen und eine
         # davon still als Standardzeit umrechnen.
         wechsel = tage.ne(tage.shift())
-        laeufe = set(tage[wechsel])
-        if len(laeufe) != int(wechsel.sum()) or laeufe & gesehen:
+        tageslaeufe = tage[wechsel]
+        konflikt = tageslaeufe[
+            tageslaeufe.duplicated() | tageslaeufe.isin(gesehen)
+        ]
+        if not konflikt.empty:
             raise ValueError(
-                f"CSV: {p.name} ist nicht nach Datum sortiert (ein Datum "
-                "erscheint in mehreren Abschnitten). Bitte die Datei auf- oder "
-                "absteigend sortieren; sonst würden die Herbststunden getrennt."
+                f"CSV: {p.name} ist nicht nach Datum sortiert: "
+                f"{konflikt.iloc[0]} erscheint in mehreren, durch andere Tage "
+                "getrennten Abschnitten. Bitte die Datei auf- oder absteigend "
+                "sortieren; sonst würden die Herbststunden getrennt."
             )
-        # Der letzte Tag wird erst mit dem nächsten Block verarbeitet.
-        ab = int((tage == tage.iloc[-1]).to_numpy().argmax())
+        # Der letzte Tag wird erst mit dem nächsten Block verarbeitet. Er bildet
+        # nach der Prüfung genau einen zusammenhängenden Lauf am Ende.
+        ab = int((tage != tage.iloc[-1]).sum())
         puffer = df.iloc[ab:].reset_index(drop=True)
         rest = df.iloc[:ab]
         if len(rest):
@@ -299,13 +402,13 @@ def lade_csv_bloecke(pfad: str | Path, server_zeitzone: str | None = None,
         yield _verarbeite(puffer, server_zeitzone, p.name, server_versatz_stunden)
 
 
-# Vor dem Schreiben werden höchstens so viele Zeilen gepuffert, bis genug
-# Abstände für ein Takturteil vorliegen; das begrenzt auch sehr dünne Dateien.
-TAKT_MINDESTABSTAENDE = 10
+# Die Vorprüfung puffert zeilenbasiert und begrenzt den Puffer auf höchstens
+# 10 000 Zeilen. Dünne Dateien werden vollständig gepuffert und vor dem
+# Schreiben geprüft; die Mindestzahl für ein Urteil steckt in takt_fehler.
 TAKT_PUFFER_ZEILEN = 10_000
 
 
-def takt_fehler(ts: pd.Series, timeframe: str, *, mindest_abstaende: int = 0) -> str | None:
+def takt_fehler(ts: pd.Series, timeframe: str, *, mindest_abstaende: int = 10) -> str | None:
     """Meldet ein Raster, das nicht zum angegebenen Zeitrahmen passt.
 
     Geurteilt wird über den häufigsten Abstand, nicht über den Median: Ein
@@ -333,28 +436,51 @@ def takt_fehler(ts: pd.Series, timeframe: str, *, mindest_abstaende: int = 0) ->
             "(Dateiname oder --zeitrahmen).")
 
 
+def _pruefe_taktpuffer(puffer: list[pd.DataFrame], zeitrahmen: str) -> None:
+    zusammen = pd.concat(puffer, ignore_index=True)
+    fehler = takt_fehler(zusammen["ts"], zeitrahmen)
+    if fehler:
+        raise ValueError(fehler)
+
+
 def mit_taktpruefung(bloecke: Iterable[pd.DataFrame], zeitrahmen: str) -> Iterator[pd.DataFrame]:
     """Prüft den Takt, bevor der erste Block in die Datenbank geht.
 
     Der Import schreibt eine Datei blockweise in einer Transaktion. Ohne diese
     Vorprüfung landeten falsch getaktete Kerzen (etwa H1 unter M15) zuerst in
     der Tabelle und fielen erst der Prüfung der zusammengeführten Reihe auf.
+    Der Puffer nimmt höchstens ``TAKT_PUFFER_ZEILEN`` Zeilen auf; ist ein
+    einzelner Block größer, wird er für die Prüfung geteilt und erst danach
+    vollständig ausgegeben. Dünne Dateien werden am Ende der Datei geprüft.
     """
     puffer: list[pd.DataFrame] = []
     zeilen = 0
+    geprueft = False
     for block in bloecke:
-        puffer.append(block)
-        zeilen += len(block)
-        if zeilen >= TAKT_PUFFER_ZEILEN:
-            break
-    if puffer:
-        zusammen = pd.concat(puffer, ignore_index=True)
-        fehler = takt_fehler(zusammen["ts"], zeitrahmen,
-                             mindest_abstaende=TAKT_MINDESTABSTAENDE)
-        if fehler:
-            raise ValueError(fehler)
+        if geprueft:
+            yield block
+            continue
+        frei = TAKT_PUFFER_ZEILEN - zeilen
+        if len(block) <= frei:
+            puffer.append(block)
+            zeilen += len(block)
+            if zeilen >= TAKT_PUFFER_ZEILEN:
+                _pruefe_taktpuffer(puffer, zeitrahmen)
+                yield from puffer
+                puffer.clear()
+                geprueft = True
+            continue
+        # Der Block ist größer als der freie Puffer: nur die ersten Zeilen
+        # puffern, prüfen und den Rest erst danach ausgeben.
+        puffer.append(block.iloc[:frei])
+        _pruefe_taktpuffer(puffer, zeitrahmen)
         yield from puffer
-    yield from bloecke
+        puffer.clear()
+        geprueft = True
+        yield block.iloc[frei:]
+    if puffer:
+        _pruefe_taktpuffer(puffer, zeitrahmen)
+        yield from puffer
 
 
 def pruefe_daten(df: pd.DataFrame, symbol: str, cfg: Any, timeframe: str = "M15") -> Datenqualitaet:
@@ -408,7 +534,7 @@ def pruefe_daten(df: pd.DataFrame, symbol: str, cfg: Any, timeframe: str = "M15"
 
     luecken = df["ts"].diff().dt.total_seconds().dropna()
     median = float(luecken.median()) if len(luecken) else 0.0
-    takt = takt_fehler(df["ts"], timeframe, mindest_abstaende=TAKT_MINDESTABSTAENDE)
+    takt = takt_fehler(df["ts"], timeframe)
     if takt:
         q.fehler.append(takt)
     if median > 0:
