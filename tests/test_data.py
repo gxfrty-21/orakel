@@ -72,9 +72,27 @@ def test_median_abstand_muss_zum_zeitrahmen_passen(cfg):
     assert not q.ok
     assert any("Median-Abstand" in f for f in q.fehler)
 
-    # M1 bleibt als M1 in Ordnung.
-    m1 = synthetische_kerzen("X", kerzen=1300, seed=2, timeframe_minuten=1)
+    # M1 bleibt als M1 in Ordnung (die Mindestzahl ist hier 1500 auf M1-Basis).
+    m1 = synthetische_kerzen("X", kerzen=1800, seed=2, timeframe_minuten=1)
     assert pruefe_daten(m1, "X", cfg, timeframe="M1").ok
+
+
+def test_mindestkerzen_folgen_dem_zeitrahmen(cfg):
+    # 1200 M15-Kerzen sind zwei Wochen; im H1-Raster wären das 50 Tage.
+    cfg._d["daten"]["min_kerzen"] = 1200
+
+    h1 = synthetische_kerzen("X", kerzen=400, seed=2, timeframe_minuten=60)
+    q = pruefe_daten(h1, "X", cfg, timeframe="H1")
+    assert q.ok, q.fehler  # 400 H1-Kerzen ≈ 16 Tage reichen
+
+    kurz = synthetische_kerzen("X", kerzen=250, seed=2, timeframe_minuten=60)
+    q = pruefe_daten(kurz, "X", cfg, timeframe="H1")
+    assert not q.ok
+    assert any("mindestens 300" in f for f in q.fehler), q.fehler
+
+    # M15 behält die Basis: 400 M15-Kerzen sind weiterhin zu wenig.
+    m15 = synthetische_kerzen("X", kerzen=400, seed=2)
+    assert not pruefe_daten(m15, "X", cfg).ok
 
 
 def test_jahresabdeckung_zaehlt_kerzen_je_jahr(cfg):

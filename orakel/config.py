@@ -67,6 +67,24 @@ class Config:
         daten.setdefault("basis", {})["bars_pro_jahr"] = bars
         return Config(daten, self.pfad)
 
+    def min_kerzen_fuer(self, zeitrahmen: str) -> int:
+        """Skaliert die M15-Mindestzahl aus [daten] auf den Zeitrahmen."""
+        from .kern.data import kerzen_minimum
+        return kerzen_minimum(int(self["daten"].get("min_kerzen", 1)), zeitrahmen)
+
+    def fuer_zeitrahmen(self, zeitrahmen: str) -> Config:
+        """Kopie mit Jahresbasis und Mindestkerzen des gelesenen Zeitrahmens.
+
+        Beide Werte gelten in der Konfiguration für M15. Der Richter muss mit
+        dem Raster rechnen, das er tatsächlich liest; die geladene Konfiguration
+        bleibt unverändert.
+        """
+        daten = copy.deepcopy(self._d)
+        daten.setdefault("basis", {})["bars_pro_jahr"] = self.bars_pro_jahr_fuer(zeitrahmen)
+        if "daten" in daten:
+            daten["daten"]["min_kerzen"] = self.min_kerzen_fuer(zeitrahmen)
+        return Config(daten, self.pfad)
+
     @property
     def waehrung(self) -> str:
         return str(self._d["basis"]["waehrung"])

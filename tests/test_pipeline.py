@@ -40,6 +40,19 @@ def test_bars_pro_jahr_folgt_dem_zeitrahmen(cfg):
     assert cfg.richter_zeitrahmen == "H1"
 
 
+def test_min_kerzen_folgt_dem_zeitrahmen(cfg):
+    cfg._d["daten"]["min_kerzen"] = 1200
+
+    assert cfg.min_kerzen_fuer("M15") == 1200
+    assert cfg.min_kerzen_fuer("H1") == 300
+    urteil = cfg.fuer_zeitrahmen("H1")
+    assert urteil["daten"]["min_kerzen"] == 300
+    assert urteil.bars_pro_jahr == 6240
+    # Original bleibt unverändert
+    assert cfg["daten"]["min_kerzen"] == 1200
+    assert cfg.bars_pro_jahr == 24960
+
+
 def test_leerer_csv_ordner_bricht_ab_statt_synthetisch(cfg):
     cfg._d["basis"]["datenquelle"] = "csv"
     db = Facts(cfg.db_pfad)

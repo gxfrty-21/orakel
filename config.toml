@@ -48,6 +48,7 @@ spread_pips = 1.0
 pip_groesse = 0.0001
 
 [daten]
+# M15-Basis (1200 Kerzen ≈ zwei Wochen); für M1/M5/H1 wird sie umgerechnet.
 min_kerzen = 1200
 max_luecke_pct = 5.0
 max_sprung_pct = 25.0
