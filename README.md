@@ -294,8 +294,10 @@ oder cp1252. Grosse Dateien (mehrere Jahre M1) werden tageweise blockweise
 gelesen und in einer Transaktion geschrieben: Der Speicherbedarf beim Lesen und
 Schreiben bleibt flach, bei einem Fehler bleibt die Datei unverändert, und
 geprüft wird weiterhin die zusammengeführte Reihe. Die Datei muss nach Datum
-sortiert sein (auf- oder absteigend); verschränkte Tage brechen mit einer
-Meldung ab, statt die Herbststunden zu trennen.
+und innerhalb eines Tages chronologisch sortiert sein (auf- oder absteigend).
+Bei der Herbst-Rückstellung ist genau ein Rücksprung um die wiederholte Stunde
+erlaubt. Verschränkte Tage oder anders gemischte Zeilen innerhalb eines Tages
+brechen mit einer Meldung ab, statt die Herbststunden falsch zuzuordnen.
 
 Zeitrahmen: importiert werden `M1`, `M5`, `M15`, `H1` (Suffix im Dateinamen
 oder `--zeitrahmen`). **Paper liest M15**; der Richter bewertet
