@@ -77,7 +77,7 @@ Werkzeugleiste. Deshalb nach dem Laden kurz warten, bis die Leiste stabil ist.
 |---|---|---|---|---|
 | PAN-1 | Mit **einem Finger** im Schiff viewport nach rechts und unten ziehen (ca. 50 px). | Das Schiff folgt der Bewegung. Die Zoom-Anzeige bleibt unverändert. Es öffnet sich kein Agentenraum. | [ ] | [ ] |
 | PAN-2 | Die Geste auf einem Agentenraum beginnen und mindestens 30 px ziehen. | Das Schiff verschiebt sich; der Raum wird **nicht** geöffnet. Erst ein anschliessender, ruhiger Tap öffnet ihn. | [ ] | [ ] |
-| PAN-3 | Abwechselnd an alle vier Ränder des Schiffs viewports ziehen. | Das Schiff bleibt innerhalb des Viewports; die Seite scrollt nicht horizontal, löst kein Zurück/Vorwärts aus und die Safari-Leiste bleibt sichtbar. | [ ] | [ ] |
+| PAN-3 | Abwechselnd an alle vier Ränder des Schiffs viewports ziehen. | Mindestens ein Teil des sichtbaren Schiffs bleibt im Viewport; der Sternenhintergrund allein reicht nicht. Die Seite scrollt nicht horizontal, löst kein Zurück/Vorwärts aus und die Safari-Leiste bleibt sichtbar. | [ ] | [ ] |
 | PAN-4 | Bei sichtbarem Schiff vom Porträt ins Querformat drehen und zurück. | Nach ca. 0,5 s ist die Ansicht automatisch neu eingepasst; alle Räume und Abteilungen sind sichtbar, die Zoom-Anzeige ist aktuell. | [ ] | [ ] |
 | PAN-5 | Nach dem Pan kurz warten und einen Raum antippen. | Der Tap wird nicht durch die vorherige Pan-Geste unterdrückt; der Raum öffnet sich. | [ ] | [ ] |
 

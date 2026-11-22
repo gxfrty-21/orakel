@@ -183,7 +183,8 @@ bisherigen Panels für Lage, Meetingraum und Sekretariat bleiben unter
 Ein Klick auf einen Raum öffnet rechts Rolle, Status, offene und laufende Aufgaben,
 Mission, letzte Aufgabe und Berichtslinie. `+`/`−`, Mausrad, Zwei-Finger-Gesten und
 `Fit` steuern den Zoom; Ziehen verschiebt das Schiff, wobei an jedem Rand
-mindestens 72 px sichtbar bleiben. Die Zoom-/Fit-Leiste liegt in jedem Zoom über
+mindestens 72 px des Schiffskörpers im Viewport bleiben; der Innenabstand
+der Bühne zählt dabei nicht als sichtbares Schiff. Die Zoom-/Fit-Leiste liegt in jedem Zoom über
 dem Schiffsinhalt. Die Darstellung ist Pixel-Art auf Canvas ohne 3D-Framework und
 bleibt bei 250 % Schrift in zwölf Ansichten und drei Breiten ohne Überläufe.
 
