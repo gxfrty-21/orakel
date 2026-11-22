@@ -343,7 +343,10 @@ und warnt, wenn
 zwischen erstem und letztem Jahr ein ganzes Jahr ohne Kerzen bleibt — etwa wenn
 die Broker-Historie abgeschnitten ist. Diese Warnung blockiert den Lauf nicht,
 weil die vorhandene Reihe weiter verwendbar ist; die Warnung erscheint auch im
-Datenqualitätsblock des Berichts. Der häufigste Abstand muss ausserdem zum
+Datenqualitätsblock des Berichts. Trifft ein erneuter Import auf denselben
+Zeitstempel mit anderen OHLC-Werten, nennt er die Zahl der abweichenden Kerzen
+und ein Beispiel; ersetzt wird weiterhin, aber nicht mehr still. Der häufigste
+Abstand muss ausserdem zum
 angegebenen Zeitrahmen passen (M1/M5/M15/H1), damit auch Zwischenraster wie M20
 oder M45 auffallen: Eine als M15 benannte H1-Datei wird mit Meldung abgelehnt,
 statt still als M15 zu gelten. Geprüft wird vor dem Schreiben — die
