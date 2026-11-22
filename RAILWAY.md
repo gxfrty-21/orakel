@@ -411,8 +411,9 @@ Die App vorher stoppen, damit SQLite keine offene WAL-Datei hat. Dann die
 Dateien in das Volume hochladen:
 
 ```bash
-# lokale Datei aus config.toml ([basis] db_pfad), ORAKEL_DB_PFAD sticht ihn;
-# der Zielpfad im Volume bleibt /orakel.db.
+# Pfade von `railway volume files` gelten relativ zum Mount /data:
+# /orakel.db ist im Container /data/orakel.db. Lokale Quelle ist
+# [basis] db_pfad aus config.toml, ORAKEL_DB_PFAD hat Vorrang.
 DB=$(python3 -c "from orakel.config import load_config; print(load_config('config.toml').db_pfad)")
 railway volume files upload "$DB" /orakel.db
 railway volume files upload ./vault /vault
