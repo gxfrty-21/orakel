@@ -300,14 +300,19 @@ erlaubt. Alle Tagesläufe müssen dieselbe Richtung haben. Verschränkte Tage,
 gemischte Tagesrichtungen oder anders gemischte Zeilen innerhalb eines Tages
 brechen mit einer Meldung ab, statt die Herbststunden falsch zuzuordnen.
 
-Zeitrahmen: importiert werden `M1`, `M5`, `M15`, `H1` (Suffix im Dateinamen
-oder `--zeitrahmen`). **Paper liest M15**; der Richter bewertet
-`[basis] richter_zeitrahmen` (Standard `M15`, z. B. `H1`). `bars_pro_jahr` gilt
-für M15 und wird für andere Zeitrahmen umgerechnet (H1: 6240 statt 24 960);
-`min_kerzen` folgt derselben Basis (H1: 300 statt 1200). Der
-Ordner-Import über `[basis] datenquelle = "csv"` liest `daten/*.csv`,
-importiert M15 und den Richter-Zeitrahmen und überspringt alles andere mit
-Ereignis im Protokoll, statt es als M15 abzulegen. Ist der Ordner leer, bricht
+Zeitrahmen: importiert werden `M1`, `M5`, `M15`, `H1`. Der Zeitrahmen wird
+an beliebiger Stelle im Dateinamen erkannt (`EURUSD_H1_2020.csv`,
+`EURUSD_2020_H1.csv`) oder über `--zeitrahmen` gesetzt; ein Jahres-Suffix wie
+`2020` wird ignoriert. Unbekannte Zeitrahmen-Tokens wie `H4` werden mit Meldung
+abgelehnt, statt still als M15 gelesen zu werden. **Paper liest M15**; der
+Richter bewertet `[basis] richter_zeitrahmen` (Standard `M15`, z. B. `H1`).
+`bars_pro_jahr` gilt für M15 und wird für andere Zeitrahmen umgerechnet (H1:
+6240 statt 24 960); `min_kerzen` folgt derselben Basis (H1: 300 statt 1200).
+Der Ordner-Import über `[basis] datenquelle = "csv"` liest `daten/*.csv`,
+importiert M15 und den Richter-Zeitrahmen; bekannte, nicht benötigte
+Zeitrahmen werden mit Ereignis im Protokoll übersprungen. Ein unbekannter
+Zeitrahmen bricht den Ordner-Import vor dem ersten Schreiben ab. Ist der Ordner
+leer, bricht
 der Lauf ohne vorhandene Datenbankkerzen mit Meldung ab, statt synthetische
 Kerzen zu erzeugen; vorhandene Datenbankkerzen werden mit einer Warnung
 weiterverwendet. Die Frischegrenzen bleiben

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Sequence
@@ -245,16 +246,46 @@ def _nach_utc(geparst: pd.Series, zeitzone: str | None,
     return lokalisiert.dt.tz_convert("UTC")
 
 
+ZEITRAHMEN_MUSTER = re.compile(r"^(?:M\d+|H\d+|D\d+|W\d+|MN\d*)$")
+JAHR_MUSTER = re.compile(r"^(?:19|20)\d{2}$")
+
+
 def zerlege_dateiname(pfad: str | Path) -> tuple[str, str]:
     """Symbol und Zeitrahmen aus einem Namen wie ``EURUSD_M15.csv``.
 
-    Ohne bekannten Zeitrahmen im Namen gilt M15; das ist der Zeitrahmen, den
-    Richter und Paper lesen.
+    Ein Zeitrahmen-Token darf an jeder Position stehen; ein Jahres-Token wie
+    ``2020`` wird dabei ignoriert. Unbekannte Zeitrahmen-Tokens (etwa ``H4``)
+    werden abgelehnt, statt still als M15 gelesen zu werden. Ohne Zeitrahmen
+    gilt M15; das ist der Zeitrahmen, den Richter und Paper lesen.
     """
     stamm = Path(pfad).stem
-    vorne, _, hinten = stamm.rpartition("_")
-    if vorne and hinten.upper() in ZEITRAHMEN:
-        return vorne.upper(), hinten.upper()
+    teile = stamm.split("_")
+    gefunden: list[tuple[int, str]] = []
+    for nummer, teil in enumerate(teile):
+        token = teil.upper()
+        if token in ZEITRAHMEN:
+            gefunden.append((nummer, token))
+        elif ZEITRAHMEN_MUSTER.fullmatch(token):
+            raise ValueError(
+                f"CSV: Unbekannter Zeitrahmen «{token}» in {Path(pfad).name}. "
+                f"Unterstützt werden {', '.join(ZEITRAHMEN)}."
+            )
+    if len(gefunden) > 1:
+        raise ValueError(
+            f"CSV: Mehrere Zeitrahmen in {Path(pfad).name}; der Zeitrahmen "
+            "muss eindeutig sein."
+        )
+    if gefunden:
+        nummer, zeitraum = gefunden[0]
+        symbol_teile = [teil for teil in teile[:nummer]
+                        if not JAHR_MUSTER.fullmatch(teil)]
+        if not symbol_teile:
+            # Zeitrahmen am Anfang: der Rest des Namens bildet das Symbol.
+            symbol_teile = [teil for teil in teile[nummer + 1:]
+                            if not JAHR_MUSTER.fullmatch(teil)]
+        if symbol_teile:
+            return "_".join(symbol_teile).upper(), zeitraum
+        raise ValueError(f"CSV: Kein Symbol in {Path(pfad).name}.")
     return stamm.split("_")[0].upper(), "M15"
 
 

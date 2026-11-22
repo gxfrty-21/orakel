@@ -839,6 +839,19 @@ def test_dateiname_liefert_symbol_und_zeitrahmen():
     assert zerlege_dateiname("US500_CASH_H1.csv") == ("US500_CASH", "H1")
     assert zerlege_dateiname("EURUSD.csv") == ("EURUSD", "M15")
     assert zerlege_dateiname("EURUSD_2024.csv") == ("EURUSD", "M15")
+    # Der Zeitrahmen wird an jeder Position erkannt, nicht nur am Ende.
+    assert zerlege_dateiname("EURUSD_H1_2020.csv") == ("EURUSD", "H1")
+    assert zerlege_dateiname("US500_H1_2023.csv") == ("US500", "H1")
+    assert zerlege_dateiname("EURUSD_2020_H1.csv") == ("EURUSD", "H1")
+    assert zerlege_dateiname("H1_EURUSD.csv") == ("EURUSD", "H1")
+    # Block-Suffixe hinter dem Zeitrahmen gehören nicht zum Symbol.
+    assert zerlege_dateiname("EURUSD_M15_a.csv") == ("EURUSD", "M15")
+
+
+def test_unbekannte_zeitrahmen_im_dateinamen_werden_abgelehnt():
+    for name in ("EURUSD_H4.csv", "EURUSD_H4_2020.csv", "EURUSD_M15_H4.csv"):
+        with pytest.raises(ValueError, match="Unbekannter Zeitrahmen"):
+            zerlege_dateiname(name)
 
 
 def test_zwei_bloecke_ergeben_eine_gepruefte_reihe(cfg, tmp_path):
