@@ -15,6 +15,11 @@ DTYPE = [
     ("close", "<f8"), ("tick_volume", "<u8"), ("spread", "<i4"),
     ("real_volume", "<u8"),
 ]
+TICK_DTYPE = [
+    ("time", "<i8"), ("bid", "<f8"), ("ask", "<f8"), ("last", "<f8"),
+    ("volume", "<u8"), ("time_msc", "<i8"), ("flags", "<u4"),
+    ("volume_real", "<f8"),
+]
 
 
 def _modul():
@@ -39,16 +44,27 @@ def _bars(*werte: tuple[str, float]) -> np.ndarray:
     return np.array(reihen, dtype=DTYPE)
 
 
+def _ticks(*werte: tuple[str, int, float, float, float, int, float]) -> np.ndarray:
+    reihen = [
+        (_stamp(zeit), bid, ask, last, volume, _stamp(zeit) * 1000 + msec, 0, volume_real)
+        for zeit, msec, bid, ask, last, volume, volume_real in werte
+    ]
+    return np.array(reihen, dtype=TICK_DTYPE)
+
+
 class FakeMT5:
     TIMEFRAME_M1 = 1
     TIMEFRAME_M5 = 5
     TIMEFRAME_M15 = 15
     TIMEFRAME_H1 = 16385
+    COPY_TICKS_ALL = 0
 
-    def __init__(self, antworten=None, symbol_ok: bool = True):
+    def __init__(self, antworten=None, symbol_ok: bool = True, tick_antworten=None):
         self.antworten = antworten or {}
+        self.tick_antworten = tick_antworten or {}
         self.symbol_ok = symbol_ok
         self.aufrufe: list[tuple[str, int, int, int]] = []
+        self.tick_aufrufe: list[tuple[str, int, int, int]] = []
         self.beendet = False
         self.symbol = None
 
@@ -66,6 +82,10 @@ class FakeMT5:
     def copy_rates_range(self, symbol, rahmen, anfang, ende):
         self.aufrufe.append((symbol, rahmen, anfang, ende))
         return self.antworten.get((anfang, ende), np.array([], dtype=DTYPE))
+
+    def copy_ticks_range(self, symbol, anfang, ende, flags):
+        self.tick_aufrufe.append((symbol, anfang, ende, flags))
+        return self.tick_antworten.get((anfang, ende), np.array([], dtype=TICK_DTYPE))
 
     def last_error(self):
         return (1, "testfehler")
@@ -239,3 +259,91 @@ def test_unbekanntes_symbol_bricht_ab(tmp_path, monkeypatch, capsys):
 
     assert code == 1
     assert "Market Watch" in capsys.readouterr().err
+
+
+def test_ticks_als_eigenes_ausgabeformat(tmp_path, monkeypatch):
+    modul = _modul()
+    januar = (_stamp("2025-01-01T00:00:00"), _stamp("2025-01-31T23:59:59"))
+    februar = (_stamp("2025-02-01T00:00:00"), _stamp("2025-02-28T23:59:59"))
+    dublette = ("2025-01-02T09:00:00", 100, 1.10, 1.1002, 0.0, 5, 2.5)
+    fake = FakeMT5(tick_antworten={
+        januar: _ticks(
+            ("2025-01-02T09:00:00", 250, 1.1002, 1.1004, 0.0, 3, 1.5),
+            dublette,
+            dublette,
+        ),
+        # Grenzfenster liefert dieselbe Dublette erneut; sie bleibt einmalig.
+        februar: _ticks(
+            ("2025-02-03T08:00:00", 500, 1.2, 1.2002, 0.0, 7, 3.5),
+            dublette,
+        ),
+    })
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
+
+    code = modul.main([
+        "--symbol", "EURUSD", "--format", "ticks",
+        "--von", "2025-01-01", "--bis", "2025-02-28", "--ausgabe", str(tmp_path),
+    ])
+
+    assert code == 0
+    datei = tmp_path / "EURUSD_ticks.csv"
+    zeilen = datei.read_text(encoding="utf-8").splitlines()
+    assert zeilen[0] == (
+        "<DATE>\t<TIME>\t<MSEC>\t<BID>\t<ASK>\t<LAST>\t<VOLUME>"
+        "\t<VOLUME_REAL>\t<FLAGS>"
+    )
+    # Nach Serverzeit und Millisekunde sortiert; die Dublette aus dem
+    # Februarfenster erzeugt keine zweite Zeile.
+    assert [z.split("\t")[0:3] for z in zeilen[1:]] == [
+        ["2025.01.02", "09:00:00", "100"],
+        ["2025.01.02", "09:00:00", "250"],
+        ["2025.02.03", "08:00:00", "500"],
+    ]
+    assert zeilen[1].split("\t") == [
+        "2025.01.02", "09:00:00", "100", "1.1", "1.1002", "0.0", "5", "2.5", "0",
+    ]
+    assert all(len(z.split("\t")) == 9 for z in zeilen[1:])
+    assert not (tmp_path / "EURUSD_M15.csv").exists()
+    assert fake.aufrufe == []
+    assert [(a[1], a[2], a[3]) for a in fake.tick_aufrufe] == [
+        (januar[0], januar[1], fake.COPY_TICKS_ALL),
+        (februar[0], februar[1], fake.COPY_TICKS_ALL),
+    ]
+    assert fake.beendet is True
+
+
+def test_leere_ticks_brechen_ohne_datei_ab(tmp_path, monkeypatch, capsys):
+    modul = _modul()
+    fake = FakeMT5()
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
+
+    code = modul.main([
+        "--symbol", "EURUSD", "--format", "ticks",
+        "--von", "2025-01-01", "--bis", "2025-01-31", "--ausgabe", str(tmp_path),
+    ])
+
+    assert code == 1
+    assert "keine Ticks" in capsys.readouterr().err
+    assert not (tmp_path / "EURUSD_ticks.csv").exists()
+    assert fake.beendet is True
+
+
+def test_tick_abruffehler_meldet_terminalfehler(tmp_path, monkeypatch, capsys):
+    modul = _modul()
+
+    class Kaputt(FakeMT5):
+        def copy_ticks_range(self, symbol, anfang, ende, flags):
+            return None
+
+    fake = Kaputt()
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
+
+    code = modul.main([
+        "--symbol", "EURUSD", "--format", "ticks",
+        "--von", "2025-01-01", "--ausgabe", str(tmp_path),
+    ])
+
+    assert code == 1
+    assert "testfehler" in capsys.readouterr().err
+    assert not (tmp_path / "EURUSD_ticks.csv").exists()
+    assert fake.beendet is True
