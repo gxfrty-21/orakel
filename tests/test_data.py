@@ -7,10 +7,12 @@ import pytest
 
 from orakel import __main__ as cli
 from orakel.__main__ import _importiere_csv, _versatz
+from orakel.kern import data
 from orakel.kern.data import (
     df_aus_db,
     lade_csv,
     lade_csv_bloecke,
+    mit_taktpruefung,
     pruefe_daten,
     synthetische_kerzen,
     zerlege_dateiname,
@@ -151,6 +153,37 @@ def test_falsch_getaktete_datei_wird_vor_dem_schreiben_abgelehnt(cfg, tmp_path):
     assert db.kerzen("EURUSD", "M15") == []
     assert any("Häufigster Abstand" in zeile["text"] and "EURUSD_M15.csv" in zeile["text"]
                for zeile in db.ereignisse())
+
+
+def test_duenn_besetzte_falsche_datei_wird_vor_dem_schreiben_abgelehnt(cfg, tmp_path):
+    # Nur zwölf H1-Kerzen: Der Zeilenpuffer liest die ganze Datei und erkennt
+    # den falschen Takt trotzdem, bevor eine Kerze gespeichert wird.
+    h1 = synthetische_kerzen("X", kerzen=12, seed=2, timeframe_minuten=60)
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(_als_mt5(h1), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)])) == 1
+
+    assert db.kerzen("EURUSD", "M15") == []
+    assert any("Häufigster Abstand" in zeile["text"] for zeile in db.ereignisse())
+
+
+def test_zeilenpuffer_bleibt_begrenzt_und_gibt_alle_zeilen_weiter(monkeypatch):
+    df = synthetische_kerzen("X", kerzen=12, seed=2)
+    monkeypatch.setattr(data, "TAKT_PUFFER_ZEILEN", 5)
+
+    # Kleine Blöcke: Der Puffer gibt höchstens fünf Zeilen am Stück aus.
+    klein = list(mit_taktpruefung((df.iloc[[i]] for i in range(len(df))), "M15"))
+    assert max(len(teil) for teil in klein) <= 5
+    assert sum(len(teil) for teil in klein) == len(df)
+    pd.testing.assert_frame_equal(pd.concat(klein, ignore_index=True), df)
+
+    # Ein einzelner großer Block wird für die Prüfung geteilt, aber vollständig
+    # und in der richtigen Reihenfolge weitergegeben.
+    gross = list(mit_taktpruefung(iter([df]), "M15"))
+    assert sum(len(teil) for teil in gross) == len(df)
+    pd.testing.assert_frame_equal(pd.concat(gross, ignore_index=True), df)
 
 
 def test_jahresabdeckung_zaehlt_kerzen_je_jahr(cfg):
