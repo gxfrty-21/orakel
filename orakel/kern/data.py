@@ -108,12 +108,14 @@ def _trenner(kopf: str) -> str:
 
 
 def _pruefe_tagesreihenfolge(geparst: pd.Series, name: str) -> None:
-    """Prüft die Reihenfolge innerhalb jedes Tages.
+    """Prüft die Reihenfolge jedes Tageslaufs.
 
-    Die Herbst-Rückstellung ist die einzige erlaubte Umkehr: Sie erzeugt genau
-    einen Sprung an einer doppelt vorkommenden Uhrzeit. Jede andere Unordnung
-    würde die Sommer-/Standardzeitfassung allein aus der Zeilenreihenfolge
-    falsch zuordnen.
+    Jeder Tageslauf muss für sich chronologisch auf- oder absteigend sein. Die
+    Herbst-Rückstellung ist die einzige erlaubte Umkehr: Sie erzeugt genau
+    einen Sprung an einer doppelt vorkommenden Uhrzeit. Zusätzlich müssen alle
+    Tagesläufe dieselbe Richtung wie der Block haben; sonst würde die
+    Herbst-Richtung des Blocks auf einen entgegengesetzten Tag angewendet und
+    Sommer-/Standardzeitfassung vertauscht.
     """
     if len(geparst) < 2:
         return
@@ -123,19 +125,39 @@ def _pruefe_tagesreihenfolge(geparst: pd.Series, name: str) -> None:
     if geparst.is_monotonic_increasing or geparst.is_monotonic_decreasing:
         return
     tage = geparst.dt.normalize()
-    aufsteigend = geparst.iloc[0] <= geparst.iloc[-1]
-    sekunden = (geparst - tage).dt.total_seconds()
-    delta = sekunden.groupby(tage).diff()
-    verletzt = delta < 0 if aufsteigend else delta > 0
-    if not verletzt.any():
-        return
-    anzahl = verletzt.groupby(tage).sum()
-    zu_viele = tage.map(anzahl) > 1
-    # Nur eine Umkehr an einer wiederholten Uhrzeit ist die Herbst-Rückstellung.
-    doppelt = geparst.duplicated(keep=False)
-    ungueltig = verletzt & (~doppelt | zu_viele)
-    if ungueltig.any():
-        tag = tage[ungueltig].iloc[0]
+    block_aufsteigend = geparst.iloc[0] <= geparst.iloc[-1]
+    starts = np.flatnonzero(tage.ne(tage.shift()).to_numpy())
+    enden = np.append(starts[1:], len(geparst))
+    for start, ende in zip(starts, enden):
+        lauf = geparst.iloc[int(start):int(ende)]
+        tag = tage.iloc[int(start)]
+        if len(lauf) < 2:
+            continue
+        if lauf.iloc[0] < lauf.iloc[-1]:
+            aufsteigend = True
+        elif lauf.iloc[0] > lauf.iloc[-1]:
+            aufsteigend = False
+        else:
+            # Nur ein Herbstpaar: keine eigene Richtung erkennbar. Die
+            # Blockrichtung gilt, damit die Fassungen konsistent bleiben.
+            aufsteigend = block_aufsteigend
+        if aufsteigend != block_aufsteigend:
+            raise ValueError(
+                f"CSV: {name or 'Datei'}: Tagesläufe haben gemischte Richtungen: "
+                f"Tag {tag:%Y-%m-%d} ist {'aufsteigend' if aufsteigend else 'absteigend'}, "
+                f"der Block insgesamt {'aufsteigend' if block_aufsteigend else 'absteigend'} "
+                "sortiert. Bitte alle Tage einheitlich auf- oder absteigend sortieren; "
+                "sonst würden die Herbststunden falsch zugeordnet."
+            )
+        sekunden = (lauf - tag).dt.total_seconds()
+        delta = sekunden.diff()
+        verletzt = delta < 0 if aufsteigend else delta > 0
+        if not verletzt.any():
+            continue
+        doppelt = lauf.duplicated(keep=False).to_numpy()
+        # Nur eine Umkehr an einer wiederholten Uhrzeit ist die Herbst-Rückstellung.
+        if int(verletzt.sum()) == 1 and bool((verletzt.to_numpy() & doppelt).any()):
+            continue
         raise ValueError(
             f"CSV: {name or 'Datei'}: Tag {tag:%Y-%m-%d} ist innerhalb des "
             f"Tages nicht {'aufsteigend' if aufsteigend else 'absteigend'} "

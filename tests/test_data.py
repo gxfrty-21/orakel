@@ -563,6 +563,49 @@ def test_gemischte_herbstzeilen_brechen_ab(tmp_path):
         list(lade_csv_bloecke(p, server_zeitzone="Europe/Athens", block=2))
 
 
+def test_gemischte_tagesrichtungen_brechen_ab(tmp_path):
+    # Drei Tage im selben Block: Tag 1 steigt auf, Tag 2 fällt ab. Die globale
+    # Blockrichtung wäre aufsteigend; ohne Prüfung je Tageslauf würde Tag 2
+    # mit der falschen Herbstrichtung gelesen.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for tag, zeit, preis in (
+        ("2025.01.02", "09:00:00", "1.10"),
+        ("2025.01.02", "09:15:00", "1.11"),
+        ("2025.01.03", "09:15:00", "1.20"),
+        ("2025.01.03", "09:00:00", "1.21"),
+        ("2025.01.04", "09:00:00", "1.30"),
+        ("2025.01.04", "09:15:00", "1.31"),
+    ):
+        zeilen.append(f"{tag}\t{zeit}\t{preis}\t{preis}\t{preis}\t{preis}\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="gemischte Richtungen"):
+        list(lade_csv_bloecke(p, block=100))
+
+
+def test_gemischte_tagesrichtungen_am_herbsttag_brechen_ab(tmp_path):
+    # Der Vortag fällt ab, der Herbsttag läuft aufsteigend. Unter der globalen
+    # Abwärtsrichtung würde der Rücksprung am Herbsttag sonst als Sommerzeit
+    # gelesen und die beiden 03:15-Preise würden vertauscht.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for tag, zeit, preis in (
+        ("2025.10.27", "09:15:00", "1.07"),
+        ("2025.10.27", "09:00:00", "1.06"),
+        ("2025.10.26", "03:00:00", "1.20"),
+        ("2025.10.26", "03:15:00", "1.25"),
+        ("2025.10.26", "03:15:00", "1.30"),
+        ("2025.10.25", "09:15:00", "1.05"),
+        ("2025.10.25", "09:00:00", "1.04"),
+    ):
+        zeilen.append(f"{tag}\t{zeit}\t{preis}\t{preis}\t{preis}\t{preis}\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="gemischte Richtungen"):
+        list(lade_csv_bloecke(p, server_zeitzone="Europe/Athens", block=100))
+
+
 def test_verschraenkte_tage_brechen_ab_statt_herbststunden_zu_trennen(cfg, tmp_path):
     # Der Herbsttag ist mit einem anderen Tag verschränkt. Blockweises Lesen
     # würde die beiden 03:00-Fassungen trennen; der Import muss stattdessen

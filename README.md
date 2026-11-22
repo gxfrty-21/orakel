@@ -296,7 +296,8 @@ Schreiben bleibt flach, bei einem Fehler bleibt die Datei unverändert, und
 geprüft wird weiterhin die zusammengeführte Reihe. Die Datei muss nach Datum
 und innerhalb eines Tages chronologisch sortiert sein (auf- oder absteigend).
 Bei der Herbst-Rückstellung ist genau ein Rücksprung um die wiederholte Stunde
-erlaubt. Verschränkte Tage oder anders gemischte Zeilen innerhalb eines Tages
+erlaubt. Alle Tagesläufe müssen dieselbe Richtung haben. Verschränkte Tage,
+gemischte Tagesrichtungen oder anders gemischte Zeilen innerhalb eines Tages
 brechen mit einer Meldung ab, statt die Herbststunden falsch zuzuordnen.
 
 Zeitrahmen: importiert werden `M1`, `M5`, `M15`, `H1` (Suffix im Dateinamen
