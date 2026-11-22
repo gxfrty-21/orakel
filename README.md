@@ -367,8 +367,10 @@ Abstand muss ausserdem zum
 angegebenen Zeitrahmen passen (M1/M5/M15/H1), damit auch Zwischenraster wie M20
 oder M45 auffallen: Eine als M15 benannte H1-Datei wird mit Meldung abgelehnt,
 statt still als M15 zu gelten. Geprüft wird vor dem Schreiben — die
-falsch getakteten Zeilen landen gar nicht erst in der Tabelle. Wochenenden, Feiertage
-und Handelspausen sind einzelne lange Abstände und verschieben den häufigsten
+falsch getakteten Zeilen landen gar nicht erst in der Tabelle. Die Vorprüfung
+puffert zeilenbasiert höchstens 10 000 Zeilen; dünne Dateien werden vollständig
+gepuffert und noch vor dem Schreiben geprüft. Wochenenden, Feiertage und
+Handelspausen sind einzelne lange Abstände und verschieben den häufigsten
 Abstand nicht; sie gelten nicht als Rasterfehler. Der Median bleibt nur für die
 Lückenschwelle maßgeblich. Fehler und Warnungen stehen im Terminal und im Ereignisprotokoll;
 bei einem Fehler endet der Befehl mit Exit-Code 1, importiert bleibt die Reihe

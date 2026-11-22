@@ -402,13 +402,13 @@ def lade_csv_bloecke(pfad: str | Path, server_zeitzone: str | None = None,
         yield _verarbeite(puffer, server_zeitzone, p.name, server_versatz_stunden)
 
 
-# Vor dem Schreiben werden höchstens so viele Zeilen gepuffert, bis genug
-# Abstände für ein Takturteil vorliegen; das begrenzt auch sehr dünne Dateien.
-TAKT_MINDESTABSTAENDE = 10
+# Die Vorprüfung puffert zeilenbasiert und begrenzt den Puffer auf höchstens
+# 10 000 Zeilen. Dünne Dateien werden vollständig gepuffert und vor dem
+# Schreiben geprüft; die Mindestzahl für ein Urteil steckt in takt_fehler.
 TAKT_PUFFER_ZEILEN = 10_000
 
 
-def takt_fehler(ts: pd.Series, timeframe: str, *, mindest_abstaende: int = 0) -> str | None:
+def takt_fehler(ts: pd.Series, timeframe: str, *, mindest_abstaende: int = 10) -> str | None:
     """Meldet ein Raster, das nicht zum angegebenen Zeitrahmen passt.
 
     Geurteilt wird über den häufigsten Abstand, nicht über den Median: Ein
@@ -436,28 +436,51 @@ def takt_fehler(ts: pd.Series, timeframe: str, *, mindest_abstaende: int = 0) ->
             "(Dateiname oder --zeitrahmen).")
 
 
+def _pruefe_taktpuffer(puffer: list[pd.DataFrame], zeitrahmen: str) -> None:
+    zusammen = pd.concat(puffer, ignore_index=True)
+    fehler = takt_fehler(zusammen["ts"], zeitrahmen)
+    if fehler:
+        raise ValueError(fehler)
+
+
 def mit_taktpruefung(bloecke: Iterable[pd.DataFrame], zeitrahmen: str) -> Iterator[pd.DataFrame]:
     """Prüft den Takt, bevor der erste Block in die Datenbank geht.
 
     Der Import schreibt eine Datei blockweise in einer Transaktion. Ohne diese
     Vorprüfung landeten falsch getaktete Kerzen (etwa H1 unter M15) zuerst in
     der Tabelle und fielen erst der Prüfung der zusammengeführten Reihe auf.
+    Der Puffer nimmt höchstens ``TAKT_PUFFER_ZEILEN`` Zeilen auf; ist ein
+    einzelner Block größer, wird er für die Prüfung geteilt und erst danach
+    vollständig ausgegeben. Dünne Dateien werden am Ende der Datei geprüft.
     """
     puffer: list[pd.DataFrame] = []
     zeilen = 0
+    geprueft = False
     for block in bloecke:
-        puffer.append(block)
-        zeilen += len(block)
-        if zeilen >= TAKT_PUFFER_ZEILEN:
-            break
-    if puffer:
-        zusammen = pd.concat(puffer, ignore_index=True)
-        fehler = takt_fehler(zusammen["ts"], zeitrahmen,
-                             mindest_abstaende=TAKT_MINDESTABSTAENDE)
-        if fehler:
-            raise ValueError(fehler)
+        if geprueft:
+            yield block
+            continue
+        frei = TAKT_PUFFER_ZEILEN - zeilen
+        if len(block) <= frei:
+            puffer.append(block)
+            zeilen += len(block)
+            if zeilen >= TAKT_PUFFER_ZEILEN:
+                _pruefe_taktpuffer(puffer, zeitrahmen)
+                yield from puffer
+                puffer.clear()
+                geprueft = True
+            continue
+        # Der Block ist größer als der freie Puffer: nur die ersten Zeilen
+        # puffern, prüfen und den Rest erst danach ausgeben.
+        puffer.append(block.iloc[:frei])
+        _pruefe_taktpuffer(puffer, zeitrahmen)
         yield from puffer
-    yield from bloecke
+        puffer.clear()
+        geprueft = True
+        yield block.iloc[frei:]
+    if puffer:
+        _pruefe_taktpuffer(puffer, zeitrahmen)
+        yield from puffer
 
 
 def pruefe_daten(df: pd.DataFrame, symbol: str, cfg: Any, timeframe: str = "M15") -> Datenqualitaet:
@@ -511,7 +534,7 @@ def pruefe_daten(df: pd.DataFrame, symbol: str, cfg: Any, timeframe: str = "M15"
 
     luecken = df["ts"].diff().dt.total_seconds().dropna()
     median = float(luecken.median()) if len(luecken) else 0.0
-    takt = takt_fehler(df["ts"], timeframe, mindest_abstaende=TAKT_MINDESTABSTAENDE)
+    takt = takt_fehler(df["ts"], timeframe)
     if takt:
         q.fehler.append(takt)
     if median > 0:
