@@ -46,7 +46,14 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
         geplant: list[tuple[Any, str, str]] = []
         for datei in sorted(ordner.glob("*.csv")):
             gesehen.append(datei.name)
-            symbol, zeitrahmen = zerlege_dateiname(datei)
+            try:
+                symbol, zeitrahmen = zerlege_dateiname(datei)
+            except ValueError as exc:
+                grund = f"CSV-Ordner {ordner}: {exc}"
+                db.ereignis("fehler", "Daten", grund)
+                raise DatenFehler(
+                    f"{grund} Es werden keine Kerzen importiert."
+                ) from exc
             if zeitrahmen not in gebraucht:
                 # Gebraucht werden M15 (Paper) und der Richter-Zeitrahmen; alles
                 # andere als M15 abzulegen würde Zeitrahmen und Kennzahlen verfälschen.
