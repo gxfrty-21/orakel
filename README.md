@@ -311,11 +311,13 @@ Richter bewertet `[basis] richter_zeitrahmen` (Standard `M15`, z. B. `H1`).
 Der Ordner-Import über `[basis] datenquelle = "csv"` liest `daten/*.csv`,
 importiert M15 und den Richter-Zeitrahmen; bekannte, nicht benötigte
 Zeitrahmen werden mit Ereignis im Protokoll übersprungen. Ein unbekannter
-Zeitrahmen bricht den Ordner-Import vor dem ersten Schreiben ab. Ist der Ordner
-leer, bricht
-der Lauf ohne vorhandene Datenbankkerzen mit Meldung ab, statt synthetische
-Kerzen zu erzeugen; vorhandene Datenbankkerzen werden mit einer Warnung
-weiterverwendet. Die Frischegrenzen bleiben
+Zeitrahmen bricht den Ordner-Import vor dem ersten Schreiben ab. Der Import
+läuft in einer gemeinsamen Transaktion: `datenquelle = "csv"` wird erst nach
+bestandener Reihenprüfung gesetzt, und ein Fehler in einer Datei rollt alle
+Dateien dieses Imports zurück. Ist der Ordner leer, bricht der Lauf ohne
+vorhandene Datenbankkerzen mit Meldung ab, statt synthetische Kerzen zu
+erzeugen; vorhandene Datenbankkerzen werden mit einer Warnung weiterverwendet.
+Die Frischegrenzen bleiben
 je Zeitrahmen getrennt (`max_kurs_alter_stunden_h1` usw.), auch wenn der
 Paper-Takt M15 liest.
 

@@ -84,36 +84,48 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
             db.ereignis("fehler", "Daten", grund)
             raise DatenFehler(grund)
 
-        for datei, symbol, zeitrahmen in geplant:
-            try:
-                n = db.kerzen_speichern_bloecke(
-                    symbol, zeitrahmen,
-                    mit_taktpruefung(
-                        lade_csv_bloecke(datei, server_zeitzone=zeitzone,
-                                         server_versatz_stunden=versatz),
-                        zeitrahmen))
-            except (OSError, ValueError) as exc:
-                db.ereignis("fehler", "Daten", f"{datei.name}: {exc}")
-                continue
-            symbole.append(symbol)
-            db.ereignis("info", "Daten", f"{datei.name}: {n} Kerzen importiert")
+        importiert: list[tuple[str, int]] = []
+        try:
+            # Alle Dateien laufen in einer gemeinsamen Transaktion. Erst die
+            # abschließende Reihenprüfung setzt den Quellzustand; jeder Fehler
+            # rollt sämtliche Dateien zurück, statt einen Teilimport zu lassen.
+            with db.conn() as c:
+                for datei, symbol, zeitrahmen in geplant:
+                    try:
+                        n = db.kerzen_speichern_bloecke(
+                            symbol, zeitrahmen,
+                            mit_taktpruefung(
+                                lade_csv_bloecke(datei, server_zeitzone=zeitzone,
+                                                 server_versatz_stunden=versatz),
+                                zeitrahmen),
+                            c=c)
+                    except (OSError, ValueError) as exc:
+                        raise DatenFehler(f"{datei.name}: {exc}") from exc
+                    symbole.append(symbol)
+                    importiert.append((datei.name, n))
+
+                if symbole:
+                    fehlend = [
+                        f"{symbol} {zeitrahmen}"
+                        for symbol in sorted(set(symbole))
+                        for zeitrahmen in sorted(gebraucht)
+                        if not db.hat_kerzen(symbol, zeitrahmen, c=c)
+                    ]
+                    if fehlend:
+                        raise DatenFehler(
+                            f"Unvollständige CSV-Quelle in {ordner}: Für "
+                            f"{', '.join(fehlend)} fehlen Kerzen; gebraucht werden "
+                            f"{zeitraeume}. Es werden keine "
+                            "synthetischen Kerzen erzeugt."
+                        )
+                    db.zustand_setzen("datenquelle", "csv", c=c)
+        except DatenFehler as exc:
+            db.ereignis("fehler", "Daten", str(exc))
+            raise
+
+        for datei_name, n in importiert:
+            db.ereignis("info", "Daten", f"{datei_name}: {n} Kerzen importiert")
         if symbole:
-            fehlend = [
-                f"{symbol} {zeitrahmen}"
-                for symbol in sorted(set(symbole))
-                for zeitrahmen in sorted(gebraucht)
-                if not db.hat_kerzen(symbol, zeitrahmen)
-            ]
-            if fehlend:
-                grund = (
-                    f"Unvollständige CSV-Quelle in {ordner}: Für "
-                    f"{', '.join(fehlend)} fehlen Kerzen; gebraucht werden "
-                    f"{zeitraeume}. Es werden keine "
-                    "synthetischen Kerzen erzeugt."
-                )
-                db.ereignis("fehler", "Daten", grund)
-                raise DatenFehler(grund)
-            db.zustand_setzen("datenquelle", "csv")
             return sorted(set(symbole)), "csv"
         if not gesehen:
             # Ein leerer, aber ausdrücklich als CSV-Quelle konfigurierter Ordner
