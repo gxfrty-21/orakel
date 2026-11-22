@@ -326,6 +326,19 @@ Geschrieben wird `daten/EURUSD_M15.csv` im selben Format wie `Save as`
 und aufsteigend sortiert.
 Zusammengeführt wird nur, was in Zeit und Werten gleich ist — die doppelte
 Stunde der Herbst-Rückstellung bleibt deshalb vollständig erhalten.
+Tick-Daten holt derselbe Abruf mit `--format ticks`:
+
+```powershell
+.\\.venv\\Scripts\\python.exe scripts\\mt5_abruf.py --symbol EURUSD --format ticks --von 2025-01-01
+```
+
+Geschrieben wird `daten/EURUSD_ticks.csv` mit
+`<DATE> <TIME> <MSEC> <BID> <ASK> <LAST> <VOLUME> <VOLUME_REAL> <FLAGS>`,
+ebenfalls monatsweise abgefragt, aufsteigend nach Serverzeit und Millisekunde
+sortiert und von exakten Dubletten befreit. `--zeitrahmen` gilt nur für Kerzen;
+ohne `--format` entsteht unverändert das Kerzen-CSV. Die Tick-Datei ist ein
+eigenes Archivformat und wird von `orakel daten --csv` nicht gelesen.
+
 Danach wie oben importieren, inklusive `--server-zeitzone` oder
 `--server-versatz`. Voraussetzung: Das
 Terminal läuft, ist angemeldet und das Symbol steht im Market Watch;
