@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .config import Config
+from .kern.data import frische_kennzahl
 from .kern.db import Facts
 from .intel import IntelNetz
 from .knowledge import Vault
@@ -574,6 +575,17 @@ class Betrieb:
         except Exception:
             historie, statistik = [], {"stunden": 24, "gesamt": 0, "fehler": 0,
                                        "uebersprungen": 0}
+        try:
+            datenfrische: list[dict[str, Any]] = []
+            for zeile in self.db.kerzen_uebersicht():
+                kennzahl = frische_kennzahl(zeile["juengste"], self.cfg["daten"],
+                                            zeile["zeitrahmen"], jetzt)
+                if kennzahl is not None:
+                    kennzahl.update(symbol=zeile["symbol"],
+                                    zeitrahmen=zeile["zeitrahmen"])
+                    datenfrische.append(kennzahl)
+        except Exception:
+            datenfrische = []
 
         ok = not any(w["stufe"] in ("fehler", "warnung") for w in warnungen)
         return {
@@ -591,6 +603,7 @@ class Betrieb:
             "jobs": jobs,
             "ressourcen": {**snapshot, "limits": self.grenzen.als_dict()},
             "daten": daten,
+            "datenfrische": datenfrische,
             "statistik": statistik,
             "letzte_laeufe": historie,
             "warnungen": warnungen,

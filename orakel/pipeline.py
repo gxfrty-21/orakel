@@ -11,8 +11,8 @@ import pandas as pd
 from . import agents as agenten
 from .config import Config, RisikoGrenzen, load_config
 from .kern.data import (
-    ZEITRAHMEN_MINUTEN, df_aus_db, lade_csv_bloecke, mit_taktpruefung, pruefe_daten,
-    synthetische_kerzen, zerlege_dateiname,
+    ZEITRAHMEN_MINUTEN, df_aus_db, frische_kennzahl, lade_csv_bloecke,
+    mit_taktpruefung, pruefe_daten, synthetische_kerzen, zerlege_dateiname,
 )
 from .kern.db import Facts, jetzt
 from .intel import IntelNetz
@@ -46,7 +46,15 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
         geplant: list[tuple[Any, str, str]] = []
         for datei in sorted(ordner.glob("*.csv")):
             gesehen.append(datei.name)
-            symbol, zeitrahmen = zerlege_dateiname(datei)
+            try:
+                symbol, zeitrahmen = zerlege_dateiname(datei)
+            except ValueError as exc:
+                grund = str(exc)
+                db.ereignis("fehler", "Daten", grund)
+                raise DatenFehler(
+                    f"CSV-Ordner {ordner}: {grund} Es werden keine "
+                    "synthetischen Kerzen erzeugt."
+                ) from exc
             if zeitrahmen not in gebraucht:
                 # Gebraucht werden M15 (Paper) und der Richter-Zeitrahmen; alles
                 # andere als M15 abzulegen würde Zeitrahmen und Kennzahlen verfälschen.
@@ -77,36 +85,67 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
             db.ereignis("fehler", "Daten", grund)
             raise DatenFehler(grund)
 
-        for datei, symbol, zeitrahmen in geplant:
-            try:
-                n = db.kerzen_speichern_bloecke(
-                    symbol, zeitrahmen,
-                    mit_taktpruefung(
-                        lade_csv_bloecke(datei, server_zeitzone=zeitzone,
-                                         server_versatz_stunden=versatz),
-                        zeitrahmen))
-            except (OSError, ValueError) as exc:
-                db.ereignis("fehler", "Daten", f"{datei.name}: {exc}")
-                continue
-            symbole.append(symbol)
-            db.ereignis("info", "Daten", f"{datei.name}: {n} Kerzen importiert")
+        importiert: list[tuple[str, int]] = []
+        try:
+            # Alle Dateien laufen in einer gemeinsamen Transaktion. Erst die
+            # abschließende Reihenprüfung setzt den Quellzustand; jeder Fehler
+            # rollt sämtliche Dateien zurück, statt einen Teilimport zu lassen.
+            with db.conn() as c:
+                for datei, symbol, zeitrahmen in geplant:
+                    try:
+                        n = db.kerzen_speichern_bloecke(
+                            symbol, zeitrahmen,
+                            mit_taktpruefung(
+                                lade_csv_bloecke(datei, server_zeitzone=zeitzone,
+                                                 server_versatz_stunden=versatz),
+                                zeitrahmen),
+                            c=c)
+                    except (OSError, ValueError) as exc:
+                        raise DatenFehler(f"{datei.name}: {exc}") from exc
+                    symbole.append(symbol)
+                    importiert.append((datei.name, n))
+
+                if symbole:
+                    fehlend = [
+                        f"{symbol} {zeitrahmen}"
+                        for symbol in sorted(set(symbole))
+                        for zeitrahmen in sorted(gebraucht)
+                        if not db.hat_kerzen(symbol, zeitrahmen, c=c)
+                    ]
+                    if fehlend:
+                        grund = (
+                            f"Unvollständige CSV-Quelle in {ordner}: Für "
+                            f"{', '.join(fehlend)} fehlen Kerzen; gebraucht werden "
+                            f"{zeitraeume}. Es werden keine "
+                            "synthetischen Kerzen erzeugt."
+                        )
+                        raise DatenFehler(grund)
+                    db.zustand_setzen("datenquelle", "csv", c=c)
+        except DatenFehler as exc:
+            db.ereignis("fehler", "Daten", str(exc))
+            raise
+
+        for datei_name, n in importiert:
+            db.ereignis("info", "Daten", f"{datei_name}: {n} Kerzen importiert")
+        try:
+            letzte = {(zeile["symbol"], zeile["zeitrahmen"]): zeile["juengste"]
+                      for zeile in db.kerzen_uebersicht()}
+            for symbol in sorted(set(symbole)):
+                for tf in sorted(gebraucht):
+                    juengste = letzte.get((symbol, tf))
+                    if juengste is None:
+                        continue
+                    kennzahl = frische_kennzahl(juengste, cfg["daten"], tf)
+                    if kennzahl and not kennzahl["frisch"]:
+                        db.ereignis(
+                            "warnung", "Daten",
+                            f"{symbol} {tf}: jüngste Kerze "
+                            f"{kennzahl['alter_stunden']:.1f} h alt "
+                            f"(Grenze {kennzahl['max_alter_stunden']:.1f} h)",
+                        )
+        except Exception as exc:  # noqa: BLE001 - Frische ist nur eine Warnung
+            db.ereignis("warnung", "Daten", f"Frischeprüfung nicht möglich: {exc}")
         if symbole:
-            fehlend = [
-                f"{symbol} {zeitrahmen}"
-                for symbol in sorted(set(symbole))
-                for zeitrahmen in sorted(gebraucht)
-                if not db.hat_kerzen(symbol, zeitrahmen)
-            ]
-            if fehlend:
-                grund = (
-                    f"Unvollständige CSV-Quelle in {ordner}: Für "
-                    f"{', '.join(fehlend)} fehlen Kerzen; gebraucht werden "
-                    f"{zeitraeume}. Es werden keine "
-                    "synthetischen Kerzen erzeugt."
-                )
-                db.ereignis("fehler", "Daten", grund)
-                raise DatenFehler(grund)
-            db.zustand_setzen("datenquelle", "csv")
             return sorted(set(symbole)), "csv"
         if not gesehen:
             # Ein leerer, aber ausdrücklich als CSV-Quelle konfigurierter Ordner

@@ -78,9 +78,32 @@ def test_falsch_getaktete_datei_landet_nicht_im_ordner_import(cfg):
     with pytest.raises(DatenFehler):
         sicherstellen_daten(cfg, db)
 
-    assert len(db.kerzen("EURUSD", "H1")) == 200
+    # Der Fehler in der zweiten Datei rollt auch die bereits gelesene H1-Datei zurück.
+    assert db.kerzen("EURUSD", "H1") == []
     assert db.kerzen("EURUSD", "M15") == []
+    assert db.zustand("datenquelle") is None
     assert any("Häufigster Abstand" in zeile["text"] for zeile in db.ereignisse())
+
+
+def test_fehlende_reihe_rollt_import_zurueck_und_setzt_quelle_nicht(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    (ordner / "EURUSD_M15.csv").write_text(
+        KOPF + "2025.01.02\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n",
+        encoding="utf-8",
+    )
+    # Kopf ohne Kerzen: Die Datei ist lesbar, liefert aber keine Reihe.
+    (ordner / "US500_M15.csv").write_text(KOPF, encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    with pytest.raises(DatenFehler) as fehler:
+        sicherstellen_daten(cfg, db)
+
+    assert "US500_M15.csv" in str(fehler.value)
+    assert db.symbole() == []
+    assert db.kerzen("EURUSD", "M15") == []
+    assert db.zustand("datenquelle") is None
 
 
 def test_leerer_csv_ordner_bricht_ab_statt_synthetisch(cfg):
@@ -147,6 +170,75 @@ def test_h1_richter_ohne_h1_datei_bricht_ab_statt_leer_zu_laufen(cfg):
     assert db.kerzen("EURUSD", "M15") == []
     assert db.kerzen("US500", "M15") == []
     assert any("EURUSD H1" in zeile["text"] for zeile in db.ereignisse())
+
+
+def test_h1_datei_mit_jahres_suffix_wird_als_h1_importiert(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    cfg._d["basis"]["richter_zeitrahmen"] = "H1"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    (ordner / "EURUSD_H1_2020.csv").write_text(
+        KOPF
+        + "2025.01.02\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n"
+        + "2025.01.02\t10:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n",
+        encoding="utf-8",
+    )
+    (ordner / "EURUSD_M15.csv").write_text(
+        KOPF + "2025.01.02\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n",
+        encoding="utf-8",
+    )
+    db = Facts(cfg.db_pfad)
+
+    assert sicherstellen_daten(cfg, db) == (["EURUSD"], "csv")
+    assert len(db.kerzen("EURUSD", "H1")) == 2
+    assert db.zustand("datenquelle") == "csv"
+
+
+def test_veraltete_csv_warnt_ohne_import_zu_blockieren(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    (ordner / "EURUSD_M15.csv").write_text(
+        KOPF + "2025.01.02\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n",
+        encoding="utf-8",
+    )
+    db = Facts(cfg.db_pfad)
+
+    assert sicherstellen_daten(cfg, db) == (["EURUSD"], "csv")
+    assert len(db.kerzen("EURUSD", "M15")) == 1
+    assert any(
+        zeile["stufe"] == "warnung"
+        and "EURUSD M15" in zeile["text"]
+        and "jüngste Kerze" in zeile["text"]
+        for zeile in db.ereignisse()
+    )
+
+
+def test_unbekannter_zeitrahmen_bricht_vor_dem_ersten_schreiben_ab(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    (ordner / "EURUSD_M15.csv").write_text(
+        KOPF + "2025.01.02\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n",
+        encoding="utf-8",
+    )
+    (ordner / "ZZZ_H4.csv").write_text(
+        KOPF + "2025.01.02\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n",
+        encoding="utf-8",
+    )
+    db = Facts(cfg.db_pfad)
+
+    with pytest.raises(DatenFehler) as fehler:
+        sicherstellen_daten(cfg, db)
+
+    meldung = str(fehler.value)
+    assert "H4" in meldung
+    assert "ZZZ_H4.csv" in meldung
+    # Die gültige M15-Datei darf nicht vor dem Abbruch importiert werden.
+    assert db.symbole() == []
+    assert db.kerzen("EURUSD", "M15") == []
+    assert any("H4" in zeile["text"] and zeile["stufe"] == "fehler"
+               for zeile in db.ereignisse())
 
 
 def test_nur_nicht_m15_dateien_brechen_ab_statt_synthetisch(cfg):

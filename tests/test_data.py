@@ -9,6 +9,7 @@ from orakel import __main__ as cli
 from orakel.__main__ import _importiere_csv, _versatz
 from orakel.kern.data import (
     df_aus_db,
+    frische_grenze_stunden,
     lade_csv,
     lade_csv_bloecke,
     pruefe_daten,
@@ -58,6 +59,16 @@ def test_gesunde_daten_sind_ok(cfg):
     q = pruefe_daten(df, "X", cfg)
     assert q.ok, q.fehler
     assert q.kerzen == 2000
+
+
+def test_veraltete_reihe_warnt_ohne_fehler(cfg):
+    df = synthetische_kerzen("X", kerzen=2000, seed=2)
+    jetzt = pd.Timestamp(df["ts"].iloc[-1]) + pd.Timedelta(days=6)
+
+    q = pruefe_daten(df, "X", cfg, jetzt=jetzt)
+
+    assert q.ok, q.fehler
+    assert any("Jüngste Kerze" in w for w in q.warnungen), q.warnungen
 
 
 def test_haeufigster_abstand_muss_zum_zeitrahmen_passen(cfg):
@@ -839,6 +850,22 @@ def test_dateiname_liefert_symbol_und_zeitrahmen():
     assert zerlege_dateiname("US500_CASH_H1.csv") == ("US500_CASH", "H1")
     assert zerlege_dateiname("EURUSD.csv") == ("EURUSD", "M15")
     assert zerlege_dateiname("EURUSD_2024.csv") == ("EURUSD", "M15")
+    assert zerlege_dateiname("EURUSD_H1_2020.csv") == ("EURUSD", "H1")
+    assert zerlege_dateiname("US500_H1_2023.csv") == ("US500", "H1")
+
+
+def test_dateiname_lehnt_unbekannten_zeitrahmen_ab():
+    for name in ("EURUSD_H4.csv", "EURUSD_H4_2020.csv"):
+        with pytest.raises(ValueError, match="H4"):
+            zerlege_dateiname(name)
+
+
+def test_frischegrenze_nutzt_zeitrahmenlimit_und_max_alter_tage(cfg):
+    daten = cfg["daten"]
+    assert frische_grenze_stunden(daten, "M15") == 120.0
+    daten["max_kurs_alter_stunden_m15"] = 4.0
+    assert frische_grenze_stunden(daten, "M15") == 4.0
+    assert frische_grenze_stunden(daten, "H1") == 120.0
 
 
 def test_zwei_bloecke_ergeben_eine_gepruefte_reihe(cfg, tmp_path):

@@ -108,7 +108,12 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
     fehler = 0
     geprueft: list[tuple[str, str]] = []
     for datei in dateien:
-        symbol, zeitrahmen = zerlege_dateiname(datei)
+        try:
+            symbol, zeitrahmen = zerlege_dateiname(datei)
+        except ValueError as exc:
+            print(f"FEHLER {datei.name}: {exc}", file=sys.stderr)
+            db.ereignis("fehler", "Daten", f"{datei.name}: {exc}")
+            return 2
         symbol = vorgabe or symbol
         zeitrahmen = args.zeitrahmen or zeitrahmen
         konflikte = Kerzenkonflikte()
@@ -162,6 +167,7 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
             print("  Fehler: " + text)
         for text in q.warnungen:
             print("  Warnung: " + text)
+            db.ereignis("warnung", "Daten", f"{symbol} {zeitrahmen}: {text}")
         if not q.ok:
             fehler += 1
         if zeitrahmen not in {"M15", cfg.richter_zeitrahmen}:

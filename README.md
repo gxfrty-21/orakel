@@ -188,7 +188,7 @@ zu lassen. Jeder Lauf wird in `betrieb_laeufe` protokolliert.
 
 ```bash
 python -m orakel betrieb           # Plan, Backoff, Ressourcen, letzte Läufe
-python -m orakel betrieb --json    # vollständige Monitoringdaten
+python -m orakel betrieb --json    # vollständige Monitoringdaten inkl. datenfrische
 ```
 
 Im Dashboard gibt es dafür den Punkt **Betrieb**; die geschützte API liegt
@@ -301,18 +301,28 @@ gemischte Tagesrichtungen oder anders gemischte Zeilen innerhalb eines Tages
 brechen mit einer Meldung ab, statt die Herbststunden falsch zuzuordnen.
 
 Zeitrahmen: importiert werden `M1`, `M5`, `M15`, `H1` (Suffix im Dateinamen
-oder `--zeitrahmen`). **Paper liest M15**; der Richter bewertet
+oder `--zeitrahmen`). Ein Jahres-Suffix wird übersprungen: `EURUSD_H1_2020.csv`
+und `US500_H1_2023.csv` werden als H1 erkannt. Unbekannte Zeitrahmen wie `H4`
+werden mit Meldung abgelehnt, statt still als M15 zu gelten. **Paper liest M15**; der Richter bewertet
 `[basis] richter_zeitrahmen` (Standard `M15`, z. B. `H1`). `bars_pro_jahr` gilt
 für M15 und wird für andere Zeitrahmen umgerechnet (H1: 6240 statt 24 960);
 `min_kerzen` folgt derselben Basis (H1: 300 statt 1200). Der
 Ordner-Import über `[basis] datenquelle = "csv"` liest `daten/*.csv`,
-importiert M15 und den Richter-Zeitrahmen und überspringt alles andere mit
-Ereignis im Protokoll, statt es als M15 abzulegen. Ist der Ordner leer, bricht
+importiert M15 und den Richter-Zeitrahmen; bekannte, nicht benötigte
+Zeitrahmen wie `M5` werden mit Ereignis im Protokoll übersprungen. Ein
+unbekannter Zeitrahmen im Dateinamen bricht den Ordner-Import vor dem ersten
+Schreiben mit Meldung ab. Der Ordner-Import ist atomar: Die Dateien werden in
+einer gemeinsamen Transaktion geprüft und geschrieben; erst nach bestandener
+Reihenprüfung wird `datenquelle = "csv"` gesetzt. Ein Fehler rollt alle
+Dateien dieses Imports zurück. Ist der Ordner leer, bricht
 der Lauf ohne vorhandene Datenbankkerzen mit Meldung ab, statt synthetische
 Kerzen zu erzeugen; vorhandene Datenbankkerzen werden mit einer Warnung
-weiterverwendet. Die Frischegrenzen bleiben
-je Zeitrahmen getrennt (`max_kurs_alter_stunden_h1` usw.), auch wenn der
-Paper-Takt M15 liest.
+weiterverwendet. Beim Import wird die jüngste Kerze je Symbol und Zeitrahmen
+gegen ihre Frischegrenze geprüft: `max_kurs_alter_stunden_<tf>` bzw. der
+Rückfall `max_alter_tage`. Eine Überschreitung wird als Warnung protokolliert,
+blockiert den Import aber nicht. Die Frischegrenzen bleiben je Zeitrahmen
+getrennt (`max_kurs_alter_stunden_h1` usw.), auch wenn der Paper-Takt M15
+liest.
 
 ### Direkter Abruf aus dem Terminal (Windows)
 
