@@ -9,6 +9,7 @@ import pandas as pd
 from ..config import Config, RisikoGrenzen
 from .kosten import kosten_je_seite
 from .metrics import kennzahlen
+from .risk import positionsgroesse
 from .strategies import atr
 
 
@@ -97,14 +98,11 @@ def backtest(
                 stop_preis = preis - abstand
                 if stop_preis > 0 and abstand > 0:
                     equity = cash
-                    risiko_betrag = equity * grenzen.risk_per_trade_pct / 100.0
-                    nach_risiko = risiko_betrag / abstand
-                    nach_deckel = equity * grenzen.max_position_pct / 100.0 / preis
-                    nach_cash = max(0.0, cash * (1 - grenzen.min_cash_pct / 100.0)) / preis
-                    menge = float(np.floor(min(nach_risiko, nach_deckel, nach_cash)))
+                    menge = positionsgroesse(equity, cash, preis, stop_preis, grenzen)
                     if menge > 0:
                         prov = kosten_je_seite(menge, cfg, symbol)
-                        if menge * preis + prov <= cash:
+                        hebel = max(1.0, float(grenzen.max_hebel))
+                        if menge * preis / hebel + prov <= cash:
                             cash -= menge * preis + prov
                             gebuehren += prov
                             stueck = menge

@@ -16,10 +16,11 @@ function renderRisk(){
   $('#riskLimits').innerHTML = `<table class="tbl"><thead><tr><th>Grenze</th><th class="m">Wert</th><th class="m">Aktuell</th><th>Auslastung</th></tr></thead><tbody>
     ${zeile('Drawdown vom Höchststand',L.max_drawdown_pct,a.drawdown_pct,' %')}
     ${zeile('Tagesverlust',L.max_daily_loss_pct,a.tagesverlust_pct,' %')}
-    ${zeile('Gesamtengagement (100 % = kein Hebel)',L.max_gross_exposure_pct,a.engagement_pct,' %')}
+    ${zeile('Gesamtengagement (Nominal)',L.max_gross_exposure_pct,a.engagement_pct,' %')}
     ${zeile('Offene Positionen',L.max_open_positions,a.positionen,'')}
     <tr><td>Risiko pro Trade bis Stop</td><td class="m">${L.risk_per_trade_pct} %</td><td class="m">–</td><td class="na">pro Auftrag geprüft</td></tr>
-    <tr><td>Max. Grösse einer Position</td><td class="m">${L.max_position_pct} %</td><td class="m">–</td><td class="na">pro Auftrag geprüft</td></tr>
+    <tr><td>Hebelgrenze</td><td class="m">${L.max_hebel}×</td><td class="m">–</td><td class="na">Nominal je Eigenkapital</td></tr>
+    <tr><td>Max. Nominal je Position</td><td class="m">${L.max_position_pct} %</td><td class="m">–</td><td class="na">pro Auftrag geprüft</td></tr>
     <tr><td>Stop-Abstand</td><td class="m">${L.atr_stop_multiple} × ATR</td><td class="m">–</td><td class="na">durchschnittliche Schwankung</td></tr>
   </tbody></table>`;
   const dq = R.datenqualitaet||[];
