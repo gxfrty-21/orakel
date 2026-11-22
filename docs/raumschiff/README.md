@@ -182,9 +182,10 @@ bisherigen Panels für Lage, Meetingraum und Sekretariat bleiben unter
 
 Ein Klick auf einen Raum öffnet rechts Rolle, Status, offene und laufende Aufgaben,
 Mission, letzte Aufgabe und Berichtslinie. `+`/`−`, Mausrad, Zwei-Finger-Gesten und
-`Fit` steuern den Zoom; Ziehen verschiebt das Schiff. Die Darstellung ist
-Pixel-Art auf Canvas ohne 3D-Framework und bleibt bei 250 % Schrift in zwölf
-Ansichten und drei Breiten ohne Überläufe.
+`Fit` steuern den Zoom; Ziehen verschiebt das Schiff, wobei an jedem Rand
+mindestens 72 px sichtbar bleiben. Die Zoom-/Fit-Leiste liegt in jedem Zoom über
+dem Schiffsinhalt. Die Darstellung ist Pixel-Art auf Canvas ohne 3D-Framework und
+bleibt bei 250 % Schrift in zwölf Ansichten und drei Breiten ohne Überläufe.
 
 Die Schiffsbühne ist responsiv: Bis 1099 px Viewportbreite gilt die kompakte
 1500-px-Fassung. Ab 1100 px aktiviert sich der 2400-px-Grossmodus mit 150 px hohen
@@ -192,6 +193,32 @@ Agentenräumen, 180 px hohen Gemeinschaftsräumen, 270 px hohen Hangar-/Warp-Rä
 und 48 px breiten Türen. Die reichere Kunst aus dem 2400-px-Anhang liegt im
 eigenen Modul `ship-gross.js`; der kompakte Modus behält seine bisherige Kunst.
 Beim Überschreiten der Grenze werden DOM, Kunst und Zoom neu aufgebaut.
+
+### Verworfener 3-Spalten-Stand
+
+Ein unversionierter Entwurf mit drei Abteilungen pro Reihe, vier Schächten, Gang je
+Reihe, Schirmraum je Abteilung und Kiel sowie einem lesbaren Start-Zoom (90–125 %,
+erste Abteilung zentriert) ist verworfen und soll nicht ohne neue Entscheidung zu den
+Prüfregeln neu gebaut werden.
+
+Vergleichsmessung auf derselben Bühne bei 1600 px: 3 Spalten Fit 27 %, Welt
+2400×3100, Abteilung 190 px, 227 Canvases; 2 Spalten Fit 31 %, Welt 2400×2743,
+Abteilung 335 px, 195 Canvases. Der Start-Zoom zeigte bei 432 px 97 % (Abteilung
+387 px), bei 390 und 320 px 90 %; bei 320 px war die erste Abteilung seitlich
+angeschnitten.
+
+Die Pflichtprüfungen lehnten den Stand ab:
+
+- `text250`: sechs Befunde bei 360/320/280 px – Viewport-Inhalt 1237>342 px und
+  Schiffsrand rechts 1246>360 px, weil jede Zoomstufe über «Fit» die pannbare Bühne
+  über den Viewport hinauslaufen lässt.
+- `Touch-Test`: bei 390 px war der kleinste Raum 14,8 px breit statt mindestens
+  24 px, weil drei Spalten à fünf Räumen bei «Fit» zu dicht stehen.
+
+Beides wäre nur durch Abschwächen der Pflichtprüfungen grün geworden; deshalb bleibt
+die 2-Spalten-Fassung. Auf ihr gemessen: 320 px Fit 19 % (kleinster Raum
+19,6×20,4 px), 390 px 24 % (24,4×25,5 px), 432 px 26 % (27,3×28,5 px), 1600 px 26 %
+(37,9×38,3 px).
 
 Die Anzeigen lesen `/api/report`, `/api/betrieb`, `/api/sekretariat` sowie
 `/api/company/overview`, `/api/company/agents` und `/api/company/tasks`; fehlende

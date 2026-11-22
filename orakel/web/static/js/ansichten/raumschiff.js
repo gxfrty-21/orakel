@@ -1326,8 +1326,21 @@ function renderShipDetail(force = false){
 function applyShipTransform(){
   const w = $('#shipWorld');
   if(!w) return;
+  begrenzeShipPosition();
   w.style.transform = `translate(${shipX}px, ${shipY}px) scale(${shipZoom})`;
   const z = $('#shipZoomWert'); if(z) z.textContent = `${Math.round(shipZoom * 100)} %`;
+}
+
+/* Hält mindestens einen Rand des Schiffs im Viewport. Gilt für Ziehen,
+   Pinch, Mausrad, +/− und Fit, weil jeder Pfad über applyShipTransform läuft. */
+function begrenzeShipPosition(){
+  const vp = $('#shipViewport'), w = $('#shipWorld');
+  if(!vp || !w || !w.offsetWidth) return;
+  const breite = w.offsetWidth * shipZoom, hoehe = w.offsetHeight * shipZoom;
+  const randX = Math.min(72, vp.clientWidth / 2, breite / 2);
+  const randY = Math.min(72, vp.clientHeight / 2, hoehe / 2);
+  shipX = Math.max(randX - breite, Math.min(vp.clientWidth - randX, shipX));
+  shipY = Math.max(randY - hoehe, Math.min(vp.clientHeight - randY, shipY));
 }
 
 function fitShip(){
