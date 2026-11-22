@@ -22,6 +22,16 @@ def test_positionsgroesse_schoepft_das_risiko_bis_zum_stop_aus(cfg):
     assert positionsgroesse(100_000, 100_000, 100.0, 50.0, g) == 20
 
 
+def test_volle_risikomenge_bei_engem_stop(cfg):
+    g = RisikoGrenzen.aus_config(cfg)
+    # 1 % von 100'000 = 1'000 Risiko, Stop-Abstand 0.5 -> 2'000 Stück.
+    # Nominal 200'000, Margin bei 5x 40'000; frei sind 90'000.
+    # Der frühere 20-%-Deckel hätte nur 200 Stück (0.1 % Risiko) erlaubt.
+    menge = positionsgroesse(100_000, 100_000, 100.0, 99.5, g)
+    assert menge == 2_000
+    assert menge * 0.5 == pytest.approx(1_000.0)
+
+
 def test_margin_begrenzt_die_risikomenge(cfg):
     """Ein sehr enger Stop darf nicht mehr Nominal kaufen, als die Margin deckt."""
     g = RisikoGrenzen.aus_config(cfg)

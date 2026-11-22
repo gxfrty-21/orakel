@@ -24,6 +24,8 @@ max_daily_loss_pct = 10.0
 # aus dem Bargeld bezahlt: Reserviert wird nur Nominal / max_leverage. Dadurch
 # greift das 1-%-Risiko bis zum Stop auch bei engen Stops, statt am früheren
 # 20-%-Nominaldeckel zu hängen.
+# Der frühere 20-%-Nominaldeckel hätte bei 0.5 % Stop nur 0.1 % Risiko
+# zugelassen; mit Margin und 5x sind die vollen 1 % erreichbar.
 # Beispiel: 100'000 Konto, Stop 2 % -> 50'000 Nominal, Margin bei 5x = 10'000.
 # Stop 0.5 % -> 200'000 Nominal, Margin = 40'000. Über max_leverage × Konto
 # wird nie gehandelt; die Margin kommt aus dem freien Bargeld.
