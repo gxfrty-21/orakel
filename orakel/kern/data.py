@@ -107,8 +107,45 @@ def _trenner(kopf: str) -> str:
     raise ValueError("CSV: Trennzeichen nicht erkannt (Tabulator, Semikolon oder Komma nötig).")
 
 
+def _pruefe_tagesreihenfolge(geparst: pd.Series, name: str) -> None:
+    """Prüft die Reihenfolge innerhalb jedes Tages.
+
+    Die Herbst-Rückstellung ist die einzige erlaubte Umkehr: Sie erzeugt genau
+    einen Sprung an einer doppelt vorkommenden Uhrzeit. Jede andere Unordnung
+    würde die Sommer-/Standardzeitfassung allein aus der Zeilenreihenfolge
+    falsch zuordnen.
+    """
+    if len(geparst) < 2:
+        return
+    # Der Normalfall ist mit einem C-Level-Vergleich erledigt; die
+    # Gruppenprüfung läuft nur bei der Herbst-Rückstellung oder gemischten
+    # Zeilen.
+    if geparst.is_monotonic_increasing or geparst.is_monotonic_decreasing:
+        return
+    tage = geparst.dt.normalize()
+    aufsteigend = geparst.iloc[0] <= geparst.iloc[-1]
+    sekunden = (geparst - tage).dt.total_seconds()
+    delta = sekunden.groupby(tage).diff()
+    verletzt = delta < 0 if aufsteigend else delta > 0
+    if not verletzt.any():
+        return
+    anzahl = verletzt.groupby(tage).sum()
+    zu_viele = tage.map(anzahl) > 1
+    # Nur eine Umkehr an einer wiederholten Uhrzeit ist die Herbst-Rückstellung.
+    doppelt = geparst.duplicated(keep=False)
+    ungueltig = verletzt & (~doppelt | zu_viele)
+    if ungueltig.any():
+        tag = tage[ungueltig].iloc[0]
+        raise ValueError(
+            f"CSV: {name or 'Datei'}: Tag {tag:%Y-%m-%d} ist innerhalb des "
+            f"Tages nicht {'aufsteigend' if aufsteigend else 'absteigend'} "
+            "sortiert. Bitte die Zeilen eines Tages chronologisch sortieren; "
+            "sonst würden die Herbststunden falsch zugeordnet."
+        )
+
+
 def _zeitstempel(reihen: pd.Series, zeitzone: str | None = None,
-                 versatz_stunden: float | None = None) -> pd.Series:
+                 versatz_stunden: float | None = None, *, name: str = "") -> pd.Series:
     """Parst MT5- und ISO-Zeitstempel zeilenweise mit festen Formaten.
 
     Zeilenweise, weil ein zusammengeführter Export mit und ohne Sekunden
@@ -134,6 +171,7 @@ def _zeitstempel(reihen: pd.Series, zeitzone: str | None = None,
             "Erwartet wird YYYY.MM.DD HH:MM[:SS] oder ISO 8601 mit Uhrzeit, in einer "
             "Spalte oder getrennt in Datum und Zeit."
         )
+    _pruefe_tagesreihenfolge(geparst, name)
     return _nach_utc(geparst, zeitzone, versatz_stunden)
 
 
@@ -240,7 +278,7 @@ def _kodierung(p: Path) -> str:
 def _verarbeite(df: pd.DataFrame, zeitzone: str | None, name: str,
                 versatz_stunden: float | None = None) -> pd.DataFrame:
     """Prüft und normalisiert einen Block; unlesbare Zeilen brechen ab."""
-    df["ts"] = _zeitstempel(df["ts"], zeitzone, versatz_stunden)
+    df["ts"] = _zeitstempel(df["ts"], zeitzone, versatz_stunden, name=name)
     for spalte in ("open", "high", "low", "close", "volume"):
         df[spalte] = pd.to_numeric(df[spalte], errors="coerce")
 

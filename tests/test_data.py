@@ -529,6 +529,40 @@ def test_absteigende_herbststunde_bleibt_je_tagesblock_zugeordnet(tmp_path):
     ]
 
 
+def test_gemischte_zeilen_innerhalb_eines_tages_brechen_ab(tmp_path):
+    # Derselbe Tag, aber die Uhrzeiten stehen nicht chronologisch. Der Import
+    # darf das nicht still sortieren, weil die Reihenfolge bei der Herbst-
+    # Rückstellung über die Sommer-/Standardzeitfassung entscheidet.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for zeit in ("09:15:00", "09:00:00", "09:30:00"):
+        zeilen.append(f"2025.01.02\t{zeit}\t1.0\t1.1\t0.9\t1.05\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="innerhalb des Tages nicht aufsteigend sortiert"):
+        list(lade_csv_bloecke(p, block=2))
+
+
+def test_gemischte_herbstzeilen_brechen_ab(tmp_path):
+    # Zwei Umkehrungen an einem Herbsttag: Das ist keine gültige
+    # Exportreihenfolge mehr und würde die Fassungen vertauschen.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for zeit, preis in (
+        ("03:00:00", "1.20"),
+        ("03:15:00", "1.25"),
+        ("02:45:00", "1.15"),
+        ("03:00:00", "1.30"),
+        ("03:15:00", "1.35"),
+        ("04:00:00", "1.40"),
+    ):
+        zeilen.append(f"2025.10.26\t{zeit}\t{preis}\t{preis}\t{preis}\t{preis}\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="innerhalb des Tages nicht aufsteigend sortiert"):
+        list(lade_csv_bloecke(p, server_zeitzone="Europe/Athens", block=2))
+
+
 def test_verschraenkte_tage_brechen_ab_statt_herbststunden_zu_trennen(cfg, tmp_path):
     # Der Herbsttag ist mit einem anderen Tag verschränkt. Blockweises Lesen
     # würde die beiden 03:00-Fassungen trennen; der Import muss stattdessen
