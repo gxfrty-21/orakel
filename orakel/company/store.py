@@ -11,7 +11,7 @@ import json
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterator, Sequence
+from typing import Any, Iterator, Sequence, TypedDict
 
 from ..kern.db import Facts
 from .policy import ERLAUBTE_TASK_TYPES
@@ -25,6 +25,16 @@ def jetzt() -> str:
 def spaeter(sekunden: int) -> str:
     return (datetime.now(timezone.utc) + timedelta(seconds=sekunden)).replace(
         microsecond=0).isoformat()
+
+
+class LaufEintrag(TypedDict):
+    """Ein Agentenlauf, der mit dem Task-Status committet wird."""
+
+    agent: str
+    abteilung: str
+    aufgabe: str
+    ergebnis: str
+    ok: bool
 
 
 class StoreError(RuntimeError):
@@ -345,15 +355,12 @@ class CompanyStore:
         return task
 
     def _buche_lauf_im_transaktion(
-        self, c: Any, lauf: dict[str, Any] | None,
+        self, c: Any, lauf: LaufEintrag | None,
     ) -> None:
         """Bucht den optionalen Lauf-Eintrag in der offenen Task-Transaktion."""
         if lauf is None:
             return
-        self.facts.agenten_lauf(
-            lauf["agent"], lauf["abteilung"], lauf["aufgabe"], lauf["ergebnis"],
-            bool(lauf["ok"]), c=c,
-        )
+        self.facts.agenten_lauf(**lauf, c=c)
 
     def complete(
         self,
@@ -363,7 +370,7 @@ class CompanyStore:
         evidence: Sequence[str],
         output: dict[str, Any] | None = None,
         reviewed_by: str = "policy",
-        lauf: dict[str, Any] | None = None,
+        lauf: LaufEintrag | None = None,
     ) -> None:
         zeit = jetzt()
         with self._event_lock:
@@ -392,7 +399,7 @@ class CompanyStore:
 
     def block(
         self, task_id: int, grund: str, evidence: Sequence[str] = (), *,
-        lauf: dict[str, Any] | None = None,
+        lauf: LaufEintrag | None = None,
     ) -> None:
         zeit = jetzt()
         with self._event_lock:
@@ -414,7 +421,7 @@ class CompanyStore:
                 )
 
     def fail(
-        self, task_id: int, fehler: str, *, lauf: dict[str, Any] | None = None,
+        self, task_id: int, fehler: str, *, lauf: LaufEintrag | None = None,
     ) -> str:
         """Markiert eine laufende oder wartende Aufgabe als fehlgeschlagen.
 
