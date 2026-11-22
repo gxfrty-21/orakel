@@ -5,6 +5,7 @@ import math
 import sqlite3
 import threading
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Sequence
@@ -63,6 +64,19 @@ def initialisiere(pfad: str | Path) -> None:
         datei.parent.mkdir(parents=True, exist_ok=True)
         migrationen.anwenden(datei)
         _INITIALISIERT.add(schluessel)
+
+
+@dataclass(slots=True)
+class Kerzenkonflikte:
+    """Abweichende Überschneidungen eines Imports; dient nur der Meldung."""
+
+    anzahl: int = 0
+    beispiele: list[str] = field(default_factory=list)
+
+    def merke(self, ts: str) -> None:
+        self.anzahl += 1
+        if len(self.beispiele) < 3:
+            self.beispiele.append(ts)
 
 
 class Facts:
@@ -133,13 +147,47 @@ class Facts:
         return len(df)
 
     def kerzen_speichern_bloecke(self, symbol: str, zeitrahmen: str,
-                                 bloecke: Iterable[Any]) -> int:
-        """Schreibt Blöcke in einer Transaktion; bei einem Fehler bleibt nichts stehen."""
+                                 bloecke: Iterable[Any], *,
+                                 konflikte: Kerzenkonflikte | None = None) -> int:
+        """Schreibt Blöcke in einer Transaktion; bei einem Fehler bleibt nichts stehen.
+
+        Mit ``konflikte`` werden gleiche Zeitstempel mit abweichenden
+        OHLC-Werten gezählt, bevor ``INSERT OR REPLACE`` sie ersetzt.
+        """
         anzahl = 0
         with self.conn() as c:
             for block in bloecke:
+                if konflikte is not None:
+                    self._abweichungen(c, symbol, zeitrahmen, block, konflikte)
                 anzahl += self._kerzen_block(c, symbol, zeitrahmen, block)
         return anzahl
+
+    def _abweichungen(self, c: sqlite3.Connection, symbol: str, zeitrahmen: str,
+                      df: Any, konflikte: Kerzenkonflikte) -> None:
+        """Zählt Kerzen, deren OHLC von der gespeicherten Fassung abweicht.
+
+        ``INSERT OR REPLACE`` ersetzt gleiche Zeitstempel ohne Nachfrage; ein
+        erneuter Export mit anderen Werten soll das nicht unbemerkt tun.
+        """
+        if df.empty:
+            return
+        ts = df["ts"].astype(str)
+        vorhanden = {
+            r["ts"]: (r["open"], r["high"], r["low"], r["close"])
+            for r in c.execute(
+                "SELECT ts,open,high,low,close FROM kerzen"
+                " WHERE symbol=? AND zeitrahmen=? AND ts BETWEEN ? AND ?",
+                (symbol, zeitrahmen, str(ts.min()), str(ts.max())),
+            )
+        }
+        for zeile in df.itertuples(index=False):
+            alt = vorhanden.get(str(zeile.ts))
+            if alt is None:
+                continue
+            neu = (float(zeile.open), float(zeile.high), float(zeile.low),
+                   float(zeile.close))
+            if alt != neu:
+                konflikte.merke(str(zeile.ts))
 
     def kerzen(self, symbol: str, zeitrahmen: str) -> list[sqlite3.Row]:
         with self.conn() as c:

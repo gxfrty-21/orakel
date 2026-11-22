@@ -20,7 +20,7 @@ from .kern.data import (
     synthetische_kerzen,
     zerlege_dateiname,
 )
-from .kern.db import Facts
+from .kern.db import Facts, Kerzenkonflikte
 from .knowledge import Vault
 
 
@@ -111,6 +111,7 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
         symbol, zeitrahmen = zerlege_dateiname(datei)
         symbol = vorgabe or symbol
         zeitrahmen = args.zeitrahmen or zeitrahmen
+        konflikte = Kerzenkonflikte()
         try:
             # Blockweise lesen und schreiben: auch Millionen Zeilen bleiben flach
             # im Speicher, und ein Fehler in einem Block rollt die Datei zurück.
@@ -119,7 +120,8 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
                 mit_taktpruefung(
                     lade_csv_bloecke(datei, server_zeitzone=zeitzone,
                                      server_versatz_stunden=versatz),
-                    zeitrahmen))
+                    zeitrahmen),
+                konflikte=konflikte)
             if not n:
                 raise ValueError(f"CSV: {datei.name} enthält keine vollständigen Kerzen.")
         except (OSError, ValueError) as exc:
@@ -129,6 +131,13 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
             continue
         db.ereignis("info", "Daten", f"{datei.name}: {n} Kerzen für {symbol} {zeitrahmen} importiert")
         print(f"{datei.name}: {n} Kerzen gelesen")
+        if konflikte.anzahl:
+            probe = konflikte.beispiele[0]
+            print(f"  Warnung: abweichende Kerzen: {konflikte.anzahl} (z. B. {probe}); "
+                  "gespeicherte Werte werden ersetzt.")
+            db.ereignis("warnung", "Daten",
+                        f"{datei.name}: {konflikte.anzahl} abweichende Kerzen ersetzt, "
+                        f"z. B. {probe}")
         if (symbol, zeitrahmen) not in geprueft:
             geprueft.append((symbol, zeitrahmen))
 

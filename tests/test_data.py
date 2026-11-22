@@ -619,6 +619,32 @@ def test_zwei_bloecke_ergeben_eine_gepruefte_reihe(cfg, tmp_path):
     assert q.von == "2024-01-01 00:00:00"
 
 
+def test_abweichende_ueberschneidung_wird_gemeldet(cfg, tmp_path, capsys):
+    basis = synthetische_kerzen("X", kerzen=1300, seed=4)
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(_als_mt5(basis), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)])) == 0
+    assert "abweichende Kerzen" not in capsys.readouterr().out
+
+    # Gleicher Zeitstempel, anderes OHLC: gültige Kerze, aber ein neuer Export.
+    geaendert = basis.copy()
+    for spalte in ("open", "high", "low", "close"):
+        geaendert.loc[700, spalte] += 0.01
+    p.write_text(_als_mt5(geaendert), encoding="utf-8")
+
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)])) == 0
+    ausgabe = capsys.readouterr().out
+    assert "Warnung: abweichende Kerzen: 1" in ausgabe
+    assert str(basis["ts"].iloc[700]) in ausgabe
+    # Ersetzt wird weiterhin, aber nicht mehr still.
+    gespeichert = {str(r["ts"]): r for r in db.kerzen("EURUSD", "M15")}
+    assert float(gespeichert[str(basis["ts"].iloc[700])]["close"]) == pytest.approx(
+        float(geaendert["close"].iloc[700]))
+    assert any("abweichende Kerzen ersetzt" in e["text"] for e in db.ereignisse())
+
+
 def test_cli_zeigt_die_jahresabdeckung(cfg, tmp_path, capsys):
     anfang = synthetische_kerzen("X", kerzen=1200, seed=2, start="2023-01-01")
     spaeter = synthetische_kerzen("X", kerzen=1200, seed=3, start="2025-01-01")
