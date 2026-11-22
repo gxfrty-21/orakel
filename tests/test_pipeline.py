@@ -142,8 +142,9 @@ def test_h1_richter_ohne_h1_datei_bricht_ab_statt_leer_zu_laufen(cfg):
     meldung = str(fehler.value)
     assert "EURUSD H1" in meldung
     assert "H1" in meldung and "M15" in meldung
-    # kein stiller Rückfall auf synthetische Kerzen und keine leere H1-Reihe
+    # kein stiller Rückfall auf synthetische Kerzen und kein Teilimport der M15-Datei
     assert db.kerzen("EURUSD", "H1") == []
+    assert db.kerzen("EURUSD", "M15") == []
     assert db.kerzen("US500", "M15") == []
     assert any("EURUSD H1" in zeile["text"] for zeile in db.ereignisse())
 

@@ -43,6 +43,7 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
         zeitzone = cfg["daten"].get("server_zeitzone") or None
         versatz = cfg["daten"].get("server_versatz_stunden")
         gesehen: list[str] = []
+        geplant: list[tuple[Any, str, str]] = []
         for datei in sorted(ordner.glob("*.csv")):
             gesehen.append(datei.name)
             symbol, zeitrahmen = zerlege_dateiname(datei)
@@ -55,6 +56,28 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
                     f"{zeitraeume}",
                 )
                 continue
+            geplant.append((datei, symbol, zeitrahmen))
+
+        # Vor dem ersten Schreibvorgang prüfen: Eine fehlende Zeitrahmen-Datei
+        # darf keine bereits importierten Reihen als Teilimport zurücklassen.
+        vorhanden = {(symbol, zeitrahmen) for _, symbol, zeitrahmen in geplant}
+        fehlend = [
+            f"{symbol} {zeitrahmen}"
+            for symbol in sorted({symbol for symbol, _ in vorhanden})
+            for zeitrahmen in sorted(gebraucht)
+            if (symbol, zeitrahmen) not in vorhanden
+        ]
+        if fehlend:
+            grund = (
+                f"Unvollständige CSV-Quelle in {ordner}: Für "
+                f"{', '.join(fehlend)} fehlen Kerzen; gebraucht werden "
+                f"{zeitraeume}. Es werden keine "
+                "synthetischen Kerzen erzeugt."
+            )
+            db.ereignis("fehler", "Daten", grund)
+            raise DatenFehler(grund)
+
+        for datei, symbol, zeitrahmen in geplant:
             try:
                 n = db.kerzen_speichern_bloecke(
                     symbol, zeitrahmen,
