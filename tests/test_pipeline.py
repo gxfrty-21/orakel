@@ -2,11 +2,22 @@ from __future__ import annotations
 
 import pytest
 
+from orakel.kern.data import synthetische_kerzen
 from orakel.kern.db import Facts
 from orakel.pipeline import DatenFehler, sicherstellen_daten
 
 
 KOPF = "<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>\n"
+
+
+def _als_mt5(df) -> str:
+    zeilen = [KOPF]
+    for r in df.itertuples(index=False):
+        zeilen.append(
+            f"{r.ts:%Y.%m.%d}\t{r.ts:%H:%M:%S}\t{r.open}\t{r.high}\t{r.low}\t{r.close}"
+            f"\t{int(r.volume)}\t0\t2\n"
+        )
+    return "".join(zeilen)
 
 
 def test_h1_datei_wird_importiert_wenn_der_richter_h1_liest(cfg):
@@ -51,6 +62,25 @@ def test_min_kerzen_folgt_dem_zeitrahmen(cfg):
     # Original bleibt unverändert
     assert cfg["daten"]["min_kerzen"] == 1200
     assert cfg.bars_pro_jahr == 24960
+
+
+def test_falsch_getaktete_datei_landet_nicht_im_ordner_import(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    cfg._d["basis"]["richter_zeitrahmen"] = "H1"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    h1 = synthetische_kerzen("EURUSD", kerzen=200, seed=4, timeframe_minuten=60)
+    (ordner / "EURUSD_H1.csv").write_text(_als_mt5(h1), encoding="utf-8")
+    # Gleiche Kerzen unter M15-Namen: vor dem Schreiben abgelehnt.
+    (ordner / "EURUSD_M15.csv").write_text(_als_mt5(h1), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    with pytest.raises(DatenFehler):
+        sicherstellen_daten(cfg, db)
+
+    assert len(db.kerzen("EURUSD", "H1")) == 200
+    assert db.kerzen("EURUSD", "M15") == []
+    assert any("Median-Abstand" in zeile["text"] for zeile in db.ereignisse())
 
 
 def test_leerer_csv_ordner_bricht_ab_statt_synthetisch(cfg):

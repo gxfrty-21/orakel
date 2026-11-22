@@ -344,7 +344,8 @@ die Broker-Historie abgeschnitten ist. Diese Warnung blockiert den Lauf nicht,
 weil die vorhandene Reihe weiter verwendbar ist; die Warnung erscheint auch im
 Datenqualitätsblock des Berichts. Der Median-Abstand muss ausserdem zum angegebenen Zeitrahmen
 passen (M1/M5/M15/H1): Eine als M15 benannte H1-Datei wird mit Meldung
-abgelehnt, statt still als M15 zu gelten. Wochenenden, Feiertage und
+abgelehnt, statt still als M15 zu gelten. Geprüft wird vor dem Schreiben — die
+falsch getakteten Zeilen landen gar nicht erst in der Tabelle. Wochenenden, Feiertage und
 Handelspausen verschieben den Median nicht, gelten also nicht als Fehler. Fehler und Warnungen stehen im Terminal und im Ereignisprotokoll;
 bei einem Fehler endet der Befehl mit Exit-Code 1, importiert bleibt die Reihe
 trotzdem.

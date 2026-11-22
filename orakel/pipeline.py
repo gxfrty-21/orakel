@@ -11,8 +11,8 @@ import pandas as pd
 from . import agents as agenten
 from .config import Config, RisikoGrenzen, load_config
 from .kern.data import (
-    ZEITRAHMEN_MINUTEN, df_aus_db, lade_csv_bloecke, pruefe_daten, synthetische_kerzen,
-    zerlege_dateiname,
+    ZEITRAHMEN_MINUTEN, df_aus_db, lade_csv_bloecke, mit_taktpruefung, pruefe_daten,
+    synthetische_kerzen, zerlege_dateiname,
 )
 from .kern.db import Facts, jetzt
 from .intel import IntelNetz
@@ -58,8 +58,10 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
             try:
                 n = db.kerzen_speichern_bloecke(
                     symbol, zeitrahmen,
-                    lade_csv_bloecke(datei, server_zeitzone=zeitzone,
-                                     server_versatz_stunden=versatz))
+                    mit_taktpruefung(
+                        lade_csv_bloecke(datei, server_zeitzone=zeitzone,
+                                         server_versatz_stunden=versatz),
+                        zeitrahmen))
             except (OSError, ValueError) as exc:
                 db.ereignis("fehler", "Daten", f"{datei.name}: {exc}")
                 continue
