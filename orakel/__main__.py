@@ -232,7 +232,7 @@ def cmd_strategie_bericht(args: argparse.Namespace) -> int:
     zeitrahmen = cfg.richter_zeitrahmen
     # Dieselbe Reihe, Jahresbasis und Mindestzahl wie im Richter, nicht fest M15.
     urteil_cfg = cfg.fuer_zeitrahmen(zeitrahmen)
-    mindestens = int(urteil_cfg["daten"]["min_kerzen"])
+    mindestens = cfg.min_kerzen_fuer(zeitrahmen)
     daten = {symbol: df_aus_db(db.kerzen(symbol, zeitrahmen)) for symbol in symbole}
     daten = {symbol: df for symbol, df in daten.items() if len(df) >= mindestens}
     if not daten:
