@@ -60,9 +60,9 @@ class Datenqualitaet:
     fehler: list[str] = field(default_factory=list)
     warnungen: list[str] = field(default_factory=list)
     timeframe: str = "M15"
-    # Kerzen je Kalenderjahr; dient der Importausgabe und der Warnung bei
+    # Kerzen je Kalenderjahr (UTC); dient der Importausgabe und der Warnung bei
     # vollständig fehlenden Jahren.
-    jahre: dict[str, int] = field(default_factory=dict)
+    jahre: dict[int, int] = field(default_factory=dict)
 
     def als_dict(self) -> dict[str, Any]:
         return {
@@ -369,16 +369,17 @@ def pruefe_daten(df: pd.DataFrame, symbol: str, cfg: Any, timeframe: str = "M15"
     q.von = str(df["ts"].iloc[0])[:19]
     q.bis = str(df["ts"].iloc[-1])[:19]
 
-    # Jahre zählen und vollständig fehlende Jahre benennen. Ein fehlendes Jahr
-    # fällt sonst durch alle bisherigen Prüfungen: Der Median-Abstand bleibt
-    # richtig, und ein einzelner Jahreswechsel liegt weit unter max_luecke_pct.
-    # Bei einem Broker, dessen Historie abgeschnitten ist, wäre die mehrjährige
-    # Reihe dann unbemerkt kürzer als gedacht. Bewusst eine Warnung, kein
-    # Fehler: Eine Reihe mit einer Lücke bleibt für Backtests verwendbar.
-    q.jahre = {str(int(jahr)): int(anzahl) for jahr, anzahl in
+    # Jahre zählen (UTC-Zeitstempel, wie in der Datenbank) und vollständig
+    # fehlende Jahre benennen. Ein fehlendes Jahr fällt sonst durch alle
+    # bisherigen Prüfungen: Der Median-Abstand bleibt richtig, und ein einzelner
+    # Jahreswechsel liegt weit unter max_luecke_pct. Bei einem Broker, dessen
+    # Historie abgeschnitten ist, wäre die mehrjährige Reihe dann unbemerkt
+    # kürzer als gedacht. Bewusst eine Warnung, kein Fehler: Eine Reihe mit
+    # einer Lücke bleibt für Backtests verwendbar.
+    q.jahre = {int(jahr): int(anzahl) for jahr, anzahl in
                df["ts"].dt.year.value_counts().sort_index().items()}
-    erstes, letztes = min(int(j) for j in q.jahre), max(int(j) for j in q.jahre)
-    ohne_kerzen = [jahr for jahr in range(erstes + 1, letztes) if str(jahr) not in q.jahre]
+    jahre = sorted(q.jahre)
+    ohne_kerzen = [jahr for jahr in range(jahre[0] + 1, jahre[-1]) if jahr not in q.jahre]
     if ohne_kerzen:
         q.warnungen.append(
             "Keine Kerzen in " + ", ".join(str(j) for j in ohne_kerzen)
