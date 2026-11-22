@@ -1001,6 +1001,18 @@
     {
       "quelle": "tests/test_api_vertrag_live.py",
       "ziel": "dateien/tests/test_api_vertrag_live.py"
+    },
+    {
+      "quelle": "docs/BENCHMARK.md",
+      "ziel": "dateien/docs/BENCHMARK.md"
+    },
+    {
+      "quelle": "scripts/messe_synthetisch.py",
+      "ziel": "dateien/scripts/messe_synthetisch.py"
+    },
+    {
+      "quelle": "tests/test_messe_synthetisch.py",
+      "ziel": "dateien/tests/test_messe_synthetisch.py"
     }
   ],
   "dokumente": [
