@@ -116,6 +116,8 @@ def test_kurze_reihe_meldet_keinen_falschen_zeitrahmen(cfg):
     assert not q.ok
     assert any("mindestens" in f for f in q.fehler)
     assert not any("Häufigster Abstand" in f for f in q.fehler), q.fehler
+    # Auch keine Median-Warnung aus der Lückenschwelle erfinden.
+    assert not q.warnungen, q.warnungen
 
 
 def test_mindestkerzen_folgen_dem_zeitrahmen(cfg):
