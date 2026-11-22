@@ -80,7 +80,7 @@ def test_falsch_getaktete_datei_landet_nicht_im_ordner_import(cfg):
 
     assert len(db.kerzen("EURUSD", "H1")) == 200
     assert db.kerzen("EURUSD", "M15") == []
-    assert any("Median-Abstand" in zeile["text"] for zeile in db.ereignisse())
+    assert any("Häufigster Abstand" in zeile["text"] for zeile in db.ereignisse())
 
 
 def test_leerer_csv_ordner_bricht_ab_statt_synthetisch(cfg):

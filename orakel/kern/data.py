@@ -299,33 +299,38 @@ def lade_csv_bloecke(pfad: str | Path, server_zeitzone: str | None = None,
         yield _verarbeite(puffer, server_zeitzone, p.name, server_versatz_stunden)
 
 
-# Vor dem Schreiben werden höchstens so viele Tagesblöcke gepuffert, bis
-# mindestens so viele Abstände für ein Takturteil vorliegen.
+# Vor dem Schreiben werden höchstens so viele Zeilen gepuffert, bis genug
+# Abstände für ein Takturteil vorliegen; das begrenzt auch sehr dünne Dateien.
 TAKT_MINDESTABSTAENDE = 10
-TAKT_MAX_BLOECKE = 5
+TAKT_PUFFER_ZEILEN = 10_000
 
 
 def takt_fehler(ts: pd.Series, timeframe: str, *, mindest_abstaende: int = 0) -> str | None:
-    """Meldet ein Zeitraster, das nicht zum angegebenen Zeitrahmen passt.
+    """Meldet ein Raster, das nicht zum angegebenen Zeitrahmen passt.
 
-    Der Median ist robust gegen Wochenenden, Feiertage und Handelspausen:
-    einzelne lange Abstände verschieben ihn nicht. Weicht er trotzdem vom
-    angegebenen Raster ab, ist die Datei anders getaktet, als sie heisst — eine
-    als M15 benannte H1-Datei würde sonst still als M15 gelten. Mit
-    ``mindest_abstaende`` wird erst geurteilt, wenn genug Abstände vorliegen.
+    Geurteilt wird über den häufigsten Abstand, nicht über den Median: Ein
+    korrekt benannter, aber dünn besetzter Export behält die Rasterweite als
+    häufigsten Abstand, während ein Zwischenraster (etwa M20 unter M15) sicher
+    auffällt. Wochenenden und Handelspausen sind einzelne lange Abstände und
+    verschieben den häufigsten Abstand nicht. Der Median dient weiterhin nur
+    der Lückenschwelle in ``pruefe_daten``. Mit ``mindest_abstaende`` wird erst
+    geurteilt, wenn genug Abstände für ein Urteil vorliegen.
     """
     luecken = ts.diff().dt.total_seconds().dropna()
     if len(luecken) < max(1, mindest_abstaende):
         return None
-    median = float(luecken.median())
     erwartet = ZEITRAHMEN_MINUTEN.get(timeframe.upper())
-    if not erwartet or median <= 0:
+    if not erwartet:
+        return None
+    haeufigster = float(luecken.value_counts().index[0])
+    if haeufigster <= 0:
         return None
     soll = erwartet * 60
-    if 0.75 * soll <= median <= 1.5 * soll:
+    if 0.9 * soll <= haeufigster <= 1.1 * soll:
         return None
-    return (f"Median-Abstand {median / 60:.0f} Min passt nicht zu {timeframe.upper()} "
-            f"(erwartet {erwartet} Min) — Datei im passenden Zeitrahmen ablegen?")
+    return (f"Häufigster Abstand {haeufigster / 60:.0f} Min passt nicht zu "
+            f"{timeframe.upper()} (erwartet {erwartet} Min) — Zeitrahmen prüfen "
+            "(Dateiname oder --zeitrahmen).")
 
 
 def mit_taktpruefung(bloecke: Iterable[pd.DataFrame], zeitrahmen: str) -> Iterator[pd.DataFrame]:
@@ -336,11 +341,11 @@ def mit_taktpruefung(bloecke: Iterable[pd.DataFrame], zeitrahmen: str) -> Iterat
     der Tabelle und fielen erst der Prüfung der zusammengeführten Reihe auf.
     """
     puffer: list[pd.DataFrame] = []
-    abstaende = 0
+    zeilen = 0
     for block in bloecke:
         puffer.append(block)
-        abstaende += max(0, len(block) - 1)
-        if abstaende >= TAKT_MINDESTABSTAENDE or len(puffer) >= TAKT_MAX_BLOECKE:
+        zeilen += len(block)
+        if zeilen >= TAKT_PUFFER_ZEILEN:
             break
     if puffer:
         zusammen = pd.concat(puffer, ignore_index=True)
@@ -402,7 +407,7 @@ def pruefe_daten(df: pd.DataFrame, symbol: str, cfg: Any, timeframe: str = "M15"
 
     luecken = df["ts"].diff().dt.total_seconds().dropna()
     median = float(luecken.median()) if len(luecken) else 0.0
-    takt = takt_fehler(df["ts"], timeframe)
+    takt = takt_fehler(df["ts"], timeframe, mindest_abstaende=TAKT_MINDESTABSTAENDE)
     if takt:
         q.fehler.append(takt)
     if median > 0:
