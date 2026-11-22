@@ -38,6 +38,7 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
     symbole: list[str] = []
 
     gebraucht = {"M15", cfg.richter_zeitrahmen}
+    zeitraeume = " und ".join(["M15", *sorted(gebraucht - {"M15"})])
     if quelle == "csv":
         zeitzone = cfg["daten"].get("server_zeitzone") or None
         versatz = cfg["daten"].get("server_versatz_stunden")
@@ -51,7 +52,7 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
                 db.ereignis(
                     "warnung", "Daten",
                     f"{datei.name}: {zeitrahmen} übersprungen — gebraucht werden "
-                    f"M15 und {cfg.richter_zeitrahmen}",
+                    f"{zeitraeume}",
                 )
                 continue
             try:
@@ -65,6 +66,21 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
             symbole.append(symbol)
             db.ereignis("info", "Daten", f"{datei.name}: {n} Kerzen importiert")
         if symbole:
+            fehlend = [
+                f"{symbol} {zeitrahmen}"
+                for symbol in sorted(set(symbole))
+                for zeitrahmen in sorted(gebraucht)
+                if not db.hat_kerzen(symbol, zeitrahmen)
+            ]
+            if fehlend:
+                grund = (
+                    f"Unvollständige CSV-Quelle in {ordner}: Für "
+                    f"{', '.join(fehlend)} fehlen Kerzen; gebraucht werden "
+                    f"{zeitraeume}. Es werden keine "
+                    "synthetischen Kerzen erzeugt."
+                )
+                db.ereignis("fehler", "Daten", grund)
+                raise DatenFehler(grund)
             db.zustand_setzen("datenquelle", "csv")
             return sorted(set(symbole)), "csv"
         if not gesehen:
@@ -87,9 +103,11 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
         # Eine bestückte Quelle, die nichts Verwertbares liefert, darf nicht
         # still auf synthetische Kerzen ausweichen.
         grund = (
-            f"Keine verwendbare M15-CSV in {ordner}: {len(gesehen)} Datei(en) "
-            f"({', '.join(sorted(gesehen)[:5])}), davon keine mit Zeitrahmen M15 "
-            "oder alle fehlerhaft. Es werden keine synthetischen Kerzen erzeugt."
+            f"Keine verwendbare CSV in {ordner}: {len(gesehen)} Datei(en) "
+            f"({', '.join(sorted(gesehen)[:5])}); gebraucht werden "
+            f"{zeitraeume}. Keine davon liefert einen "
+            "gebrauchten Zeitrahmen, oder alle sind fehlerhaft. Es werden keine "
+            "synthetischen Kerzen erzeugt."
         )
         db.ereignis("fehler", "Daten", grund)
         raise DatenFehler(grund)
