@@ -159,6 +159,17 @@ def test_jahresabdeckung_zaehlt_kerzen_je_jahr(cfg):
     assert not any("Keine Kerzen in" in w for w in q.warnungen), q.warnungen
 
 
+def test_jahresabdeckung_steht_im_datenqualitaetsblock(cfg):
+    anfang = synthetische_kerzen("X", kerzen=1200, seed=2, start="2023-01-01")
+    spaeter = synthetische_kerzen("X", kerzen=1200, seed=3, start="2025-01-01")
+    df = pd.concat([anfang, spaeter], ignore_index=True)
+
+    block = pruefe_daten(df, "X", cfg).als_dict()
+
+    assert block["jahre"] == {2023: 1200, 2025: 1200}
+    assert any("Keine Kerzen in 2024" in w for w in block["warnungen"]), block["warnungen"]
+
+
 def test_fehlendes_jahr_wird_als_warnung_gemeldet(cfg):
     # 2023 und 2025 belegt, 2024 fehlt vollständig — der Fall einer
     # abgeschnittenen Broker-Historie nach einem mehrjährigen Import.
