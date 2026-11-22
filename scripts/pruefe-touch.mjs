@@ -4,6 +4,7 @@
  *
  * Geprüft werden echte Touch-Events über das Chromium-DevTools-Protokoll:
  *   - Ein-Finger-Pan verschiebt das Schiff,
+ *   - auch bei starkem Zoom bleibt der Schiffskörper nach dem Ziehen sichtbar,
  *   - Zwei-Finger-Pinch zoomt danach hinein,
  *   - Tippen auf einen Raum öffnet die Ops-Details,
  *   - die Abteilungslegende startet schmal eingeklappt und lässt sich aufklappen,
@@ -96,6 +97,20 @@ async function touch(cdp, type, punkte) {
 
 async function schiffTransform(page) {
   return transformWerte(await page.locator('#shipWorld').evaluate(el => el.style.transform));
+}
+
+async function sichtbarerSchiffsteil(page) {
+  return page.evaluate(() => {
+    const schiff = document.querySelector('#shipWorld .px-ship');
+    const viewport = document.querySelector('#shipViewport');
+    if (!schiff || !viewport) return { breite: 0, hoehe: 0 };
+    const s = schiff.getBoundingClientRect();
+    const v = viewport.getBoundingClientRect();
+    return {
+      breite: Math.max(0, Math.min(s.right, v.right) - Math.max(s.left, v.left)),
+      hoehe: Math.max(0, Math.min(s.bottom, v.bottom) - Math.max(s.top, v.top)),
+    };
+  });
 }
 
 async function ladeSchiff(page) {
@@ -527,6 +542,24 @@ async function main() {
     pruefe(filterAus.titel === 'Abteilung im Schiff hervorheben',
       `Gelöster Legendenfilter hat den Titel «${filterAus.titel}»`);
     geprueft.filter = true;
+
+    // Auch bei starkem Zoom darf kein Zug den Schiffskörper vollständig aus
+    // dem Viewport schieben. Der Innenabstand der Bühne zählt nicht als Schiff.
+    await page.locator('[data-ship-zoom="fit"]').click();
+    for (let i = 0; i < 12; i++) await page.locator('[data-ship-zoom="in"]').click();
+    await page.waitForTimeout(150);
+    const grenzZoom = await schiffTransform(page);
+    pruefe(grenzZoom.zoom > 1.5, `Grenztest zoomt nicht ausreichend (${grenzZoom.zoom})`);
+    const grenzMitte = await mitte(page);
+    await page.mouse.move(grenzMitte.cx, grenzMitte.cy);
+    await page.mouse.down();
+    await page.mouse.move(grenzMitte.cx, -3000, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(250);
+    const sichtbar = await sichtbarerSchiffsteil(page);
+    pruefe(sichtbar.breite >= 60 && sichtbar.hoehe >= 60,
+      `Grenztest: nur ${sichtbar.breite.toFixed(1)}×${sichtbar.hoehe.toFixed(1)} px Schiff sichtbar`);
+    await page.locator('[data-ship-zoom="fit"]').click();
 
     if (opts.bilder) {
       await page.screenshot({ path: join(opts.bilder, 'touch-final.png'), fullPage: true });
