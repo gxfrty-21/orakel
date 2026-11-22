@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 import pytest
 
@@ -65,7 +67,7 @@ def test_strategie_bericht_liest_den_richter_zeitrahmen(cfg, tmp_path, monkeypat
     db = Facts(cfg.db_pfad)
     db.kerzen_speichern_df(
         "TEST", "H1",
-        synthetische_kerzen("TEST", kerzen=1300, seed=2, timeframe_minuten=60),
+        synthetische_kerzen("TEST", kerzen=50, seed=2, timeframe_minuten=60),
     )
     db.kerzen_speichern_df("TEST", "M15", synthetische_kerzen("TEST", kerzen=700, seed=3))
     aufruf = {}
@@ -88,11 +90,29 @@ def test_strategie_bericht_liest_den_richter_zeitrahmen(cfg, tmp_path, monkeypat
                               symbol=None, ausgabe=str(tmp_path / "out"))
 
     assert cli.cmd_strategie_bericht(args) == 0
-    assert len(aufruf["daten"]["TEST"]) == 1300  # H1, nicht die kürzere M15-Reihe
+    # 50 H1-Bars liegen über der skalierten Grenze (25), aber unter der rohen
+    # M15-Grenze (100); die Auswahl muss trotzdem H1 statt M15 verwenden.
+    assert len(aufruf["daten"]["TEST"]) == 50
     assert aufruf["config"].bars_pro_jahr == 6240
     assert aufruf["config"]["daten"]["min_kerzen"] == 25
     assert cfg.bars_pro_jahr == 24960
     assert cfg["daten"]["min_kerzen"] == 100
+
+
+def test_bericht_nennt_den_h1_zeitrahmen_in_json_und_markdown(cfg, tmp_path):
+    cfg._d["basis"]["richter_zeitrahmen"] = "H1"
+    urteil_cfg = cfg.fuer_zeitrahmen("H1")
+    df = synthetische_kerzen("TEST", kerzen=700, seed=5, timeframe_minuten=60)
+
+    bericht = erstelle_bericht(
+        {"TEST": df}, urteil_cfg, RisikoGrenzen.aus_config(urteil_cfg),
+        quelle="synthetisch (H1-Test)", commit="0" * 40,
+    )
+    assert bericht["zeitrahmen"] == "H1"
+
+    json_pfad, md_pfad = schreibe_bericht(bericht, tmp_path / "out")
+    assert json.loads(json_pfad.read_text(encoding="utf-8"))["zeitrahmen"] == "H1"
+    assert "Zeitrahmen: **H1**" in md_pfad.read_text(encoding="utf-8")
 
 
 def test_kaufen_halten_rechnet_ueber_den_zeitraum():

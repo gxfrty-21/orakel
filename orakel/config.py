@@ -81,8 +81,7 @@ class Config:
         """
         daten = copy.deepcopy(self._d)
         daten.setdefault("basis", {})["bars_pro_jahr"] = self.bars_pro_jahr_fuer(zeitrahmen)
-        if "daten" in daten:
-            daten["daten"]["min_kerzen"] = self.min_kerzen_fuer(zeitrahmen)
+        daten.setdefault("daten", {})["min_kerzen"] = self.min_kerzen_fuer(zeitrahmen)
         return Config(daten, self.pfad)
 
     @property
