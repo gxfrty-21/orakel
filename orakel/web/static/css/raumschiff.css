@@ -359,8 +359,7 @@
 
 .eng-thruster{width:28px;height:14px;border-radius:50%;background:radial-gradient(ellipse,#74ffd0 0 18%,#38e8ff 19% 40%,#ff3fa4 41% 58%,transparent 60%);filter:blur(.3px);opacity:.85;box-shadow:0 0 16px rgba(56,232,255,.35)}
 
-/* Liegt über der transformierten Welt (z-index 1) und bleibt klickbar. */
-.ship-zoom{position:absolute;right:10px;bottom:10px;z-index:9;pointer-events:auto;display:flex;align-items:center;gap:2px;padding:3px;
+.ship-zoom{position:absolute;right:10px;bottom:10px;z-index:6;display:flex;align-items:center;gap:2px;padding:3px;
   border:1px solid rgba(56,232,255,.35);border-radius:2px;background:rgba(5,8,12,.9);box-shadow:0 0 12px rgba(56,232,255,.1);backdrop-filter:blur(5px)}
 
 .ship-zoom button{min-width:25px;height:23px;border:1px solid transparent;border-radius:1px;background:transparent;color:#8fd;font-family:var(--mono);font-size:11px;cursor:pointer}
