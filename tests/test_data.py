@@ -564,6 +564,42 @@ def test_absteigende_herbststunde_bleibt_je_tagesblock_zugeordnet(tmp_path):
     ]
 
 
+def test_absteigende_herbstdatei_ordnet_fassungen_ueber_die_blockgrenze_zu(tmp_path):
+    # block=3 legt die Blockgrenze genau zwischen die Standardzeitfassung
+    # (03:00, 1.30) und die Sommerzeitfassung (03:00, 1.20) des Herbsttages.
+    # Beide Fassungen müssen samt Preis in UTC erhalten bleiben; eine Drehung
+    # würde 1.20 und 1.30 vertauschen, ohne die Menge der Zeitstempel zu ändern.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for zeit, preis in (
+        ("04:00:00", "1.40"),
+        ("03:15:00", "1.35"),  # Standardzeit
+        ("03:00:00", "1.30"),  # Standardzeit — Blockgrenze folgt hier
+        ("03:15:00", "1.25"),  # Sommerzeit
+        ("03:00:00", "1.20"),  # Sommerzeit
+        ("02:45:00", "1.15"),
+    ):
+        zeilen.append(f"2025.10.26\t{zeit}\t{preis}\t{preis}\t{preis}\t{preis}\t10\t0\t2")
+    for zeit in ("09:15:00", "09:00:00"):
+        zeilen.append(f"2025.10.25\t{zeit}\t1.0\t1.0\t1.0\t1.0\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    bloecke = list(lade_csv_bloecke(p, server_zeitzone="Europe/Athens", block=3))
+
+    assert [len(b) for b in bloecke] == [6, 2]
+    assert [(str(t), float(c)) for t, c in zip(bloecke[0]["ts"], bloecke[0]["close"])] == [
+        ("2025-10-25 23:45:00+00:00", 1.15),
+        ("2025-10-26 00:00:00+00:00", 1.20),
+        ("2025-10-26 00:15:00+00:00", 1.25),
+        ("2025-10-26 01:00:00+00:00", 1.30),
+        ("2025-10-26 01:15:00+00:00", 1.35),
+        ("2025-10-26 02:00:00+00:00", 1.40),
+    ]
+    assert [str(t) for t in bloecke[1]["ts"]] == [
+        "2025-10-25 06:00:00+00:00", "2025-10-25 06:15:00+00:00",
+    ]
+
+
 def test_gemischte_zeilen_innerhalb_eines_tages_brechen_ab(tmp_path):
     # Derselbe Tag, aber die Uhrzeiten stehen nicht chronologisch. Der Import
     # darf das nicht still sortieren, weil die Reihenfolge bei der Herbst-
