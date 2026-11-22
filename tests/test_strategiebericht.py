@@ -90,7 +90,9 @@ def test_strategie_bericht_liest_den_richter_zeitrahmen(cfg, tmp_path, monkeypat
     assert cli.cmd_strategie_bericht(args) == 0
     assert len(aufruf["daten"]["TEST"]) == 1300  # H1, nicht die kürzere M15-Reihe
     assert aufruf["config"].bars_pro_jahr == 6240
+    assert aufruf["config"]["daten"]["min_kerzen"] == 25
     assert cfg.bars_pro_jahr == 24960
+    assert cfg["daten"]["min_kerzen"] == 100
 
 
 def test_kaufen_halten_rechnet_ueber_den_zeitraum():

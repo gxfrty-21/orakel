@@ -145,8 +145,8 @@ def lauf(
     fehler: list[str] = []
 
     zeitrahmen = cfg.richter_zeitrahmen
-    # Sharpe skaliert mit der Kerzenzahl pro Jahr; die Basis in [basis] gilt für M15.
-    urteil_cfg = cfg.mit_bars_pro_jahr(cfg.bars_pro_jahr_fuer(zeitrahmen))
+    # Sharpe und Mindestkerzen skalieren mit dem Raster; die Basis gilt für M15.
+    urteil_cfg = cfg.fuer_zeitrahmen(zeitrahmen)
     if zeitrahmen != "M15":
         db.ereignis("info", "Daten",
                     f"Richter bewertet {zeitrahmen}; der Paper-Takt liest weiterhin M15")
@@ -177,7 +177,7 @@ def lauf(
     roh: dict[str, list[tuple[Any, Any]]] = {}
     for symbol in symbole:
         df = daten[symbol]
-        if len(df) < int(cfg["daten"]["min_kerzen"]):
+        if len(df) < int(urteil_cfg["daten"]["min_kerzen"]):
             continue
         for strategie in strategien(cfg).values():
             try:

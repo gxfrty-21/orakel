@@ -15,6 +15,19 @@ SPALTEN = ["ts", "open", "high", "low", "close", "volume"]
 ZEITRAHMEN_MINUTEN = {"M1": 1, "M5": 5, "M15": 15, "H1": 60}
 ZEITRAHMEN = tuple(ZEITRAHMEN_MINUTEN)
 
+
+def kerzen_minimum(basis: int, zeitrahmen: str) -> int:
+    """Rechnet die M15-Mindestzahl ``basis`` auf ``zeitrahmen`` um.
+
+    ``min_kerzen`` gilt in der Konfiguration für M15 (1200 Kerzen ≈ zwei
+    Wochen). Dieselbe Zahl im H1-Raster wären 50 Tage; der Richter braucht
+    deshalb die zum gelesenen Raster passende Mindestzahl.
+    """
+    minuten = ZEITRAHMEN_MINUTEN.get(zeitrahmen.upper())
+    if minuten is None:
+        raise ValueError(f"Unbekannter Zeitrahmen: {zeitrahmen}")
+    return max(1, int(round(basis * 15 / minuten)))
+
 # MT5 exportiert Datum als YYYY.MM.DD; ISO-Dateien kommen zusätzlich vor (das
 # «T» wird vor dem Parsen zum Leerzeichen). Bewusst nur diese Formen: eine
 # Tag/Monat-Vertauschung soll nicht still passieren. Reine Datumsangaben fehlen
@@ -314,8 +327,11 @@ def pruefe_daten(df: pd.DataFrame, symbol: str, cfg: Any, timeframe: str = "M15"
             + " — mehrjährige Reihe unvollständig (Broker-Historie oder Exportgrenze?)"
         )
 
-    if len(df) < int(grenzen["min_kerzen"]):
-        q.fehler.append(f"Nur {len(df)} Kerzen, mindestens {grenzen['min_kerzen']} nötig")
+    mindestens = kerzen_minimum(int(grenzen["min_kerzen"]), timeframe)
+    if len(df) < mindestens:
+        q.fehler.append(
+            f"Nur {len(df)} Kerzen, mindestens {mindestens} nötig ({timeframe.upper()})"
+        )
 
     if df["ts"].duplicated().any():
         q.fehler.append("Doppelte Zeitstempel")
