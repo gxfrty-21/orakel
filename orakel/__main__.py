@@ -167,6 +167,7 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
             print("  Fehler: " + text)
         for text in q.warnungen:
             print("  Warnung: " + text)
+            db.ereignis("warnung", "Daten", f"{symbol} {zeitrahmen}: {text}")
         if not q.ok:
             fehler += 1
         if zeitrahmen not in {"M15", cfg.richter_zeitrahmen}:

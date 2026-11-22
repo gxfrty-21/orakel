@@ -11,8 +11,8 @@ import pandas as pd
 from . import agents as agenten
 from .config import Config, RisikoGrenzen, load_config
 from .kern.data import (
-    ZEITRAHMEN_MINUTEN, df_aus_db, lade_csv_bloecke, mit_taktpruefung, pruefe_daten,
-    synthetische_kerzen, zerlege_dateiname,
+    ZEITRAHMEN_MINUTEN, df_aus_db, frische_kennzahl, lade_csv_bloecke,
+    mit_taktpruefung, pruefe_daten, synthetische_kerzen, zerlege_dateiname,
 )
 from .kern.db import Facts, jetzt
 from .intel import IntelNetz
@@ -125,6 +125,24 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
 
         for datei_name, n in importiert:
             db.ereignis("info", "Daten", f"{datei_name}: {n} Kerzen importiert")
+        try:
+            letzte = {(zeile["symbol"], zeile["zeitrahmen"]): zeile["juengste"]
+                      for zeile in db.kerzen_uebersicht()}
+            for symbol in sorted(set(symbole)):
+                for tf in sorted(gebraucht):
+                    juengste = letzte.get((symbol, tf))
+                    if juengste is None:
+                        continue
+                    kennzahl = frische_kennzahl(juengste, cfg["daten"], tf)
+                    if kennzahl and not kennzahl["frisch"]:
+                        db.ereignis(
+                            "warnung", "Daten",
+                            f"{symbol} {tf}: jüngste Kerze "
+                            f"{kennzahl['alter_stunden']:.1f} h alt "
+                            f"(Grenze {kennzahl['max_alter_stunden']:.1f} h)",
+                        )
+        except Exception as exc:  # noqa: BLE001 - Frische ist nur eine Warnung
+            db.ereignis("warnung", "Daten", f"Frischeprüfung nicht möglich: {exc}")
         if symbole:
             return sorted(set(symbole)), "csv"
         if not gesehen:

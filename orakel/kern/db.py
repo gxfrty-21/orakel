@@ -243,6 +243,14 @@ class Facts:
         with self.conn() as c:
             return [r["symbol"] for r in c.execute("SELECT DISTINCT symbol FROM kerzen ORDER BY symbol")]
 
+    def kerzen_uebersicht(self) -> list[sqlite3.Row]:
+        """Jüngste Kerze je Symbol und Zeitrahmen."""
+        with self.conn() as c:
+            return list(c.execute(
+                "SELECT symbol, zeitrahmen, MAX(ts) AS juengste FROM kerzen "
+                "GROUP BY symbol, zeitrahmen ORDER BY symbol, zeitrahmen"
+            ))
+
     # ---------- Validierungen ----------
     def validierung_speichern(
         self, symbol: str, strategie: str, schluessel: str, parameter: dict[str, Any],

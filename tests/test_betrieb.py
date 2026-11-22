@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from orakel.betrieb import Betrieb, betrieb_health
+from orakel.betrieb import Betrieb, betrieb_health, betrieb_status
+from orakel.kern.data import synthetische_kerzen
 from orakel.kern.db import Facts
 
 START = datetime(2026, 11, 10, 0, 0, tzinfo=timezone.utc)
@@ -186,6 +187,25 @@ def test_ressourcengrenze_ueberspringt_schreibintensiven_job(cfg):
     assert any("Datenbank" in w["text"] for w in daten["warnungen"])
     assert daten["letzte_laeufe"][0]["status"] == "uebersprungen"
     assert daten["letzte_laeufe"][0]["fehler"].startswith("Datenbank")
+
+
+def test_datenfrische_steht_im_monitoring(cfg):
+    db = Facts(cfg.db_pfad)
+    df = synthetische_kerzen("TEST", kerzen=120, seed=1)
+    df["ts"] = df["ts"] - (df["ts"].iloc[-1] - (START - timedelta(hours=2)))
+    db.kerzen_speichern_df("TEST", "M15", df)
+    cfg._d["daten"]["max_kurs_alter_stunden_m15"] = 1.0
+
+    daten = betrieb_status(cfg, db, START)
+
+    assert daten["datenfrische"] == [{
+        "juengste": str(df["ts"].iloc[-1]),
+        "alter_stunden": 2.0,
+        "max_alter_stunden": 1.0,
+        "frisch": False,
+        "symbol": "TEST",
+        "zeitrahmen": "M15",
+    }]
 
 
 def test_health_zaehlt_info_hinweise_nicht_als_warnung(cfg):

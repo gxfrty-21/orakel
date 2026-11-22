@@ -317,7 +317,10 @@ bestandener Reihenprüfung gesetzt, und ein Fehler in einer Datei rollt alle
 Dateien dieses Imports zurück. Ist der Ordner leer, bricht der Lauf ohne
 vorhandene Datenbankkerzen mit Meldung ab, statt synthetische Kerzen zu
 erzeugen; vorhandene Datenbankkerzen werden mit einer Warnung weiterverwendet.
-Die Frischegrenzen bleiben
+Beim Import wird die jüngste Kerze je Symbol und Zeitrahmen gegen ihre
+Frischegrenze geprüft: `max_kurs_alter_stunden_<tf>` bzw. der Rückfall
+`max_alter_tage`. Eine Überschreitung wird als Warnung protokolliert,
+blockiert den Import aber nicht. Die Frischegrenzen bleiben
 je Zeitrahmen getrennt (`max_kurs_alter_stunden_h1` usw.), auch wenn der
 Paper-Takt M15 liest.
 
