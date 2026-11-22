@@ -5,11 +5,14 @@ import argparse
 import pandas as pd
 import pytest
 
+from orakel import __main__ as cli
 from orakel.__main__ import _importiere_csv, _versatz
+from orakel.kern import data
 from orakel.kern.data import (
     df_aus_db,
     lade_csv,
     lade_csv_bloecke,
+    mit_taktpruefung,
     pruefe_daten,
     synthetische_kerzen,
     zerlege_dateiname,
@@ -115,6 +118,8 @@ def test_kurze_reihe_meldet_keinen_falschen_zeitrahmen(cfg):
     assert not q.ok
     assert any("mindestens" in f for f in q.fehler)
     assert not any("Häufigster Abstand" in f for f in q.fehler), q.fehler
+    # Auch keine Median-Warnung aus der Lückenschwelle erfinden.
+    assert not q.warnungen, q.warnungen
 
 
 def test_mindestkerzen_folgen_dem_zeitrahmen(cfg):
@@ -150,12 +155,54 @@ def test_falsch_getaktete_datei_wird_vor_dem_schreiben_abgelehnt(cfg, tmp_path):
                for zeile in db.ereignisse())
 
 
+def test_duenn_besetzte_falsche_datei_wird_vor_dem_schreiben_abgelehnt(cfg, tmp_path):
+    # Nur zwölf H1-Kerzen: Der Zeilenpuffer liest die ganze Datei und erkennt
+    # den falschen Takt trotzdem, bevor eine Kerze gespeichert wird.
+    h1 = synthetische_kerzen("X", kerzen=12, seed=2, timeframe_minuten=60)
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(_als_mt5(h1), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)])) == 1
+
+    assert db.kerzen("EURUSD", "M15") == []
+    assert any("Häufigster Abstand" in zeile["text"] for zeile in db.ereignisse())
+
+
+def test_zeilenpuffer_bleibt_begrenzt_und_gibt_alle_zeilen_weiter(monkeypatch):
+    df = synthetische_kerzen("X", kerzen=12, seed=2)
+    monkeypatch.setattr(data, "TAKT_PUFFER_ZEILEN", 5)
+
+    # Kleine Blöcke: Der Puffer gibt höchstens fünf Zeilen am Stück aus.
+    klein = list(mit_taktpruefung((df.iloc[[i]] for i in range(len(df))), "M15"))
+    assert max(len(teil) for teil in klein) <= 5
+    assert sum(len(teil) for teil in klein) == len(df)
+    pd.testing.assert_frame_equal(pd.concat(klein, ignore_index=True), df)
+
+    # Ein einzelner großer Block wird für die Prüfung geteilt, aber vollständig
+    # und in der richtigen Reihenfolge weitergegeben.
+    gross = list(mit_taktpruefung(iter([df]), "M15"))
+    assert sum(len(teil) for teil in gross) == len(df)
+    pd.testing.assert_frame_equal(pd.concat(gross, ignore_index=True), df)
+
+
 def test_jahresabdeckung_zaehlt_kerzen_je_jahr(cfg):
     df = synthetische_kerzen("X", kerzen=2000, seed=2)
     q = pruefe_daten(df, "X", cfg)
 
     assert q.jahre == {2024: 2000}
     assert not any("Keine Kerzen in" in w for w in q.warnungen), q.warnungen
+
+
+def test_jahresabdeckung_steht_im_datenqualitaetsblock(cfg):
+    anfang = synthetische_kerzen("X", kerzen=1200, seed=2, start="2023-01-01")
+    spaeter = synthetische_kerzen("X", kerzen=1200, seed=3, start="2025-01-01")
+    df = pd.concat([anfang, spaeter], ignore_index=True)
+
+    block = pruefe_daten(df, "X", cfg).als_dict()
+
+    assert block["jahre"] == {2023: 1200, 2025: 1200}
+    assert any("Keine Kerzen in 2024" in w for w in block["warnungen"]), block["warnungen"]
 
 
 def test_fehlendes_jahr_wird_als_warnung_gemeldet(cfg):
@@ -328,6 +375,24 @@ def test_herbst_umstellung_in_absteigender_datei(tmp_path):
     ]
 
 
+def test_herbstpaar_ohne_exportrichtung_gilt_als_aufsteigend(tmp_path):
+    # Nur die beiden Fassungen derselben Uhrzeit: Erster und letzter Zeitstempel
+    # sind gleich, eine Exportrichtung ist nicht erkennbar. Der Import nimmt
+    # deshalb aufsteigend an: Sommerzeit zuerst, Standardzeit danach.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for preis in ("1.20", "1.30"):
+        zeilen.append(f"2025.10.26\t03:00:00\t{preis}\t{preis}\t{preis}\t{preis}\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    df = lade_csv(p, server_zeitzone="Europe/Athens")
+
+    assert [(str(t), float(c)) for t, c in zip(df["ts"], df["close"])] == [
+        ("2025-10-26 00:00:00+00:00", 1.20),
+        ("2025-10-26 01:00:00+00:00", 1.30),
+    ]
+
+
 def test_sommerzeitluecke_meldet_deutschen_fehler(tmp_path):
     # Europe/Athens springt am 30.03.2025 von 03:00 auf 04:00; 03:15 existiert
     # dort nicht und darf nicht mit einer englischen pandas-Meldung abbrechen.
@@ -369,6 +434,66 @@ def test_bloecke_zerteilen_die_herbststunde_nicht(tmp_path):
         "2025-10-25 23:45:00+00:00", "2025-10-26 00:00:00+00:00",
         "2025-10-26 00:15:00+00:00", "2025-10-26 01:00:00+00:00",
         "2025-10-26 01:15:00+00:00", "2025-10-26 02:00:00+00:00",
+    ]
+
+
+def test_aufsteigende_tage_bleiben_blockweise_zusammen(tmp_path):
+    # Drei aufsteigend exportierte Tage; block=3 zwingt Chunks mitten in die
+    # Tage. Die Tagesgrenze muss den Herbsttag trotzdem zusammenhalten.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for tag, zeit, preis in (
+        ("2025.10.25", "09:00:00", "1.10"),
+        ("2025.10.25", "09:15:00", "1.11"),
+        ("2025.10.26", "03:00:00", "1.20"),
+        ("2025.10.26", "03:15:00", "1.25"),
+        ("2025.10.26", "03:00:00", "1.30"),
+        ("2025.10.26", "03:15:00", "1.35"),
+        ("2025.10.27", "09:00:00", "1.40"),
+        ("2025.10.27", "09:15:00", "1.41"),
+    ):
+        zeilen.append(f"{tag}\t{zeit}\t{preis}\t{preis}\t{preis}\t{preis}\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    bloecke = list(lade_csv_bloecke(p, server_zeitzone="Europe/Athens", block=3))
+
+    assert [len(b) for b in bloecke] == [2, 4, 2]
+    assert [(str(t), float(c)) for t, c in zip(bloecke[1]["ts"], bloecke[1]["close"])] == [
+        ("2025-10-26 00:00:00+00:00", 1.20),
+        ("2025-10-26 00:15:00+00:00", 1.25),
+        ("2025-10-26 01:00:00+00:00", 1.30),
+        ("2025-10-26 01:15:00+00:00", 1.35),
+    ]
+    assert [str(t) for t in bloecke[0]["ts"]] == [
+        "2025-10-25 06:00:00+00:00", "2025-10-25 06:15:00+00:00",
+    ]
+    assert [str(t) for t in bloecke[2]["ts"]] == [
+        "2025-10-27 07:00:00+00:00", "2025-10-27 07:15:00+00:00",
+    ]
+
+
+def test_iso_tage_ohne_nullauffuellung_werden_als_ein_tag_erkannt(tmp_path):
+    # Gültige ISO-Zeitstempel ohne führende Nullen: Die Tagesprüfung darf nicht
+    # die ersten zehn Zeichen vergleichen, sonst wird derselbe Tag je nach
+    # Stunde zerteilt.
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(
+        "datetime,open,high,low,close,volume\n"
+        "2025-1-2 09:00:00,1,1,1,1,1\n"
+        "2025-1-2 10:00:00,1,1,1,1,1\n"
+        "2025-1-3 09:00:00,1,1,1,1,1\n"
+        "2025-1-3 10:00:00,1,1,1,1,1\n",
+        encoding="utf-8",
+    )
+
+    bloecke = list(lade_csv_bloecke(p, block=2))
+
+    assert [len(b) for b in bloecke] == [2, 2]
+    assert [str(t) for t in bloecke[0]["ts"]] == [
+        "2025-01-02 09:00:00+00:00", "2025-01-02 10:00:00+00:00",
+    ]
+    assert [str(t) for t in bloecke[1]["ts"]] == [
+        "2025-01-03 09:00:00+00:00", "2025-01-03 10:00:00+00:00",
     ]
 
 
@@ -439,6 +564,83 @@ def test_absteigende_herbststunde_bleibt_je_tagesblock_zugeordnet(tmp_path):
     ]
 
 
+def test_gemischte_zeilen_innerhalb_eines_tages_brechen_ab(tmp_path):
+    # Derselbe Tag, aber die Uhrzeiten stehen nicht chronologisch. Der Import
+    # darf das nicht still sortieren, weil die Reihenfolge bei der Herbst-
+    # Rückstellung über die Sommer-/Standardzeitfassung entscheidet.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for zeit in ("09:15:00", "09:00:00", "09:30:00"):
+        zeilen.append(f"2025.01.02\t{zeit}\t1.0\t1.1\t0.9\t1.05\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="innerhalb des Tages nicht aufsteigend sortiert"):
+        list(lade_csv_bloecke(p, block=2))
+
+
+def test_gemischte_herbstzeilen_brechen_ab(tmp_path):
+    # Zwei Umkehrungen an einem Herbsttag: Das ist keine gültige
+    # Exportreihenfolge mehr und würde die Fassungen vertauschen.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for zeit, preis in (
+        ("03:00:00", "1.20"),
+        ("03:15:00", "1.25"),
+        ("02:45:00", "1.15"),
+        ("03:00:00", "1.30"),
+        ("03:15:00", "1.35"),
+        ("04:00:00", "1.40"),
+    ):
+        zeilen.append(f"2025.10.26\t{zeit}\t{preis}\t{preis}\t{preis}\t{preis}\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="innerhalb des Tages nicht aufsteigend sortiert"):
+        list(lade_csv_bloecke(p, server_zeitzone="Europe/Athens", block=2))
+
+
+def test_gemischte_tagesrichtungen_brechen_ab(tmp_path):
+    # Drei Tage im selben Block: Tag 1 steigt auf, Tag 2 fällt ab. Die globale
+    # Blockrichtung wäre aufsteigend; ohne Prüfung je Tageslauf würde Tag 2
+    # mit der falschen Herbstrichtung gelesen.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for tag, zeit, preis in (
+        ("2025.01.02", "09:00:00", "1.10"),
+        ("2025.01.02", "09:15:00", "1.11"),
+        ("2025.01.03", "09:15:00", "1.20"),
+        ("2025.01.03", "09:00:00", "1.21"),
+        ("2025.01.04", "09:00:00", "1.30"),
+        ("2025.01.04", "09:15:00", "1.31"),
+    ):
+        zeilen.append(f"{tag}\t{zeit}\t{preis}\t{preis}\t{preis}\t{preis}\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="gemischte Richtungen"):
+        list(lade_csv_bloecke(p, block=100))
+
+
+def test_gemischte_tagesrichtungen_am_herbsttag_brechen_ab(tmp_path):
+    # Der Vortag fällt ab, der Herbsttag läuft aufsteigend. Unter der globalen
+    # Abwärtsrichtung würde der Rücksprung am Herbsttag sonst als Sommerzeit
+    # gelesen und die beiden 03:15-Preise würden vertauscht.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for tag, zeit, preis in (
+        ("2025.10.27", "09:15:00", "1.07"),
+        ("2025.10.27", "09:00:00", "1.06"),
+        ("2025.10.26", "03:00:00", "1.20"),
+        ("2025.10.26", "03:15:00", "1.25"),
+        ("2025.10.26", "03:15:00", "1.30"),
+        ("2025.10.25", "09:15:00", "1.05"),
+        ("2025.10.25", "09:00:00", "1.04"),
+    ):
+        zeilen.append(f"{tag}\t{zeit}\t{preis}\t{preis}\t{preis}\t{preis}\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="gemischte Richtungen"):
+        list(lade_csv_bloecke(p, server_zeitzone="Europe/Athens", block=100))
+
+
 def test_verschraenkte_tage_brechen_ab_statt_herbststunden_zu_trennen(cfg, tmp_path):
     # Der Herbsttag ist mit einem anderen Tag verschränkt. Blockweises Lesen
     # würde die beiden 03:00-Fassungen trennen; der Import muss stattdessen
@@ -459,7 +661,7 @@ def test_verschraenkte_tage_brechen_ab_statt_herbststunden_zu_trennen(cfg, tmp_p
     p = tmp_path / "EURUSD_M15.csv"
     p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="nach Datum sortiert"):
+    with pytest.raises(ValueError, match="2025.10.26.*mehreren"):
         db.kerzen_speichern_bloecke(
             "EURUSD", "M15",
             lade_csv_bloecke(p, server_zeitzone="Europe/Athens", block=4))
@@ -526,10 +728,48 @@ def test_cli_speichert_serverzeit_als_utc(cfg, tmp_path):
 def test_kurzform_server_versatz_wird_geparst():
     assert _versatz("+03:00") == 3.0
     assert _versatz("-05:30") == -5.5
+    assert _versatz("-14:00") == -14.0
+    assert _versatz("-00:00") == 0.0
     with pytest.raises(argparse.ArgumentTypeError):
         _versatz("3")
     with pytest.raises(argparse.ArgumentTypeError):
         _versatz("+14:30")
+    with pytest.raises(argparse.ArgumentTypeError):
+        _versatz("-14:30")
+    with pytest.raises(argparse.ArgumentTypeError):
+        _versatz("-05:60")
+
+
+def test_cli_negative_kurzform_ohne_gleichheitszeichen(monkeypatch):
+    # argparse würde -05:00 als Option lesen; die CLI muss den negativen Wert
+    # direkt hinter --server-versatz akzeptieren. Die positive Form und die
+    # Gleichheitsform dürfen weiter funktionieren.
+    gesehen: list[float | None] = []
+
+    def fake_daten(args: argparse.Namespace) -> int:
+        gesehen.append(args.server_versatz)
+        return 0
+
+    monkeypatch.setattr(cli, "cmd_daten", fake_daten)
+
+    assert cli.main(["daten", "--csv", "x.csv", "--server-versatz", "-05:00"]) == 0
+    assert cli.main(["daten", "--csv", "x.csv", "--server-versatz", "+05:00"]) == 0
+    assert cli.main(["daten", "--csv", "x.csv", "--server-versatz=-05:00"]) == 0
+    assert gesehen == [-5.0, 5.0, -5.0]
+
+
+def test_cli_versatzoptionen_schliessen_sich_im_parser_aus():
+    # Die drei expliziten Angaben sind schon auf Parser-Ebene Alternativen;
+    # das verhindert Seiteneffekte, bevor cmd_daten Config und DB anfasst.
+    for argumente in (
+        ["daten", "--csv", "x.csv", "--server-zeitzone", "Europe/Athens",
+         "--server-versatz", "-05:00"],
+        ["daten", "--csv", "x.csv", "--server-versatz", "-05:00",
+         "--server-versatz-stunden", "3"],
+    ):
+        with pytest.raises(SystemExit) as fehler:
+            cli.main(argumente)
+        assert fehler.value.code == 2
 
 
 def test_cli_kurzform_server_versatz_als_utc(cfg, tmp_path):
@@ -634,6 +874,19 @@ def test_dateiname_liefert_symbol_und_zeitrahmen():
     assert zerlege_dateiname("US500_CASH_H1.csv") == ("US500_CASH", "H1")
     assert zerlege_dateiname("EURUSD.csv") == ("EURUSD", "M15")
     assert zerlege_dateiname("EURUSD_2024.csv") == ("EURUSD", "M15")
+    # Der Zeitrahmen wird an jeder Position erkannt, nicht nur am Ende.
+    assert zerlege_dateiname("EURUSD_H1_2020.csv") == ("EURUSD", "H1")
+    assert zerlege_dateiname("US500_H1_2023.csv") == ("US500", "H1")
+    assert zerlege_dateiname("EURUSD_2020_H1.csv") == ("EURUSD", "H1")
+    assert zerlege_dateiname("H1_EURUSD.csv") == ("EURUSD", "H1")
+    # Block-Suffixe hinter dem Zeitrahmen gehören nicht zum Symbol.
+    assert zerlege_dateiname("EURUSD_M15_a.csv") == ("EURUSD", "M15")
+
+
+def test_unbekannte_zeitrahmen_im_dateinamen_werden_abgelehnt():
+    for name in ("EURUSD_H4.csv", "EURUSD_H4_2020.csv", "EURUSD_M15_H4.csv"):
+        with pytest.raises(ValueError, match="Unbekannter Zeitrahmen"):
+            zerlege_dateiname(name)
 
 
 def test_zwei_bloecke_ergeben_eine_gepruefte_reihe(cfg, tmp_path):
@@ -697,6 +950,39 @@ def test_cli_zeigt_die_jahresabdeckung(cfg, tmp_path, capsys):
     ausgabe = capsys.readouterr().out
     assert "Abdeckung: 2023: 1200, 2025: 1200" in ausgabe
     assert "Keine Kerzen in 2024" in ausgabe
+
+
+def test_cli_lehnt_verschraenkte_tagesdatei_ab_und_schreibt_keine_kerzen(
+        cfg, tmp_path, monkeypatch, capsys):
+    # Der Herbsttag ist mit einem anderen Tag verschränkt. Der blockweise
+    # Import erkennt die wiederkehrende Tagesgrenze und bricht ab, bevor Kerzen
+    # gespeichert werden.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for tag, zeit, preis in (
+        ("2025.10.26", "03:00:00", "1.20"),  # Sommerzeitfassung
+        ("2025.10.26", "03:15:00", "1.25"),
+        ("2025.10.25", "09:00:00", "1.10"),
+        ("2025.10.25", "09:15:00", "1.11"),
+        ("2025.10.26", "03:00:00", "1.30"),  # Standardzeitfassung
+        ("2025.10.26", "03:15:00", "1.35"),
+        ("2025.10.25", "09:30:00", "1.12"),
+        ("2025.10.25", "09:45:00", "1.13"),
+    ):
+        zeilen.append(f"{tag}\t{zeit}\t{preis}\t{preis}\t{preis}\t{preis}\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+    monkeypatch.setattr(cli, "_cfg", lambda _pfad: cfg)
+
+    code = cli.main(["daten", "--csv", str(p), "--server-zeitzone", "Europe/Athens"])
+
+    ausgabe = capsys.readouterr()
+    assert code == 1
+    assert "FEHLER EURUSD_M15.csv:" in ausgabe.err
+    assert "ist nicht nach Datum sortiert" in ausgabe.err
+    assert "2025.10.26" in ausgabe.err
+    assert "mehreren" in ausgabe.err
+    assert "Nichts importiert." in ausgabe.err
+    assert Facts(cfg.db_pfad).kerzen("EURUSD", "M15") == []
 
 
 def test_zeitrahmen_aus_dateiname_wird_gespeichert_und_nicht_bewertet(cfg, tmp_path):

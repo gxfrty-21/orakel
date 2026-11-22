@@ -511,14 +511,6 @@
       "ziel": "dateien/orakel/migrations/0005_laeufe_versuche.sql"
     },
     {
-      "quelle": "orakel/migrations/0006_position_margin.down.sql",
-      "ziel": "dateien/orakel/migrations/0006_position_margin.down.sql"
-    },
-    {
-      "quelle": "orakel/migrations/0006_position_margin.sql",
-      "ziel": "dateien/orakel/migrations/0006_position_margin.sql"
-    },
-    {
       "quelle": "orakel/pipeline.py",
       "ziel": "dateien/orakel/pipeline.py"
     },

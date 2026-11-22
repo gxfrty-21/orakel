@@ -108,7 +108,12 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
     fehler = 0
     geprueft: list[tuple[str, str]] = []
     for datei in dateien:
-        symbol, zeitrahmen = zerlege_dateiname(datei)
+        try:
+            symbol, zeitrahmen = zerlege_dateiname(datei)
+        except ValueError as exc:
+            print(f"FEHLER {datei.name}: {exc}", file=sys.stderr)
+            db.ereignis("fehler", "Daten", f"{datei.name}: {exc}")
+            return 2
         symbol = vorgabe or symbol
         zeitrahmen = args.zeitrahmen or zeitrahmen
         konflikte = Kerzenkonflikte()
@@ -232,7 +237,7 @@ def cmd_strategie_bericht(args: argparse.Namespace) -> int:
     zeitrahmen = cfg.richter_zeitrahmen
     # Dieselbe Reihe, Jahresbasis und Mindestzahl wie im Richter, nicht fest M15.
     urteil_cfg = cfg.fuer_zeitrahmen(zeitrahmen)
-    mindestens = int(urteil_cfg["daten"]["min_kerzen"])
+    mindestens = cfg.min_kerzen_fuer(zeitrahmen)
     daten = {symbol: df_aus_db(db.kerzen(symbol, zeitrahmen)) for symbol in symbole}
     daten = {symbol: df for symbol, df in daten.items() if len(df) >= mindestens}
     if not daten:
@@ -511,6 +516,26 @@ def cmd_migration(args: argparse.Namespace) -> int:
     return 0
 
 
+def _normalisiere_server_versatz(argv: list[str]) -> list[str]:
+    """Verbinde ``--server-versatz`` mit einem negativen Wert ohne ``=``.
+
+    argparse hält ``-05:00`` sonst für eine Option. Nur die exakte negative
+    Kurzform wird umgeschrieben; ``--server-versatz +03:00`` und
+    ``--server-versatz=-05:00`` bleiben unverändert.
+    """
+    ergebnis: list[str] = []
+    i = 0
+    while i < len(argv):
+        if (argv[i] == "--server-versatz" and i + 1 < len(argv)
+                and re.fullmatch(r"-\d{2}:\d{2}", argv[i + 1])):
+            ergebnis.append(f"--server-versatz={argv[i + 1]}")
+            i += 2
+            continue
+        ergebnis.append(argv[i])
+        i += 1
+    return ergebnis
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="orakel", description="Orakel Trading-Engine (Paper only)")
     p.add_argument("--config", default="config.toml")
@@ -521,14 +546,17 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--symbol", nargs="*")
     d.add_argument("--zeitrahmen", choices=ZEITRAHMEN, default=None,
                    help="Standard: aus dem Dateinamen (z. B. EURUSD_M15.csv), sonst M15")
-    d.add_argument("--server-zeitzone", default=None, metavar="IANA-ZONE",
-                   help="Zeitzone der MT5-Serverzeit, z. B. Europe/Athens; Standard: UTC")
-    d.add_argument("--server-versatz", type=_versatz, default=None, metavar="±HH:MM",
-                   help="fester Broker-Versatz als +03:00 (negativ: --server-versatz=-05:00); "
-                        "Alternative zu --server-zeitzone und --server-versatz-stunden")
-    d.add_argument("--server-versatz-stunden", type=float, default=None, metavar="STUNDEN",
-                   help="fester Broker-Versatz der MT5-Serverzeit in Stunden, z. B. 3 oder -5; "
-                        "Alternative zu --server-zeitzone und --server-versatz")
+    versatz = d.add_mutually_exclusive_group()
+    versatz.add_argument("--server-zeitzone", default=None, metavar="IANA-ZONE",
+                         help="Zeitzone der MT5-Serverzeit, z. B. Europe/Athens; Standard: UTC; "
+                              "nicht mit einem festen Versatz kombinierbar")
+    versatz.add_argument("--server-versatz", type=_versatz, default=None, metavar="±HH:MM",
+                         help="fester Broker-Versatz als +03:00 oder -05:00 "
+                              "(auch --server-versatz=-05:00); nicht mit "
+                              "--server-zeitzone oder --server-versatz-stunden kombinierbar")
+    versatz.add_argument("--server-versatz-stunden", type=float, default=None, metavar="STUNDEN",
+                         help="fester Broker-Versatz der MT5-Serverzeit in Stunden, z. B. 3 oder -5; "
+                              "nicht mit --server-zeitzone oder --server-versatz kombinierbar")
     d.add_argument("--kerzen", type=int, default=6000)
     d.set_defaults(func=cmd_daten)
 
@@ -596,7 +624,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="Rückrollen wirklich ausführen")
     mi.set_defaults(func=cmd_migration)
 
-    args = p.parse_args(argv)
+    werte = sys.argv[1:] if argv is None else argv
+    args = p.parse_args(_normalisiere_server_versatz(list(werte)))
     return int(args.func(args))
 
 
