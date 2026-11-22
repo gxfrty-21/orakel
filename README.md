@@ -349,8 +349,8 @@ Kalenderjahr nach UTC-Zeitstempel (`Abdeckung: 2023: 24960, 2024: 24960, …`)
 und warnt, wenn
 zwischen erstem und letztem Jahr ein ganzes Jahr ohne Kerzen bleibt — etwa wenn
 die Broker-Historie abgeschnitten ist. Diese Warnung blockiert den Lauf nicht,
-weil die vorhandene Reihe weiter verwendbar ist; die Warnung erscheint auch im
-Datenqualitätsblock des Berichts. Trifft ein erneuter Import auf denselben
+weil die vorhandene Reihe weiter verwendbar ist; die Jahresabdeckung und die
+Warnung stehen auch im Datenqualitätsblock des Berichts. Trifft ein erneuter Import auf denselben
 Zeitstempel mit anderen OHLC-Werten, nennt er die Zahl der abweichenden Kerzen
 und ein Beispiel; ersetzt wird weiterhin, aber nicht mehr still. Der häufigste
 Abstand muss ausserdem zum

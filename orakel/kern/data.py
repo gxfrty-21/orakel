@@ -69,6 +69,7 @@ class Datenqualitaet:
             "symbol": self.symbol, "ok": self.ok, "kerzen": self.kerzen,
             "von": self.von, "bis": self.bis,
             "fehler": list(self.fehler), "warnungen": list(self.warnungen),
+            "jahre": dict(self.jahre),
         }
 
 
