@@ -20,12 +20,15 @@ max_open_positions = 15            # harte Obergrenze gleichzeitig offener Posit
 # --- konservative Zusatzdeckel (jederzeit änderbar) ---
 # Tagesverlust bewusst gleich dem Not-Stop: keine zusätzliche, versteckte Grenze.
 max_daily_loss_pct = 10.0
-# Kein Hebel: eine Position wird voll aus dem Bargeld bezahlt. Das 1-%-Risiko
-# ist eine Obergrenze; bei engem Stop greift der 20-%-Deckel, dann liegt das
-# tatsächlich riskierte Kapital darunter (z. B. 20 % Nominal × 2 % Stop = 0.4 %).
-max_gross_exposure_pct = 100.0     # 100 % = kein Hebel
-max_position_pct = 20.0            # bestimmende Grösse: max. 20 % des Kontos je Position
-min_cash_pct = 10.0                # Mindest-Bargeld nach dem Kauf
+# Explizite Hebelgrenze mit Margin-Buchung. Die Position wird nicht mehr voll
+# aus dem Bargeld bezahlt: Reserviert wird nur Nominal / max_leverage. Dadurch
+# greift das 1-%-Risiko bis zum Stop auch bei engen Stops, statt am früheren
+# 20-%-Nominaldeckel zu hängen.
+# Beispiel: 100'000 Konto, Stop 2 % -> 50'000 Nominal, Margin bei 5x = 10'000.
+# Stop 0.5 % -> 200'000 Nominal, Margin = 40'000. Über max_leverage × Konto
+# wird nie gehandelt; die Margin kommt aus dem freien Bargeld.
+max_leverage = 5.0
+min_cash_pct = 10.0                # freies Bargeld nach der Margin-Buchung
 max_korrelation = 0.85            # Sperre: Kauf wird abgelehnt über diesem Wert
 # Kerzen für die Korrelationsrechnung (M15: 500 ≈ 5 Handelstage) — gleiche Basis wie die Weltkugel
 correlation_lookback = 500

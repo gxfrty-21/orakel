@@ -347,7 +347,8 @@ class Facts:
             return list(c.execute("SELECT * FROM positionen ORDER BY symbol"))
 
     def position_setzen(self, symbol: str, menge: float, einstieg: float, stop: float,
-                        strategie: str, eroeffnet: str) -> None:
+                        strategie: str, eroeffnet: str,
+                        margin: float | None = None) -> None:
         """Legt eine Long-Position an.
 
         Der Paper-Takt und der Backtest sind Long-only. Eine Menge <= 0 würde
@@ -359,9 +360,10 @@ class Facts:
                              f'ist aber {menge!r}')
         with self.conn() as c:
             c.execute(
-                "INSERT OR REPLACE INTO positionen(symbol,menge,einstieg,stop,strategie,eroeffnet)"
-                " VALUES (?,?,?,?,?,?)",
-                (symbol, menge, einstieg, stop, strategie, eroeffnet),
+                "INSERT OR REPLACE INTO positionen"
+                "(symbol,menge,einstieg,stop,strategie,eroeffnet,margin)"
+                " VALUES (?,?,?,?,?,?,?)",
+                (symbol, menge, einstieg, stop, strategie, eroeffnet, margin),
             )
 
     def position_loeschen(self, symbol: str) -> None:
