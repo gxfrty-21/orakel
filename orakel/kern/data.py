@@ -164,8 +164,9 @@ def _nach_utc(geparst: pd.Series, zeitzone: str | None,
     # Exportreihenfolge ist die frühere Fassung die Sommerzeit-, die spätere die
     # Standardzeitstunde; so bleiben beide Stunden erhalten, statt als Dublette
     # zusammenzufallen. Eine absteigend sortierte Datei dreht diese Reihenfolge —
-    # erkannt am ersten und letzten Zeitstempel. Ausserhalb einer Wiederholung
-    # ist das Merkmal bedeutungslos.
+    # erkannt am ersten und letzten Zeitstempel. Sind beide gleich (nur das
+    # Herbstpaar), ist keine Richtung erkennbar; dann gilt aufsteigend.
+    # Ausserhalb einer Wiederholung ist das Merkmal bedeutungslos.
     wiederholt = geparst.duplicated(keep="first").to_numpy()
     ambiguous = wiederholt if geparst.iloc[0] > geparst.iloc[-1] else ~wiederholt
     lokalisiert = geparst.dt.tz_localize(zone, ambiguous=ambiguous, nonexistent="NaT")
@@ -276,20 +277,30 @@ def lade_csv_bloecke(pfad: str | Path, server_zeitzone: str | None = None,
         df = _normalisiere_spalten(roh)
         if puffer is not None:
             df = pd.concat([puffer, df], ignore_index=True)
-        tage = df["ts"].astype(str).str[:10]
+        # Nur der Datumsteil, nicht die ersten zehn Zeichen: ISO-Daten dürfen
+        # ohne führende Nullen kommen, und Leerzeichen vor dem Zeitstempel sind
+        # erlaubt. Sonst würde ein Tag je nach Stunde zerteilt oder mit einem
+        # anderen Tag verwechselt.
+        tage = (df["ts"].astype(str).str.strip()
+                .str.split(r"[ T]", n=1, regex=True).str[0])
         # Jeder Tag darf nur einen zusammenhängenden Lauf bilden; sonst könnte
         # die Blockgrenze die beiden Fassungen der Herbststunde trennen und eine
         # davon still als Standardzeit umrechnen.
         wechsel = tage.ne(tage.shift())
-        laeufe = set(tage[wechsel])
-        if len(laeufe) != int(wechsel.sum()) or laeufe & gesehen:
+        tageslaeufe = tage[wechsel]
+        konflikt = tageslaeufe[
+            tageslaeufe.duplicated() | tageslaeufe.isin(gesehen)
+        ]
+        if not konflikt.empty:
             raise ValueError(
-                f"CSV: {p.name} ist nicht nach Datum sortiert (ein Datum "
-                "erscheint in mehreren Abschnitten). Bitte die Datei auf- oder "
-                "absteigend sortieren; sonst würden die Herbststunden getrennt."
+                f"CSV: {p.name} ist nicht nach Datum sortiert: "
+                f"{konflikt.iloc[0]} erscheint in mehreren, durch andere Tage "
+                "getrennten Abschnitten. Bitte die Datei auf- oder absteigend "
+                "sortieren; sonst würden die Herbststunden getrennt."
             )
-        # Der letzte Tag wird erst mit dem nächsten Block verarbeitet.
-        ab = int((tage == tage.iloc[-1]).to_numpy().argmax())
+        # Der letzte Tag wird erst mit dem nächsten Block verarbeitet. Er bildet
+        # nach der Prüfung genau einen zusammenhängenden Lauf am Ende.
+        ab = int((tage != tage.iloc[-1]).sum())
         puffer = df.iloc[ab:].reset_index(drop=True)
         rest = df.iloc[:ab]
         if len(rest):
