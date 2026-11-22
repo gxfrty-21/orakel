@@ -399,6 +399,46 @@ def test_absteigende_tage_bleiben_blockweise_zusammen(tmp_path):
     ]
 
 
+def test_absteigende_herbststunde_bleibt_je_tagesblock_zugeordnet(tmp_path):
+    # Drei absteigend exportierte Tage; block=4 erzwingt Chunks, die mitten im
+    # Herbsttag beginnen. lade_csv_bloecke muss trotzdem je Tag einen Block
+    # liefern und beide 03:00-Fassungen samt Preis zusammenhalten.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for zeit, preis in (("09:15:00", "1.07"), ("09:00:00", "1.06")):
+        zeilen.append(f"2025.10.27\t{zeit}\t{preis}\t{preis}\t{preis}\t{preis}\t10\t0\t2")
+    for zeit, preis in (
+        ("04:00:00", "1.40"), ("03:15:00", "1.35"), ("03:00:00", "1.30"),
+        ("03:15:00", "1.25"), ("03:00:00", "1.20"), ("02:45:00", "1.15"),
+    ):
+        zeilen.append(f"2025.10.26\t{zeit}\t{preis}\t{preis}\t{preis}\t{preis}\t10\t0\t2")
+    for zeit, preis in (("09:15:00", "1.05"), ("09:00:00", "1.04")):
+        zeilen.append(f"2025.10.25\t{zeit}\t{preis}\t{preis}\t{preis}\t{preis}\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    bloecke = list(lade_csv_bloecke(p, server_zeitzone="Europe/Athens", block=4))
+
+    # Ein Block je Tag, obwohl die Roh-Chunks mitten im Herbsttag wechseln.
+    assert [len(b) for b in bloecke] == [2, 6, 2]
+    # Der Herbstblock enthält beide 03:00-Fassungen: Sommerzeit → 00:00 UTC
+    # (1.20), Standardzeit → 01:00 UTC (1.30). Eine Drehung würde die Preise
+    # vertauschen, ohne die Zahl der Zeitstempel zu verändern.
+    assert [(str(t), float(c)) for t, c in zip(bloecke[1]["ts"], bloecke[1]["close"])] == [
+        ("2025-10-25 23:45:00+00:00", 1.15),
+        ("2025-10-26 00:00:00+00:00", 1.20),
+        ("2025-10-26 00:15:00+00:00", 1.25),
+        ("2025-10-26 01:00:00+00:00", 1.30),
+        ("2025-10-26 01:15:00+00:00", 1.35),
+        ("2025-10-26 02:00:00+00:00", 1.40),
+    ]
+    assert [str(t) for t in bloecke[0]["ts"]] == [
+        "2025-10-27 07:00:00+00:00", "2025-10-27 07:15:00+00:00",
+    ]
+    assert [str(t) for t in bloecke[2]["ts"]] == [
+        "2025-10-25 06:00:00+00:00", "2025-10-25 06:15:00+00:00",
+    ]
+
+
 def test_verschraenkte_tage_brechen_ab_statt_herbststunden_zu_trennen(cfg, tmp_path):
     # Der Herbsttag ist mit einem anderen Tag verschränkt. Blockweises Lesen
     # würde die beiden 03:00-Fassungen trennen; der Import muss stattdessen
