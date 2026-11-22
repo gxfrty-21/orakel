@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Sequence
@@ -261,16 +262,46 @@ def _nach_utc(geparst: pd.Series, zeitzone: str | None,
     return lokalisiert.dt.tz_convert("UTC")
 
 
+ZEITRAHMEN_MUSTER = re.compile(r"^(?:M\d+|H\d+|D\d+|W\d+|MN\d*)$")
+JAHR_MUSTER = re.compile(r"^(?:19|20)\d{2}$")
+
+
 def zerlege_dateiname(pfad: str | Path) -> tuple[str, str]:
     """Symbol und Zeitrahmen aus einem Namen wie ``EURUSD_M15.csv``.
 
-    Ohne bekannten Zeitrahmen im Namen gilt M15; das ist der Zeitrahmen, den
-    Richter und Paper lesen.
+    Ein Zeitrahmen-Token darf an jeder Position stehen; ein Jahres-Token wie
+    ``2020`` wird dabei ignoriert. Unbekannte Zeitrahmen-Tokens (etwa ``H4``)
+    werden abgelehnt, statt still als M15 gelesen zu werden. Ohne Zeitrahmen
+    gilt M15; das ist der Zeitrahmen, den Richter und Paper lesen.
     """
     stamm = Path(pfad).stem
-    vorne, _, hinten = stamm.rpartition("_")
-    if vorne and hinten.upper() in ZEITRAHMEN:
-        return vorne.upper(), hinten.upper()
+    teile = stamm.split("_")
+    gefunden: list[tuple[int, str]] = []
+    for nummer, teil in enumerate(teile):
+        token = teil.upper()
+        if token in ZEITRAHMEN:
+            gefunden.append((nummer, token))
+        elif ZEITRAHMEN_MUSTER.fullmatch(token):
+            raise ValueError(
+                f"CSV: Unbekannter Zeitrahmen «{token}» in {Path(pfad).name}. "
+                f"Unterstützt werden {', '.join(ZEITRAHMEN)}."
+            )
+    if len(gefunden) > 1:
+        raise ValueError(
+            f"CSV: Mehrere Zeitrahmen in {Path(pfad).name}; der Zeitrahmen "
+            "muss eindeutig sein."
+        )
+    if gefunden:
+        nummer, zeitraum = gefunden[0]
+        symbol_teile = [teil for teil in teile[:nummer]
+                        if not JAHR_MUSTER.fullmatch(teil)]
+        if not symbol_teile:
+            # Zeitrahmen am Anfang: der Rest des Namens bildet das Symbol.
+            symbol_teile = [teil for teil in teile[nummer + 1:]
+                            if not JAHR_MUSTER.fullmatch(teil)]
+        if symbol_teile:
+            return "_".join(symbol_teile).upper(), zeitraum
+        raise ValueError(f"CSV: Kein Symbol in {Path(pfad).name}.")
     return stamm.split("_")[0].upper(), "M15"
 
 
@@ -425,13 +456,13 @@ def lade_csv_bloecke(pfad: str | Path, server_zeitzone: str | None = None,
         yield verarbeitet
 
 
-# Vor dem Schreiben werden höchstens so viele Zeilen gepuffert, bis genug
-# Abstände für ein Takturteil vorliegen; das begrenzt auch sehr dünne Dateien.
-TAKT_MINDESTABSTAENDE = 10
+# Die Vorprüfung puffert zeilenbasiert und begrenzt den Puffer auf höchstens
+# 10 000 Zeilen. Dünne Dateien werden vollständig gepuffert und vor dem
+# Schreiben geprüft; die Mindestzahl für ein Urteil steckt in takt_fehler.
 TAKT_PUFFER_ZEILEN = 10_000
 
 
-def takt_fehler(ts: pd.Series, timeframe: str, *, mindest_abstaende: int = 0) -> str | None:
+def takt_fehler(ts: pd.Series, timeframe: str, *, mindest_abstaende: int = 10) -> str | None:
     """Meldet ein Raster, das nicht zum angegebenen Zeitrahmen passt.
 
     Geurteilt wird über den häufigsten Abstand, nicht über den Median: Ein
@@ -459,28 +490,51 @@ def takt_fehler(ts: pd.Series, timeframe: str, *, mindest_abstaende: int = 0) ->
             "(Dateiname oder --zeitrahmen).")
 
 
+def _pruefe_taktpuffer(puffer: list[pd.DataFrame], zeitrahmen: str) -> None:
+    zusammen = pd.concat(puffer, ignore_index=True)
+    fehler = takt_fehler(zusammen["ts"], zeitrahmen)
+    if fehler:
+        raise ValueError(fehler)
+
+
 def mit_taktpruefung(bloecke: Iterable[pd.DataFrame], zeitrahmen: str) -> Iterator[pd.DataFrame]:
     """Prüft den Takt, bevor der erste Block in die Datenbank geht.
 
     Der Import schreibt eine Datei blockweise in einer Transaktion. Ohne diese
     Vorprüfung landeten falsch getaktete Kerzen (etwa H1 unter M15) zuerst in
     der Tabelle und fielen erst der Prüfung der zusammengeführten Reihe auf.
+    Der Puffer nimmt höchstens ``TAKT_PUFFER_ZEILEN`` Zeilen auf; ist ein
+    einzelner Block größer, wird er für die Prüfung geteilt und erst danach
+    vollständig ausgegeben. Dünne Dateien werden am Ende der Datei geprüft.
     """
     puffer: list[pd.DataFrame] = []
     zeilen = 0
+    geprueft = False
     for block in bloecke:
-        puffer.append(block)
-        zeilen += len(block)
-        if zeilen >= TAKT_PUFFER_ZEILEN:
-            break
-    if puffer:
-        zusammen = pd.concat(puffer, ignore_index=True)
-        fehler = takt_fehler(zusammen["ts"], zeitrahmen,
-                             mindest_abstaende=TAKT_MINDESTABSTAENDE)
-        if fehler:
-            raise ValueError(fehler)
+        if geprueft:
+            yield block
+            continue
+        frei = TAKT_PUFFER_ZEILEN - zeilen
+        if len(block) <= frei:
+            puffer.append(block)
+            zeilen += len(block)
+            if zeilen >= TAKT_PUFFER_ZEILEN:
+                _pruefe_taktpuffer(puffer, zeitrahmen)
+                yield from puffer
+                puffer.clear()
+                geprueft = True
+            continue
+        # Der Block ist größer als der freie Puffer: nur die ersten Zeilen
+        # puffern, prüfen und den Rest erst danach ausgeben.
+        puffer.append(block.iloc[:frei])
+        _pruefe_taktpuffer(puffer, zeitrahmen)
         yield from puffer
-    yield from bloecke
+        puffer.clear()
+        geprueft = True
+        yield block.iloc[frei:]
+    if puffer:
+        _pruefe_taktpuffer(puffer, zeitrahmen)
+        yield from puffer
 
 
 def pruefe_daten(df: pd.DataFrame, symbol: str, cfg: Any, timeframe: str = "M15") -> Datenqualitaet:
@@ -534,7 +588,7 @@ def pruefe_daten(df: pd.DataFrame, symbol: str, cfg: Any, timeframe: str = "M15"
 
     luecken = df["ts"].diff().dt.total_seconds().dropna()
     median = float(luecken.median()) if len(luecken) else 0.0
-    takt = takt_fehler(df["ts"], timeframe, mindest_abstaende=TAKT_MINDESTABSTAENDE)
+    takt = takt_fehler(df["ts"], timeframe)
     if takt:
         q.fehler.append(takt)
     if median > 0:

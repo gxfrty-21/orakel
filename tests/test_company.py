@@ -655,6 +655,36 @@ def test_lauf_und_task_status_werden_gemeinsam_zurueckgerollt(cfg, monkeypatch, 
     assert store.audit_chain_ok()
 
 
+def test_worker_fallback_bucht_lauf_bei_bekanntem_profil(cfg, monkeypatch):
+    """Eine unerwartete Ausnahme im Worker setzt den Task fehl und bucht den
+    Lauf-Eintrag für das bekannte Profil in derselben Transaktion."""
+    db, store = _store(cfg)
+    task_id = store.enqueue(
+        task_key="test:worker-fallback",
+        assigned_to="A1",
+        dept="A",
+        title="Worker-Fallback",
+        task_type="daily_check",
+        max_attempts=1,
+    )
+    runtime = CompanyRuntime(cfg, db, store=store, max_workers=1)
+
+    def kaputt(*_args, **_kwargs):
+        raise RuntimeError("Worker absichtlich kaputt")
+
+    monkeypatch.setattr(runtime, "_execute", kaputt)
+    runtime._worker("worker-fallback", 1, runtime.kontext())
+
+    task = store.task(task_id)
+    assert task is not None
+    assert task["state"] == "dead_letter"
+    assert "Runtime-Fehler" in task["error"]
+    laeufe = [r for r in db.agenten_laeufe() if r["agent"] == "A1:Koordinator"]
+    assert len(laeufe) == 1
+    assert laeufe[0]["ergebnis"] == "Fehler: Worker absichtlich kaputt"
+    assert laeufe[0]["ok"] == 0
+
+
 def test_audit_kette_erkennt_manipulation(cfg):
     db, store = _store(cfg)
     store.enqueue(task_key="test:audit:1", assigned_to="A1", dept="A",

@@ -214,7 +214,7 @@ der erzeugte Rohbericht liegt nach dem Lauf unter
 | Datenprüfung | Lücken, Doppelungen, unmögliche Hoch/Tief, Preissprünge, Mindestmenge, Zeitrahmen-Abstand |
 | Backtest | Kerze für Kerze, Ausführung zur Folge-Eröffnung, ATR-Stop, Gaps, Kommission, Slippage |
 | Richter | Rollierende Walk-Forward-Fenster, versiegelter Holdout, Monte-Carlo, Nachbar-Parameter, Zufallsvergleich |
-| Risiko | 1 % je Trade bis Stop, 10 % Not-Stop, max. 15 Positionen, Hebelgrenze mit Margin-Buchung, Korrelation |
+| Risiko | 1 % je Trade bis Stop, 10 % Not-Stop, max. 15 Positionen, Engagement, Bargeld, Korrelation |
 | Paper-Takt | direkte SQLite-Simulation aus Kerzen; kein Broker-Aufruf, keine echten Orders |
 | Agenten | 80 bestehende Agenten in 8 Abteilungen, jeder mit echter Aufgabe und Ergebnis in der DB |
 | Company-Schicht | Phase 1: 103 Profile, SQLite-Queue mit Lease/Retry, Policy-Engine, Audit-Kette; Company-API für Übersicht, Agenten, Aufgaben, Details, Nachrichten, Räume und Konferenz; Agentenkommunikation mit Threads/Ack und persönliche Gedächtnisse; 2D-Agenten-Querschnitt mit 103 Räumen; 3D noch nicht |
@@ -300,17 +300,24 @@ erlaubt. Alle Tagesläufe müssen dieselbe Richtung haben. Verschränkte Tage,
 gemischte Tagesrichtungen oder anders gemischte Zeilen innerhalb eines Tages
 brechen mit einer Meldung ab, statt die Herbststunden falsch zuzuordnen.
 
-Zeitrahmen: importiert werden `M1`, `M5`, `M15`, `H1` (Suffix im Dateinamen
-oder `--zeitrahmen`). **Paper liest M15**; der Richter bewertet
-`[basis] richter_zeitrahmen` (Standard `M15`, z. B. `H1`). `bars_pro_jahr` gilt
-für M15 und wird für andere Zeitrahmen umgerechnet (H1: 6240 statt 24 960);
-`min_kerzen` folgt derselben Basis (H1: 300 statt 1200). Der
-Ordner-Import über `[basis] datenquelle = "csv"` liest `daten/*.csv`,
-importiert M15 und den Richter-Zeitrahmen und überspringt alles andere mit
-Ereignis im Protokoll, statt es als M15 abzulegen. Ist der Ordner leer, bricht
-der Lauf ohne vorhandene Datenbankkerzen mit Meldung ab, statt synthetische
-Kerzen zu erzeugen; vorhandene Datenbankkerzen werden mit einer Warnung
-weiterverwendet. Die Frischegrenzen bleiben
+Zeitrahmen: importiert werden `M1`, `M5`, `M15`, `H1`. Der Zeitrahmen wird
+an beliebiger Stelle im Dateinamen erkannt (`EURUSD_H1_2020.csv`,
+`EURUSD_2020_H1.csv`) oder über `--zeitrahmen` gesetzt; ein Jahres-Suffix wie
+`2020` wird ignoriert. Unbekannte Zeitrahmen-Tokens wie `H4` werden mit Meldung
+abgelehnt, statt still als M15 gelesen zu werden. **Paper liest M15**; der
+Richter bewertet `[basis] richter_zeitrahmen` (Standard `M15`, z. B. `H1`).
+`bars_pro_jahr` gilt für M15 und wird für andere Zeitrahmen umgerechnet (H1:
+6240 statt 24 960); `min_kerzen` folgt derselben Basis (H1: 300 statt 1200).
+Der Ordner-Import über `[basis] datenquelle = "csv"` liest `daten/*.csv`,
+importiert M15 und den Richter-Zeitrahmen; bekannte, nicht benötigte
+Zeitrahmen werden mit Ereignis im Protokoll übersprungen. Ein unbekannter
+Zeitrahmen bricht den Ordner-Import vor dem ersten Schreiben ab. Der Import
+läuft in einer gemeinsamen Transaktion: `datenquelle = "csv"` wird erst nach
+bestandener Reihenprüfung gesetzt, und ein Fehler in einer Datei rollt alle
+Dateien dieses Imports zurück. Ist der Ordner leer, bricht der Lauf ohne
+vorhandene Datenbankkerzen mit Meldung ab, statt synthetische Kerzen zu
+erzeugen; vorhandene Datenbankkerzen werden mit einer Warnung weiterverwendet.
+Die Frischegrenzen bleiben
 je Zeitrahmen getrennt (`max_kurs_alter_stunden_h1` usw.), auch wenn der
 Paper-Takt M15 liest.
 
@@ -360,8 +367,12 @@ Abstand muss ausserdem zum
 angegebenen Zeitrahmen passen (M1/M5/M15/H1), damit auch Zwischenraster wie M20
 oder M45 auffallen: Eine als M15 benannte H1-Datei wird mit Meldung abgelehnt,
 statt still als M15 zu gelten. Geprüft wird vor dem Schreiben — die
-falsch getakteten Zeilen landen gar nicht erst in der Tabelle. Wochenenden, Feiertage und
-Handelspausen verschieben den Median nicht, gelten also nicht als Fehler. Fehler und Warnungen stehen im Terminal und im Ereignisprotokoll;
+falsch getakteten Zeilen landen gar nicht erst in der Tabelle. Die Vorprüfung
+puffert zeilenbasiert höchstens 10 000 Zeilen; dünne Dateien werden vollständig
+gepuffert und noch vor dem Schreiben geprüft. Wochenenden, Feiertage und
+Handelspausen sind einzelne lange Abstände und verschieben den häufigsten
+Abstand nicht; sie gelten nicht als Rasterfehler. Der Median bleibt nur für die
+Lückenschwelle maßgeblich. Fehler und Warnungen stehen im Terminal und im Ereignisprotokoll;
 bei einem Fehler endet der Befehl mit Exit-Code 1, importiert bleibt die Reihe
 trotzdem.
 
@@ -379,14 +390,14 @@ max_drawdown_pct   = 10.0    # Not-Stop
 max_open_positions = 15      # harter Deckel
 ```
 
-Zusätzlich konservativ: 10 % Tagesverlust, 10 % freies Mindest-Bargeld und eine
-explizite Hebelgrenze von 5× (`max_leverage`). Die Position wird nicht mehr
-voll aus dem Bargeld bezahlt: Es wird nur die Margin (Nominal / `max_leverage`)
-gebucht. Damit schöpft die Risikomenge die 1 % bis zum Stop auch bei engen
-Stops aus — bei 100'000 Konto und 0.5 % Stop-Abstand sind das 200'000 Nominal
-und 40'000 Margin; bei 2 % Abstand 50'000 Nominal und 10'000 Margin. Mehr als
-5× Konto wird nie gehandelt, und das freie Bargeld fällt nie unter 10 % der
-Equity.
+Zusätzlich konservativ: 10 % Tagesverlust, 100 % Gesamtengagement (kein Hebel),
+20 % max. Positionsgrösse und 10 % Mindest-Bargeld. Die 1 % sind eine
+**Obergrenze**, keine Zielgrösse: Bei einem engen Stop erlaubte das Risikobudget
+deutlich mehr Stück, der 20-%-Deckel lässt aber höchstens ein Fünftel des
+Kontos als Nominal zu. Ohne Hebel hängt die tatsächliche Risikohöhe deshalb am
+Stop: 0.5 % Stop-Abstand ergeben 0.1 %, 1 % ergibt 0.2 %, 2 % ergeben 0.4 % des
+Kontos. Die vollen 1 % erreicht eine Position erst ab etwa 5 % Stop-Abstand;
+mehr als 1 % sind nie möglich.
 
 ## Kostenmodell
 

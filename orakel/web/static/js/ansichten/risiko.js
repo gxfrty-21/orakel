@@ -18,7 +18,7 @@ function renderRisk(){
     ${zeile('Tagesverlust',L.max_daily_loss_pct,a.tagesverlust_pct,' %')}
     ${zeile('Gesamtengagement (100 % = kein Hebel)',L.max_gross_exposure_pct,a.engagement_pct,' %')}
     ${zeile('Offene Positionen',L.max_open_positions,a.positionen,'')}
-    <tr><td>Risiko pro Trade bis Stop (Obergrenze)</td><td class="m">${L.risk_per_trade_pct} %</td><td class="m">–</td><td class="na">pro Auftrag geprüft</td></tr>
+    <tr><td>Risiko pro Trade bis Stop</td><td class="m">${L.risk_per_trade_pct} %</td><td class="m">–</td><td class="na">Obergrenze; bei 0.5–2 % Stop 0.1–0.4 %</td></tr>
     <tr><td>Max. Grösse einer Position</td><td class="m">${L.max_position_pct} %</td><td class="m">–</td><td class="na">bestimmt die tatsächliche Grösse</td></tr>
     <tr><td>Stop-Abstand</td><td class="m">${L.atr_stop_multiple} × ATR</td><td class="m">–</td><td class="na">durchschnittliche Schwankung</td></tr>
   </tbody></table>`;

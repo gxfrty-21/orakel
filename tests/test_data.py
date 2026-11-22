@@ -7,10 +7,12 @@ import pytest
 
 from orakel import __main__ as cli
 from orakel.__main__ import _importiere_csv, _versatz
+from orakel.kern import data
 from orakel.kern.data import (
     df_aus_db,
     lade_csv,
     lade_csv_bloecke,
+    mit_taktpruefung,
     pruefe_daten,
     synthetische_kerzen,
     zerlege_dateiname,
@@ -116,6 +118,8 @@ def test_kurze_reihe_meldet_keinen_falschen_zeitrahmen(cfg):
     assert not q.ok
     assert any("mindestens" in f for f in q.fehler)
     assert not any("Häufigster Abstand" in f for f in q.fehler), q.fehler
+    # Auch keine Median-Warnung aus der Lückenschwelle erfinden.
+    assert not q.warnungen, q.warnungen
 
 
 def test_mindestkerzen_folgen_dem_zeitrahmen(cfg):
@@ -149,6 +153,37 @@ def test_falsch_getaktete_datei_wird_vor_dem_schreiben_abgelehnt(cfg, tmp_path):
     assert db.kerzen("EURUSD", "M15") == []
     assert any("Häufigster Abstand" in zeile["text"] and "EURUSD_M15.csv" in zeile["text"]
                for zeile in db.ereignisse())
+
+
+def test_duenn_besetzte_falsche_datei_wird_vor_dem_schreiben_abgelehnt(cfg, tmp_path):
+    # Nur zwölf H1-Kerzen: Der Zeilenpuffer liest die ganze Datei und erkennt
+    # den falschen Takt trotzdem, bevor eine Kerze gespeichert wird.
+    h1 = synthetische_kerzen("X", kerzen=12, seed=2, timeframe_minuten=60)
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(_als_mt5(h1), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)])) == 1
+
+    assert db.kerzen("EURUSD", "M15") == []
+    assert any("Häufigster Abstand" in zeile["text"] for zeile in db.ereignisse())
+
+
+def test_zeilenpuffer_bleibt_begrenzt_und_gibt_alle_zeilen_weiter(monkeypatch):
+    df = synthetische_kerzen("X", kerzen=12, seed=2)
+    monkeypatch.setattr(data, "TAKT_PUFFER_ZEILEN", 5)
+
+    # Kleine Blöcke: Der Puffer gibt höchstens fünf Zeilen am Stück aus.
+    klein = list(mit_taktpruefung((df.iloc[[i]] for i in range(len(df))), "M15"))
+    assert max(len(teil) for teil in klein) <= 5
+    assert sum(len(teil) for teil in klein) == len(df)
+    pd.testing.assert_frame_equal(pd.concat(klein, ignore_index=True), df)
+
+    # Ein einzelner großer Block wird für die Prüfung geteilt, aber vollständig
+    # und in der richtigen Reihenfolge weitergegeben.
+    gross = list(mit_taktpruefung(iter([df]), "M15"))
+    assert sum(len(teil) for teil in gross) == len(df)
+    pd.testing.assert_frame_equal(pd.concat(gross, ignore_index=True), df)
 
 
 def test_jahresabdeckung_zaehlt_kerzen_je_jahr(cfg):
@@ -867,6 +902,19 @@ def test_dateiname_liefert_symbol_und_zeitrahmen():
     assert zerlege_dateiname("US500_CASH_H1.csv") == ("US500_CASH", "H1")
     assert zerlege_dateiname("EURUSD.csv") == ("EURUSD", "M15")
     assert zerlege_dateiname("EURUSD_2024.csv") == ("EURUSD", "M15")
+    # Der Zeitrahmen wird an jeder Position erkannt, nicht nur am Ende.
+    assert zerlege_dateiname("EURUSD_H1_2020.csv") == ("EURUSD", "H1")
+    assert zerlege_dateiname("US500_H1_2023.csv") == ("US500", "H1")
+    assert zerlege_dateiname("EURUSD_2020_H1.csv") == ("EURUSD", "H1")
+    assert zerlege_dateiname("H1_EURUSD.csv") == ("EURUSD", "H1")
+    # Block-Suffixe hinter dem Zeitrahmen gehören nicht zum Symbol.
+    assert zerlege_dateiname("EURUSD_M15_a.csv") == ("EURUSD", "M15")
+
+
+def test_unbekannte_zeitrahmen_im_dateinamen_werden_abgelehnt():
+    for name in ("EURUSD_H4.csv", "EURUSD_H4_2020.csv", "EURUSD_M15_H4.csv"):
+        with pytest.raises(ValueError, match="Unbekannter Zeitrahmen"):
+            zerlege_dateiname(name)
 
 
 def test_zwei_bloecke_ergeben_eine_gepruefte_reihe(cfg, tmp_path):

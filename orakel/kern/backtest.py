@@ -60,7 +60,6 @@ def backtest(
 
     cash = kapital_start
     stueck = 0.0
-    margin = 0.0
     einstieg = stop = 0.0
     einstieg_ts = ""
     gebuehren = 0.0
@@ -71,12 +70,11 @@ def backtest(
     equity_hoechst = kapital_start
 
     def schliessen(bar: int, preis: float, grund: str) -> None:
-        nonlocal cash, stueck, margin, gebuehren
+        nonlocal cash, stueck, gebuehren
         if stueck <= 0:
             return
         prov = kosten_je_seite(stueck, cfg, symbol, kurs=preis)
-        cash += margin + stueck * (preis - einstieg) - prov
-        margin = 0.0
+        cash += stueck * preis - prov
         gebuehren += prov
         netto = (stueck * (preis - einstieg) - prov
                  - kosten_je_seite(stueck, cfg, symbol, kurs=preis))
@@ -104,10 +102,8 @@ def backtest(
                     menge = positionsgroesse(equity, cash, preis, stop_preis, grenzen)
                     if menge > 0:
                         prov = kosten_je_seite(menge, cfg, symbol, kurs=preis)
-                        margin_neu = menge * preis / grenzen.max_leverage
-                        if margin_neu + prov <= cash:
-                            cash -= margin_neu + prov
-                            margin = margin_neu
+                        if menge * preis + prov <= cash:
+                            cash -= menge * preis + prov
                             gebuehren += prov
                             stueck = menge
                             einstieg = preis
@@ -116,9 +112,9 @@ def backtest(
                             # Stop noch in der Einstiegskerze möglich
                             if l[fill] <= stop:
                                 schliessen(fill, min(o[fill], stop) * (1 - slip), "Stop (Einstiegskerze)")
-                equity_hoechst = max(equity_hoechst, cash + margin)
-            kapital.append(cash + margin + stueck * (c[i] - einstieg))
-            kurve.append([str(ts[i])[:19], round(cash + margin + stueck * (c[i] - einstieg), 2)])
+                equity_hoechst = max(equity_hoechst, cash)
+            kapital.append(cash + stueck * c[i])
+            kurve.append([str(ts[i])[:19], round(cash + stueck * c[i], 2)])
             i += 1
             continue
 
@@ -130,11 +126,10 @@ def backtest(
         elif signale[i] <= 0 and i + 1 < ende:
             schliessen(i + 1, o[i + 1] * (1 - slip), "Signal")
         else:
-            equity_hoechst = max(equity_hoechst,
-                                 cash + margin + stueck * (c[i] - einstieg))
+            equity_hoechst = max(equity_hoechst, cash + stueck * c[i])
 
-        kapital.append(cash + margin + stueck * (c[i] - einstieg))
-        kurve.append([str(ts[i])[:19], round(cash + margin + stueck * (c[i] - einstieg), 2)])
+        kapital.append(cash + stueck * c[i])
+        kurve.append([str(ts[i])[:19], round(cash + stueck * c[i], 2)])
         i += 1
 
     # Offene Position zum letzten Schlusskurs schliessen (Bewertung, kein Signal)

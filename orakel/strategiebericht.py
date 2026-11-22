@@ -109,6 +109,7 @@ def erstelle_bericht(
     return {
         "schema": SCHEMA,
         "commit": commit,
+        "zeitrahmen": cfg.richter_zeitrahmen,
         "datenquelle": quelle,
         "symbole": sorted(daten),
         "zeitraum": {
@@ -143,6 +144,7 @@ def rendere_markdown(bericht: dict[str, Any]) -> str:
     zeilen = [
         "# Strategie-Bericht",
         "",
+        f"Zeitrahmen: **{bericht.get('zeitrahmen', 'unbekannt')}** · "
         f"Quelle: {bericht['datenquelle']} · Commit `{bericht['commit'] or 'unbekannt'}` · "
         f"Zeitraum {bericht['zeitraum']['von']} bis {bericht['zeitraum']['bis']}",
         "",
