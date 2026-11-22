@@ -159,8 +159,7 @@ def validiere_config(daten: dict[str, Any]) -> None:
     _zahl(daten, 'risiko', 'max_open_positions', minimum=1, ganzzahl=True)
     _zahl(daten, 'risiko', 'max_daily_loss_pct', minimum=0.000001, maximum=100.0)
     _zahl(daten, 'risiko', 'max_gross_exposure_pct', minimum=0.000001, maximum=1000.0)
-    _zahl(daten, 'risiko', 'max_position_pct', minimum=0.000001, maximum=1000.0)
-    _zahl(daten, 'risiko', 'max_hebel', minimum=1.0, maximum=100.0, standard=1.0)
+    _zahl(daten, 'risiko', 'max_position_pct', minimum=0.000001, maximum=100.0)
     _zahl(daten, 'risiko', 'min_cash_pct', minimum=0.0, maximum=99.999999)
     risiko = daten.get('risiko') or {}
     if not any(k in risiko for k in ('max_korrelation', 'max_correlation')):
@@ -229,7 +228,6 @@ class RisikoGrenzen:
     max_daily_loss_pct: float
     max_gross_exposure_pct: float
     max_position_pct: float
-    max_hebel: float
     min_cash_pct: float
     max_correlation: float
     correlation_lookback: int
@@ -245,7 +243,6 @@ class RisikoGrenzen:
             max_daily_loss_pct=float(r["max_daily_loss_pct"]),
             max_gross_exposure_pct=float(r["max_gross_exposure_pct"]),
             max_position_pct=float(r["max_position_pct"]),
-            max_hebel=float(r.get("max_hebel", 1.0)),
             min_cash_pct=float(r["min_cash_pct"]),
             # deutscher Schlüssel in config.toml, englischer als Rückfall
             max_correlation=float(r.get("max_korrelation", r.get("max_correlation", 0.85))),
@@ -261,7 +258,6 @@ class RisikoGrenzen:
             "max_daily_loss_pct": self.max_daily_loss_pct,
             "max_gross_exposure_pct": self.max_gross_exposure_pct,
             "max_position_pct": self.max_position_pct,
-            "max_hebel": self.max_hebel,
             "min_cash_pct": self.min_cash_pct,
             "max_correlation": self.max_correlation,
             "correlation_lookback": self.correlation_lookback,

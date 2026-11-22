@@ -73,10 +73,11 @@ def backtest(
         nonlocal cash, stueck, gebuehren
         if stueck <= 0:
             return
-        prov = kosten_je_seite(stueck, cfg, symbol)
+        prov = kosten_je_seite(stueck, cfg, symbol, kurs=preis)
         cash += stueck * preis - prov
         gebuehren += prov
-        netto = stueck * (preis - einstieg) - prov - kosten_je_seite(stueck, cfg, symbol)
+        netto = (stueck * (preis - einstieg) - prov
+                 - kosten_je_seite(stueck, cfg, symbol, kurs=preis))
         basis = stueck * einstieg
         trades.append({
             "einstieg": einstieg_ts[:19],
@@ -100,9 +101,8 @@ def backtest(
                     equity = cash
                     menge = positionsgroesse(equity, cash, preis, stop_preis, grenzen)
                     if menge > 0:
-                        prov = kosten_je_seite(menge, cfg, symbol)
-                        hebel = max(1.0, float(grenzen.max_hebel))
-                        if menge * preis / hebel + prov <= cash:
+                        prov = kosten_je_seite(menge, cfg, symbol, kurs=preis)
+                        if menge * preis + prov <= cash:
                             cash -= menge * preis + prov
                             gebuehren += prov
                             stueck = menge

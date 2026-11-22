@@ -20,7 +20,7 @@ from .kern.judge import beurteile_walk_forward, pruefe_holdout
 from .knowledge import Vault
 from .kern.markt import korrelation_max, markt_uebersicht
 from .report import baue_bericht, schreibe_bericht
-from .kern.risk import KontoZustand, Order, Risikomanager, freie_margin, positionsgroesse
+from .kern.risk import KontoZustand, Order, Risikomanager, positionsgroesse
 from .kern.strategies import atr, strategien
 
 SYMBOLE_STANDARD = ["EURUSD", "US500"]
@@ -274,7 +274,6 @@ def lauf(
               for p in db.positionen()]
     konto = KontoZustand(equity=equity, cash=equity, hoechststand=max(hoechst, equity),
                          tagesstart_equity=equity, positionen=offene)
-    frei = freie_margin(equity, offene, grenzen.max_hebel)
 
     plan: list[dict[str, Any]] = []
     for symbol, d in beste.items():
@@ -290,7 +289,7 @@ def lauf(
         stop = kurs - grenzen.atr_stop_multiple * atr_wert if atr_wert > 0 else 0.0
 
         if signal > 0:
-            menge = positionsgroesse(equity, frei, kurs, stop, grenzen)
+            menge = positionsgroesse(equity, equity, kurs, stop, grenzen)
             order = Order(symbol=symbol, aktion="kaufen", menge=menge, kurs=kurs,
                           strategie=d["schluessel"], stop=stop)
             # Klumpenrisiko: Korrelation des geplanten Symbols zu offenen Positionen

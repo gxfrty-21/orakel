@@ -56,34 +56,23 @@ class Pruefung:
         return {"genehmigt": self.genehmigt, "gruende": list(self.gruende)}
 
 
-def freie_margin(equity: float, positionen: list[dict], hebel: float) -> float:
-    """Eigenkapital minus die Margin, die offene Positionen binden."""
-    if equity <= 0 or hebel <= 0:
-        return 0.0
-    gebunden = sum(abs(float(p.get("menge", 0))) * float(p.get("kurs", 0))
-                   for p in positionen)
-    return equity - gebunden / hebel
-
-
-def positionsgroesse(equity: float, frei: float, preis: float, stop: float, grenzen) -> float:
+def positionsgroesse(equity: float, cash: float, preis: float, stop: float, grenzen) -> float:
     """Einzige Stelle, an der Positionsgrössen entstehen.
 
     Backtest und Paper-Trading nutzen exakt dieselbe Funktion (Regel 8).
-    ``frei`` ist die freie Margin, nicht das Bargeld: Gehandelt wird auf
-    Margin, das Nominal begrenzen Hebel und Margin-Puffer.
+    Kein Hebel: Die Position wird voll aus dem Bargeld bezahlt. Das Risiko
+    pro Trade ist eine Obergrenze; der Positionsdeckel kann kleiner sein und
+    senkt dann das tatsächlich riskierte Kapital.
     """
     if preis <= 0 or equity <= 0:
         return 0.0
     abstand = preis - stop
     if abstand <= 0:
         return 0.0
-    hebel = max(1.0, float(grenzen.max_hebel))
     nach_risiko = equity * grenzen.risk_per_trade_pct / 100.0 / abstand
     nach_deckel = equity * grenzen.max_position_pct / 100.0 / preis
-    nach_hebel = equity * hebel / preis
-    verfuegbar = max(0.0, frei - equity * grenzen.min_cash_pct / 100.0)
-    nach_margin = verfuegbar * hebel / preis
-    return float(np.floor(min(nach_risiko, nach_deckel, nach_hebel, nach_margin)))
+    nach_cash = max(0.0, cash * (1 - grenzen.min_cash_pct / 100.0)) / preis
+    return float(np.floor(min(nach_risiko, nach_deckel, nach_cash)))
 
 
 class Risikomanager:
@@ -114,14 +103,13 @@ class Risikomanager:
             return Pruefung(False, [f"Handelsstopp: {stopp}"])
 
         if order.menge <= 0:
-            return Pruefung(False, ["Menge ist null (Stop-Abstand zu gross oder Margin zu knapp)"])
+            return Pruefung(False, ["Menge ist null (Stop-Abstand zu gross oder Bargeld zu knapp)"])
 
         if len(konto.positionen) >= self.g.max_open_positions:
             gruende.append(f"Zu viele offene Positionen ({len(konto.positionen)} von max. "
                            f"{self.g.max_open_positions})")
 
         wert = order.menge * order.kurs
-        hebel = max(1.0, float(self.g.max_hebel))
         if konto.equity > 0:
             if wert / konto.equity * 100 > self.g.max_position_pct + 1e-9:
                 gruende.append(f"Position würde {wert / konto.equity * 100:.1f} % des Kontos "
@@ -129,12 +117,10 @@ class Risikomanager:
             neu_engagement = konto.engagement_pct + wert / konto.equity * 100
             if neu_engagement > self.g.max_gross_exposure_pct + 1e-9:
                 gruende.append(f"Gesamtengagement würde {neu_engagement:.1f} % erreichen "
-                               f"(max. {self.g.max_gross_exposure_pct} %, "
-                               f"{hebel:g}-facher Hebel)")
-            gebunden = konto.engagement_pct / 100.0 * konto.equity
-            frei = konto.equity - (gebunden + wert) / hebel
-            if frei < konto.equity * self.g.min_cash_pct / 100.0:
-                gruende.append(f"Freie Margin würde unter {self.g.min_cash_pct} % fallen")
+                               f"(max. {self.g.max_gross_exposure_pct} %, kein Hebel)")
+            rest_cash = konto.cash - wert
+            if rest_cash < konto.equity * self.g.min_cash_pct / 100.0:
+                gruende.append(f"Bargeld würde unter {self.g.min_cash_pct} % fallen")
 
         if konto.letzte_korrelation is not None and abs(konto.letzte_korrelation) > self.g.max_correlation:
             gruende.append(f"Korrelation {konto.letzte_korrelation:.2f} zu einer offenen Position "
@@ -145,6 +131,5 @@ class Risikomanager:
         return Pruefung(True, [
             f"Risiko pro Trade {self.g.risk_per_trade_pct} % eingehalten (Stop gesetzt)",
             f"Offene Positionen {len(konto.positionen)} von max. {self.g.max_open_positions}",
-            f"Gesamtengagement {konto.engagement_pct:.1f} % von max. "
-            f"{self.g.max_gross_exposure_pct} % ({hebel:g}-facher Hebel)",
+            f"Gesamtengagement {konto.engagement_pct:.1f} % von max. {self.g.max_gross_exposure_pct} %",
         ])

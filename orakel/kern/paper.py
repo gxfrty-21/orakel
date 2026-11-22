@@ -40,7 +40,7 @@ from .data import df_aus_db
 from .db import Facts, jetzt
 from .kosten import kosten_je_seite
 from .markt import korrelation_max
-from .risk import KontoZustand, Order, Risikomanager, freie_margin, positionsgroesse
+from .risk import KontoZustand, Order, Risikomanager, positionsgroesse
 from .strategies import atr, strategien
 
 # Handelstag und Tagesverlust rechnen in der Handelszeitzone. Der Server läuft
@@ -143,9 +143,9 @@ def _verkauf(db: Facts, cfg: Config, p: Any, preis: float, status: str,
     ganz geschlossen.
     """
     menge = float(p["menge"])
-    prov = kosten_je_seite(menge, cfg, p["symbol"])
+    prov = kosten_je_seite(menge, cfg, p["symbol"], kurs=preis)
     netto = (menge * (preis - float(p["einstieg"])) - prov
-             - kosten_je_seite(menge, cfg, p["symbol"]))
+             - kosten_je_seite(menge, cfg, p["symbol"], kurs=preis))
     db.position_loeschen(p["symbol"])
     db.entscheid_speichern(p["symbol"], "verkaufen", menge, preis, p["strategie"],
                            status, True, [grund, f"Netto {netto:.2f}"])
@@ -420,8 +420,7 @@ def tick(cfg: Config, db: Facts, zeitpunkt: datetime | None = None) -> dict[str,
         if not math.isfinite(atr_wert) or atr_wert <= 0:
             continue
         stop = kurs - grenzen.atr_stop_multiple * atr_wert
-        frei = freie_margin(equity, konto.positionen, grenzen.max_hebel)
-        menge = positionsgroesse(equity, frei, kurs, stop, grenzen)
+        menge = positionsgroesse(equity, cash, kurs, stop, grenzen)
         order = Order(symbol=symbol, aktion="kaufen", menge=menge, kurs=kurs,
                       strategie=wahl["schluessel"], stop=stop)
         # Klumpenrisiko: Korrelation zu den aktuell offenen Positionen
@@ -440,9 +439,8 @@ def tick(cfg: Config, db: Facts, zeitpunkt: datetime | None = None) -> dict[str,
         if menge <= 0:
             continue
 
-        prov = kosten_je_seite(menge, cfg, symbol)
-        hebel = max(1.0, float(grenzen.max_hebel))
-        if menge * kurs / hebel + prov > frei:
+        prov = kosten_je_seite(menge, cfg, symbol, kurs=kurs)
+        if menge * kurs + prov > cash:
             continue
         cash -= menge * kurs + prov
         kurs_map[symbol] = kurs

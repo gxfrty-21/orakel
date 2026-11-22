@@ -364,37 +364,46 @@ auch H1 lesen, wobei `bars_pro_jahr` umgerechnet wird.
 ## Risikogrenzen (deine Vorgaben)
 
 ```toml
-risk_per_trade_pct = 1.0     # 1 % des Kontos bis zum Stop
+risk_per_trade_pct = 1.0     # Obergrenze bis zum Stop
 max_drawdown_pct   = 10.0    # Not-Stop
 max_open_positions = 15      # harter Deckel
 ```
 
-Zusätzlich: 10 % Tagesverlust, Hebelgrenze 5, 500 % Gesamtengagement und
-500 % Nominal je Position (500 % entspricht dem 5-fachen Eigenkapital) sowie
-10 % freie Margin nach dem Kauf. Gehandelt wird auf Margin: Die Positionsgrösse
-kommt aus dem 1-%-Risiko und wird erst von Hebelgrenze und Margin-Puffer
-gedeckelt — nicht mehr vom Bargeld. Ein sehr enger Stop landet deshalb an der
-Hebelgrenze statt bei einem Bruchteil des Kontos.
+Zusätzlich konservativ: 10 % Tagesverlust, 100 % Gesamtengagement (kein Hebel),
+20 % max. Positionsgrösse und 10 % Mindest-Bargeld. Die 1 % sind eine
+**Obergrenze**, keine Zielgrösse: Bei einem engen Stop erlaubte das Risikobudget
+deutlich mehr Stück, der 20-%-Deckel lässt aber höchstens ein Fünftel des
+Kontos als Nominal zu. Die tatsächliche Risikohöhe liegt dann darunter — bei
+2 % Stop-Abstand sind es 20 % × 2 % = 0.4 % des Kontos. Erst bei weiten Stops
+schöpft die Position die 1 % aus.
 
 ## Kostenmodell
 
 Das Instrument wählt Modell und Pip-Grösse: `orakel/kern/kosten.py` leitet die
-Klasse aus dem Symbol ab (Devisenpaare sechs Buchstaben, JPY-Paare enden auf
-`JPY`, Indizes wie `US500`/`US30`/`NAS100`/`GER40`/`UK100`/`JP225`). EURUSD
-rechnet mit 0.0001 je Pip, USDJPY mit 0.01, Indizes mit 1.0 Punkt und 0.5
-Punkten Spread. Backtest und Paper-Takt nutzen dieselbe Formel:
+Klasse aus dem Symbol ab. Nur Devisenpaare haben ein Profil (zwei bekannte
+Währungscodes; Broker-Suffixe wie `EURUSDm`, `EURUSD_RAW` oder `EURUSD.pro`
+werden ignoriert, JPY-Paare enden auf `JPY`): EURUSD rechnet mit 0.0001 je Pip,
+USDJPY mit 0.01.
+Indizes wie `US500` haben kein Profil und laufen wie andere unbekannte Symbole
+über `[kosten]`. Backtest und Paper-Takt nutzen dieselbe Formel:
 
 - `stueck` (Standard): Kommission je Stück, mindestens `min_commission` — für
   Aktien und andere Stück-Instrumente.
 - `spread`: halber quotierter Spread je Seite, also `menge × spread_pips ×
-  pip_groesse / 2` — für Devisen und CFDs. Eine Kommission fällt dabei nicht an.
+  pip_groesse / 2` — für Devisen und andere Symbole mit `modell = "spread"`.
+  Eine Kommission fällt dabei nicht an.
 
 Beispiel EURUSD: 1 Pip = 0.0001, Spread 1.0 Pip. Bei 18'500 Einheiten kostet
 eine Seite 0.93 USD. Das Stück-Modell mit 0.005 je Einheit verlangte 92.50 USD
 je Seite, rund 46 Basispunkte — damit wäre jede Forex-Strategie nach Kosten
-unrentabel. `[kosten]` (inklusive `modell`) gilt nur noch als Rückfall für
-unbekannte Symbole wie Aktien; für Devisen und Indizes muss in `config.toml`
-nichts je Symbol eingestellt werden.
+unrentabel. Der Spread fällt in der Kurswährung des Paares an: Bei USDJPY sind
+die 92.5 JPY je Seite durch den Kurs zu teilen, bei 157 also rund 0.59 USD;
+EURUSD notiert bereits in USD und bleibt bei 0.93. Für Paare ohne Kurs zur
+Kontowährung (etwa EURGBP bei USD-Konto) bricht die Kostenrechnung mit einer
+Meldung ab, statt eine falsche Währung zu buchen. `[kosten]` (inklusive
+`modell`) gilt als Rückfall für unbekannte Symbole wie Aktien und Indizes; nur
+Devisenpaare bringen ihr Profil mit, für sie muss in `config.toml` nichts je
+Symbol eingestellt werden.
 
 ## Aufbau
 

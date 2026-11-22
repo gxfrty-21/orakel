@@ -45,9 +45,14 @@ def test_instrumentenklasse_wird_aus_dem_symbol_abgeleitet():
     assert instrument("usdjpy").pip_groesse == pytest.approx(0.01)
     assert instrument("EURUSD").klasse == "fx"
     assert instrument("USDJPY").klasse == "fx_jpy"
-    # Broker-Zusätze hinter einem Punkt ändern die Klasse nicht.
+    # Broker-Suffixe ändern die Klasse nicht.
     assert instrument("EURUSD.a").klasse == "fx"
-    assert instrument("US500").klasse == "index"
+    assert instrument("EURUSDm").klasse == "fx"
+    assert instrument("EURUSD_RAW").klasse == "fx"
+    assert instrument("EURUSD.pro").klasse == "fx"
+    assert instrument("USDJPYm").klasse == "fx_jpy"
+    # Indizes haben kein Profil; für sie gilt [kosten] wie für andere Symbole.
+    assert instrument("US500") is None
     # Unbekannte Symbole (Aktien) haben kein Profil und nutzen [kosten].
     assert instrument("AAPL") is None
     assert instrument(None) is None
@@ -59,10 +64,11 @@ def test_kosten_je_symbol_nutzen_das_instrumentprofil(tmp_path):
 
     # EURUSD: 18'500 × 1 Pip × 0.0001 / 2
     assert kosten_je_seite(18_500, cfg, "EURUSD") == pytest.approx(0.925)
-    # USDJPY: gleiche Menge, aber 1 Pip = 0.01
-    assert kosten_je_seite(18_500, cfg, "USDJPY") == pytest.approx(92.5)
-    # US500: 0.5 Punkte Spread, 1 Punkt je Pip → 10 × 0.5 × 1.0 / 2
-    assert kosten_je_seite(10, cfg, "US500") == pytest.approx(2.5)
+    # USDJPY: gleiche Menge, aber 1 Pip = 0.01; der Betrag fällt in JPY an und
+    # wird mit dem Kurs in die Kontowährung (USD) umgerechnet.
+    assert kosten_je_seite(18_500, cfg, "USDJPY", kurs=157.0) == pytest.approx(92.5 / 157.0)
+    # US500 hat kein Profil: Stück-Modell aus [kosten], Minimum greift.
+    assert kosten_je_seite(10, cfg, "US500") == pytest.approx(1.0)
     # Unbekanntes Symbol: Stück-Modell mit Mindestkommission wie bisher.
     assert kosten_je_seite(10, cfg, "AAPL") == pytest.approx(1.0)
 
@@ -76,8 +82,30 @@ def test_backtest_rechnet_mit_dem_pip_des_symbols(tmp_path):
         erg = backtest(_reihe(kurs=kurs), signale, cfg, RisikoGrenzen.aus_config(cfg),
                        symbol=symbol)
         assert erg.trades, f"{symbol}: Es muss ein Trade entstanden sein"
-        erwartet = 2 * kosten_je_seite(erg.trades[0]["stueck"], cfg, symbol)
+        erwartet = 2 * kosten_je_seite(erg.trades[0]["stueck"], cfg, symbol, kurs=kurs)
         assert erg.kennzahlen["gebuehren"] == pytest.approx(erwartet, abs=0.01)
+
+
+def test_usdjpy_kosten_werden_in_die_kontowaehrung_umgerechnet(tmp_path):
+    cfg = _cfg(tmp_path, modell="stueck")
+
+    eur = kosten_je_seite(18_500, cfg, "EURUSD")
+    jpy = kosten_je_seite(18_500, cfg, "USDJPY", kurs=157.0)
+
+    # EURUSD notiert in der Kontowährung: 1 Pip × 0.0001 / 2 je Einheit.
+    assert eur == pytest.approx(0.925)
+    # USDJPY: 92.5 JPY je Seite, durch den Kurs in USD umgerechnet.
+    assert jpy == pytest.approx(92.5 / 157.0)
+    assert jpy == pytest.approx(0.59, abs=0.01)
+    # Ohne Umrechnung wären 92.50 angesetzt worden — rund 157-mal zu viel.
+    assert jpy * 157.0 == pytest.approx(92.5)
+
+    # Ohne Kurs wird nicht geraten.
+    with pytest.raises(ValueError, match="USDJPY"):
+        kosten_je_seite(18_500, cfg, "USDJPY")
+    # Für Drittwährungen fehlt der Kreuzkurs zur Kontowährung.
+    with pytest.raises(ValueError, match="EURGBP"):
+        kosten_je_seite(1_000, cfg, "EURGBP", kurs=0.85)
 
 
 def test_stueck_modell_nutzt_kommission_und_minimum(tmp_path):
