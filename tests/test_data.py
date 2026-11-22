@@ -655,6 +655,34 @@ def test_gemischte_tagesrichtungen_brechen_ab(tmp_path):
         list(lade_csv_bloecke(p, block=100))
 
 
+def test_gemischte_tagesrichtungen_ueber_blockgrenzen_brechen_ab(tmp_path):
+    # block=2 liefert jeden Tag als eigenen Block. Der erste Tag fällt ab, der
+    # Herbsttag läuft aufsteigend. Ohne eine über die Blöcke gemerkte
+    # Gesamtrichtung wäre jeder Block für sich monoton und die Preise der
+    # beiden 03:00-Fassungen könnten still vertauscht werden.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for tag, zeit, preis in (
+        ("2025.10.27", "09:15:00", "1.07"),
+        ("2025.10.27", "09:00:00", "1.06"),
+        ("2025.10.26", "03:00:00", "1.20"),
+        ("2025.10.26", "03:15:00", "1.25"),
+        ("2025.10.26", "03:00:00", "1.30"),
+        ("2025.10.26", "03:15:00", "1.35"),
+        ("2025.10.25", "09:15:00", "1.05"),
+        ("2025.10.25", "09:00:00", "1.04"),
+    ):
+        zeilen.append(f"{tag}\t{zeit}\t{preis}\t{preis}\t{preis}\t{preis}\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    with pytest.raises(
+        ValueError,
+        match=r"gemischte Richtungen: Tagesblock .* ist aufsteigend, die "
+              r"Gesamtrichtung ist absteigend",
+    ):
+        list(lade_csv_bloecke(p, server_zeitzone="Europe/Athens", block=2))
+
+
 def test_gemischte_tagesrichtungen_am_herbsttag_brechen_ab(tmp_path):
     # Der Vortag fällt ab, der Herbsttag läuft aufsteigend. Unter der globalen
     # Abwärtsrichtung würde der Rücksprung am Herbsttag sonst als Sommerzeit

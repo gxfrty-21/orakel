@@ -108,6 +108,17 @@ def _trenner(kopf: str) -> str:
     raise ValueError("CSV: Trennzeichen nicht erkannt (Tabulator, Semikolon oder Komma nötig).")
 
 
+def _richtung(ts: pd.Series) -> bool | None:
+    """Richtung einer unveränderten Zeitstempelreihe; ``None`` bei Gleichstand."""
+    if len(ts) < 2:
+        return None
+    if ts.iloc[0] < ts.iloc[-1]:
+        return True
+    if ts.iloc[0] > ts.iloc[-1]:
+        return False
+    return None
+
+
 def _pruefe_tagesreihenfolge(geparst: pd.Series, name: str) -> None:
     """Prüft die Reihenfolge jedes Tageslaufs.
 
@@ -168,14 +179,18 @@ def _pruefe_tagesreihenfolge(geparst: pd.Series, name: str) -> None:
 
 
 def _zeitstempel(reihen: pd.Series, zeitzone: str | None = None,
-                 versatz_stunden: float | None = None, *, name: str = "") -> pd.Series:
+                 versatz_stunden: float | None = None, *,
+                 name: str = "") -> tuple[pd.Series, bool | None]:
     """Parst MT5- und ISO-Zeitstempel zeilenweise mit festen Formaten.
 
     Zeilenweise, weil ein zusammengeführter Export mit und ohne Sekunden
     vorkommen kann; geraten wird trotzdem nichts. Ohne ``zeitzone`` und ohne
     ``versatz_stunden`` gilt die Serverzeit als UTC, mit ``zeitzone`` als
     Ortszeit dieser IANA-Zone (inkl. Sommerzeit), mit ``versatz_stunden`` als
-    Serverzeit eines festen Broker-Versatzes.
+    Serverzeit eines festen Broker-Versatzes. Gibt die UTC-Reihe und die
+    Richtung der eingelesenen Serverzeitreihe zurück; letztere muss vor der
+    UTC-Umrechnung bestimmt werden, weil die Herbst-Rückstellung die
+    Reihenfolge scheinbar umkehren kann.
     """
     text = (reihen.astype(str).str.strip()
             .str.replace(r"\s+", " ", regex=True)
@@ -195,7 +210,8 @@ def _zeitstempel(reihen: pd.Series, zeitzone: str | None = None,
             "Spalte oder getrennt in Datum und Zeit."
         )
     _pruefe_tagesreihenfolge(geparst, name)
-    return _nach_utc(geparst, zeitzone, versatz_stunden)
+    aufsteigend = _richtung(geparst)
+    return _nach_utc(geparst, zeitzone, versatz_stunden), aufsteigend
 
 
 def _nach_utc(geparst: pd.Series, zeitzone: str | None,
@@ -331,7 +347,10 @@ def _kodierung(p: Path) -> str:
 def _verarbeite(df: pd.DataFrame, zeitzone: str | None, name: str,
                 versatz_stunden: float | None = None) -> pd.DataFrame:
     """Prüft und normalisiert einen Block; unlesbare Zeilen brechen ab."""
-    df["ts"] = _zeitstempel(df["ts"], zeitzone, versatz_stunden, name=name)
+    df["ts"], aufsteigend = _zeitstempel(
+        df["ts"], zeitzone, versatz_stunden, name=name)
+    # Die Richtung vor dem Sortieren festhalten; danach ist sie nicht mehr
+    # erkennbar. ``lade_csv_bloecke`` vergleicht sie über Blockgrenzen hinweg.
     for spalte in ("open", "high", "low", "close", "volume"):
         df[spalte] = pd.to_numeric(df[spalte], errors="coerce")
 
@@ -345,7 +364,35 @@ def _verarbeite(df: pd.DataFrame, zeitzone: str | None, name: str,
     df = df.drop_duplicates(subset="ts", keep="last").sort_values("ts").reset_index(drop=True)
     if df.empty:
         raise ValueError(f"CSV: {name} enthält keine vollständigen Kerzen.")
+    df.attrs["aufsteigend"] = aufsteigend
     return df
+
+
+def _pruefe_blockrichtung(block: pd.DataFrame, name: str,
+                          gesamt_aufsteigend: bool | None) -> bool | None:
+    """Hält die Gesamtrichtung über die ausgelieferten Tagesblöcke hinweg.
+
+    ``_pruefe_tagesreihenfolge`` sieht bei kleinen Blöcken oft nur einen Tag
+    und kann deshalb nicht erkennen, dass ein späterer Tag der Gesamtdatei
+    entgegenläuft. Diese Prüfung setzt die Richtung aus dem ersten eindeutigen
+    Block und vergleicht jeden weiteren Block damit.
+    """
+    block_aufsteigend = block.attrs.get("aufsteigend")
+    if block_aufsteigend is None:
+        return gesamt_aufsteigend
+    if gesamt_aufsteigend is None:
+        return block_aufsteigend
+    if block_aufsteigend != gesamt_aufsteigend:
+        tag = block["ts"].iloc[0].date()
+        raise ValueError(
+            f"CSV: {name}: gemischte Richtungen: Tagesblock {tag} ist "
+            f"{'aufsteigend' if block_aufsteigend else 'absteigend'}, die "
+            f"Gesamtrichtung ist "
+            f"{'aufsteigend' if gesamt_aufsteigend else 'absteigend'}. Bitte "
+            "alle Tage einheitlich auf- oder absteigend sortieren; sonst "
+            "würden die Herbststunden falsch zugeordnet."
+        )
+    return gesamt_aufsteigend
 
 
 def lade_csv_bloecke(pfad: str | Path, server_zeitzone: str | None = None,
@@ -358,13 +405,15 @@ def lade_csv_bloecke(pfad: str | Path, server_zeitzone: str | None = None,
     Import schreibt blockweise in die Datenbank und prüft danach wie bisher die
     zusammengeführte Reihe. Die Datei muss nach Datum sortiert sein (auf- oder
     absteigend); verschränkte Tage brechen mit Meldung ab, weil die Blockgrenze
-    sonst die beiden Herbstfassungen trennen würde.
+    sonst die beiden Herbstfassungen trennen würde. Zusätzlich müssen alle
+    Tagesblöcke dieselbe Gesamtrichtung haben.
     """
     p = Path(pfad)
     sep, kodierung = _trenner_und_kodierung(p)
 
     puffer: pd.DataFrame | None = None
     gesehen: set[str] = set()
+    gesamt_aufsteigend: bool | None = None
     for roh in pd.read_csv(p, sep=sep, encoding=kodierung, chunksize=block):
         df = _normalisiere_spalten(roh)
         if puffer is not None:
@@ -397,9 +446,14 @@ def lade_csv_bloecke(pfad: str | Path, server_zeitzone: str | None = None,
         rest = df.iloc[:ab]
         if len(rest):
             gesehen.update(tage.iloc[:ab])
-            yield _verarbeite(rest, server_zeitzone, p.name, server_versatz_stunden)
+            verarbeitet = _verarbeite(rest, server_zeitzone, p.name, server_versatz_stunden)
+            gesamt_aufsteigend = _pruefe_blockrichtung(
+                verarbeitet, p.name, gesamt_aufsteigend)
+            yield verarbeitet
     if puffer is not None and len(puffer):
-        yield _verarbeite(puffer, server_zeitzone, p.name, server_versatz_stunden)
+        verarbeitet = _verarbeite(puffer, server_zeitzone, p.name, server_versatz_stunden)
+        _pruefe_blockrichtung(verarbeitet, p.name, gesamt_aufsteigend)
+        yield verarbeitet
 
 
 # Die Vorprüfung puffert zeilenbasiert und begrenzt den Puffer auf höchstens
