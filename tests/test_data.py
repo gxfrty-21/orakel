@@ -59,22 +59,62 @@ def test_gesunde_daten_sind_ok(cfg):
     assert q.kerzen == 2000
 
 
-def test_median_abstand_muss_zum_zeitrahmen_passen(cfg):
-    # H1-Takt, aber als M15 deklariert: der Median-Abstand ist 60 statt 15 Min.
+def test_haeufigster_abstand_muss_zum_zeitrahmen_passen(cfg):
+    # H1-Takt, aber als M15 deklariert: der häufigste Abstand ist 60 statt 15 Min.
     h1 = synthetische_kerzen("X", kerzen=1300, seed=2, timeframe_minuten=60)
     q = pruefe_daten(h1, "X", cfg, timeframe="M15")
     assert not q.ok
-    assert any("Median-Abstand" in f and "M15" in f for f in q.fehler), q.fehler
+    assert any("Häufigster Abstand" in f and "M15" in f for f in q.fehler), q.fehler
 
     # Umgekehrt ebenso: M15-Takt als H1 abgelegt (das war der stille Fehler).
     m15 = synthetische_kerzen("X", kerzen=1300, seed=2)
     q = pruefe_daten(m15, "X", cfg, timeframe="H1")
     assert not q.ok
-    assert any("Median-Abstand" in f for f in q.fehler)
+    assert any("Häufigster Abstand" in f for f in q.fehler)
 
     # M1 bleibt als M1 in Ordnung (die Mindestzahl ist hier 1500 auf M1-Basis).
     m1 = synthetische_kerzen("X", kerzen=1800, seed=2, timeframe_minuten=1)
     assert pruefe_daten(m1, "X", cfg, timeframe="M1").ok
+
+
+def test_zwischenraster_werden_erkannt(cfg):
+    # 20- und 45-Minuten-Raster lagen innerhalb der alten Median-Toleranz.
+    m20 = synthetische_kerzen("X", kerzen=400, seed=2, timeframe_minuten=20)
+    q = pruefe_daten(m20, "X", cfg, timeframe="M15")
+    assert not q.ok
+    assert any("Häufigster Abstand 20 Min" in f for f in q.fehler), q.fehler
+
+    m45 = synthetische_kerzen("X", kerzen=300, seed=2, timeframe_minuten=45)
+    q = pruefe_daten(m45, "X", cfg, timeframe="H1")
+    assert not q.ok
+    assert any("Häufigster Abstand 45 Min" in f for f in q.fehler), q.fehler
+
+
+def test_duenn_besetzter_m15_export_bleibt_gueltig(cfg):
+    # Jede fünfte Kerze fehlt: der häufigste Abstand bleibt 15 Min, die Reihe
+    # ist also M15 und nicht etwa M30.
+    df = synthetische_kerzen("X", kerzen=500, seed=2)
+    df = df.drop(df.index[4::5]).reset_index(drop=True)
+
+    q = pruefe_daten(df, "X", cfg)
+
+    assert q.ok, q.fehler
+
+
+def test_kurze_reihe_meldet_keinen_falschen_zeitrahmen(cfg):
+    # Zwei Kerzen über ein Wochenende: zu kurz für ein Takturteil, daher nur
+    # der Mindestkerzen-Fehler und keine erfundene Zeitrahmen-Meldung.
+    df = pd.DataFrame({
+        "ts": pd.to_datetime(["2024-01-05 23:45", "2024-01-08 00:00"], utc=True),
+        "open": [1.0, 1.0], "high": [1.1, 1.1], "low": [0.9, 0.9],
+        "close": [1.05, 1.05], "volume": [10.0, 10.0],
+    })
+
+    q = pruefe_daten(df, "X", cfg)
+
+    assert not q.ok
+    assert any("mindestens" in f for f in q.fehler)
+    assert not any("Häufigster Abstand" in f for f in q.fehler), q.fehler
 
 
 def test_mindestkerzen_folgen_dem_zeitrahmen(cfg):
@@ -106,7 +146,7 @@ def test_falsch_getaktete_datei_wird_vor_dem_schreiben_abgelehnt(cfg, tmp_path):
     assert _importiere_csv(cfg, db, _args(csv=[str(p)])) == 1
 
     assert db.kerzen("EURUSD", "M15") == []
-    assert any("Median-Abstand" in zeile["text"] and "EURUSD_M15.csv" in zeile["text"]
+    assert any("Häufigster Abstand" in zeile["text"] and "EURUSD_M15.csv" in zeile["text"]
                for zeile in db.ereignisse())
 
 
@@ -142,7 +182,7 @@ def test_median_abstand_ignoriert_wochenende_und_handelspausen(cfg):
         drop=True)
     q = pruefe_daten(df, "X", cfg)
     assert q.ok, q.fehler
-    assert not any("Median-Abstand" in f for f in q.fehler)
+    assert not any("Häufigster Abstand" in f for f in q.fehler)
 
 
 def test_mt5_csv_mit_getrenntem_datum_und_zeit(tmp_path):
