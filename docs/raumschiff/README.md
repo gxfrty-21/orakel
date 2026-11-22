@@ -201,11 +201,11 @@ Reihe, Schirmraum je Abteilung und Kiel sowie einem lesbaren Start-Zoom (90–12
 erste Abteilung zentriert) ist verworfen und soll nicht ohne neue Entscheidung zu den
 Prüfregeln neu gebaut werden.
 
-Vergleichsmessung auf derselben Bühne bei 1600 px: 3 Spalten Fit 27 %, Welt
-2400×3100, Abteilung 190 px, 227 Canvases; 2 Spalten Fit 31 %, Welt 2400×2743,
-Abteilung 335 px, 195 Canvases. Der Start-Zoom zeigte bei 432 px 97 % (Abteilung
-387 px), bei 390 und 320 px 90 %; bei 320 px war die erste Abteilung seitlich
-angeschnitten.
+Vergleichsmessung auf derselben Bühne (Fenster 1600×1200, Bühnenhöhe 860 px):
+3 Spalten Fit 27 %, Welt 2400×3100, Abteilung 190 px, 227 Canvases; 2 Spalten
+Fit 31 %, Welt 2400×2743, Abteilung 335 px, 195 Canvases. Der Start-Zoom zeigte
+bei 432 px 97 % (Abteilung 387 px), bei 390 und 320 px 90 %; bei 320 px war die
+erste Abteilung seitlich angeschnitten.
 
 Die Pflichtprüfungen lehnten den Stand ab:
 
@@ -216,9 +216,13 @@ Die Pflichtprüfungen lehnten den Stand ab:
   24 px, weil drei Spalten à fünf Räumen bei «Fit» zu dicht stehen.
 
 Beides wäre nur durch Abschwächen der Pflichtprüfungen grün geworden; deshalb bleibt
-die 2-Spalten-Fassung. Auf ihr gemessen: 320 px Fit 19 % (kleinster Raum
-19,6×20,4 px), 390 px 24 % (24,4×25,5 px), 432 px 26 % (27,3×28,5 px), 1600 px 26 %
-(37,9×38,3 px).
+die 2-Spalten-Fassung. Auf ihr gemessen (Fenster 1600×900, Bühnenhöhe 720 px):
+320 px Fit 19 % (kleinster Raum 19,6×20,4 px), 390 px 24 % (24,4×25,5 px),
+432 px 26 % (27,3×28,5 px), 1600 px 26 % (37,9×38,3 px). «Fit» ist das Minimum
+aus Breiten- und Höhenfaktor; die flachere 900-px-Bühne begrenzt hier die Höhe und
+ergibt deshalb 26 % statt der 31 % aus der 860-px-Vergleichsbühne. Die 27 % der
+3-Spalten-Fassung und die 31 % der 2-Spalten-Fassung sind dagegen direkt
+vergleichbar, weil beide auf derselben 860-px-Bühne gemessen wurden.
 
 Die Anzeigen lesen `/api/report`, `/api/betrieb`, `/api/sekretariat` sowie
 `/api/company/overview`, `/api/company/agents` und `/api/company/tasks`; fehlende
