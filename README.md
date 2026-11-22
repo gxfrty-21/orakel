@@ -284,9 +284,9 @@ der Broker dauerhaft einen festen Versatz ohne Sommerzeit, verschiebt
 `--server-versatz-stunden 3` (oder
 `[daten] server_versatz_stunden` in `config.toml`) die Serverzeit um drei
 Stunden nach UTC; negative Werte sind erlaubt. Als Kurzform akzeptiert der
-Import auch `--server-versatz +03:00` (negative Werte als
-`--server-versatz=-05:00`); die Angabe schliesst `--server-zeitzone` und
-`--server-versatz-stunden` aus. Zone und fester Versatz zusammen werden mit
+Import auch `--server-versatz +03:00` oder `--server-versatz -05:00`
+(negativ auch mit Gleichheitszeichen: `--server-versatz=-05:00`); die Angabe
+schliesst `--server-zeitzone` und `--server-versatz-stunden` aus. Zone und fester Versatz zusammen werden mit
 einer Meldung abgelehnt, weil sonst unklar wäre, welche gilt. Preise brauchen einen Dezimalpunkt; `1,035` wird
 abgelehnt statt still zu fehlen. Doppelte Zeitstempel gewinnen mit der letzten
 Zeile, die Reihe wird aufsteigend sortiert. Kodierung: UTF-8 (auch mit BOM)

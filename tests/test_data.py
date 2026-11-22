@@ -693,10 +693,48 @@ def test_cli_speichert_serverzeit_als_utc(cfg, tmp_path):
 def test_kurzform_server_versatz_wird_geparst():
     assert _versatz("+03:00") == 3.0
     assert _versatz("-05:30") == -5.5
+    assert _versatz("-14:00") == -14.0
+    assert _versatz("-00:00") == 0.0
     with pytest.raises(argparse.ArgumentTypeError):
         _versatz("3")
     with pytest.raises(argparse.ArgumentTypeError):
         _versatz("+14:30")
+    with pytest.raises(argparse.ArgumentTypeError):
+        _versatz("-14:30")
+    with pytest.raises(argparse.ArgumentTypeError):
+        _versatz("-05:60")
+
+
+def test_cli_negative_kurzform_ohne_gleichheitszeichen(monkeypatch):
+    # argparse würde -05:00 als Option lesen; die CLI muss den negativen Wert
+    # direkt hinter --server-versatz akzeptieren. Die positive Form und die
+    # Gleichheitsform dürfen weiter funktionieren.
+    gesehen: list[float | None] = []
+
+    def fake_daten(args: argparse.Namespace) -> int:
+        gesehen.append(args.server_versatz)
+        return 0
+
+    monkeypatch.setattr(cli, "cmd_daten", fake_daten)
+
+    assert cli.main(["daten", "--csv", "x.csv", "--server-versatz", "-05:00"]) == 0
+    assert cli.main(["daten", "--csv", "x.csv", "--server-versatz", "+05:00"]) == 0
+    assert cli.main(["daten", "--csv", "x.csv", "--server-versatz=-05:00"]) == 0
+    assert gesehen == [-5.0, 5.0, -5.0]
+
+
+def test_cli_versatzoptionen_schliessen_sich_im_parser_aus():
+    # Die drei expliziten Angaben sind schon auf Parser-Ebene Alternativen;
+    # das verhindert Seiteneffekte, bevor cmd_daten Config und DB anfasst.
+    for argumente in (
+        ["daten", "--csv", "x.csv", "--server-zeitzone", "Europe/Athens",
+         "--server-versatz", "-05:00"],
+        ["daten", "--csv", "x.csv", "--server-versatz", "-05:00",
+         "--server-versatz-stunden", "3"],
+    ):
+        with pytest.raises(SystemExit) as fehler:
+            cli.main(argumente)
+        assert fehler.value.code == 2
 
 
 def test_cli_kurzform_server_versatz_als_utc(cfg, tmp_path):
