@@ -188,7 +188,7 @@ zu lassen. Jeder Lauf wird in `betrieb_laeufe` protokolliert.
 
 ```bash
 python -m orakel betrieb           # Plan, Backoff, Ressourcen, letzte Läufe
-python -m orakel betrieb --json    # vollständige Monitoringdaten inkl. datenfrische
+python -m orakel betrieb --json    # vollständige Monitoringdaten
 ```
 
 Im Dashboard gibt es dafür den Punkt **Betrieb**; die geschützte API liegt
@@ -300,29 +300,29 @@ erlaubt. Alle Tagesläufe müssen dieselbe Richtung haben. Verschränkte Tage,
 gemischte Tagesrichtungen oder anders gemischte Zeilen innerhalb eines Tages
 brechen mit einer Meldung ab, statt die Herbststunden falsch zuzuordnen.
 
-Zeitrahmen: importiert werden `M1`, `M5`, `M15`, `H1` (Suffix im Dateinamen
-oder `--zeitrahmen`). Ein Jahres-Suffix wird übersprungen: `EURUSD_H1_2020.csv`
-und `US500_H1_2023.csv` werden als H1 erkannt. Unbekannte Zeitrahmen wie `H4`
-werden mit Meldung abgelehnt, statt still als M15 zu gelten. **Paper liest M15**; der Richter bewertet
-`[basis] richter_zeitrahmen` (Standard `M15`, z. B. `H1`). `bars_pro_jahr` gilt
-für M15 und wird für andere Zeitrahmen umgerechnet (H1: 6240 statt 24 960);
-`min_kerzen` folgt derselben Basis (H1: 300 statt 1200). Der
-Ordner-Import über `[basis] datenquelle = "csv"` liest `daten/*.csv`,
+Zeitrahmen: importiert werden `M1`, `M5`, `M15`, `H1`. Der Zeitrahmen wird
+an beliebiger Stelle im Dateinamen erkannt (`EURUSD_H1_2020.csv`,
+`EURUSD_2020_H1.csv`) oder über `--zeitrahmen` gesetzt; ein Jahres-Suffix wie
+`2020` wird ignoriert. Unbekannte Zeitrahmen-Tokens wie `H4` werden mit Meldung
+abgelehnt, statt still als M15 gelesen zu werden. **Paper liest M15**; der
+Richter bewertet `[basis] richter_zeitrahmen` (Standard `M15`, z. B. `H1`).
+`bars_pro_jahr` gilt für M15 und wird für andere Zeitrahmen umgerechnet (H1:
+6240 statt 24 960); `min_kerzen` folgt derselben Basis (H1: 300 statt 1200).
+Der Ordner-Import über `[basis] datenquelle = "csv"` liest `daten/*.csv`,
 importiert M15 und den Richter-Zeitrahmen; bekannte, nicht benötigte
-Zeitrahmen wie `M5` werden mit Ereignis im Protokoll übersprungen. Ein
-unbekannter Zeitrahmen im Dateinamen bricht den Ordner-Import vor dem ersten
-Schreiben mit Meldung ab. Der Ordner-Import ist atomar: Die Dateien werden in
-einer gemeinsamen Transaktion geprüft und geschrieben; erst nach bestandener
-Reihenprüfung wird `datenquelle = "csv"` gesetzt. Ein Fehler rollt alle
-Dateien dieses Imports zurück. Ist der Ordner leer, bricht
-der Lauf ohne vorhandene Datenbankkerzen mit Meldung ab, statt synthetische
-Kerzen zu erzeugen; vorhandene Datenbankkerzen werden mit einer Warnung
-weiterverwendet. Beim Import wird die jüngste Kerze je Symbol und Zeitrahmen
-gegen ihre Frischegrenze geprüft: `max_kurs_alter_stunden_<tf>` bzw. der
-Rückfall `max_alter_tage`. Eine Überschreitung wird als Warnung protokolliert,
-blockiert den Import aber nicht. Die Frischegrenzen bleiben je Zeitrahmen
-getrennt (`max_kurs_alter_stunden_h1` usw.), auch wenn der Paper-Takt M15
-liest.
+Zeitrahmen werden mit Ereignis im Protokoll übersprungen. Ein unbekannter
+Zeitrahmen bricht den Ordner-Import vor dem ersten Schreiben ab. Der Import
+läuft in einer gemeinsamen Transaktion: `datenquelle = "csv"` wird erst nach
+bestandener Reihenprüfung gesetzt, und ein Fehler in einer Datei rollt alle
+Dateien dieses Imports zurück. Ist der Ordner leer, bricht der Lauf ohne
+vorhandene Datenbankkerzen mit Meldung ab, statt synthetische Kerzen zu
+erzeugen; vorhandene Datenbankkerzen werden mit einer Warnung weiterverwendet.
+Beim Import wird die jüngste Kerze je Symbol und Zeitrahmen gegen ihre
+Frischegrenze geprüft: `max_kurs_alter_stunden_<tf>` bzw. der Rückfall
+`max_alter_tage`. Eine Überschreitung wird als Warnung protokolliert,
+blockiert den Import aber nicht. Die Frischegrenzen bleiben
+je Zeitrahmen getrennt (`max_kurs_alter_stunden_h1` usw.), auch wenn der
+Paper-Takt M15 liest.
 
 ### Direkter Abruf aus dem Terminal (Windows)
 
@@ -342,6 +342,19 @@ Geschrieben wird `daten/EURUSD_M15.csv` im selben Format wie `Save as`
 und aufsteigend sortiert.
 Zusammengeführt wird nur, was in Zeit und Werten gleich ist — die doppelte
 Stunde der Herbst-Rückstellung bleibt deshalb vollständig erhalten.
+Tick-Daten holt derselbe Abruf mit `--format ticks`:
+
+```powershell
+.\\.venv\\Scripts\\python.exe scripts\\mt5_abruf.py --symbol EURUSD --format ticks --von 2025-01-01
+```
+
+Geschrieben wird `daten/EURUSD_ticks.csv` mit
+`<DATE> <TIME> <MSEC> <BID> <ASK> <LAST> <VOLUME> <VOLUME_REAL> <FLAGS>`,
+ebenfalls monatsweise abgefragt, aufsteigend nach Serverzeit und Millisekunde
+sortiert und von exakten Dubletten befreit. `--zeitrahmen` gilt nur für Kerzen;
+ohne `--format` entsteht unverändert das Kerzen-CSV. Die Tick-Datei ist ein
+eigenes Archivformat und wird von `orakel daten --csv` nicht gelesen.
+
 Danach wie oben importieren, inklusive `--server-zeitzone` oder
 `--server-versatz`. Voraussetzung: Das
 Terminal läuft, ist angemeldet und das Symbol steht im Market Watch;
@@ -370,8 +383,12 @@ Abstand muss ausserdem zum
 angegebenen Zeitrahmen passen (M1/M5/M15/H1), damit auch Zwischenraster wie M20
 oder M45 auffallen: Eine als M15 benannte H1-Datei wird mit Meldung abgelehnt,
 statt still als M15 zu gelten. Geprüft wird vor dem Schreiben — die
-falsch getakteten Zeilen landen gar nicht erst in der Tabelle. Wochenenden, Feiertage und
-Handelspausen verschieben den Median nicht, gelten also nicht als Fehler. Fehler und Warnungen stehen im Terminal und im Ereignisprotokoll;
+falsch getakteten Zeilen landen gar nicht erst in der Tabelle. Die Vorprüfung
+puffert zeilenbasiert höchstens 10 000 Zeilen; dünne Dateien werden vollständig
+gepuffert und noch vor dem Schreiben geprüft. Wochenenden, Feiertage und
+Handelspausen sind einzelne lange Abstände und verschieben den häufigsten
+Abstand nicht; sie gelten nicht als Rasterfehler. Der Median bleibt nur für die
+Lückenschwelle maßgeblich. Fehler und Warnungen stehen im Terminal und im Ereignisprotokoll;
 bei einem Fehler endet der Befehl mit Exit-Code 1, importiert bleibt die Reihe
 trotzdem.
 
@@ -476,6 +493,13 @@ Fehlerschlucker `S110`, Sicherheitsregeln `S`), `mypy` für den Handelskern
 Untergrenze von 85 % für dieselben vier Module. Regeln, Ausnahmen für den
 Altbestand und die lokalen Befehle stehen in
 [docs/QUALITAET.md](docs/QUALITAET.md).
+
+## Reproduzierbare Synthetik-Messung
+
+`scripts/messe_synthetisch.py` erzeugt eine deterministische Fünfjahresreihe
+und misst Import und Richterlauf getrennt (Wanduhrzeit und Spitzen-RSS) in einer
+eigenen, isolierten SQLite-Datenbank. Aufruf, Isolationsgarantie und Grenzen:
+[docs/BENCHMARK.md](docs/BENCHMARK.md).
 
 ## Review-Paket
 

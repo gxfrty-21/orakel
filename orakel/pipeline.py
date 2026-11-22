@@ -49,11 +49,10 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
             try:
                 symbol, zeitrahmen = zerlege_dateiname(datei)
             except ValueError as exc:
-                grund = str(exc)
+                grund = f"CSV-Ordner {ordner}: {exc}"
                 db.ereignis("fehler", "Daten", grund)
                 raise DatenFehler(
-                    f"CSV-Ordner {ordner}: {grund} Es werden keine "
-                    "synthetischen Kerzen erzeugt."
+                    f"{grund} Es werden keine Kerzen importiert."
                 ) from exc
             if zeitrahmen not in gebraucht:
                 # Gebraucht werden M15 (Paper) und der Richter-Zeitrahmen; alles
@@ -113,13 +112,12 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
                         if not db.hat_kerzen(symbol, zeitrahmen, c=c)
                     ]
                     if fehlend:
-                        grund = (
+                        raise DatenFehler(
                             f"Unvollständige CSV-Quelle in {ordner}: Für "
                             f"{', '.join(fehlend)} fehlen Kerzen; gebraucht werden "
                             f"{zeitraeume}. Es werden keine "
                             "synthetischen Kerzen erzeugt."
                         )
-                        raise DatenFehler(grund)
                     db.zustand_setzen("datenquelle", "csv", c=c)
         except DatenFehler as exc:
             db.ereignis("fehler", "Daten", str(exc))

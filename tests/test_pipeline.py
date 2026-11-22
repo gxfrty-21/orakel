@@ -42,6 +42,42 @@ def test_h1_datei_wird_importiert_wenn_der_richter_h1_liest(cfg):
     assert db.kerzen("EURUSD", "M5") == []
 
 
+def test_h1_jahres_suffix_landet_in_h1_und_ueberschreibt_m15_nicht(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    cfg._d["basis"]["richter_zeitrahmen"] = "H1"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    h1 = synthetische_kerzen("EURUSD", kerzen=3, seed=4, timeframe_minuten=60)
+    m15 = synthetische_kerzen("EURUSD", kerzen=3, seed=5)
+    (ordner / "EURUSD_H1_2020.csv").write_text(_als_mt5(h1), encoding="utf-8")
+    (ordner / "EURUSD_M15.csv").write_text(_als_mt5(m15), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    assert sicherstellen_daten(cfg, db) == (["EURUSD"], "csv")
+
+    assert len(db.kerzen("EURUSD", "H1")) == 3
+    assert len(db.kerzen("EURUSD", "M15")) == 3
+
+
+def test_unbekannter_zeitrahmen_im_ordner_bricht_vor_dem_schreiben_ab(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    cfg._d["basis"]["richter_zeitrahmen"] = "H1"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    m15 = synthetische_kerzen("EURUSD", kerzen=3, seed=5)
+    (ordner / "EURUSD_M15.csv").write_text(_als_mt5(m15), encoding="utf-8")
+    (ordner / "EURUSD_M15_H4.csv").write_text(_als_mt5(m15), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    with pytest.raises(DatenFehler, match="Unbekannter Zeitrahmen.*H4"):
+        sicherstellen_daten(cfg, db)
+
+    assert db.kerzen("EURUSD", "M15") == []
+    assert db.kerzen("EURUSD", "H1") == []
+    assert any("Unbekannter Zeitrahmen" in zeile["text"]
+               for zeile in db.ereignisse())
+
+
 def test_bars_pro_jahr_folgt_dem_zeitrahmen(cfg):
     assert cfg.bars_pro_jahr_fuer("M15") == 24960
     assert cfg.bars_pro_jahr_fuer("H1") == 6240
@@ -104,6 +140,32 @@ def test_fehlende_reihe_rollt_import_zurueck_und_setzt_quelle_nicht(cfg):
     assert db.symbole() == []
     assert db.kerzen("EURUSD", "M15") == []
     assert db.zustand("datenquelle") is None
+
+
+def test_kaputte_zweite_datei_laesst_keine_daten_oder_zustand(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    (ordner / "EURUSD_M15.csv").write_text(
+        KOPF + "2025.01.02\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n",
+        encoding="utf-8",
+    )
+    # Zweite Datei ist kaputt, nachdem die erste bereits in der Transaktion liegt.
+    (ordner / "US500_M15.csv").write_text(
+        KOPF + "2025.01.02\t09:00:00\tkaputt\t1.1\t0.9\t1.05\t10\t0\t2\n",
+        encoding="utf-8",
+    )
+    db = Facts(cfg.db_pfad)
+    db.zustand_setzen("datenquelle", "datenbank")
+
+    with pytest.raises(DatenFehler, match="US500_M15.csv"):
+        sicherstellen_daten(cfg, db)
+
+    assert db.symbole() == []
+    assert db.kerzen("EURUSD", "M15") == []
+    assert db.kerzen("US500", "M15") == []
+    assert db.zustand("datenquelle") == "datenbank"
+    assert not any("Kerzen importiert" in zeile["text"] for zeile in db.ereignisse())
 
 
 def test_leerer_csv_ordner_bricht_ab_statt_synthetisch(cfg):
@@ -170,75 +232,6 @@ def test_h1_richter_ohne_h1_datei_bricht_ab_statt_leer_zu_laufen(cfg):
     assert db.kerzen("EURUSD", "M15") == []
     assert db.kerzen("US500", "M15") == []
     assert any("EURUSD H1" in zeile["text"] for zeile in db.ereignisse())
-
-
-def test_h1_datei_mit_jahres_suffix_wird_als_h1_importiert(cfg):
-    cfg._d["basis"]["datenquelle"] = "csv"
-    cfg._d["basis"]["richter_zeitrahmen"] = "H1"
-    ordner = cfg.daten_ordner
-    ordner.mkdir(parents=True, exist_ok=True)
-    (ordner / "EURUSD_H1_2020.csv").write_text(
-        KOPF
-        + "2025.01.02\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n"
-        + "2025.01.02\t10:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n",
-        encoding="utf-8",
-    )
-    (ordner / "EURUSD_M15.csv").write_text(
-        KOPF + "2025.01.02\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n",
-        encoding="utf-8",
-    )
-    db = Facts(cfg.db_pfad)
-
-    assert sicherstellen_daten(cfg, db) == (["EURUSD"], "csv")
-    assert len(db.kerzen("EURUSD", "H1")) == 2
-    assert db.zustand("datenquelle") == "csv"
-
-
-def test_veraltete_csv_warnt_ohne_import_zu_blockieren(cfg):
-    cfg._d["basis"]["datenquelle"] = "csv"
-    ordner = cfg.daten_ordner
-    ordner.mkdir(parents=True, exist_ok=True)
-    (ordner / "EURUSD_M15.csv").write_text(
-        KOPF + "2025.01.02\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n",
-        encoding="utf-8",
-    )
-    db = Facts(cfg.db_pfad)
-
-    assert sicherstellen_daten(cfg, db) == (["EURUSD"], "csv")
-    assert len(db.kerzen("EURUSD", "M15")) == 1
-    assert any(
-        zeile["stufe"] == "warnung"
-        and "EURUSD M15" in zeile["text"]
-        and "jüngste Kerze" in zeile["text"]
-        for zeile in db.ereignisse()
-    )
-
-
-def test_unbekannter_zeitrahmen_bricht_vor_dem_ersten_schreiben_ab(cfg):
-    cfg._d["basis"]["datenquelle"] = "csv"
-    ordner = cfg.daten_ordner
-    ordner.mkdir(parents=True, exist_ok=True)
-    (ordner / "EURUSD_M15.csv").write_text(
-        KOPF + "2025.01.02\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n",
-        encoding="utf-8",
-    )
-    (ordner / "ZZZ_H4.csv").write_text(
-        KOPF + "2025.01.02\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n",
-        encoding="utf-8",
-    )
-    db = Facts(cfg.db_pfad)
-
-    with pytest.raises(DatenFehler) as fehler:
-        sicherstellen_daten(cfg, db)
-
-    meldung = str(fehler.value)
-    assert "H4" in meldung
-    assert "ZZZ_H4.csv" in meldung
-    # Die gültige M15-Datei darf nicht vor dem Abbruch importiert werden.
-    assert db.symbole() == []
-    assert db.kerzen("EURUSD", "M15") == []
-    assert any("H4" in zeile["text"] and zeile["stufe"] == "fehler"
-               for zeile in db.ereignisse())
 
 
 def test_nur_nicht_m15_dateien_brechen_ab_statt_synthetisch(cfg):

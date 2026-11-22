@@ -7,11 +7,13 @@ import pytest
 
 from orakel import __main__ as cli
 from orakel.__main__ import _importiere_csv, _versatz
+from orakel.kern import data
 from orakel.kern.data import (
     df_aus_db,
-    frische_grenze_stunden,
     lade_csv,
+    frische_grenze_stunden,
     lade_csv_bloecke,
+    mit_taktpruefung,
     pruefe_daten,
     synthetische_kerzen,
     zerlege_dateiname,
@@ -59,16 +61,6 @@ def test_gesunde_daten_sind_ok(cfg):
     q = pruefe_daten(df, "X", cfg)
     assert q.ok, q.fehler
     assert q.kerzen == 2000
-
-
-def test_veraltete_reihe_warnt_ohne_fehler(cfg):
-    df = synthetische_kerzen("X", kerzen=2000, seed=2)
-    jetzt = pd.Timestamp(df["ts"].iloc[-1]) + pd.Timedelta(days=6)
-
-    q = pruefe_daten(df, "X", cfg, jetzt=jetzt)
-
-    assert q.ok, q.fehler
-    assert any("Jüngste Kerze" in w for w in q.warnungen), q.warnungen
 
 
 def test_haeufigster_abstand_muss_zum_zeitrahmen_passen(cfg):
@@ -122,11 +114,13 @@ def test_kurze_reihe_meldet_keinen_falschen_zeitrahmen(cfg):
         "close": [1.05, 1.05], "volume": [10.0, 10.0],
     })
 
-    q = pruefe_daten(df, "X", cfg)
+    q = pruefe_daten(df, "X", cfg, jetzt=pd.Timestamp("2024-01-08 01:00", tz="UTC"))
 
     assert not q.ok
     assert any("mindestens" in f for f in q.fehler)
     assert not any("Häufigster Abstand" in f for f in q.fehler), q.fehler
+    # Auch keine Median-Warnung aus der Lückenschwelle erfinden.
+    assert not q.warnungen, q.warnungen
 
 
 def test_mindestkerzen_folgen_dem_zeitrahmen(cfg):
@@ -160,6 +154,37 @@ def test_falsch_getaktete_datei_wird_vor_dem_schreiben_abgelehnt(cfg, tmp_path):
     assert db.kerzen("EURUSD", "M15") == []
     assert any("Häufigster Abstand" in zeile["text"] and "EURUSD_M15.csv" in zeile["text"]
                for zeile in db.ereignisse())
+
+
+def test_duenn_besetzte_falsche_datei_wird_vor_dem_schreiben_abgelehnt(cfg, tmp_path):
+    # Nur zwölf H1-Kerzen: Der Zeilenpuffer liest die ganze Datei und erkennt
+    # den falschen Takt trotzdem, bevor eine Kerze gespeichert wird.
+    h1 = synthetische_kerzen("X", kerzen=12, seed=2, timeframe_minuten=60)
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(_als_mt5(h1), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)])) == 1
+
+    assert db.kerzen("EURUSD", "M15") == []
+    assert any("Häufigster Abstand" in zeile["text"] for zeile in db.ereignisse())
+
+
+def test_zeilenpuffer_bleibt_begrenzt_und_gibt_alle_zeilen_weiter(monkeypatch):
+    df = synthetische_kerzen("X", kerzen=12, seed=2)
+    monkeypatch.setattr(data, "TAKT_PUFFER_ZEILEN", 5)
+
+    # Kleine Blöcke: Der Puffer gibt höchstens fünf Zeilen am Stück aus.
+    klein = list(mit_taktpruefung((df.iloc[[i]] for i in range(len(df))), "M15"))
+    assert max(len(teil) for teil in klein) <= 5
+    assert sum(len(teil) for teil in klein) == len(df)
+    pd.testing.assert_frame_equal(pd.concat(klein, ignore_index=True), df)
+
+    # Ein einzelner großer Block wird für die Prüfung geteilt, aber vollständig
+    # und in der richtigen Reihenfolge weitergegeben.
+    gross = list(mit_taktpruefung(iter([df]), "M15"))
+    assert sum(len(teil) for teil in gross) == len(df)
+    pd.testing.assert_frame_equal(pd.concat(gross, ignore_index=True), df)
 
 
 def test_jahresabdeckung_zaehlt_kerzen_je_jahr(cfg):
@@ -540,6 +565,42 @@ def test_absteigende_herbststunde_bleibt_je_tagesblock_zugeordnet(tmp_path):
     ]
 
 
+def test_absteigende_herbstdatei_ordnet_fassungen_ueber_die_blockgrenze_zu(tmp_path):
+    # block=3 legt die Blockgrenze genau zwischen die Standardzeitfassung
+    # (03:00, 1.30) und die Sommerzeitfassung (03:00, 1.20) des Herbsttages.
+    # Beide Fassungen müssen samt Preis in UTC erhalten bleiben; eine Drehung
+    # würde 1.20 und 1.30 vertauschen, ohne die Menge der Zeitstempel zu ändern.
+    zeilen = ["<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"]
+    for zeit, preis in (
+        ("04:00:00", "1.40"),
+        ("03:15:00", "1.35"),  # Standardzeit
+        ("03:00:00", "1.30"),  # Standardzeit — Blockgrenze folgt hier
+        ("03:15:00", "1.25"),  # Sommerzeit
+        ("03:00:00", "1.20"),  # Sommerzeit
+        ("02:45:00", "1.15"),
+    ):
+        zeilen.append(f"2025.10.26\t{zeit}\t{preis}\t{preis}\t{preis}\t{preis}\t10\t0\t2")
+    for zeit in ("09:15:00", "09:00:00"):
+        zeilen.append(f"2025.10.25\t{zeit}\t1.0\t1.0\t1.0\t1.0\t10\t0\t2")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text("\n".join(zeilen) + "\n", encoding="utf-8")
+
+    bloecke = list(lade_csv_bloecke(p, server_zeitzone="Europe/Athens", block=3))
+
+    assert [len(b) for b in bloecke] == [6, 2]
+    assert [(str(t), float(c)) for t, c in zip(bloecke[0]["ts"], bloecke[0]["close"])] == [
+        ("2025-10-25 23:45:00+00:00", 1.15),
+        ("2025-10-26 00:00:00+00:00", 1.20),
+        ("2025-10-26 00:15:00+00:00", 1.25),
+        ("2025-10-26 01:00:00+00:00", 1.30),
+        ("2025-10-26 01:15:00+00:00", 1.35),
+        ("2025-10-26 02:00:00+00:00", 1.40),
+    ]
+    assert [str(t) for t in bloecke[1]["ts"]] == [
+        "2025-10-25 06:00:00+00:00", "2025-10-25 06:15:00+00:00",
+    ]
+
+
 def test_gemischte_zeilen_innerhalb_eines_tages_brechen_ab(tmp_path):
     # Derselbe Tag, aber die Uhrzeiten stehen nicht chronologisch. Der Import
     # darf das nicht still sortieren, weil die Reihenfolge bei der Herbst-
@@ -850,13 +911,18 @@ def test_dateiname_liefert_symbol_und_zeitrahmen():
     assert zerlege_dateiname("US500_CASH_H1.csv") == ("US500_CASH", "H1")
     assert zerlege_dateiname("EURUSD.csv") == ("EURUSD", "M15")
     assert zerlege_dateiname("EURUSD_2024.csv") == ("EURUSD", "M15")
+    # Der Zeitrahmen wird an jeder Position erkannt, nicht nur am Ende.
     assert zerlege_dateiname("EURUSD_H1_2020.csv") == ("EURUSD", "H1")
     assert zerlege_dateiname("US500_H1_2023.csv") == ("US500", "H1")
+    assert zerlege_dateiname("EURUSD_2020_H1.csv") == ("EURUSD", "H1")
+    assert zerlege_dateiname("H1_EURUSD.csv") == ("EURUSD", "H1")
+    # Block-Suffixe hinter dem Zeitrahmen gehören nicht zum Symbol.
+    assert zerlege_dateiname("EURUSD_M15_a.csv") == ("EURUSD", "M15")
 
 
-def test_dateiname_lehnt_unbekannten_zeitrahmen_ab():
-    for name in ("EURUSD_H4.csv", "EURUSD_H4_2020.csv"):
-        with pytest.raises(ValueError, match="H4"):
+def test_unbekannte_zeitrahmen_im_dateinamen_werden_abgelehnt():
+    for name in ("EURUSD_H4.csv", "EURUSD_H4_2020.csv", "EURUSD_M15_H4.csv"):
+        with pytest.raises(ValueError, match="Unbekannter Zeitrahmen"):
             zerlege_dateiname(name)
 
 
