@@ -156,6 +156,16 @@ class CompanyRuntime:
                 self._verarbeitet -= 1
         return task
 
+    def _lauf_eintrag(self, profile: Profile, ergebnis: str, ok: bool) -> dict[str, Any]:
+        """Daten für den Agentenlauf, der mit dem Task-Status committet wird."""
+        return {
+            "agent": f"{profile.agent_id}:{profile.role}",
+            "abteilung": profile.dept,
+            "aufgabe": profile.mission,
+            "ergebnis": ergebnis,
+            "ok": ok,
+        }
+
     def _execute(self, task: dict[str, Any], ctx: dict[str, Any]) -> str:
         profile = profile_by_id(str(task["assigned_to"]))
         if profile is None:
@@ -164,37 +174,32 @@ class CompanyRuntime:
         try:
             self.policy.check_task(profile, str(task["task_type"]))
         except PolicyError as exc:
-            self.db.agenten_lauf(
-                f"{profile.agent_id}:{profile.role}", profile.dept, profile.mission,
-                f"blockiert: {exc.grund}", False,
+            self.store.block(
+                int(task["id"]), exc.grund, ("policy:task",),
+                lauf=self._lauf_eintrag(profile, f"blockiert: {exc.grund}", False),
             )
-            self.store.block(int(task["id"]), exc.grund, ("policy:task",))
             return "blocked"
 
         erwartet = erwarteter_task_type(profile)
         if str(task["task_type"]) != erwartet:
             grund = (f"Task-Typ {task['task_type']!r} passt nicht zu "
                      f"{profile.agent_id} ({erwartet})")
-            self.db.agenten_lauf(
-                f"{profile.agent_id}:{profile.role}", profile.dept, profile.mission,
-                f"blockiert: {grund}", False,
+            self.store.block(
+                int(task["id"]), grund, ("policy:dispatch",),
+                lauf=self._lauf_eintrag(profile, f"blockiert: {grund}", False),
             )
-            self.store.block(int(task["id"]), grund, ("policy:dispatch",))
             return "blocked"
 
         try:
             ergebnis: HandlerResult = run_handler(profile, ctx)
         except Exception as exc:
-            # Der Versuch wird vor dem Zustandswechsel gebucht. Scheitert die
-            # Buchung (z. B. kurzzeitig gesperrte DB), bleibt der Task offen und
-            # wird erneut versucht, statt als "done" ohne Lauf-Eintrag dazustehen
-            # und beim Aufräumen ein irreführendes "kann nicht fehlschlagen"
-            # zu erzeugen.
-            self.db.agenten_lauf(
-                f"{profile.agent_id}:{profile.role}", profile.dept, profile.mission,
-                f"Fehler: {exc}", False,
+            # Lauf-Eintrag und Zustandswechsel liegen in derselben Transaktion:
+            # Scheitert eine der beiden Schreibungen, wird keine von beiden
+            # committet. Der Task bleibt dann offen und wird erneut versucht.
+            neu = self.store.fail(
+                int(task["id"]), f"Handler-Ausnahme: {exc}",
+                lauf=self._lauf_eintrag(profile, f"Fehler: {exc}", False),
             )
-            neu = self.store.fail(int(task["id"]), f"Handler-Ausnahme: {exc}")
             return "dead_letter" if neu == "dead_letter" else "failed"
 
         evidence = list(ergebnis.evidence) + [f"task:{task['id']}"]
@@ -204,16 +209,11 @@ class CompanyRuntime:
                 # den Inhalt. Ein Handler-Ergebnis ohne eigenen Beleg blockiert.
                 self.policy.validate_output(ergebnis.text, ergebnis.evidence)
             except PolicyError as exc:
-                self.db.agenten_lauf(
-                    f"{profile.agent_id}:{profile.role}", profile.dept, profile.mission,
-                    f"blockiert: {exc.grund}", False,
+                self.store.block(
+                    int(task["id"]), exc.grund, evidence,
+                    lauf=self._lauf_eintrag(profile, f"blockiert: {exc.grund}", False),
                 )
-                self.store.block(int(task["id"]), exc.grund, evidence)
                 return "blocked"
-            self.db.agenten_lauf(
-                f"{profile.agent_id}:{profile.role}", profile.dept, profile.mission,
-                ergebnis.text, True,
-            )
             self.store.complete(
                 int(task["id"]),
                 result=ergebnis.text,
@@ -228,22 +228,21 @@ class CompanyRuntime:
                     "ok": True,
                 },
                 reviewed_by="policy",
+                lauf=self._lauf_eintrag(profile, ergebnis.text, True),
             )
             return "done"
 
         if ergebnis.blocked:
-            self.db.agenten_lauf(
-                f"{profile.agent_id}:{profile.role}", profile.dept, profile.mission,
-                f"blockiert: {ergebnis.text}", False,
+            self.store.block(
+                int(task["id"]), ergebnis.text, evidence,
+                lauf=self._lauf_eintrag(profile, f"blockiert: {ergebnis.text}", False),
             )
-            self.store.block(int(task["id"]), ergebnis.text, evidence)
             return "blocked"
 
-        self.db.agenten_lauf(
-            f"{profile.agent_id}:{profile.role}", profile.dept, profile.mission,
-            f"Fehler: {ergebnis.text}", False,
+        neu = self.store.fail(
+            int(task["id"]), ergebnis.text,
+            lauf=self._lauf_eintrag(profile, f"Fehler: {ergebnis.text}", False),
         )
-        neu = self.store.fail(int(task["id"]), ergebnis.text)
         return "dead_letter" if neu == "dead_letter" else "failed"
 
     def run(self, *, tag: str | None = None, max_tasks: int | None = None) -> dict[str, Any]:

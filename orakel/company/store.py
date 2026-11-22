@@ -344,6 +344,17 @@ class CompanyStore:
                 )
         return task
 
+    def _buche_lauf_im_transaktion(
+        self, c: Any, lauf: dict[str, Any] | None,
+    ) -> None:
+        """Bucht den optionalen Lauf-Eintrag in der offenen Task-Transaktion."""
+        if lauf is None:
+            return
+        self.facts.agenten_lauf(
+            lauf["agent"], lauf["abteilung"], lauf["aufgabe"], lauf["ergebnis"],
+            bool(lauf["ok"]), c=c,
+        )
+
     def complete(
         self,
         task_id: int,
@@ -352,6 +363,7 @@ class CompanyStore:
         evidence: Sequence[str],
         output: dict[str, Any] | None = None,
         reviewed_by: str = "policy",
+        lauf: dict[str, Any] | None = None,
     ) -> None:
         zeit = jetzt()
         with self._event_lock:
@@ -368,6 +380,7 @@ class CompanyStore:
                 )
                 if cur.rowcount != 1:
                     raise StoreError(f"Task {task_id} ist nicht im Zustand running")
+                self._buche_lauf_im_transaktion(c, lauf)
                 task = c.execute("SELECT assigned_to FROM agent_tasks WHERE id=?",
                                  (task_id,)).fetchone()
                 self._append_event_im_transaktion(
@@ -377,7 +390,10 @@ class CompanyStore:
                     },
                 )
 
-    def block(self, task_id: int, grund: str, evidence: Sequence[str] = ()) -> None:
+    def block(
+        self, task_id: int, grund: str, evidence: Sequence[str] = (), *,
+        lauf: dict[str, Any] | None = None,
+    ) -> None:
         zeit = jetzt()
         with self._event_lock:
             with self._conn() as c:
@@ -390,13 +406,16 @@ class CompanyStore:
                 )
                 if cur.rowcount != 1:
                     raise StoreError(f"Task {task_id} kann nicht blockiert werden")
+                self._buche_lauf_im_transaktion(c, lauf)
                 task = c.execute("SELECT assigned_to FROM agent_tasks WHERE id=?",
                                  (task_id,)).fetchone()
                 self._append_event_im_transaktion(
                     c, task["assigned_to"], task_id, "task_blocked", {"reason": grund},
                 )
 
-    def fail(self, task_id: int, fehler: str) -> str:
+    def fail(
+        self, task_id: int, fehler: str, *, lauf: dict[str, Any] | None = None,
+    ) -> str:
         """Markiert eine laufende oder wartende Aufgabe als fehlgeschlagen.
 
         Ein bereits abgeschlossener Task darf nicht wiederbelebt werden: Sonst
@@ -426,6 +445,7 @@ class CompanyStore:
                 )
                 if cur.rowcount != 1:
                     raise StoreError(f"Task {task_id} konnte nicht fehlschlagen")
+                self._buche_lauf_im_transaktion(c, lauf)
                 self._append_event_im_transaktion(
                     c, row["assigned_to"], task_id, "task_failed",
                     {"error": fehler, "state": neu},

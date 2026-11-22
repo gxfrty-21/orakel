@@ -17,9 +17,13 @@ def test_h1_datei_wird_importiert_wenn_der_richter_h1_liest(cfg):
     zeilen = [KOPF]
     for stunde in (9, 10, 11):
         zeilen.append(f"2025.01.02\t{stunde:02d}:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n")
-    (ordner / "EURUSD_H1.csv").write_text("".join(zeilen), encoding="utf-8")
+        (ordner / "EURUSD_H1.csv").write_text("".join(zeilen), encoding="utf-8")
+    (ordner / "EURUSD_M15.csv").write_text(
+        KOPF + "2025.01.02\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n", encoding="utf-8"
+    )
     (ordner / "EURUSD_M5.csv").write_text(
-        KOPF + "2025.01.02\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n", encoding="utf-8")
+        KOPF + "2025.01.02\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n", encoding="utf-8"
+    )
     db = Facts(cfg.db_pfad)
 
     assert sicherstellen_daten(cfg, db) == (["EURUSD"], "csv")
@@ -50,6 +54,29 @@ def test_leerer_csv_ordner_bricht_ab_statt_synthetisch(cfg):
     assert db.symbole() == []
     assert db.kerzen("EURUSD", "M15") == []
     assert any("Keine CSV-Datei" in zeile["text"] for zeile in db.ereignisse())
+
+
+def test_h1_richter_ohne_h1_datei_bricht_ab_statt_leer_zu_laufen(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    cfg._d["basis"]["richter_zeitrahmen"] = "H1"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    (ordner / "EURUSD_M15.csv").write_text(
+        KOPF + "2025.01.02\t09:00:00\t1.0\t1.1\t0.9\t1.05\t10\t0\t2\n",
+        encoding="utf-8",
+    )
+    db = Facts(cfg.db_pfad)
+
+    with pytest.raises(DatenFehler) as fehler:
+        sicherstellen_daten(cfg, db)
+
+    meldung = str(fehler.value)
+    assert "EURUSD H1" in meldung
+    assert "H1" in meldung and "M15" in meldung
+    # kein stiller Rückfall auf synthetische Kerzen und keine leere H1-Reihe
+    assert db.kerzen("EURUSD", "H1") == []
+    assert db.kerzen("US500", "M15") == []
+    assert any("EURUSD H1" in zeile["text"] for zeile in db.ereignisse())
 
 
 def test_nur_nicht_m15_dateien_brechen_ab_statt_synthetisch(cfg):

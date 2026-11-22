@@ -149,6 +149,14 @@ class Facts:
                 (symbol, zeitrahmen),
             ))
 
+    def hat_kerzen(self, symbol: str, zeitrahmen: str) -> bool:
+        """Prüft ohne Laden der Reihe, ob mindestens eine Kerze existiert."""
+        with self.conn() as c:
+            return c.execute(
+                "SELECT 1 FROM kerzen WHERE symbol=? AND zeitrahmen=? LIMIT 1",
+                (symbol, zeitrahmen),
+            ).fetchone() is not None
+
     def kerzen_bloecke(self, symbol: str, zeitrahmen: str,
                        groesse: int = 200_000) -> Iterator[list[sqlite3.Row]]:
         """Liefert die Kerzen blockweise; für Millionen Zeilen schonender als ``kerzen``."""
@@ -262,12 +270,24 @@ class Facts:
             return c.execute("SELECT * FROM konto ORDER BY id DESC LIMIT 1").fetchone()
 
     # ---------- Agenten ----------
-    def agenten_lauf(self, agent: str, abteilung: str, aufgabe: str, ergebnis: str, ok: bool) -> None:
-        with self.conn() as c:
-            c.execute(
-                "INSERT INTO agenten_laeufe(zeit,agent,abteilung,aufgabe,ergebnis,ok) VALUES (?,?,?,?,?,?)",
-                (jetzt(), agent, abteilung, aufgabe, ergebnis, int(ok)),
-            )
+    def agenten_lauf(
+        self, agent: str, abteilung: str, aufgabe: str, ergebnis: str, ok: bool, *,
+        c: sqlite3.Connection | None = None,
+    ) -> None:
+        """Schreibt einen Agentenlauf.
+
+        Mit ``c`` läuft der Insert in der bereits offenen Transaktion des
+        Aufrufers; ohne ``c`` wird er wie bisher sofort committet. So kann der
+        Lauf gemeinsam mit dem Task-Status gebucht oder zurückgerollt werden.
+        """
+        sql = ("INSERT INTO agenten_laeufe(zeit,agent,abteilung,aufgabe,ergebnis,ok)"
+               " VALUES (?,?,?,?,?,?)")
+        werte = (jetzt(), agent, abteilung, aufgabe, ergebnis, int(ok))
+        if c is not None:
+            c.execute(sql, werte)
+            return
+        with self.conn() as conn:
+            conn.execute(sql, werte)
 
     def agenten_laeufe(self, limit: int = 200) -> list[sqlite3.Row]:
         with self.conn() as c:
