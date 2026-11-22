@@ -276,9 +276,12 @@ Rückstellung im Herbst wiederholen sich Uhrzeiten: Die frühere Fassung gilt al
 Sommerzeit, die spätere als Standardzeit, sodass beide Stunden erhalten bleiben.
 Eine absteigend sortierte Datei dreht diese Reihenfolge; der Import erkennt die
 Richtung am ersten und letzten Zeitstempel und ordnet die Fassungen entsprechend
-zu. Das gilt innerhalb einer Datei; wird die wiederholte Stunde über zwei
-Dateien verteilt, greift die Dublettenregel. Führt der Broker dauerhaft einen festen
-Versatz ohne Sommerzeit, verschiebt `--server-versatz-stunden 3` (oder
+zu. Besteht eine Datei nur aus dem Herbstpaar, sind erster und letzter
+Zeitstempel gleich; dann ist keine Richtung erkennbar und der Import nimmt
+aufsteigend an (Sommerzeit zuerst). Das gilt innerhalb einer Datei; wird die
+wiederholte Stunde über zwei Dateien verteilt, greift die Dublettenregel. Führt
+der Broker dauerhaft einen festen Versatz ohne Sommerzeit, verschiebt
+`--server-versatz-stunden 3` (oder
 `[daten] server_versatz_stunden` in `config.toml`) die Serverzeit um drei
 Stunden nach UTC; negative Werte sind erlaubt. Als Kurzform akzeptiert der
 Import auch `--server-versatz +03:00` (negative Werte als
