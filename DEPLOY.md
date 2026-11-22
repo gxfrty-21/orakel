@@ -88,21 +88,20 @@ Im Volume `orakel_data`, im Container unter `/data`:
 | `/data/vault/` | Obsidian-Vault |
 | `/data/daten/` | Kerzen und CSV-Importe |
 
-Der Entrypoint setzt `ORAKEL_DB_PFAD=/data/orakel.db`,
-`ORAKEL_DATEN_ORDNER=/data/daten` und `ORAKEL_VAULT_ORDNER=/data/vault`, sofern
-die Variablen nicht schon gesetzt sind. Diese Variablen haben Vorrang vor
-`[basis] db_pfad`, `daten_ordner` und `vault_ordner` in `config.toml`; die
-eingecheckte `config.toml` bleibt unverändert. Massgeblich ist damit
-`ORAKEL_DB_PFAD`: Im Container zeigt er ohne eigene Angabe auf
-`/data/orakel.db`; ausserhalb des Containers ohne gesetzte Variable gilt der
-Pfad aus `config.toml`.
+Der Entrypoint setzt `ORAKEL_DB_PFAD`, `ORAKEL_DATEN_ORDNER` und
+`ORAKEL_VAULT_ORDNER` nur, wenn sie nicht schon gesetzt sind – standardmässig
+`/data/orakel.db`, `/data/daten` und `/data/vault`. Eine gesetzte Variable hat
+Vorrang vor dem Container-Standard und vor `[basis] db_pfad`, `daten_ordner`
+und `vault_ordner` in `config.toml`; die eingecheckte `config.toml` bleibt
+unverändert. Ausserhalb des Containers ohne gesetzte Variable gilt der Pfad aus
+`config.toml`.
 
 ## Bestehende Daten übernehmen
 
 Die Quelle vorher stoppen, damit SQLite keine offene WAL-Datei hat; den
-Ziel-Container hält der Import unten an. Der Datenbankpfad ist
-`[basis] db_pfad` aus `config.toml`, `ORAKEL_DB_PFAD` hat Vorrang. Im Archiv
-muss die Datei `orakel.db` heissen (Standardpfad des Containers); bei einem
+Ziel-Container hält der Import unten an. Das Skript nutzt `[basis] db_pfad`
+aus `config.toml`, sofern `ORAKEL_DB_PFAD` nicht gesetzt ist. Im Archiv muss
+die Datei `orakel.db` heissen (Standardpfad des Containers); bei einem
 abweichenden `ORAKEL_DB_PFAD` entsprechend anpassen.
 
 ```bash
@@ -195,7 +194,8 @@ derselbe Neustart wie beim Dauerbetrieb:
   sind deshalb Pflicht: `docker compose` bricht ohne sie schon beim Auflösen
   der `.env` ab (`:?` in `docker-compose.yml`), der Entrypoint meldet es
   zusätzlich und beendet sich mit Exit 1. Nur für die lokale Entwicklung
-  erlaubt `ORAKEL_ALLOW_NO_AUTH=1` einen Start ohne Login.
+  erlaubt `ORAKEL_ALLOW_NO_AUTH=1` einen Start ohne Login – beim direkten Start
+  ohne Compose; dieser Stack verlangt die beiden Werte unabhängig davon.
 - Schreibende Anfragen mit fremder Herkunft lehnt die App mit 403
   `herkunft_abgelehnt` ab. Erlaubt sind die eigene Adresse sowie die
   kommagetrennten Einträge in `ORAKEL_ERLAUBTE_ORIGINS`; `GET`, `HEAD` und
