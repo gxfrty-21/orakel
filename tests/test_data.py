@@ -154,7 +154,7 @@ def test_jahresabdeckung_zaehlt_kerzen_je_jahr(cfg):
     df = synthetische_kerzen("X", kerzen=2000, seed=2)
     q = pruefe_daten(df, "X", cfg)
 
-    assert q.jahre == {"2024": 2000}
+    assert q.jahre == {2024: 2000}
     assert not any("Keine Kerzen in" in w for w in q.warnungen), q.warnungen
 
 
@@ -167,7 +167,7 @@ def test_fehlendes_jahr_wird_als_warnung_gemeldet(cfg):
 
     q = pruefe_daten(df, "X", cfg)
 
-    assert q.jahre == {"2023": 1200, "2025": 1200}
+    assert q.jahre == {2023: 1200, 2025: 1200}
     assert any("Keine Kerzen in 2024" in w for w in q.warnungen), q.warnungen
     # Eine Lücke macht die Reihe nicht unbrauchbar; der Import bleibt erfolgreich.
     assert q.ok, q.fehler

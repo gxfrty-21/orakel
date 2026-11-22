@@ -338,7 +338,8 @@ Kerzen (`min_kerzen` gilt für M15 — 1200 Kerzen sind zwei Wochen — und wird
 andere Raster umgerechnet, z. B. 300 für H1), doppelte oder unsortierte Zeitstempel, unmögliches Hoch/Tief, Preise
 ≤ 0, Lücken über dem Dreifachen des Median-Abstands und Sprünge über
 `max_sprung_pct`. Bei mehreren Jahren zeigt der Import die Kerzen je
-Kalenderjahr (`Abdeckung: 2023: 24960, 2024: 24960, …`) und warnt, wenn
+Kalenderjahr nach UTC-Zeitstempel (`Abdeckung: 2023: 24960, 2024: 24960, …`)
+und warnt, wenn
 zwischen erstem und letztem Jahr ein ganzes Jahr ohne Kerzen bleibt — etwa wenn
 die Broker-Historie abgeschnitten ist. Diese Warnung blockiert den Lauf nicht,
 weil die vorhandene Reihe weiter verwendbar ist; die Warnung erscheint auch im
