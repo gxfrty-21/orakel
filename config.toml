@@ -14,19 +14,18 @@ richter_zeitrahmen = "M15"         # bewerteter Zeitrahmen (M1|M5|M15|H1); Paper
 
 [risiko]
 # --- deine Vorgaben ---
-risk_per_trade_pct = 1.0           # 1 % des Kontos bis zum Stop
+risk_per_trade_pct = 1.0           # Obergrenze: höchstens 1 % des Kontos bis zum Stop
 max_drawdown_pct = 10.0            # Not-Stop: ab 10 % Drawdown wird der Handel gestoppt
 max_open_positions = 15            # harte Obergrenze gleichzeitig offener Positionen
 # --- konservative Zusatzdeckel (jederzeit änderbar) ---
 # Tagesverlust bewusst gleich dem Not-Stop: keine zusätzliche, versteckte Grenze.
 max_daily_loss_pct = 10.0
-# Margin: gehandelt wird auf Margin, das Nominal darf das Eigenkapital um den
-# Hebel übersteigen. Der Hebel ist die harte Grenze für Position und Gesamt-
-# engagement; 500 % Nominal entsprechen dem 5-fachen Konto.
-max_hebel = 5.0                    # Nominal/Eigenkapital, begrenzt jede Position
-max_gross_exposure_pct = 500.0     # 500 % = 5-facher Hebel (Nominal gesamt)
-max_position_pct = 500.0           # 500 % = 5-facher Hebel (Nominal je Position)
-min_cash_pct = 10.0                # freie Margin nach dem Kauf
+# Kein Hebel: eine Position wird voll aus dem Bargeld bezahlt. Das 1-%-Risiko
+# ist eine Obergrenze; bei engem Stop greift der 20-%-Deckel, dann liegt das
+# tatsächlich riskierte Kapital darunter (z. B. 20 % Nominal × 2 % Stop = 0.4 %).
+max_gross_exposure_pct = 100.0     # 100 % = kein Hebel
+max_position_pct = 20.0            # bestimmende Grösse: max. 20 % des Kontos je Position
+min_cash_pct = 10.0                # Mindest-Bargeld nach dem Kauf
 max_korrelation = 0.85            # Sperre: Kauf wird abgelehnt über diesem Wert
 # Kerzen für die Korrelationsrechnung (M15: 500 ≈ 5 Handelstage) — gleiche Basis wie die Weltkugel
 correlation_lookback = 500
@@ -37,9 +36,10 @@ risiko_stopp_freigabe_takte = 2
 
 [kosten]
 # Kostenmodell für Backtest und Paper-Takt (gleiche Formel, orakel/kern/kosten.py).
-# Bekannte Instrumente bringen ihr Profil mit: Devisen 1 Pip = 0.0001,
-# JPY-Paare 0.01, Indizes 1.0 Punkt; dort gilt der halbe quotierte Spread.
-# Die Werte hier sind der Rückfall für unbekannte Symbole (z. B. Aktien):
+# Devisenpaare bringen ihr Profil mit (auch mit Broker-Suffix wie EURUSDm):
+# 1 Pip = 0.0001, JPY-Paare 0.01; dort
+# gilt der halbe quotierte Spread. Alles andere — auch Indizes — nutzt die
+# Werte hier (Rückfall für unbekannte Symbole, z. B. Aktien und US500):
 #   "stueck" = Kommission je Stück, mindestens min_commission
 #   "spread" = halber quotierter Spread je Seite in Pips
 modell = "stueck"
