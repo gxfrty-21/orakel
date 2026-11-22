@@ -102,6 +102,68 @@ def test_verlauf_bleibt_bei_hoechstens_120_punkten(cfg: Config, db: Facts) -> No
         assert verlauf[0][0] <= verlauf[-1][0]
 
 
+def test_uebersicht_ueber_mehrere_tage_mit_offener_position(cfg: Config, db: Facts) -> None:
+    # Kontozeilen über Tage; die Zeile um 23:30 UTC liegt bereits nach Zürcher
+    # Mitternacht, die um 22:55 UTC noch davor.
+    _konto(db, datetime(2026, 1, 7, 12, 0, tzinfo=timezone.utc), 99_800.0)
+    _konto(db, datetime(2026, 1, 9, 9, 0, tzinfo=timezone.utc), 100_800.0)
+    _konto(db, datetime(2026, 1, 12, 15, 0, tzinfo=timezone.utc), 101_200.0)
+    _konto(db, datetime(2026, 1, 14, 22, 55, tzinfo=timezone.utc), 101_500.0)
+    _konto(db, datetime(2026, 1, 14, 23, 30, tzinfo=timezone.utc), 101_900.0)
+    _konto(db, JETZT - timedelta(minutes=5), 102_400.0)
+    db.position_setzen("AAPL", 10.0, 100.0, 90.0, "ema",
+                       (JETZT - timedelta(hours=14)).isoformat())
+    _kerze(db, "AAPL", JETZT - timedelta(minutes=15), 110.0)
+    _kerze(db, "AAPL", JETZT, 111.0)
+
+    block = cockpit.cockpit_block(cfg, db, jetzt=JETZT)
+    mitternacht = (JETZT.astimezone(ZURICH).replace(hour=0, minute=0, second=0, microsecond=0)
+                   .astimezone(timezone.utc))
+    mitternacht_iso = mitternacht.replace(microsecond=0).isoformat()
+
+    # «Heute» beginnt in Zürich, nicht um UTC-Mitternacht: Basis ist die Zeile
+    # von 22:55 UTC, nicht die von 23:30 UTC.
+    heute = block["gewinn"]["heute"]
+    assert heute["seit"] == mitternacht_iso
+    assert heute["basis"] == 101_500.0
+    assert heute["betrag"] == 900.0
+    assert heute["pct"] == pytest.approx(0.89, abs=0.01)
+    assert heute["seit_start"] is False
+    assert heute["verlauf"] == [
+        [mitternacht_iso, 101_500.0],
+        ["2026-01-14T23:30:00+00:00", 101_900.0],
+        ["2026-01-15T11:55:00+00:00", 102_400.0],
+    ]
+
+    # 7 Tage: Basis ist die letzte Zeile vor der Grenze (8. Januar 12:00 UTC).
+    woche = block["gewinn"]["7t"]
+    assert woche["basis"] == 99_800.0
+    assert woche["betrag"] == 2_600.0
+    assert len(woche["verlauf"]) == 6  # Grenzpunkt und fünf Zeilen danach
+    assert woche["verlauf"][0] == ["2026-01-08T12:00:00+00:00", 99_800.0]
+    assert woche["verlauf"][-1] == ["2026-01-15T11:55:00+00:00", 102_400.0]
+
+    # 1 Monat: Der Bot ist erst im Zeitraum gestartet, Basis ist das Startkapital.
+    monat = block["gewinn"]["1m"]
+    assert monat["seit_start"] is True
+    assert monat["basis"] == cfg.start_kapital
+    assert monat["basis"] == 100_000.0
+    assert monat["betrag"] == 2_400.0
+    assert len(monat["verlauf"]) == 7  # Startpunkt plus sechs Kontozeilen
+    assert monat["verlauf"][0] == ["2026-01-07T12:00:00+00:00", 100_000.0]
+
+    # Eine offene Position mit letztem M15-Kurs und unrealisiertem Ergebnis.
+    (position,) = block["positionen"]
+    assert position["symbol"] == "AAPL"
+    assert position["kurs"] == 111.0
+    assert position["wert"] == 1_110.0
+    assert position["ergebnis"] == 110.0
+    assert position["ergebnis_pct"] == pytest.approx(11.0)
+    assert block["positionen_ergebnis"] == 110.0
+    assert block["konto"]["equity"] == 102_400.0
+    assert block["konto"]["zeit"] == "2026-01-15T11:55:00+00:00"
+
+
 def test_botstatus_laeuft_steht_gestoppt_und_nie(cfg: Config, db: Facts) -> None:
     assert cockpit.cockpit_block(cfg, db, jetzt=JETZT)["bot"]["zustand"] == "nie"
 
