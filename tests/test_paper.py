@@ -139,6 +139,20 @@ def test_stop_schliesst_position(cfg):
     assert any("Stop ausgelöst" in r["text"] for r in db.ereignisse(10))
 
 
+def test_margin_wird_gebucht_statt_des_ganzen_nominals(cfg):
+    db, _ = aufbau(cfg)
+    tick(cfg, db)
+
+    position = db.positionen()[0]
+    margin = float(position["margin"])
+    assert margin == pytest.approx(
+        float(position["menge"]) * float(position["einstieg"]) / 5.0)
+    # Nur die Margin verlässt das freie Bargeld; die Equity bleibt vollständig.
+    assert db.zustand("paper_konto")["cash"] == pytest.approx(
+        cfg.start_kapital - margin)
+    assert float(db.letztes_konto()["equity"]) == pytest.approx(cfg.start_kapital)
+
+
 def test_kein_zweiter_kauf_bei_offener_position(cfg):
     db, _ = aufbau(cfg)
     tick(cfg, db)

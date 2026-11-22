@@ -13,33 +13,30 @@ def konto(**kw) -> KontoZustand:
     return KontoZustand(**basis)
 
 
-def test_positionsgroesse_haelt_risiko_und_deckel_ein(cfg):
+def test_positionsgroesse_schoepft_das_risiko_bis_zum_stop_aus(cfg):
     g = RisikoGrenzen.aus_config(cfg)
-    # 1 % von 100'000 = 1'000 Risiko, Stop-Abstand 2 -> 500 Stück
-    # Deckel 20 % von 100'000 = 20'000 / Kurs 100 -> 200 Stück
-    assert positionsgroesse(100_000, 100_000, 100.0, 98.0, g) == 200
-    # Bei grossem Stop-Abstand begrenzt das Risiko
+    # 1 % von 100'000 = 1'000 Risiko, Stop-Abstand 2 -> 500 Stück.
+    # Nominal 50'000, Margin bei 5x 10'000.
+    assert positionsgroesse(100_000, 100_000, 100.0, 98.0, g) == 500
+    # Bei grossem Stop-Abstand begrenzt weiterhin das Risiko.
     assert positionsgroesse(100_000, 100_000, 100.0, 50.0, g) == 20
 
 
-def test_positionsdeckel_bestimmt_die_realisierte_risikohoehe(cfg):
-    """1 % ist eine Obergrenze; der 20-%-Deckel kann das Risiko senken."""
+def test_margin_begrenzt_die_risikomenge(cfg):
+    """Ein sehr enger Stop darf nicht mehr Nominal kaufen, als die Margin deckt."""
     g = RisikoGrenzen.aus_config(cfg)
-    equity, kurs = 100_000.0, 100.0
+    # 1 % Risiko bei 0.2 % Stop wären 5'000 Stück (Nominal 500'000, Margin
+    # 100'000). Frei sind 90'000 -> 4'500 Stück, realisiertes Risiko 0.9 %.
+    menge = positionsgroesse(100_000, 100_000, 100.0, 99.8, g)
+    assert menge == 4_500
+    assert menge * 0.2 == pytest.approx(900.0)
+    assert menge * 0.2 <= 1_000.0
 
-    # Enger Stop (2 %): Das Risikobudget erlaubte 500 Stück (1 %), der
-    # 20-%-Deckel lässt nur 200 zu. Realisiert werden 200 × 2 = 400 = 0,4 %.
-    eng = positionsgroesse(equity, equity, kurs, 98.0, g)
-    assert eng == 200
-    assert eng * (kurs - 98.0) / equity * 100 == pytest.approx(0.4)
-    # Die Obergrenze wird nie überschritten.
-    assert eng * (kurs - 98.0) <= equity * g.risk_per_trade_pct / 100.0
 
-    # Weiter Stop (50 %): Das Risikobudget (20 Stück) liegt unter dem Deckel
-    # und schöpft die 1 % voll aus.
-    weit = positionsgroesse(equity, equity, kurs, 50.0, g)
-    assert weit == 20
-    assert weit * 50.0 / equity * 100 == pytest.approx(1.0)
+def test_hebelgrenze_begrenzt_trotz_grossem_bargeld(cfg):
+    g = RisikoGrenzen.aus_config(cfg)
+    # 1 % bei 0.1 % Stop wären 10'000 Stück; 5x Konto erlaubt höchstens 5'000.
+    assert positionsgroesse(100_000, 1_000_000, 100.0, 99.9, g) == 5_000
 
 
 def test_positionsgroesse_ohne_stop_ist_null(cfg):
@@ -87,11 +84,22 @@ def test_korrelation_im_betrag_und_unter_grenze(cfg):
                               konto(letzte_korrelation=-0.90)).genehmigt
 
 
-def test_engagement_deckel_wird_geprueft(cfg):
+def test_margin_ueber_freiem_bargeld_wird_abgelehnt(cfg):
     manager = Risikomanager(RisikoGrenzen.aus_config(cfg))
-    # 90 % des Kontos bereits investiert -> weiterer Kauf von 20'000 würde 110 % ergeben
-    offen = [{"menge": 900, "kurs": 100.0}]
-    pruefung = manager.pruefe(Order("EURUSD", "kaufen", 200, 100.0),
-                              konto(cash=10_000.0, positionen=offen))
+    # 100 Stück à 100 = 10'000 Nominal, Margin bei 5x = 2'000.
+    # Bei 11'000 Bargeld blieben 9'000 < 10 % von 100'000.
+    pruefung = manager.pruefe(Order("EURUSD", "kaufen", 100, 100.0),
+                              konto(cash=11_000.0))
+    assert not pruefung.genehmigt
+    assert any("Bargeld" in g for g in pruefung.gruende)
+
+
+def test_engagement_deckel_folgt_der_hebelgrenze(cfg):
+    manager = Risikomanager(RisikoGrenzen.aus_config(cfg))
+    # 4500 Stück offen = 450 % Nominal; ein weiterer Kauf von 1000 Stück
+    # würde 550 % erreichen und die 5x-Grenze reissen.
+    offen = [{"menge": 4_500, "kurs": 100.0}]
+    pruefung = manager.pruefe(Order("EURUSD", "kaufen", 1_000, 100.0),
+                              konto(cash=1_000_000.0, positionen=offen))
     assert not pruefung.genehmigt
     assert any("Gesamtengagement" in g for g in pruefung.gruende)

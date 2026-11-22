@@ -135,6 +135,17 @@ def _positionswert(p: Any, kurs_map: dict[str, float],
     return min(kandidaten) if menge >= 0 else max(kandidaten)
 
 
+def _margin(p: Any) -> float:
+    """Reservierte Margin einer Position.
+
+    Bestandszeilen vor Migration 0006 haben keine Margin: Sie wurden voll aus
+    dem Bargeld bezahlt, deshalb zählt ihr ganzer Einstiegswert als Margin.
+    """
+    if "margin" in p.keys() and p["margin"] is not None:
+        return float(p["margin"])
+    return float(p["menge"]) * float(p["einstieg"])
+
+
 def _verkauf(db: Facts, cfg: Config, p: Any, preis: float, status: str,
              grund: str, ereignis: str) -> float:
     """Bucht einen vollständigen Verkauf und liefert den Cash-Zufluss.
@@ -151,7 +162,7 @@ def _verkauf(db: Facts, cfg: Config, p: Any, preis: float, status: str,
                            status, True, [grund, f"Netto {netto:.2f}"])
     db.ereignis("info", "Trading Floor",
                 f"{p['symbol']}: {ereignis} bei {preis:.5f}, Netto {netto:.2f}")
-    return menge * preis - prov
+    return _margin(p) + menge * (preis - float(p["einstieg"])) - prov
 
 
 def _kerze_gueltig(zeile: Any) -> bool:
@@ -220,7 +231,8 @@ def _equity(
     for p in positionen:
         if p["symbol"] not in kurs_map:
             unsicher = True
-        summe += float(p["menge"]) * _positionswert(p, kurs_map, ersatz_map)
+        summe += _margin(p) + float(p["menge"]) * (
+            _positionswert(p, kurs_map, ersatz_map) - float(p["einstieg"]))
     return summe, unsicher
 
 
@@ -440,15 +452,18 @@ def tick(cfg: Config, db: Facts, zeitpunkt: datetime | None = None) -> dict[str,
             continue
 
         prov = kosten_je_seite(menge, cfg, symbol, kurs=kurs)
-        if menge * kurs + prov > cash:
+        margin_wert = menge * kurs / grenzen.max_leverage
+        if margin_wert + prov > cash:
             continue
-        cash -= menge * kurs + prov
+        if cash - margin_wert - prov < equity * grenzen.min_cash_pct / 100.0 - 1e-9:
+            continue
+        cash -= margin_wert + prov
         kurs_map[symbol] = kurs
         db.position_setzen(
             symbol, menge, kurs, stop,
             json.dumps({"schluessel": wahl["schluessel"],
                         "validierung_id": int(wahl["validierung_id"])}, ensure_ascii=False),
-            jetzt(),
+            jetzt(), margin=margin_wert,
         )
         db.entscheid_speichern(symbol, "kaufen", menge, kurs, wahl["schluessel"],
                                "ausgeführt (Paper)", True,

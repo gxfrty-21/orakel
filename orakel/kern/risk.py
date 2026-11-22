@@ -60,19 +60,21 @@ def positionsgroesse(equity: float, cash: float, preis: float, stop: float, gren
     """Einzige Stelle, an der Positionsgrössen entstehen.
 
     Backtest und Paper-Trading nutzen exakt dieselbe Funktion (Regel 8).
-    Kein Hebel: Die Position wird voll aus dem Bargeld bezahlt. Das Risiko
-    pro Trade ist eine Obergrenze; der Positionsdeckel kann kleiner sein und
-    senkt dann das tatsächlich riskierte Kapital.
+    Die Risikomenge (1 % bis zum Stop) wird voll ausgeschöpft. Begrenzt wird
+    sie durch die Margin-Buchung (Nominal / ``max_leverage`` aus dem freien
+    Bargeld) und die explizite Hebelgrenze; einen separaten Nominaldeckel gibt
+    es nicht mehr.
     """
-    if preis <= 0 or equity <= 0:
+    if preis <= 0 or equity <= 0 or grenzen.max_leverage <= 0:
         return 0.0
     abstand = preis - stop
     if abstand <= 0:
         return 0.0
     nach_risiko = equity * grenzen.risk_per_trade_pct / 100.0 / abstand
-    nach_deckel = equity * grenzen.max_position_pct / 100.0 / preis
-    nach_cash = max(0.0, cash * (1 - grenzen.min_cash_pct / 100.0)) / preis
-    return float(np.floor(min(nach_risiko, nach_deckel, nach_cash)))
+    verfuegbar = max(0.0, cash - equity * grenzen.min_cash_pct / 100.0)
+    nach_margin = verfuegbar * grenzen.max_leverage / preis
+    nach_hebel = equity * grenzen.max_leverage / preis
+    return float(np.floor(min(nach_risiko, nach_margin, nach_hebel)))
 
 
 class Risikomanager:
@@ -111,16 +113,18 @@ class Risikomanager:
 
         wert = order.menge * order.kurs
         if konto.equity > 0:
-            if wert / konto.equity * 100 > self.g.max_position_pct + 1e-9:
-                gruende.append(f"Position würde {wert / konto.equity * 100:.1f} % des Kontos "
-                               f"überschreiten (max. {self.g.max_position_pct} %)")
+            margin = wert / self.g.max_leverage
+            if margin > konto.cash + 1e-9:
+                gruende.append(f"Margin {margin:.2f} übersteigt das freie Bargeld "
+                               f"{konto.cash:.2f} (max. Hebel {self.g.max_leverage:g})")
+            rest_cash = konto.cash - margin
+            if rest_cash < konto.equity * self.g.min_cash_pct / 100.0 - 1e-9:
+                gruende.append(f"Freies Bargeld würde unter {self.g.min_cash_pct} % fallen")
             neu_engagement = konto.engagement_pct + wert / konto.equity * 100
-            if neu_engagement > self.g.max_gross_exposure_pct + 1e-9:
+            hebelgrenze = self.g.max_leverage * 100.0
+            if neu_engagement > hebelgrenze + 1e-9:
                 gruende.append(f"Gesamtengagement würde {neu_engagement:.1f} % erreichen "
-                               f"(max. {self.g.max_gross_exposure_pct} %, kein Hebel)")
-            rest_cash = konto.cash - wert
-            if rest_cash < konto.equity * self.g.min_cash_pct / 100.0:
-                gruende.append(f"Bargeld würde unter {self.g.min_cash_pct} % fallen")
+                               f"(max. Hebel {self.g.max_leverage:g} = {hebelgrenze:g} %)")
 
         if konto.letzte_korrelation is not None and abs(konto.letzte_korrelation) > self.g.max_correlation:
             gruende.append(f"Korrelation {konto.letzte_korrelation:.2f} zu einer offenen Position "
@@ -131,5 +135,6 @@ class Risikomanager:
         return Pruefung(True, [
             f"Risiko pro Trade {self.g.risk_per_trade_pct} % eingehalten (Stop gesetzt)",
             f"Offene Positionen {len(konto.positionen)} von max. {self.g.max_open_positions}",
-            f"Gesamtengagement {konto.engagement_pct:.1f} % von max. {self.g.max_gross_exposure_pct} %",
+            f"Gesamtengagement {konto.engagement_pct:.1f} % von max. "
+            f"{self.g.max_leverage * 100:g} % (Hebel {self.g.max_leverage:g})",
         ])
