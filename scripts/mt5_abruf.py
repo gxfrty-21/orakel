@@ -4,7 +4,8 @@
 Läuft nur unter Windows: Das Paket ``MetaTrader5`` spricht per IPC mit einem
 installierten, angemeldeten Terminal. Es steht deshalb bewusst nicht in
 ``requirements.txt``; die Installation erfolgt im venv des Windows-Rechners.
-Geschrieben wird genau das Format, das ``orakel daten --csv`` liest.
+Kerzen entstehen im Format, das ``orakel daten --csv`` liest; Ticks bekommen
+mit ``--format ticks`` ein eigenes Archivformat.
 """
 from __future__ import annotations
 
@@ -17,6 +18,8 @@ from typing import Any, Iterator
 WURZEL = Path(__file__).resolve().parents[1]
 RAHMEN = ("M1", "M5", "M15", "H1")
 KOPFZEILE = "<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"
+TICK_KOPFZEILE = ("<DATE>\t<TIME>\t<MSEC>\t<BID>\t<ASK>\t<LAST>\t<VOLUME>"
+                  "\t<VOLUME_REAL>\t<FLAGS>")
 
 
 class AbrufFehler(RuntimeError):
@@ -105,12 +108,55 @@ def _hole(mt5: Any, symbol: str, rahmen: str, von: date, bis: date) -> list[str]
     return [_zeile(kerze) for kerze in reihenfolge]
 
 
+def _tick_zeile(tick: Any) -> str:
+    # Server-Wandzeit wie beim Kerzen-CSV, zusätzlich die Millisekunde.
+    stamp = datetime.fromtimestamp(int(tick["time"]), tz=timezone.utc)
+    return "\t".join([
+        stamp.strftime("%Y.%m.%d"),
+        stamp.strftime("%H:%M:%S"),
+        f"{int(tick['time_msc']) % 1000:03d}",
+        repr(float(tick["bid"])),
+        repr(float(tick["ask"])),
+        repr(float(tick["last"])),
+        str(int(tick["volume"])),
+        repr(float(tick["volume_real"])),
+        str(int(tick["flags"])),
+    ])
+
+
+def _tick_inhalt(tick: Any) -> tuple[int, float, float, float, int, float, int]:
+    return (int(tick["time_msc"]), float(tick["bid"]), float(tick["ask"]),
+            float(tick["last"]), int(tick["volume"]),
+            float(tick["volume_real"]), int(tick["flags"]))
+
+
+def _hole_ticks(mt5: Any, symbol: str, von: date, bis: date) -> list[str]:
+    """Holt Ticks monatsweise; exakte Dubletten aus Grenzfenstern fallen weg."""
+    flag = int(getattr(mt5, "COPY_TICKS_ALL", 0))
+    ticks: dict[tuple[int, float, float, float, int, float, int], Any] = {}
+    for anfang, ende in _zeitraeume(von, bis):
+        roh = mt5.copy_ticks_range(symbol, anfang, ende, flag)
+        if roh is None:
+            raise AbrufFehler(
+                f"copy_ticks_range({symbol}) lieferte nichts: {_letzter_fehler(mt5)}"
+            )
+        for tick in roh:
+            ticks[_tick_inhalt(tick)] = tick
+    reihenfolge = sorted(
+        ticks.values(), key=lambda tick: (int(tick["time"]), int(tick["time_msc"]))
+    )
+    return [_tick_zeile(tick) for tick in reihenfolge]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="MT5-Historie direkt aus dem Terminal als MT5-CSV nach daten/ schreiben."
+        description="MT5-Historie direkt aus dem Terminal als Kerzen- oder Tick-CSV nach daten/ schreiben."
     )
     parser.add_argument("--symbol", required=True, help="Broker-Symbol, z. B. EURUSD (auch EURUSD.a)")
-    parser.add_argument("--zeitrahmen", choices=RAHMEN, default="M15")
+    parser.add_argument("--zeitrahmen", choices=RAHMEN, default="M15",
+                        help="Kerzen-Zeitrahmen (bei --format ticks ohne Wirkung)")
+    parser.add_argument("--format", choices=("kerzen", "ticks"), default="kerzen",
+                        help="Ausgabeformat: MT5-Kerzen-CSV (Standard) oder Tick-CSV")
     parser.add_argument("--von", required=True, type=date.fromisoformat, metavar="JJJJ-MM-TT")
     parser.add_argument("--bis", type=date.fromisoformat, metavar="JJJJ-MM-TT",
                         help="Standard: heute (UTC)")
@@ -140,18 +186,31 @@ def main(argv: list[str] | None = None) -> int:
             raise AbrufFehler(
                 f"Symbol {args.symbol} nicht im Market Watch: {_letzter_fehler(mt5)}"
             )
-        zeilen = _hole(mt5, args.symbol, args.zeitrahmen, args.von, bis)
-        if not zeilen:
-            raise AbrufFehler(
-                f"keine Kerzen für {args.symbol} {args.zeitrahmen} zwischen {args.von} und {bis}"
-            )
-        ziel = Path(args.ausgabe) / f"{args.symbol.upper()}_{args.zeitrahmen}.csv"
+        if args.format == "ticks":
+            zeilen = _hole_ticks(mt5, args.symbol, args.von, bis)
+            if not zeilen:
+                raise AbrufFehler(
+                    f"keine Ticks für {args.symbol} zwischen {args.von} und {bis}"
+                )
+            dateiname = f"{args.symbol.upper()}_ticks.csv"
+            kopfzeile = TICK_KOPFZEILE
+            einheit = "Ticks"
+        else:
+            zeilen = _hole(mt5, args.symbol, args.zeitrahmen, args.von, bis)
+            if not zeilen:
+                raise AbrufFehler(
+                    f"keine Kerzen für {args.symbol} {args.zeitrahmen} zwischen {args.von} und {bis}"
+                )
+            dateiname = f"{args.symbol.upper()}_{args.zeitrahmen}.csv"
+            kopfzeile = KOPFZEILE
+            einheit = "Kerzen"
+        ziel = Path(args.ausgabe) / dateiname
         ziel.parent.mkdir(parents=True, exist_ok=True)
         try:
-            ziel.write_text("\n".join([KOPFZEILE, *zeilen]) + "\n", encoding="utf-8")
+            ziel.write_text("\n".join([kopfzeile, *zeilen]) + "\n", encoding="utf-8")
         except OSError as exc:
             raise AbrufFehler(f"{ziel} nicht schreibbar: {exc}") from exc
-        print(f"{ziel}: {len(zeilen)} Kerzen ({args.von} bis {bis})")
+        print(f"{ziel}: {len(zeilen)} {einheit} ({args.von} bis {bis})")
         return 0
     except AbrufFehler as exc:
         print(f"FEHLER {exc}", file=sys.stderr)
