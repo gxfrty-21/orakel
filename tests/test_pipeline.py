@@ -99,6 +99,32 @@ def test_leerer_csv_ordner_bricht_ab_statt_synthetisch(cfg):
     assert any("Keine CSV-Datei" in zeile["text"] for zeile in db.ereignisse())
 
 
+def test_leerer_csv_ordner_verwendet_vorhandene_db_kerzen_ohne_synthetik(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    db = Facts(cfg.db_pfad)
+    bestand = synthetische_kerzen("EURUSD", kerzen=120, seed=9)
+    db.kerzen_speichern_df("EURUSD", "M15", bestand)
+    db.zustand_setzen("datenquelle", "csv")
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+
+    symbole, quelle = sicherstellen_daten(cfg, db)
+
+    assert symbole == ["EURUSD"]
+    assert quelle == "csv"
+    assert len(db.kerzen("EURUSD", "M15")) == len(bestand)
+    assert db.kerzen("US500", "M15") == []
+    ereignisse = db.ereignisse()
+    assert any(
+        zeile["stufe"] == "warnung"
+        and "Keine CSV-Datei" in zeile["text"]
+        and "vorhandene Datenbankkerzen" in zeile["text"]
+        for zeile in ereignisse
+    )
+    assert not any("Synthetische Kerzen erzeugt" in zeile["text"]
+                   for zeile in ereignisse)
+
+
 def test_h1_richter_ohne_h1_datei_bricht_ab_statt_leer_zu_laufen(cfg):
     cfg._d["basis"]["datenquelle"] = "csv"
     cfg._d["basis"]["richter_zeitrahmen"] = "H1"
@@ -143,3 +169,27 @@ def test_nur_nicht_m15_dateien_brechen_ab_statt_synthetisch(cfg):
     assert db.symbole() == []
     assert db.kerzen("EURUSD", "M15") == []
     assert any("EURUSD_M1.csv" in zeile["text"] for zeile in db.ereignisse())
+
+
+@pytest.mark.parametrize("befehl", ["cmd_pruefen", "cmd_konferenz"])
+def test_cli_meldet_datenfehler_mit_exit_1(befehl, monkeypatch, capsys):
+    import argparse
+
+    from orakel import __main__ as cli
+    from orakel import pipeline
+
+    def datenfehler(**_kwargs):
+        raise DatenFehler("CSV-Quelle liefert keine verwendbaren Kerzen")
+
+    monkeypatch.setattr(pipeline, "lauf", datenfehler)
+    monkeypatch.setattr(cli, "_cfg", lambda _pfad: object())
+    monkeypatch.setattr(cli, "_schema_pruefen", lambda _cfg: None)
+    args = argparse.Namespace(
+        config="config.toml", modus="backtest", quelle=None, bericht="dashboard.json",
+        ohne_konferenz=False, mit_spider=False,
+    )
+
+    code = getattr(cli, befehl)(args)
+
+    assert code == 1
+    assert "FEHLER CSV-Quelle liefert keine verwendbaren Kerzen" in capsys.readouterr().err
