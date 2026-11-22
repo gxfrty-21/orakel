@@ -81,8 +81,7 @@ class Config:
         """
         daten = copy.deepcopy(self._d)
         daten.setdefault("basis", {})["bars_pro_jahr"] = self.bars_pro_jahr_fuer(zeitrahmen)
-        if "daten" in daten:
-            daten["daten"]["min_kerzen"] = self.min_kerzen_fuer(zeitrahmen)
+        daten.setdefault("daten", {})["min_kerzen"] = self.min_kerzen_fuer(zeitrahmen)
         return Config(daten, self.pfad)
 
     @property
@@ -158,7 +157,8 @@ def validiere_config(daten: dict[str, Any]) -> None:
     _zahl(daten, 'risiko', 'max_drawdown_pct', minimum=0.000001, maximum=100.0)
     _zahl(daten, 'risiko', 'max_open_positions', minimum=1, ganzzahl=True)
     _zahl(daten, 'risiko', 'max_daily_loss_pct', minimum=0.000001, maximum=100.0)
-    _zahl(daten, 'risiko', 'max_leverage', minimum=1.0, maximum=100.0)
+    _zahl(daten, 'risiko', 'max_gross_exposure_pct', minimum=0.000001, maximum=1000.0)
+    _zahl(daten, 'risiko', 'max_position_pct', minimum=0.000001, maximum=100.0)
     _zahl(daten, 'risiko', 'min_cash_pct', minimum=0.0, maximum=99.999999)
     risiko = daten.get('risiko') or {}
     if not any(k in risiko for k in ('max_korrelation', 'max_correlation')):
@@ -225,7 +225,8 @@ class RisikoGrenzen:
     max_drawdown_pct: float
     max_open_positions: int
     max_daily_loss_pct: float
-    max_leverage: float
+    max_gross_exposure_pct: float
+    max_position_pct: float
     min_cash_pct: float
     max_correlation: float
     correlation_lookback: int
@@ -239,7 +240,8 @@ class RisikoGrenzen:
             max_drawdown_pct=float(r["max_drawdown_pct"]),
             max_open_positions=int(r["max_open_positions"]),
             max_daily_loss_pct=float(r["max_daily_loss_pct"]),
-            max_leverage=float(r["max_leverage"]),
+            max_gross_exposure_pct=float(r["max_gross_exposure_pct"]),
+            max_position_pct=float(r["max_position_pct"]),
             min_cash_pct=float(r["min_cash_pct"]),
             # deutscher Schlüssel in config.toml, englischer als Rückfall
             max_correlation=float(r.get("max_korrelation", r.get("max_correlation", 0.85))),
@@ -253,7 +255,8 @@ class RisikoGrenzen:
             "max_drawdown_pct": self.max_drawdown_pct,
             "max_open_positions": self.max_open_positions,
             "max_daily_loss_pct": self.max_daily_loss_pct,
-            "max_leverage": self.max_leverage,
+            "max_gross_exposure_pct": self.max_gross_exposure_pct,
+            "max_position_pct": self.max_position_pct,
             "min_cash_pct": self.min_cash_pct,
             "max_correlation": self.max_correlation,
             "correlation_lookback": self.correlation_lookback,

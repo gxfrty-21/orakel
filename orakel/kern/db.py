@@ -148,18 +148,31 @@ class Facts:
 
     def kerzen_speichern_bloecke(self, symbol: str, zeitrahmen: str,
                                  bloecke: Iterable[Any], *,
-                                 konflikte: Kerzenkonflikte | None = None) -> int:
+                                 konflikte: Kerzenkonflikte | None = None,
+                                 c: sqlite3.Connection | None = None) -> int:
         """Schreibt Blöcke in einer Transaktion; bei einem Fehler bleibt nichts stehen.
 
         Mit ``konflikte`` werden gleiche Zeitstempel mit abweichenden
-        OHLC-Werten gezählt, bevor ``INSERT OR REPLACE`` sie ersetzt.
+        OHLC-Werten gezählt, bevor ``INSERT OR REPLACE`` sie ersetzt. Mit ``c``
+        läuft der Import in der bereits offenen Transaktion des Aufrufers; so
+        können mehrere Dateien gemeinsam committet oder zurückgerollt werden.
         """
+        if c is not None:
+            return self._kerzen_bloecke_auf_verbindung(
+                c, symbol, zeitrahmen, bloecke, konflikte)
+        with self.conn() as verbindung:
+            return self._kerzen_bloecke_auf_verbindung(
+                verbindung, symbol, zeitrahmen, bloecke, konflikte)
+
+    def _kerzen_bloecke_auf_verbindung(
+        self, c: sqlite3.Connection, symbol: str, zeitrahmen: str,
+        bloecke: Iterable[Any], konflikte: Kerzenkonflikte | None,
+    ) -> int:
         anzahl = 0
-        with self.conn() as c:
-            for block in bloecke:
-                if konflikte is not None:
-                    self._abweichungen(c, symbol, zeitrahmen, block, konflikte)
-                anzahl += self._kerzen_block(c, symbol, zeitrahmen, block)
+        for block in bloecke:
+            if konflikte is not None:
+                self._abweichungen(c, symbol, zeitrahmen, block, konflikte)
+            anzahl += self._kerzen_block(c, symbol, zeitrahmen, block)
         return anzahl
 
     def _abweichungen(self, c: sqlite3.Connection, symbol: str, zeitrahmen: str,
@@ -197,10 +210,16 @@ class Facts:
                 (symbol, zeitrahmen),
             ))
 
-    def hat_kerzen(self, symbol: str, zeitrahmen: str) -> bool:
+    def hat_kerzen(self, symbol: str, zeitrahmen: str, *,
+                   c: sqlite3.Connection | None = None) -> bool:
         """Prüft ohne Laden der Reihe, ob mindestens eine Kerze existiert."""
-        with self.conn() as c:
+        if c is not None:
             return c.execute(
+                "SELECT 1 FROM kerzen WHERE symbol=? AND zeitrahmen=? LIMIT 1",
+                (symbol, zeitrahmen),
+            ).fetchone() is not None
+        with self.conn() as verbindung:
+            return verbindung.execute(
                 "SELECT 1 FROM kerzen WHERE symbol=? AND zeitrahmen=? LIMIT 1",
                 (symbol, zeitrahmen),
             ).fetchone() is not None
@@ -347,8 +366,7 @@ class Facts:
             return list(c.execute("SELECT * FROM positionen ORDER BY symbol"))
 
     def position_setzen(self, symbol: str, menge: float, einstieg: float, stop: float,
-                        strategie: str, eroeffnet: str,
-                        margin: float | None = None) -> None:
+                        strategie: str, eroeffnet: str) -> None:
         """Legt eine Long-Position an.
 
         Der Paper-Takt und der Backtest sind Long-only. Eine Menge <= 0 würde
@@ -360,10 +378,9 @@ class Facts:
                              f'ist aber {menge!r}')
         with self.conn() as c:
             c.execute(
-                "INSERT OR REPLACE INTO positionen"
-                "(symbol,menge,einstieg,stop,strategie,eroeffnet,margin)"
-                " VALUES (?,?,?,?,?,?,?)",
-                (symbol, menge, einstieg, stop, strategie, eroeffnet, margin),
+                "INSERT OR REPLACE INTO positionen(symbol,menge,einstieg,stop,strategie,eroeffnet)"
+                " VALUES (?,?,?,?,?,?)",
+                (symbol, menge, einstieg, stop, strategie, eroeffnet),
             )
 
     def position_loeschen(self, symbol: str) -> None:
@@ -1260,10 +1277,15 @@ class Facts:
         return {"zeit": r["zeit"], "protokoll": json.loads(r["protokoll"])}
 
     # ---------- Zustand ----------
-    def zustand_setzen(self, schluessel: str, wert: Any) -> None:
-        with self.conn() as c:
-            c.execute("INSERT OR REPLACE INTO zustand(schluessel,wert) VALUES (?,?)",
-                      (schluessel, json.dumps(wert, ensure_ascii=False)))
+    def zustand_setzen(self, schluessel: str, wert: Any, *,
+                       c: sqlite3.Connection | None = None) -> None:
+        sql = "INSERT OR REPLACE INTO zustand(schluessel,wert) VALUES (?,?)"
+        werte = (schluessel, json.dumps(wert, ensure_ascii=False))
+        if c is not None:
+            c.execute(sql, werte)
+            return
+        with self.conn() as verbindung:
+            verbindung.execute(sql, werte)
 
     def zustand(self, schluessel: str, standard: Any = None) -> Any:
         with self.conn() as c:
