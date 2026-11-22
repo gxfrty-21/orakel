@@ -131,7 +131,8 @@ def test_slippage_grenzwerte():
 def test_ungueltige_risikoparameter():
     faelle = [
         ("risk_per_trade_pct", 101.0),
-        ("max_position_pct", 100.1),
+        ("max_position_pct", 1000.1),
+        ("max_hebel", 0.9),
         ("min_cash_pct", 100.0),
         ("max_correlation", 1.1),
         ("max_correlation", -0.1),

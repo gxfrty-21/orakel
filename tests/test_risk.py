@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from orakel.config import RisikoGrenzen
 from orakel.kern.risk import KontoZustand, Order, Risikomanager, positionsgroesse
 
@@ -18,6 +20,33 @@ def test_positionsgroesse_haelt_risiko_und_deckel_ein(cfg):
     assert positionsgroesse(100_000, 100_000, 100.0, 98.0, g) == 200
     # Bei grossem Stop-Abstand begrenzt das Risiko
     assert positionsgroesse(100_000, 100_000, 100.0, 50.0, g) == 20
+
+
+def test_margin_und_hebel_lassen_das_risiko_die_groesse_bestimmen(cfg):
+    g = replace(RisikoGrenzen.aus_config(cfg), max_position_pct=500.0,
+                max_gross_exposure_pct=500.0, max_hebel=5.0)
+
+    # Stop 0.5 % entfernt: 1 % Risiko will 2'000 Stück (2-faches Nominal).
+    # Ohne Margin hätte der Bargeld-Deckel nur 900 Stück erlaubt.
+    assert positionsgroesse(100_000, 100_000, 100.0, 99.5, g) == 2_000
+    # Sehr enger Stop: Das Risiko will 10'000 Stück, der 5-fache Hebel mit
+    # 10 % Margin-Puffer deckelt bei (90'000 × 5) / 100 = 4'500 Stück.
+    assert positionsgroesse(100_000, 100_000, 100.0, 99.9, g) == 4_500
+    # Bleibt nur der Margin-Puffer übrig, entsteht keine Position.
+    assert positionsgroesse(100_000, 10_000, 100.0, 99.5, g) == 0
+
+
+def test_manager_prueft_margin_statt_bargeld(cfg):
+    g = replace(RisikoGrenzen.aus_config(cfg), max_position_pct=500.0,
+                max_gross_exposure_pct=500.0, max_hebel=5.0)
+    manager = Risikomanager(g)
+
+    # 2-faches Nominal braucht 40 % Margin: gedeckt.
+    assert manager.pruefe(Order("EURUSD", "kaufen", 2_000, 100.0), konto()).genehmigt
+    # 5-faches Nominal bindet das ganze Konto als Margin: unter dem Puffer.
+    zu_gross = manager.pruefe(Order("EURUSD", "kaufen", 5_000, 100.0), konto())
+    assert not zu_gross.genehmigt
+    assert any("Freie Margin" in x for x in zu_gross.gruende)
 
 
 def test_positionsgroesse_ohne_stop_ist_null(cfg):

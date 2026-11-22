@@ -366,8 +366,12 @@ max_drawdown_pct   = 10.0    # Not-Stop
 max_open_positions = 15      # harter Deckel
 ```
 
-Zusätzlich konservativ: 3 % Tagesverlust, 100 % Gesamtengagement (kein Hebel),
-20 % max. Positionsgrösse, 10 % Mindest-Bargeld.
+Zusätzlich: 10 % Tagesverlust, Hebelgrenze 5, 500 % Gesamtengagement und
+500 % Nominal je Position (500 % entspricht dem 5-fachen Eigenkapital) sowie
+10 % freie Margin nach dem Kauf. Gehandelt wird auf Margin: Die Positionsgrösse
+kommt aus dem 1-%-Risiko und wird erst von Hebelgrenze und Margin-Puffer
+gedeckelt — nicht mehr vom Bargeld. Ein sehr enger Stop landet deshalb an der
+Hebelgrenze statt bei einem Bruchteil des Kontos.
 
 ## Kostenmodell
 
