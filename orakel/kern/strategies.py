@@ -115,11 +115,9 @@ def _h1_retest(df: pd.DataFrame, p: dict[str, Any]) -> Signalplan:
     close = df["close"].to_numpy(dtype=float)
     low = df["low"].to_numpy(dtype=float)
 
-    setup_aktiv = False
     in_position = False
     breakout_level = np.nan
     positions_stop = np.nan
-    retest_gesehen = False
     retest_tief = np.nan
     retest_bar = -1
     setup_bar = -1
@@ -139,34 +137,31 @@ def _h1_retest(df: pd.DataFrame, p: dict[str, Any]) -> Signalplan:
 
         # Das Fenster umfasst die Kerzen setup_bar+1 bis setup_bar+F. Es endet
         # auch, wenn der Ausbruch vor der Bestätigung scheitert.
-        if setup_aktiv and (i - setup_bar > retest_fenster or close[i] < breakout_level):
-            setup_aktiv = False
+        if setup_bar >= 0 and (i - setup_bar > retest_fenster or close[i] < breakout_level):
+            setup_bar = -1
 
-        if not setup_aktiv:
+        if setup_bar < 0:
             if np.isfinite(level[i]) and close[i] > level[i]:
-                setup_aktiv = True
+                setup_bar = i
                 breakout_level = float(level[i])
-                retest_gesehen = False
                 retest_tief = np.nan
                 retest_bar = -1
-                setup_bar = i
             continue
 
         if low[i] <= breakout_level:
-            if not retest_gesehen:
-                retest_gesehen = True
+            if retest_bar < 0:
                 retest_bar = i
                 retest_tief = float(low[i])
             else:
                 retest_tief = min(retest_tief, float(low[i]))
-        if retest_gesehen and i > retest_bar and close[i] > breakout_level:
+        if retest_bar >= 0 and i > retest_bar and close[i] > breakout_level:
             stop_wert = retest_tief * (1.0 - puffer)
             if np.isfinite(stop_wert) and stop_wert > 0:
                 ziel[i] = 1.0
                 stop[i] = stop_wert
                 positions_stop = stop_wert
                 in_position = True
-            setup_aktiv = False
+            setup_bar = -1
 
     return Signalplan(ziel=ziel, stop=stop, reentry_sperre=True)
 
@@ -201,15 +196,16 @@ def strategien(cfg: Any) -> dict[str, Strategie]:
         for b in r["rsi_buy"] for e in r["rsi_exit"] if b < e
     ]
     roc_grid = [{"periode": n, "schwelle": 0.0} for n in r["roc_period"]]
-    retest_grid = [
-        {"lookback": lookback, "retest_fenster": fenster, "stop_puffer_pct": puffer}
-        for lookback in r.get("h1_retest_lookback", ())
-        for fenster in r.get("h1_retest_fenster", ())
-        for puffer in r.get("h1_retest_stop_puffer_pct", ())
-    ]
     # H1-Retest nur mit H1-Daten: Der Richter-Zeitrahmen bestimmt das Raster,
     # auf dem die Kandidaten laufen. Bei M15 bleibt die Strategie aus.
-    h1_aktiv = cfg.richter_zeitrahmen == "H1"
+    retest_grid = []
+    if cfg.richter_zeitrahmen == "H1":
+        retest_grid = [
+            {"lookback": lookback, "retest_fenster": fenster, "stop_puffer_pct": puffer}
+            for lookback in r.get("h1_retest_lookback", ())
+            for fenster in r.get("h1_retest_fenster", ())
+            for puffer in r.get("h1_retest_stop_puffer_pct", ())
+        ]
 
     auswahl = {
         "ema_cross": Strategie(
@@ -247,7 +243,7 @@ def strategien(cfg: Any) -> dict[str, Strategie]:
             grid=tuple(roc_grid),
         ),
     }
-    if retest_grid and h1_aktiv:
+    if retest_grid:
         auswahl["h1_retest"] = Strategie(
             name="h1_retest",
             beschreibung="H1-Retest: Ausbruch über das Hoch der letzten N H1-Kerzen, "

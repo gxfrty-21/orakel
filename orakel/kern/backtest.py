@@ -164,7 +164,7 @@ def backtest(
     i = start
     while i < ende - 1:
         if stueck <= 0:
-            if reentry_sperre and gesperrt and ziel[i] <= 0:
+            if gesperrt and ziel[i] <= 0:
                 gesperrt = False
             if ziel[i] > 0 and not gesperrt:
                 fill = i + 1

@@ -207,6 +207,25 @@ def test_ungueltiger_stop_verhindert_einstieg_und_warnt(cfg):
     assert "Ungültiger Stop" in erg.warnungen[0]
 
 
+@pytest.mark.parametrize("stop_preis", [100.0, 101.0])
+def test_plan_stop_auf_oder_ueber_fill_verhindert_einstieg_und_warnt(cfg, stop_preis):
+    df = flache_kerzen()
+    ziel = np.zeros(len(df))
+    ziel[30] = 1.0
+    stop = np.full(len(df), stop_preis)
+
+    erg = backtest(
+        df, Signalplan(ziel, stop, True), cfg, RisikoGrenzen.aus_config(cfg),
+    )
+
+    # Der Fill wäre die Eröffnung von Bar 31 bei 100,0. Ein ATR-Fallback
+    # hätte einen Trade erzeugt; der Plan-Stop darf nicht ersetzt werden.
+    assert erg.trades == []
+    assert erg.warnungen == [
+        "Stop im Signalplan nicht unter dem Einstieg an Bar 30"
+    ]
+
+
 def retest_kerzen(bestaetigung_bar: int) -> pd.DataFrame:
     """Breakout bei 10, Retest bei 11, Bestätigung bei ``bestaetigung_bar``."""
     n = 40
