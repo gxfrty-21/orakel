@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import replace
 from typing import Any
@@ -21,7 +22,7 @@ from .knowledge import Vault
 from .kern.markt import korrelation_max, markt_uebersicht
 from .report import baue_bericht, schreibe_bericht
 from .kern.risk import KontoZustand, Order, Risikomanager, positionsgroesse
-from .kern.strategies import atr, strategien
+from .kern.strategies import Signalplan, atr, strategien
 
 SYMBOLE_STANDARD = ["EURUSD", "US500"]
 
@@ -189,6 +190,25 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
     return symbole, "synthetisch"
 
 
+def _stop_fuer_plan(signale: Any, kurs: float, atr_wert: float,
+                    grenzen: RisikoGrenzen) -> tuple[float, str]:
+    """Stop und Quelle für den Auftragsentwurf des Laufs.
+
+    Der Entwurf läuft auf dem Richter-Zeitrahmen. Liefert die ausgewählte
+    Strategie einen Signalplan mit gültigem Stop, gilt dieser für Grösse und
+    Begründung; sonst bleibt es beim bisherigen ATR-Stop. Der M15-Paper-Takt
+    liest den Entwurf nicht und setzt seinen Stop weiterhin selbst.
+    """
+    if isinstance(signale, Signalplan) and signale.stop is not None:
+        wert = float(signale.stop[-1])
+        if math.isfinite(wert) and 0 < wert < kurs:
+            return wert, "Signalplan"
+    if atr_wert > 0:
+        return (kurs - grenzen.atr_stop_multiple * atr_wert,
+                f"{grenzen.atr_stop_multiple} × ATR")
+    return 0.0, ""
+
+
 def lauf(
     cfg_pfad: str = "config.toml",
     modus: str = "backtest",
@@ -343,12 +363,13 @@ def lauf(
         strat = strategien(cfg).get(d["strategie"])
         if strat is None:
             continue
-        signal = strat.signale(df, d["parameter"])[-1]
+        signale = strat.signale(df, d["parameter"])
+        signal = signale[-1]
         kurs = float(df["close"].iloc[-1])
-        atr_wert = float(atr(df, 14).iloc[-1] or 0.0)
-        stop = kurs - grenzen.atr_stop_multiple * atr_wert if atr_wert > 0 else 0.0
 
         if signal > 0:
+            atr_wert = float(atr(df, 14).iloc[-1] or 0.0)
+            stop, stop_quelle = _stop_fuer_plan(signale, kurs, atr_wert, grenzen)
             menge = positionsgroesse(equity, equity, kurs, stop, grenzen)
             order = Order(symbol=symbol, aktion="kaufen", menge=menge, kurs=kurs,
                           strategie=d["schluessel"], stop=stop)
@@ -361,7 +382,7 @@ def lauf(
                 "vom Risiko abgelehnt"
             gruende = list(pruefung.gruende)
             if stop:
-                gruende.append(f"Stop bei {stop:.5f} ({grenzen.atr_stop_multiple} × ATR)")
+                gruende.append(f"Stop bei {stop:.5f} ({stop_quelle})")
             plan.append({
                 "symbol": symbol, "aktion": "kaufen", "menge": menge, "kurs": round(kurs, 5),
                 "strategie": d["schluessel"], "status": status,

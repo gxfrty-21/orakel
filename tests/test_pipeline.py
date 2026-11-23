@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
+from orakel.config import RisikoGrenzen
 from orakel.kern.data import synthetische_kerzen
 from orakel.kern.db import Facts
-from orakel.pipeline import DatenFehler, sicherstellen_daten
+from orakel.kern.strategies import Signalplan
+from orakel.pipeline import DatenFehler, _stop_fuer_plan, sicherstellen_daten
 
 
 KOPF = "<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>\n"
@@ -279,3 +282,31 @@ def test_cli_meldet_datenfehler_mit_exit_1(befehl, monkeypatch, capsys):
 
     assert code == 1
     assert "FEHLER CSV-Quelle liefert keine verwendbaren Kerzen" in capsys.readouterr().err
+
+
+def test_plan_stop_kommt_aus_dem_signalplan(cfg):
+    grenzen = RisikoGrenzen.aus_config(cfg)
+    plan = Signalplan(np.array([0.0, 1.0]), np.array([np.nan, 95.0]), True)
+
+    stop, quelle = _stop_fuer_plan(plan, kurs=100.0, atr_wert=2.0, grenzen=grenzen)
+
+    assert stop == pytest.approx(95.0)
+    assert quelle == "Signalplan"
+
+
+def test_plan_stop_faellt_ohne_gueltigen_planstop_auf_atr_zurueck(cfg):
+    grenzen = RisikoGrenzen.aus_config(cfg)
+    kandidaten = [
+        np.array([0.0, 1.0]),                                   # Array ohne Stop
+        Signalplan(np.array([1.0]), np.array([np.nan]), True),  # kein Stop gesetzt
+        Signalplan(np.array([1.0]), np.array([101.0]), True),   # Stop nicht unter dem Kurs
+    ]
+
+    for signale in kandidaten:
+        stop, quelle = _stop_fuer_plan(signale, kurs=100.0, atr_wert=2.0, grenzen=grenzen)
+        assert stop == pytest.approx(96.0)
+        assert quelle == "2.0 × ATR"
+
+    stop, quelle = _stop_fuer_plan(np.array([1.0]), kurs=100.0, atr_wert=0.0,
+                                   grenzen=grenzen)
+    assert stop == 0.0
