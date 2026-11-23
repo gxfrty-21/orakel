@@ -261,7 +261,7 @@ def lauf(
         df = daten[symbol]
         if len(df) < int(urteil_cfg["daten"]["min_kerzen"]):
             continue
-        for strategie in strategien(cfg).values():
+        for strategie in strategien(cfg, zeitrahmen=zeitrahmen).values():
             try:
                 u = beurteile_walk_forward(df, symbol, strategie, urteil_cfg, grenzen)
             except Exception as exc:
@@ -360,7 +360,7 @@ def lauf(
         df = daten.get(symbol)
         if df is None or len(df) < 60:
             continue
-        strat = strategien(cfg).get(d["strategie"])
+        strat = strategien(cfg, zeitrahmen=zeitrahmen).get(d["strategie"])
         if strat is None:
             continue
         signale = strat.signale(df, d["parameter"])

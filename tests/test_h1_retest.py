@@ -111,14 +111,17 @@ def test_h1_retest_wird_erst_im_h1_raster_aktiv(cfg):
 
     mit_raster = mit_h1_raster(cfg)
     assert "h1_retest" in strategien(mit_raster)
+    assert "h1_retest" in strategien(mit_raster, zeitrahmen="H1")
     assert any(s.name == "h1_retest" for s, _ in kandidaten(mit_raster))
 
 
 def test_h1_retest_wird_bei_m15_nicht_mitbewertet(cfg):
     cfg = mit_h1_raster(cfg)
-    cfg._d["basis"]["richter_zeitrahmen"] = "M15"
+    assert "h1_retest" not in strategien(cfg, zeitrahmen="M15")
 
+    cfg._d["basis"]["richter_zeitrahmen"] = "M15"
     assert "h1_retest" not in strategien(cfg)
+    assert "h1_retest" not in strategien(cfg, zeitrahmen="H1")
     assert all(s.name != "h1_retest" for s, _ in kandidaten(cfg))
     assert "donchian" in strategien(cfg)
 

@@ -190,24 +190,29 @@ Dokumentation und eigenen Tests – eingeführt, nicht als versteckter
   `[basis] richter_zeitrahmen = "H1"` gesetzt ist. Bei M15 bleibt sie aus dem
   Raster und wird nicht mitbewertet. Die ausgelieferte `config.toml` enthält
   ein kleines Raster; bestehende Testkonfigurationen ohne diese Schlüssel
-  bleiben unverändert. Der Paper-Takt bleibt unabhängig davon bei M15.
+  bleiben unverändert. Der Paper-Takt bleibt unabhängig davon bei M15: Er
+  fragt das Strategienraster ausdrücklich mit `zeitrahmen="M15"` ab. Dadurch
+  wird `h1_retest` auch bei `richter_zeitrahmen="H1"` nicht auf M15-Kerzen
+  ausgewertet. Ein explizites H1-Raster kann die Bindung an
+  `richter_zeitrahmen="H1"` nicht umgehen.
 - Die exakten Regeln und die Zuordnung der Rasterschlüssel zu den
   Strategieparametern stehen in der Tabelle unter
   [H1-Retest-Regeln und Strategieparameter](#h1-retest-regeln-und-strategieparameter).
   Die Bestätigung benötigt kein neues `Signalplan`-Feld: Sie wird in der
   Strategie aus `close` und dem festgeschriebenen Level berechnet; `ziel` und
   `stop` bleiben die einzigen Ausgaben.
-- `judge.py`, `robustheit.py` und `paper.py` wurden nicht umgebaut. Sie reichen
-  den Plan weiter oder lesen über die Array-Schnittstelle nur das Ziel. Der
-  Auftragsentwurf der Pipeline nutzt dagegen den Stop des Signalplans, wenn die
-  ausgewählte Strategie einen gültigen liefert; sonst bleibt es beim ATR-Stop.
-  Der M15-Paper-Takt liest diesen Entwurf nicht, setzt seinen Stop weiterhin
-  selbst und bleibt unverändert; die Paper-Sperre bleibt unangetastet.
+- `judge.py` und `robustheit.py` wurden nicht umgebaut. `paper.py` liest über
+  die Array-Schnittstelle nur das Ziel; sein Strategienraster ist ausdrücklich
+  auf M15 begrenzt, sodass die H1-Strategie dort nicht auf M15-Kerzen läuft.
+  Der Auftragsentwurf der Pipeline nutzt dagegen den Stop des Signalplans, wenn
+  die ausgewählte Strategie einen gültigen liefert; sonst bleibt es beim
+  ATR-Stop. Der M15-Paper-Takt liest diesen Entwurf nicht, setzt seinen Stop
+  weiterhin selbst; die Paper-Sperre bleibt unangetastet.
 
 ## Tests
 
-Die Tests liegen in `tests/test_h1_retest.py` und ergänzen die bestehenden
-Backtest-Tests:
+Die Tests liegen in `tests/test_h1_retest.py` und `tests/test_paper.py` und
+ergänzen die bestehenden Backtest-Tests:
 
 - Ein Array mit dauerhaft positivem Ziel nach einem Stop erzeugt keinen
   zweiten Einstieg, bis das Ziel neutral war.
@@ -217,6 +222,9 @@ Backtest-Tests:
   Warnung.
 - Die 0/1-Ziel-Arrays bestehender Strategien erzeugen dieselben Trades wie
   bisher, solange kein Stop und keine Sperre aktiv sind.
+- Der Paper-Takt baut sein Strategienraster auch bei
+  `richter_zeitrahmen="H1"` ausdrücklich für M15 auf und öffnet keine
+  H1-Validierung auf M15-Kerzen.
 - H1-Retest: Einstieg erst nach bestätigter Kerze, Ausführung erst zur
   Folge-Eröffnung, Stop unter dem Retest-Tief, kein Wiedereinstieg aus dem
   alten Signal.

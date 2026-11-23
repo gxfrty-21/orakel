@@ -187,8 +187,17 @@ class Strategie:
         return f"{self.name}|{teile}"
 
 
-def strategien(cfg: Any) -> dict[str, Strategie]:
+def strategien(cfg: Any, *, zeitrahmen: str | None = None) -> dict[str, Strategie]:
+    """Baut das Strategienraster für ein Bewertungsraster.
+
+    ``zeitrahmen`` beschränkt das Raster auf den tatsächlich gelesenen
+    Zeitrahmen. H1 bleibt zusätzlich an ``richter_zeitrahmen = "H1"``
+    gebunden; der Paper-Takt übergibt ``M15`` und kann die H1-Strategie
+    deshalb nicht aktivieren.
+    """
     r = cfg["research"]
+    richter = cfg.richter_zeitrahmen
+    raster = str(zeitrahmen or richter).upper()
     ema_grid = [{"fast": f, "slow": s} for f in r["ema_fast"] for s in r["ema_slow"] if f < s]
     don_grid = [{"lookback": n} for n in r["donchian"]]
     rsi_grid = [
@@ -196,10 +205,11 @@ def strategien(cfg: Any) -> dict[str, Strategie]:
         for b in r["rsi_buy"] for e in r["rsi_exit"] if b < e
     ]
     roc_grid = [{"periode": n, "schwelle": 0.0} for n in r["roc_period"]]
-    # H1-Retest nur mit H1-Daten: Der Richter-Zeitrahmen bestimmt das Raster,
-    # auf dem die Kandidaten laufen. Bei M15 bleibt die Strategie aus.
+    # H1-Retest nur mit H1-Daten: Der Richter muss H1 bewerten, und das
+    # übergebene Raster darf nicht auf M15 beschränkt sein. Paper übergibt M15.
+    h1_aktiv = richter == "H1" and raster == "H1"
     retest_grid = []
-    if cfg.richter_zeitrahmen == "H1":
+    if h1_aktiv:
         retest_grid = [
             {"lookback": lookback, "retest_fenster": fenster, "stop_puffer_pct": puffer}
             for lookback in r.get("h1_retest_lookback", ())

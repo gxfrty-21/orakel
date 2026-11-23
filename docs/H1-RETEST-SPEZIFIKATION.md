@@ -102,8 +102,8 @@ Nachbildung eines Broker-Swaps:
   `[research]`-Raster registriert, aber nur bei
   `[basis] richter_zeitrahmen = "H1"`. Bei M15 bleibt sie aus dem Raster und
   wird nicht mitbewertet.
-- Die Tests liegen in `tests/test_h1_retest.py`; die bestehenden
-  Backtest-Tests bleiben unverändert gültig.
+- Die Tests liegen in `tests/test_h1_retest.py` und `tests/test_paper.py`;
+  die bestehenden Backtest-Tests bleiben unverändert gültig.
 - Der Finanzierungskosten-Backtest ist implementiert:
   `finanzierung_bps_pro_tag` wird validiert, am UTC-Kalendertag auf das
   Einstiegsnotional in Kontowährung gebucht und als `finanzierung` in den
@@ -130,7 +130,12 @@ Nachbildung eines Broker-Swaps:
 ## Offene Paper-Integrationspunkte
 
 1. Der Paper-Takt liest weiterhin ausschliesslich **M15**-Kerzen. Die
-   H1-Strategie wird dort nicht als H1-Handel ausgeführt.
+   H1-Strategie wird dort nicht als H1-Handel ausgeführt. Das Strategienraster
+   wird im Paper-Takt ausdrücklich mit `zeitrahmen="M15"` aufgebaut;
+   `h1_retest` ist dort auch bei `richter_zeitrahmen="H1"` nicht registriert
+   und wird nicht auf M15-Kerzen ausgewertet. Die H1-Strategie bleibt
+   zusätzlich an `richter_zeitrahmen="H1"` gebunden; ein explizites H1-Raster
+   kann diese Bindung nicht umgehen.
 2. `paper.py` liest aus einem `Signalplan` nur das Ziel. Der strategieeigene
    Stop und die Re-Entry-Sperre werden im Paper-Takt nicht verwendet; dort
    gelten weiterhin der ATR-Stop und die bestehende Ein-Takt-Sperre.
