@@ -106,10 +106,11 @@ print(ergebnis.als_dict())
 ```
 
 `df` enthält die Kerzen, `strategie` und `parameter` den festgelegten
-Kandidaten. Die Funktion verändert keine der übergebenen Strukturen. Für einen
-schnellen Test lassen sich `laeufe`, `preis_sigma` und `parameter_jitter`
-gezielt verkleinern; für eine belastbare Aussage sollten es mindestens
-mehrere hundert Läufe sein.
+Kandidaten. Die Kerzen müssen denselben Zeitrahmen wie die Strategie haben;
+`h1_retest` ist ausschliesslich für H1-Kerzen vorgesehen. Die Funktion
+verändert keine der übergebenen Strukturen. Für einen schnellen Test lassen
+sich `laeufe`, `preis_sigma` und `parameter_jitter` gezielt verkleinern; für
+eine belastbare Aussage sollten es mindestens mehrere hundert Läufe sein.
 
 ## CLI
 

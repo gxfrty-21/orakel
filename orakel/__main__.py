@@ -298,14 +298,14 @@ def cmd_robustheit(args: argparse.Namespace) -> int:
               file=sys.stderr)
         return 2
 
-    strategie = strategien(cfg).get(str(zeile["strategie"]))
+    zeitrahmen = cfg.richter_zeitrahmen
+    strategie = strategien(cfg, zeitrahmen=zeitrahmen).get(str(zeile["strategie"]))
     if strategie is None:
         print(f"FEHLER Kandidat {args.kandidat}: unbekannte Strategie "
               f"{zeile['strategie']!r}.", file=sys.stderr)
         return 2
 
     symbol = str(zeile["symbol"])
-    zeitrahmen = cfg.richter_zeitrahmen
     df = df_aus_db(db.kerzen(symbol, zeitrahmen))
     mindestens = cfg.min_kerzen_fuer(zeitrahmen)
     if len(df) < mindestens:
