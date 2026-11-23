@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import os
 import sqlite3
@@ -47,7 +48,9 @@ def test_sicherung_ist_integer_und_hat_dieselben_zeilen(tmp_path):
     assert ergebnis["integrity"] == "ok"
     sicherung = Path(ergebnis["pfad"])
     assert sicherung.exists()
-    assert modul.zeilenzahlen(sicherung) == modul.zeilenzahlen(db)
+    assert modul.zeilenzahlen(sicherung, unveraenderlich=True) == modul.zeilenzahlen(db)
+    assert not Path(str(sicherung) + "-wal").exists()
+    assert not Path(str(sicherung) + "-shm").exists()
     probe = modul.pruefe_restore(db, sicherung)
     assert probe["ok"] is True
     assert probe["abweichungen"] == []
@@ -100,6 +103,49 @@ def test_restore_probe_erkennt_abweichende_zeilen(tmp_path):
     assert [a["tabelle"] for a in probe["abweichungen"]] == ["kerzen"]
 
 
+def test_restore_probe_oeffnet_backup_immutable_und_laesst_es_unveraendert(
+    tmp_path, monkeypatch,
+):
+    modul = _modul()
+    db = _db(tmp_path)
+    sicherung = Path(modul.sichere(db, tmp_path / "backups")["pfad"])
+
+    # WAL-Modus macht den Test aussagekräftig: Eine normale Verbindung könnte
+    # Seitenwagen anlegen. Nach dem Checkpoint ist die Datei eigenständig.
+    c = sqlite3.connect(sicherung)
+    try:
+        c.execute("PRAGMA journal_mode=WAL")
+        c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        c.close()
+    for rest in (sicherung.with_name(sicherung.name + "-wal"),
+                 sicherung.with_name(sicherung.name + "-shm")):
+        rest.unlink(missing_ok=True)
+
+    vorher_hash = hashlib.sha256(sicherung.read_bytes()).hexdigest()
+    vorher_mtime = sicherung.stat().st_mtime_ns
+    aufrufe: list[tuple[str, bool]] = []
+    original = sqlite3.connect
+
+    def merken(datenbank, *args, **kwargs):
+        aufrufe.append((str(datenbank), bool(kwargs.get("uri"))))
+        return original(datenbank, *args, **kwargs)
+
+    monkeypatch.setattr(modul.sqlite3, "connect", merken)
+    probe = modul.pruefe_restore(db, sicherung)
+
+    assert probe["ok"] is True
+    backup_aufrufe = [(datenbank, uri) for datenbank, uri in aufrufe
+                      if str(sicherung) in datenbank]
+    assert backup_aufrufe
+    assert all(uri and "mode=ro" in datenbank and "immutable=1" in datenbank
+               for datenbank, uri in backup_aufrufe)
+    assert hashlib.sha256(sicherung.read_bytes()).hexdigest() == vorher_hash
+    assert sicherung.stat().st_mtime_ns == vorher_mtime
+    assert not sicherung.with_name(sicherung.name + "-wal").exists()
+    assert not sicherung.with_name(sicherung.name + "-shm").exists()
+
+
 def test_alte_zeitstempel_der_sicherung_bleiben_lesbar(tmp_path):
     modul = _modul()
     db = _db(tmp_path)
@@ -107,4 +153,4 @@ def test_alte_zeitstempel_der_sicherung_bleiben_lesbar(tmp_path):
 
     ergebnis = modul.sichere(db, tmp_path / "backups", jetzt=gestern)
 
-    assert modul.integritaet(Path(ergebnis["pfad"])) == "ok"
+    assert modul.integritaet(Path(ergebnis["pfad"]), unveraenderlich=True) == "ok"

@@ -153,7 +153,9 @@ docker compose run --rm -T --entrypoint python orakel \
   /app/scripts/pruefe_backup.py --db /data/orakel.db --ordner /data/backups --pruefen
 ```
 
-Exit 0 heisst: Integrität `ok` und alle Zeilenzahlen stimmen überein.
+Exit 0 heisst: Integrität `ok` und alle Zeilenzahlen stimmen überein. Die
+Probe öffnet die Sicherung ausschliesslich mit `mode=ro&immutable=1`; neben
+dem Backup entstehen dadurch keine `-wal`/`-shm`-Dateien.
 
 Für den Umzug auf einen anderen Server das komplette Volume archivieren — bei
 gestoppter App, damit die WAL-Datei nicht offen ist. Das Archiv enthält auch
