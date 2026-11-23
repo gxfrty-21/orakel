@@ -67,10 +67,12 @@ def backtest(
     finanzierung_bps = max(
         0.0, float(cfg["kosten"].get("finanzierung_bps_pro_tag", 0.0))
     )
+    # Bei ausgeschalteter Finanzierung bleibt das Array leer; der letzte
+    # Finanzierungstag ist dann None und verhindert jeden Zugriff darauf.
     kalendertage = (
         pd.to_datetime(df["ts"], utc=True).dt.date.to_numpy()
         if finanzierung_bps > 0
-        else None
+        else np.empty(0, dtype=object)
     )
     atr_serie = atr(df, 14).to_numpy(dtype=float)
     o = df["open"].to_numpy(dtype=float)
@@ -88,8 +90,7 @@ def backtest(
     finanzierung = 0.0
     finanzierung_handel = 0.0
     finanzierung_notional = 0.0
-    einstieg_tag: date | None = None
-    finanzierung_tage = 0
+    letzter_finanzierungstag: date | None = None
     trades: list[dict[str, Any]] = []
     kapital: list[float] = []
     kurve: list[list[Any]] = []
@@ -125,19 +126,20 @@ def backtest(
         Notional ist in Kontowährung umgerechnet und wird nicht täglich neu
         bewertet. Details in docs/H1-RETEST-SPEZIFIKATION.md.
         """
-        nonlocal cash, finanzierung, finanzierung_handel, finanzierung_tage
-        # kalendertage entsteht nur bei aktiver Finanzierung.
-        if stueck <= 0 or kalendertage is None or einstieg_tag is None:
+        nonlocal cash, finanzierung, finanzierung_handel, letzter_finanzierungstag
+        if stueck <= 0 or letzter_finanzierungstag is None:
             return
-        tage = (kalendertage[bar] - einstieg_tag).days
-        neue = tage - finanzierung_tage
+        # Die Differenz zum zuletzt abgerechneten Tag sind die neu
+        # angebrochenen Kalendertage; derselbe Tag wird nicht doppelt belastet.
+        tag = kalendertage[bar]
+        neue = (tag - letzter_finanzierungstag).days
         if neue <= 0:
             return
         betrag = neue * finanzierung_bps / 10_000.0 * finanzierung_notional
         cash -= betrag
         finanzierung += betrag
         finanzierung_handel += betrag
-        finanzierung_tage = tage
+        letzter_finanzierungstag = tag
 
     def schliessen(bar: int, preis: float, grund: str) -> None:
         nonlocal cash, stueck, gebuehren
@@ -189,10 +191,9 @@ def backtest(
                             einstieg_ts = str(ts[fill])
                             finanzierung_handel = 0.0
                             finanzierung_notional = notional
-                            einstieg_tag = (
-                                kalendertage[fill] if kalendertage is not None else None
+                            letzter_finanzierungstag = (
+                                kalendertage[fill] if finanzierung_bps > 0 else None
                             )
-                            finanzierung_tage = 0
                             # Stop noch in der Einstiegskerze möglich
                             if l[fill] <= stop:
                                 schliessen(fill, min(o[fill], stop) * (1 - slip), "Stop (Einstiegskerze)")
