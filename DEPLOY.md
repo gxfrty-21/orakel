@@ -195,9 +195,11 @@ derselbe Neustart wie beim Dauerbetrieb:
 - Der Container bindet `0.0.0.0`. `ORAKEL_AUTH_USER` und `ORAKEL_AUTH_PASS`
   sind deshalb Pflicht: `docker compose` bricht ohne sie schon beim Auflösen
   der `.env` ab (`:?` in `docker-compose.yml`), der Entrypoint meldet es
-  zusätzlich und beendet sich mit Exit 1. Nur für die lokale Entwicklung
-  erlaubt `ORAKEL_ALLOW_NO_AUTH=1` einen Start ohne Login – beim direkten Start
-  ohne Compose; dieser Stack verlangt die beiden Werte unabhängig davon.
+  zusätzlich und beendet sich mit Exit 1. Eine Ausnahme für einen externen
+  Start ohne Login gibt es nicht; auch `ORAKEL_ALLOW_NO_AUTH=1` wird im
+  Entrypoint nicht mehr akzeptiert. Der sichere direkte Start ohne Login ist
+  ausschliesslich Loopback:
+  `.venv/bin/python -m orakel serve --host 127.0.0.1 --port 8000`.
 - Schreibende Anfragen mit fremder Herkunft lehnt die App mit 403
   `herkunft_abgelehnt` ab. Erlaubt sind die eigene Adresse sowie die
   kommagetrennten Einträge in `ORAKEL_ERLAUBTE_ORIGINS`; `GET`, `HEAD` und

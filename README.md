@@ -161,10 +161,21 @@ persistentem SQLite-Speicher im `/data`-Volume (Standardpfad
 Der Container bindet `0.0.0.0`; `ORAKEL_AUTH_USER` und `ORAKEL_AUTH_PASS`
 sind deshalb **Pflicht**. Fehlen sie, bricht der Containerstart mit
 `orakel-entrypoint: FEHLER: ORAKEL_AUTH_USER und ORAKEL_AUTH_PASS muessen gesetzt sein.`
-ab. Ohne Login läuft der Server nur lokal: `python -m orakel serve`
-(Standard `127.0.0.1`) oder bewusst mit `ORAKEL_ALLOW_NO_AUTH=1` – beim
-direkten Start ohne Compose; der Compose-Stack verlangt die beiden Werte
-unabhängig davon.
+ab. Ohne Login läuft der Server ausschliesslich auf Loopback; ein externer
+Bind wird auch bei einem Neustart mit der Altlast `ORAKEL_ALLOW_NO_AUTH=1`
+abgelehnt. Der sichere lokale Startbefehl ist:
+
+```bash
+.venv/bin/python -m orakel serve --host 127.0.0.1 --port 8000
+```
+
+Für einen externen Start müssen `ORAKEL_AUTH_USER` und `ORAKEL_AUTH_PASS`
+gesetzt sein, etwa über die ignorierte `.env`:
+
+```bash
+set -a; . ./.env; set +a
+.venv/bin/python -m orakel serve --host 0.0.0.0 --port 8000
+```
 
 Für Railway ohne eigenen Server, Caddy oder eigene Domain: siehe
 [RAILWAY.md](RAILWAY.md).

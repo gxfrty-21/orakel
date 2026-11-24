@@ -150,19 +150,17 @@ def _bericht(cfg: Config) -> dict[str, Any]:
 
 
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
-WAHRE_WERTE = {"1", "true", "yes", "on"}
 
 
 def _startfreigabe(host: str | None) -> None:
     """Ohne Zugangsdaten darf der Server nur auf Loopback lauschen (fail-closed).
 
     Der Start auf einer externen Adresse ohne ``ORAKEL_AUTH_USER`` /
-    ``ORAKEL_AUTH_PASS`` würde alle Endpunkte offen ins Netz stellen. Eine
-    bewusste Ausnahme erlaubt ``ORAKEL_ALLOW_NO_AUTH=1``.
+    ``ORAKEL_AUTH_PASS`` würde alle Endpunkte offen ins Netz stellen. Die
+    frühere Ausnahme ``ORAKEL_ALLOW_NO_AUTH=1`` gibt es nicht mehr: Auch ein
+    Neustart mit dieser Altlast darf keinen externen Bind ohne Login erzeugen.
     """
     if os.environ.get("ORAKEL_AUTH_USER", "").strip():
-        return
-    if os.environ.get("ORAKEL_ALLOW_NO_AUTH", "").strip().lower() in WAHRE_WERTE:
         return
     if host is None:
         return
@@ -172,8 +170,7 @@ def _startfreigabe(host: str | None) -> None:
             "erreichbar.\n"
             "ORAKEL_AUTH_USER und ORAKEL_AUTH_PASS setzen (Docker: .env, "
             "Railway: Service-Variablen), oder nur lokal auf 127.0.0.1 "
-            "starten.\n"
-            "Bewusste Ausnahme fuer die Entwicklung: ORAKEL_ALLOW_NO_AUTH=1."
+            "starten."
         )
 
 

@@ -168,13 +168,15 @@ def test_serve_ohne_zugangsdaten_nur_auf_loopback(monkeypatch):
             web.create_app(host=host)
 
 
-def test_serve_ohne_zugangsdaten_nur_mit_ausnahme_extern(monkeypatch):
+def test_serve_ohne_zugangsdaten_nie_extern_auch_nicht_mit_altlast(monkeypatch):
     monkeypatch.delenv("ORAKEL_AUTH_USER", raising=False)
     monkeypatch.delenv("ORAKEL_AUTH_PASS", raising=False)
     monkeypatch.setenv("ORAKEL_ALLOW_NO_AUTH", "1")
 
-    # Testabsicht: ohne Zugangsdaten erlaubt nur die gesetzte Ausnahme extern.
-    web.create_app(host="0.0.0.0")  # noqa: S104 - geprüft wird die Freigabe, kein Bind
+    # Eine alte Umgebungsvariable darf einen externen Bind ohne Login nicht
+    # wieder freischalten; der Neustart muss fail-closed bleiben.
+    with pytest.raises(RuntimeError):
+        web.create_app(host="0.0.0.0")  # noqa: S104 - geprüft wird die Freigabe, kein Bind
 
 
 def test_serve_mit_zugangsdaten_auf_externer_adresse(monkeypatch):
@@ -255,12 +257,16 @@ def test_container_entrypoint_bricht_ohne_zugangsdaten_ab():
     # Voller Pfad zur Shell, damit kein Eintrag aus PATH aufgelöst wird (S607).
     shell = shutil.which("sh")
     assert shell is not None
-    lauf = subprocess.run([shell, str(skript)], env=umgebung,  # noqa: S603 - fester Programmaufruf mit Argumentliste, ohne Shell
-                          capture_output=True, text=True)
+    for allow_no_auth in (None, "1"):
+        lauf_umgebung = dict(umgebung)
+        if allow_no_auth is not None:
+            lauf_umgebung["ORAKEL_ALLOW_NO_AUTH"] = allow_no_auth
+        lauf = subprocess.run([shell, str(skript)], env=lauf_umgebung,  # noqa: S603 - fester Programmaufruf mit Argumentliste, ohne Shell
+                              capture_output=True, text=True)
 
-    assert lauf.returncode == 1
-    assert "ORAKEL_AUTH_USER" in lauf.stderr
-    assert "fail-closed" in lauf.stderr
+        assert lauf.returncode == 1
+        assert "ORAKEL_AUTH_USER" in lauf.stderr
+        assert "fail-closed" in lauf.stderr
 
 
 def test_erlaubte_herkuenfte_konfigurierbar(cfg, monkeypatch):
