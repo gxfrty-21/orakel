@@ -1013,6 +1013,34 @@
     {
       "quelle": "tests/test_messe_synthetisch.py",
       "ziel": "dateien/tests/test_messe_synthetisch.py"
+    },
+    {
+      "quelle": "docs/H1-RETEST-SPEZIFIKATION.md",
+      "ziel": "dateien/docs/H1-RETEST-SPEZIFIKATION.md"
+    },
+    {
+      "quelle": "docs/H1-RETEST.md",
+      "ziel": "dateien/docs/H1-RETEST.md"
+    },
+    {
+      "quelle": "docs/ROBUSTHEIT.md",
+      "ziel": "dateien/docs/ROBUSTHEIT.md"
+    },
+    {
+      "quelle": "orakel/kern/robustheit.py",
+      "ziel": "dateien/orakel/kern/robustheit.py"
+    },
+    {
+      "quelle": "tests/test_h1_retest.py",
+      "ziel": "dateien/tests/test_h1_retest.py"
+    },
+    {
+      "quelle": "tests/test_robustheit.py",
+      "ziel": "dateien/tests/test_robustheit.py"
+    },
+    {
+      "quelle": "tests/test_robustheit_cli.py",
+      "ziel": "dateien/tests/test_robustheit_cli.py"
     }
   ],
   "dokumente": [

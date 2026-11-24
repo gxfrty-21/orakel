@@ -161,10 +161,21 @@ persistentem SQLite-Speicher im `/data`-Volume (Standardpfad
 Der Container bindet `0.0.0.0`; `ORAKEL_AUTH_USER` und `ORAKEL_AUTH_PASS`
 sind deshalb **Pflicht**. Fehlen sie, bricht der Containerstart mit
 `orakel-entrypoint: FEHLER: ORAKEL_AUTH_USER und ORAKEL_AUTH_PASS muessen gesetzt sein.`
-ab. Ohne Login läuft der Server nur lokal: `python -m orakel serve`
-(Standard `127.0.0.1`) oder bewusst mit `ORAKEL_ALLOW_NO_AUTH=1` – beim
-direkten Start ohne Compose; der Compose-Stack verlangt die beiden Werte
-unabhängig davon.
+ab. Ohne Login läuft der Server ausschliesslich auf Loopback; ein externer
+Bind wird auch bei einem Neustart mit der Altlast `ORAKEL_ALLOW_NO_AUTH=1`
+abgelehnt. Der sichere lokale Startbefehl ist:
+
+```bash
+.venv/bin/python -m orakel serve --host 127.0.0.1 --port 8000
+```
+
+Für einen externen Start müssen `ORAKEL_AUTH_USER` und `ORAKEL_AUTH_PASS`
+gesetzt sein, etwa über die ignorierte `.env`:
+
+```bash
+set -a; . ./.env; set +a
+.venv/bin/python -m orakel serve --host 0.0.0.0 --port 8000
+```
 
 Für Railway ohne eigenen Server, Caddy oder eigene Domain: siehe
 [RAILWAY.md](RAILWAY.md).
@@ -225,6 +236,10 @@ der erzeugte Rohbericht liegt nach dem Lauf unter
 | Dauerbetrieb | persistenter Plan, Backoff, Ressourcenlimits, Jobprotokoll und Betriebsansicht |
 
 Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswahl einmal geöffnet; scheitert er, gibt es keinen Ersatzkandidaten. Im Lab zeigt ein Chart die aggregierte Kapitalkurve der Testfenster; beim Überfahren nennt ein Tooltip Kapitalstand, Veränderung seit dem Start in Prozent, Datum sowie den bisherigen Höchststand mit Abstand in Prozent; per Tastatur (Tab, Pfeiltasten, Home/Ende) ist dieselbe Anzeige erreichbar. Solange der Tastaturfokus im sichtbaren Lab-Detail liegt, pausiert der Auto-Refresh nur den Ansichts-Render, damit die Anzeige beim Ablesen nicht neu aufgebaut wird; Daten und Kopfzeile werden weiter aktualisiert; ein Status in der Listenkopfzeile (`#labNeu`, höfliche Live-Region) zeigt «Neue Daten verfügbar», und beim Verlassen des Details wird sofort neu gezeichnet statt auf den nächsten Takt zu warten. Ein Fokus auf der Lab-Liste oder einem anderen Lab-Element blockiert den Render nicht; ein ausgeblendetes Lab ebenfalls nicht. Der Refresh baut die Liste nicht neu auf: Vorhandene Einträge werden über eine stabile Kandidatenkennung in die neue Reihenfolge gebracht, Auswahl, Fokus und Scrollposition bleiben erhalten. Der Acht-Sekunden-Takt startet keinen zweiten Aufruf, solange eine Antwort läuft, pausiert im Hintergrundtab und lädt beim Zurückkehren sofort nach. Dort und in der Strategien-Ansicht lässt sich zudem bei jedem Kandidaten die Liste der Walk-Forward-Fenster aufklappen: Trainings- und Testblock, gewählter Parameter, Trades, Profit Factor und Netto je Fenster.
+
+Der isolierte [Monte-Carlo-Perturbationstest](docs/ROBUSTHEIT.md) prüft einen bereits festgelegten Kandidaten zusätzlich gegen kleine Preis- und Parameteränderungen. Er ist nicht Teil des Richters und ändert weder Risiko noch Paper-Sperre.
+
+Der H1-Retest mit bestätigtem Retest und Re-Entry-Sperre ist als [Signalplan und H1-Strategie](docs/H1-RETEST.md) im Backtest umgesetzt. Die [bestätigte Kurzfassung mit den offenen Backtest- und Paper-Punkten](docs/H1-RETEST-SPEZIFIKATION.md) hält den Entscheidungsstand fest. Die H1-Parameter stehen im `[research]`-Raster; die Strategie wird nur bei `richter_zeitrahmen = "H1"` aktiv und bei M15 nicht mitbewertet. Richter, Risikogrenzen und Paper-Sperre bleiben unverändert.
 
 Das Cockpit oben in der Übersicht zeigt vier Zahlen aus derselben Datenbank: Bot-Zustand (letzter Paper-Takt, Risikostopp), Kontostand, Gewinn/Verlust und offene Positionen. Der Zeitraum lässt sich zwischen heute, 7 Tagen und 1 Monat umschalten; «heute» beginnt um 00:00 Uhr Europe/Zurich, und der Verlauf ist auf 120 Punkte ausgedünnt. Fehlt eine Grundlage, steht «–», und ein leerer Verlauf wird als solcher benannt. Als «steht» gilt der Bot, wenn seit drei Takten (mindestens drei Minuten) kein Paper-Takt mehr lief; ein gesetzter Risikostopp hat Vorrang und zeigt seinen Grund. Die offenen Positionen erscheinen darunter mit Einstieg, letztem M15-Kurs, Stop und unrealisiertem Ergebnis.
 
@@ -442,6 +457,13 @@ Meldung ab, statt eine falsche Währung zu buchen. `[kosten]` (inklusive
 `modell`) gilt als Rückfall für unbekannte Symbole wie Aktien und Indizes; nur
 Devisenpaare bringen ihr Profil mit, für sie muss in `config.toml` nichts je
 Symbol eingestellt werden.
+
+Optional bucht `finanzierung_bps_pro_tag` Finanzierungskosten pro UTC-Kalendertag
+auf das Einstiegsnotional; der Default ist `0` (deaktiviert). Die Kennzahl
+`finanzierung` steht im Backtest-Ergebnis getrennt von `gebuehren`. Der Bericht
+führt den Tagessatz additiv unter `kosten.finanzierung_bps_pro_tag`; Lab und
+Strategien zeigen die gebuchten Finanzierungskosten getrennt von den Gebühren.
+Das Berichtsschema bleibt bei 2, neue Felder sind für bestehende Leser additiv.
 
 ## Aufbau
 

@@ -21,6 +21,7 @@ from .kern.data import (
     zerlege_dateiname,
 )
 from .kern.db import Facts, Kerzenkonflikte
+from .kern.robustheit import STANDARD_LAEUFE, STANDARD_SEED
 from .knowledge import Vault
 
 
@@ -253,6 +254,88 @@ def cmd_strategie_bericht(args: argparse.Namespace) -> int:
     print(f"Strategie-Bericht: {z['kandidaten']} Kandidaten · bestanden {z['bestanden']} · "
           f"abgelehnt {z['abgelehnt']} · ohne Daten {z['ohne_ausreichende_daten']}")
     print(f"Geschrieben: {json_pfad} und {md_pfad}")
+    return 0
+
+
+def _kennzahl_text(wert: float | None) -> str:
+    return "–" if wert is None else f"{float(wert):.2f}"
+
+
+def _anteil_text(wert: float | None) -> str:
+    return "–" if wert is None else f"{float(wert) * 100:.1f} %"
+
+
+def cmd_robustheit(args: argparse.Namespace) -> int:
+    """Prüft einen festgelegten Kandidaten aus ``validierungen``.
+
+    Der Kandidat wird nicht neu ausgewählt: Symbol, Strategie und Parameter
+    stammen aus der gespeicherten Validierung. Der Test liest nur Kerzen und
+    schreibt weder Urteil noch Auswahl zurück.
+    """
+    from .kern.robustheit import perturbationstest
+    from .kern.strategies import strategien
+
+    cfg = _cfg(args.config)
+    db_pfad = Path(args.db) if args.db else cfg.db_pfad
+    if not db_pfad.is_file():
+        print(f"FEHLER Datenbank nicht gefunden: {db_pfad}", file=sys.stderr)
+        return 2
+
+    db = Facts(db_pfad)
+    zeile = db.validierung(int(args.kandidat))
+    if zeile is None:
+        print(f"FEHLER Kandidat {args.kandidat} nicht gefunden.", file=sys.stderr)
+        return 2
+
+    try:
+        parameter = json.loads(zeile["parameter"])
+    except (TypeError, ValueError):
+        print(f"FEHLER Kandidat {args.kandidat}: Parameter sind kein gültiges JSON.",
+              file=sys.stderr)
+        return 2
+    if not isinstance(parameter, dict):
+        print(f"FEHLER Kandidat {args.kandidat}: Parameter müssen ein Objekt sein.",
+              file=sys.stderr)
+        return 2
+
+    zeitrahmen = cfg.richter_zeitrahmen
+    strategie = strategien(cfg, zeitrahmen=zeitrahmen).get(str(zeile["strategie"]))
+    if strategie is None:
+        print(f"FEHLER Kandidat {args.kandidat}: unbekannte Strategie "
+              f"{zeile['strategie']!r}.", file=sys.stderr)
+        return 2
+
+    symbol = str(zeile["symbol"])
+    df = df_aus_db(db.kerzen(symbol, zeitrahmen))
+    mindestens = cfg.min_kerzen_fuer(zeitrahmen)
+    if len(df) < mindestens:
+        print(f"FEHLER {symbol} {zeitrahmen}: {len(df)} Kerzen, "
+              f"mindestens {mindestens} erwartet.", file=sys.stderr)
+        return 2
+
+    urteil_cfg = cfg.fuer_zeitrahmen(zeitrahmen)
+    try:
+        ergebnis = perturbationstest(
+            df, strategie, parameter, urteil_cfg,
+            RisikoGrenzen.aus_config(urteil_cfg),
+            laeufe=int(args.laeufe), seed=int(args.seed), symbol=symbol,
+        )
+    except (KeyError, TypeError, ValueError) as fehler:
+        print(f"FEHLER Robustheitstest: {fehler}", file=sys.stderr)
+        return 2
+
+    parameter_text = ", ".join(f"{k}={v}" for k, v in sorted(parameter.items()))
+    print(f"Kandidat {args.kandidat}: {symbol} · {strategie.name} · {parameter_text}")
+    print(f"Urteil: {zeile['urteil']} · Zeitrahmen: {zeitrahmen} · "
+          f"{ergebnis.laeufe} Läufe ({ergebnis.laeufe_mit_trades} mit Trades)")
+    print(f"Basis: Drawdown {_kennzahl_text(ergebnis.basis_drawdown_pct)} % · "
+          f"Profit Factor {_kennzahl_text(ergebnis.basis_profit_factor)}")
+    print(f"Drawdown: p50 {_kennzahl_text(ergebnis.drawdown_p50_pct)} % · "
+          f"p95 {_kennzahl_text(ergebnis.drawdown_p95_pct)} % · "
+          f"max {_kennzahl_text(ergebnis.drawdown_max_pct)} %")
+    print(f"Profit Factor: p50 {_kennzahl_text(ergebnis.profit_factor_p50)} · "
+          f"p05 {_kennzahl_text(ergebnis.profit_factor_p05)} · "
+          f"über 1: {_anteil_text(ergebnis.profit_factor_ueber_1_anteil)}")
     return 0
 
 
@@ -577,6 +660,18 @@ def main(argv: list[str] | None = None) -> int:
     sb.add_argument("--symbol", nargs="*", default=None, help="Nur diese Symbole prüfen")
     sb.add_argument("--ausgabe", default="artifacts/strategie-bericht")
     sb.set_defaults(func=cmd_strategie_bericht)
+
+    rb = sub.add_parser("robustheit",
+                        help="Monte-Carlo-Perturbation für einen festgelegten Kandidaten")
+    rb.add_argument("--db", default=None,
+                    help="Datenbank mit Kandidat und Kerzen (Standard: config.toml)")
+    rb.add_argument("--kandidat", type=int, required=True,
+                    help="ID des Kandidaten aus der Tabelle validierungen")
+    rb.add_argument("--laeufe", type=int, default=STANDARD_LAEUFE,
+                    help=f"Anzahl der Perturbationsläufe (Standard: {STANDARD_LAEUFE})")
+    rb.add_argument("--seed", type=int, default=STANDARD_SEED,
+                    help=f"Zufallsseed (Standard: {STANDARD_SEED})")
+    rb.set_defaults(func=cmd_robustheit)
 
     s = sub.add_parser("serve", help="Dashboard im Browser starten")
     # Ohne Zugangsdaten nur Loopback; Container setzen 0.0.0.0 ausdruecklich

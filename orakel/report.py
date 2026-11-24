@@ -146,6 +146,9 @@ def baue_bericht(
             "commission_per_share": float(cfg["kosten"]["commission_per_share"]),
             "min_commission": float(cfg["kosten"]["min_commission"]),
             "slippage_bps": float(cfg["kosten"]["slippage_bps"]),
+            "finanzierung_bps_pro_tag": float(
+                cfg["kosten"].get("finanzierung_bps_pro_tag", 0.0)
+            ),
         },
         "live": {"gruende": [
             "Projekt ist ausschliesslich Paper-Trading (Meister-Prompt, Abschnitt 9)",

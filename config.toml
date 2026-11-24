@@ -48,6 +48,10 @@ modell = "stueck"
 commission_per_share = 0.005
 min_commission = 1.0
 slippage_bps = 2.0
+# Optionaler Finanzierungskosten-Backtest: Basispunkte pro UTC-Kalendertag
+# auf das Einstiegsnotional in Kontowährung. 0.0 = aus. Vereinfachtes Modell:
+# kein Broker-Rollover, kein Triple-Swap, keine tägliche Neubewertung.
+finanzierung_bps_pro_tag = 0.0
 # Nur für unbekannte Symbole mit modell = "spread": Spread und Pip-Grösse.
 # EURUSD und USDJPY brauchen diese Werte nicht — sie kommen aus dem Profil.
 spread_pips = 1.0
@@ -101,6 +105,12 @@ donchian = [20, 40, 55]
 rsi_buy = [30, 35]
 rsi_exit = [60, 70]
 roc_period = [20, 40]
+# H1-Retest: Ausbruch, bestätigter Retest und Re-Entry-Sperre.
+# Die Strategie wird nur bei [basis] richter_zeitrahmen = "H1" registriert
+# und bei M15 nicht mitbewertet; der Paper-Takt bleibt unabhängig davon M15.
+h1_retest_lookback = [20, 40]
+h1_retest_fenster = [5]
+h1_retest_stop_puffer_pct = [0.001]
 
 [paper]
 order_freigabe = false             # harte Policy-Sperre; muss false bleiben.

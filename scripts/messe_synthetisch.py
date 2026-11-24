@@ -65,7 +65,7 @@ grenzen = RisikoGrenzen.aus_config(cfg)
 anzahl = 0
 for symbol in db.symbole():
     df = df_aus_db(db.kerzen(symbol, "M15"))
-    for strategie in strategien(cfg).values():
+    for strategie in strategien(cfg, zeitrahmen="M15").values():
         urteil = beurteile_walk_forward(df, symbol, strategie, cfg, grenzen)
         anzahl += 1
         print(f"{symbol} {strategie.name}: {urteil.urteil}")

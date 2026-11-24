@@ -41,6 +41,7 @@ def kennzahlen(
     startkapital: float,
     bars_pro_jahr: int,
     zeit_im_markt_pct: float,
+    finanzierung: float = 0.0,
 ) -> dict[str, Any]:
     netto = sum(float(t["netto"]) for t in trades)
     gewinne = sum(float(t["netto"]) for t in trades if float(t["netto"]) > 0)
@@ -59,6 +60,7 @@ def kennzahlen(
         "max_drawdown_pct": max_drawdown_pct(kapital),
         "trades": len(trades),
         "gebuehren": round(gebuehren, 2),
+        "finanzierung": round(finanzierung, 2),
         "zeit_im_markt_pct": round(zeit_im_markt_pct, 1),
         "sharpe": sharpe(kapital, bars_pro_jahr),
         "endkapital": round(endkapital, 2),
@@ -68,6 +70,7 @@ def kennzahlen(
 def leer() -> dict[str, Any]:
     return {
         "netto": 0.0, "rendite_pct": 0.0, "profit_factor": None, "trefferquote_pct": 0.0,
-        "max_drawdown_pct": 0.0, "trades": 0, "gebuehren": 0.0, "zeit_im_markt_pct": 0.0,
+        "max_drawdown_pct": 0.0, "trades": 0, "gebuehren": 0.0,
+        "finanzierung": 0.0, "zeit_im_markt_pct": 0.0,
         "sharpe": None, "endkapital": 0.0,
     }
