@@ -14,6 +14,9 @@
  *   - die Rand-Fades zeigen nur die Richtung mit weiteren Bereichen,
  *   - die Desktop-Sidebar bleibt auf langen Ansichten beim Scrollen sichtbar,
  *   - der aktive Link bleibt auch in der intern scrollenden Sidebar sichtbar,
+ *   - echte Viewport-Wechsel 1024 × 500 → 1280 × 800 → 1024 × 500,
+ *   - der Querformat-Grenzfall 901 × 500,
+ *   - eine explizite Änderung der Header-Höhe mit Neuberechnung der max-height,
  *   - die Querformat-Navigation öffnet sich beim Verlassen des Raumschiffs.
  *
  * Der Test ist für die Seed-Datenbank gedacht und läuft ohne Test-Framework.
@@ -218,7 +221,7 @@ async function pruefeStickySidebar(page) {
   const aktiverStand = async () => page.evaluate(() => {
     const liste = document.querySelector('.nav-liste');
     const aktiv = liste?.querySelector('.nav[aria-current="page"]');
-    if (!liste || !aktiv) return { text: '', inListe: false, imViewport: false, listenUnten: 0, listenAbstand: 0, maxHoehe: 0, scrollTop: 0 };
+    if (!liste || !aktiv) return { text: '', inListe: false, imViewport: false, listenUnten: 0, listenAbstand: 0, maxHoehe: 0, viewportHoehe: innerHeight, scrollTop: 0 };
     const listenKasten = liste.getBoundingClientRect();
     const linkKasten = aktiv.getBoundingClientRect();
     return {
@@ -228,24 +231,38 @@ async function pruefeStickySidebar(page) {
       listenUnten: Math.round(listenKasten.bottom),
       listenAbstand: Math.round(liste.offsetTop),
       maxHoehe: Math.round(parseFloat(getComputedStyle(liste).maxHeight)),
+      viewportHoehe: innerHeight,
       scrollTop: Math.round(liste.scrollTop),
     };
   });
+
+  const warteAufDynamischeHoehe = () => page.waitForFunction(() => {
+    const liste = document.querySelector('.nav-liste');
+    if (!liste) return false;
+    const maxHoehe = parseFloat(getComputedStyle(liste).maxHeight);
+    return Math.abs(maxHoehe - (innerHeight - liste.offsetTop)) <= 1;
+  });
+
+  const pruefeDynamischeHoehe = (stand, kontext) => {
+    pruefe(Math.abs(stand.maxHoehe - (stand.viewportHoehe - stand.listenAbstand)) <= 1,
+      `${kontext}: max-height ${stand.maxHoehe} px passt nicht zu ${stand.viewportHoehe} - ${stand.listenAbstand} px`);
+    pruefe(stand.listenUnten <= stand.viewportHoehe + 1,
+      `${kontext}: Linkliste endet bei ${stand.listenUnten} px ausserhalb des Viewports`);
+  };
 
   for (const breite of [1280, 1024]) {
     await page.setViewportSize({ width: breite, height: 500 });
     await page.goto(`${opts.url}/?v=sticky-kurz-${breite}#/kb`, { waitUntil: 'networkidle' });
     await page.waitForFunction(() => document.querySelectorAll('#hauptnav .nav[data-v]').length === 10);
     await warteAufRoute(page, 'kb');
+    await warteAufDynamischeHoehe();
 
     let kurz = await aktiverStand();
     pruefe(kurz.text === 'Wissensbank', `Kurzer Viewport ${breite}: aktiver Link ist «${kurz.text}» statt «Wissensbank»`);
     pruefe(kurz.scrollTop > 0, `Kurzer Viewport ${breite}: die Linkliste wurde für den Deep-Link nicht intern gescrollt`);
     pruefe(kurz.inListe, `Kurzer Viewport ${breite}: aktiver Link liegt nach dem Deep-Link ausserhalb der Linkliste`);
     pruefe(kurz.imViewport, `Kurzer Viewport ${breite}: aktiver Link liegt nach dem Deep-Link ausserhalb des Viewports`);
-    pruefe(kurz.listenUnten <= 501, `Kurzer Viewport ${breite}: Linkliste endet bei ${kurz.listenUnten} px ausserhalb des Viewports`);
-    pruefe(kurz.maxHoehe === 500 - kurz.listenAbstand,
-      `Kurzer Viewport ${breite}: max-height ${kurz.maxHoehe} px passt nicht zur Listenposition ${kurz.listenAbstand} px`);
+    pruefeDynamischeHoehe(kurz, `Kurzer Viewport ${breite}`);
 
     await page.locator('.nav[data-v="overview"]').click();
     await warteAufRoute(page, 'overview');
@@ -255,8 +272,107 @@ async function pruefeStickySidebar(page) {
     pruefe(kurz.text === 'Wissensbank', `Kurzer Viewport ${breite}: aktiver Link nach Zurück ist «${kurz.text}» statt «Wissensbank»`);
     pruefe(kurz.inListe && kurz.imViewport,
       `Kurzer Viewport ${breite}: aktiver Link ist nach Zurück nicht sichtbar`);
+    pruefeDynamischeHoehe(kurz, `Kurzer Viewport ${breite} nach Zurück`);
     notiere(`aktiver Sidebar-Link bei ${breite} × 500 px nach Deep-Link und Zurück sichtbar`);
   }
+
+  // 901 × 500 liegt wegen der Querformat-Regel (max-width: 950px und
+  // max-height: 500px) noch im Querformat-Modus. Dort gibt es keine intern
+  // scrollende Desktop-Liste; der aktive Link muss trotzdem sichtbar sein.
+  await page.setViewportSize({ width: 901, height: 500 });
+  await page.goto(`${opts.url}/?v=sticky-grenze-901#/kb`, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => document.querySelectorAll('#hauptnav .nav[data-v]').length === 10);
+  await warteAufRoute(page, 'kb');
+
+  const grenze901 = async () => page.evaluate(() => {
+    const nav = document.querySelector('#hauptnav');
+    const liste = document.querySelector('.nav-liste');
+    const aktiv = liste?.querySelector('.nav[aria-current="page"]');
+    if (!nav || !liste || !aktiv) return { text: '', imViewport: false, imNav: false, internScrollbar: false };
+    const navKasten = nav.getBoundingClientRect();
+    const linkKasten = aktiv.getBoundingClientRect();
+    return {
+      text: aktiv.querySelector('b')?.textContent?.trim() || '',
+      imViewport: linkKasten.top >= -1 && linkKasten.bottom <= innerHeight + 1,
+      imNav: linkKasten.left >= navKasten.left - 1 && linkKasten.right <= navKasten.right + 1,
+      internScrollbar: liste.scrollHeight > liste.clientHeight + 1,
+    };
+  });
+
+  let grenze = await grenze901();
+  pruefe(grenze.text === 'Wissensbank', `901 × 500: aktiver Link ist «${grenze.text}» statt «Wissensbank»`);
+  pruefe(grenze.imViewport, '901 × 500: aktiver Link liegt ausserhalb des Viewports');
+  pruefe(grenze.imNav, '901 × 500: aktiver Link liegt ausserhalb der Navigation');
+  pruefe(!grenze.internScrollbar, '901 × 500: Querformat-Navigation scrollt unerwartet intern');
+
+  await page.locator('.nav[data-v="overview"]').click();
+  await warteAufRoute(page, 'overview');
+  await page.evaluate(() => history.back());
+  await warteAufRoute(page, 'kb');
+  grenze = await grenze901();
+  pruefe(grenze.text === 'Wissensbank' && grenze.imViewport && grenze.imNav,
+    '901 × 500: aktiver Link ist nach Zurück nicht sichtbar');
+  notiere('901 × 500: Querformat-Grenzfall hält den aktiven Link sichtbar');
+
+  // Echte Viewport-Wechsel ohne Reload: Die Karte muss ihre Höhe und den
+  // aktiven Link nach jedem Schritt neu berechnen.
+  await page.setViewportSize({ width: 1024, height: 500 });
+  await page.goto(`${opts.url}/?v=resize-start#/kb`, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => document.querySelectorAll('#hauptnav .nav[data-v]').length === 10);
+  await warteAufRoute(page, 'kb');
+  await warteAufDynamischeHoehe();
+
+  let resizeStand = await aktiverStand();
+  pruefeDynamischeHoehe(resizeStand, 'Resize-Start 1024 × 500');
+  pruefe(resizeStand.text === 'Wissensbank' && resizeStand.inListe && resizeStand.imViewport,
+    'Resize-Start 1024 × 500: aktiver Link ist nicht sichtbar');
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await warteAufDynamischeHoehe();
+  await page.waitForTimeout(80);
+  resizeStand = await aktiverStand();
+  pruefeDynamischeHoehe(resizeStand, 'Resize 1280 × 800');
+  pruefe(resizeStand.text === 'Wissensbank' && resizeStand.inListe && resizeStand.imViewport,
+    'Resize 1280 × 800: aktiver Link ist nicht sichtbar');
+
+  await page.setViewportSize({ width: 1024, height: 500 });
+  await warteAufDynamischeHoehe();
+  await page.waitForTimeout(80);
+  resizeStand = await aktiverStand();
+  pruefeDynamischeHoehe(resizeStand, 'Resize zurück zu 1024 × 500');
+  pruefe(resizeStand.text === 'Wissensbank' && resizeStand.inListe && resizeStand.imViewport,
+    'Resize zurück zu 1024 × 500: aktiver Link ist nicht sichtbar');
+  pruefe(resizeStand.scrollTop > 0, 'Resize zurück zu 1024 × 500: Liste wurde nicht intern gescrollt');
+  notiere('echte Resize-Übergänge 1024 × 500 → 1280 × 800 → 1024 × 500 geprüft');
+
+  // Explizite Höhenänderung der Kopfzeile: Der ResizeObserver muss die
+  // verfügbare Listenhöhe neu berechnen und den aktiven Link nachziehen.
+  const vorHeader = await aktiverStand();
+  await page.evaluate(() => {
+    document.querySelector('.top').style.minHeight = '140px';
+  });
+  await warteAufDynamischeHoehe();
+  await page.waitForTimeout(80);
+  const nachHeader = await aktiverStand();
+  pruefe(nachHeader.listenAbstand > vorHeader.listenAbstand,
+    `Header-Höhe: Listenposition blieb bei ${nachHeader.listenAbstand} px`);
+  pruefe(nachHeader.maxHoehe < vorHeader.maxHoehe,
+    `Header-Höhe: max-height blieb bei ${nachHeader.maxHoehe} px`);
+  pruefeDynamischeHoehe(nachHeader, 'Header-Höhe 140 px');
+  pruefe(nachHeader.text === 'Wissensbank' && nachHeader.inListe && nachHeader.imViewport,
+    'Header-Höhe: aktiver Link ist nicht sichtbar');
+  notiere('Header-Höhe 140 px: max-height und aktiver Link neu berechnet');
+
+  await page.evaluate(() => {
+    document.querySelector('.top').style.minHeight = '';
+  });
+  await warteAufDynamischeHoehe();
+  await page.waitForTimeout(80);
+  const nachHeaderZurueck = await aktiverStand();
+  pruefeDynamischeHoehe(nachHeaderZurueck, 'Header-Höhe zurückgesetzt');
+  pruefe(nachHeaderZurueck.text === 'Wissensbank' && nachHeaderZurueck.inListe && nachHeaderZurueck.imViewport,
+    'Header-Höhe zurückgesetzt: aktiver Link ist nicht sichtbar');
+  notiere('Header-Höhe zurückgesetzt: max-height und aktiver Link weiter sichtbar');
 
   await page.setViewportSize({ width: 1280, height: 800 });
   notiere('Desktop-Sidebar bleibt auf Lab, Spider und Wissensbank sichtbar und bedienbar');
