@@ -309,6 +309,36 @@ def test_h1_fensterende_erlaubt_gleichzeitiges_neues_breakout(cfg):
     assert plan.stop[15] == pytest.approx(107.0 * 0.99)
 
 
+def h1_mehrtages_kerzen(n: int = 120) -> pd.DataFrame:
+    """H1-Retest mit Bestätigung und einer Haltephase über mehrere UTC-Tage."""
+    ts = pd.date_range("2025-01-01", periods=n, freq="1h", tz="UTC")
+    close = np.full(n, 100.0)
+    high = close + 1.0
+    low = close - 1.0
+    open_ = close.copy()
+
+    # Breakout bei 10, Retest bei 11, Bestätigung bei 15; Level 101.
+    close[10], high[10], low[10] = 105.0, 106.0, 100.0
+    close[11], high[11], low[11] = 101.0, 102.0, 100.5
+    for i in range(12, 15):
+        close[i], high[i], low[i] = 101.0, 101.5, 100.8
+    close[15], high[15], low[15] = 103.0, 103.5, 100.9
+
+    # Die Position bleibt über mehrere Kalendertage klar über dem Stop.
+    for i in range(16, 100):
+        open_[i], close[i], high[i], low[i] = 103.0, 103.0, 104.0, 102.0
+    # Ein Schluss unter dem Breakout-Level beendet die Haltephase am Folgetag.
+    open_[100], close[100], high[100], low[100] = 103.0, 100.0, 103.0, 100.5
+    # Ausstieg zum neutralen Ziel wieder auf dem Einstiegspreis, damit der Test
+    # die Finanzierung und nicht einen Kursgewinn/-verlust misst.
+    open_[101] = 103.0
+
+    return pd.DataFrame({
+        "ts": ts, "open": open_, "high": high, "low": low,
+        "close": close, "volume": [100.0] * n,
+    })
+
+
 def test_h1_plan_traegt_den_stop_ueber_halte_bars(cfg):
     cfg = mit_h1_raster(cfg)
     df = retest_kerzen(15)
@@ -355,6 +385,41 @@ def test_h1_retest_nach_stop_neu_erst_nach_neutralem_ziel(cfg):
     assert plan.ziel[27] == 1.0  # neues Setup wird bestätigt
     assert [t["grund"] for t in erg.trades] == ["Stop", "Ende der Daten"]
     assert erg.trades[1]["einstieg"] == str(df["ts"].iloc[28])[:19]
+
+
+def test_h1_retest_mehrtages_haltephase_bucht_finanzierung(cfg):
+    cfg = mit_h1_raster(cfg)
+    cfg._d["kosten"]["finanzierung_bps_pro_tag"] = 10.0
+    df = h1_mehrtages_kerzen()
+    plan = strategien(cfg)["h1_retest"].signale(
+        df, {"lookback": 5, "retest_fenster": 5, "stop_puffer_pct": 0.01},
+    )
+
+    assert plan.ziel[15] == 1.0
+    assert plan.ziel[99] == 1.0
+    assert plan.ziel[100] == 0.0
+
+    erg = backtest(df, plan, cfg, RisikoGrenzen.aus_config(cfg))
+
+    assert len(erg.trades) == 1
+    trade = erg.trades[0]
+    assert trade["einstieg"] == str(df["ts"].iloc[16])[:19]
+    assert trade["ausstieg"] == str(df["ts"].iloc[101])[:19]
+    assert trade["grund"] == "Signal"
+
+    tage = (
+        pd.Timestamp(trade["ausstieg"]).normalize()
+        - pd.Timestamp(trade["einstieg"]).normalize()
+    ).days
+    assert tage >= 3
+    notional = trade["stueck"] * float(df["open"].iloc[16])
+    assert erg.kennzahlen["finanzierung"] == pytest.approx(
+        tage * 0.001 * notional, abs=0.01,
+    )
+    assert trade["netto"] == pytest.approx(
+        -erg.kennzahlen["finanzierung"], abs=0.01,
+    )
+    assert erg.kennzahlen["netto"] == pytest.approx(trade["netto"], abs=0.01)
 
 
 def test_array_und_plan_liefern_denselben_backtest(cfg):
