@@ -40,15 +40,32 @@ function routeAusHash(){
 
 function halteAktivenLinkSichtbar(link){
   const nav = link.closest('#hauptnav');
-  if(!nav || nav.scrollWidth <= nav.clientWidth + 1) return;
-  const navKasten = nav.getBoundingClientRect();
-  const linkKasten = link.getBoundingClientRect();
-  if(linkKasten.left >= navKasten.left && linkKasten.right <= navKasten.right) return;
-  const ziel = Math.max(0, Math.min(
-    nav.scrollLeft + linkKasten.left - navKasten.left - (nav.clientWidth - linkKasten.width) / 2,
-    nav.scrollWidth - nav.clientWidth,
-  ));
-  nav.scrollLeft = ziel;
+  if(!nav) return;
+
+  if(nav.scrollWidth > nav.clientWidth + 1){
+    const navKasten = nav.getBoundingClientRect();
+    const linkKasten = link.getBoundingClientRect();
+    if(linkKasten.left < navKasten.left || linkKasten.right > navKasten.right){
+      const ziel = Math.max(0, Math.min(
+        nav.scrollLeft + linkKasten.left - navKasten.left - (nav.clientWidth - linkKasten.width) / 2,
+        nav.scrollWidth - nav.clientWidth,
+      ));
+      nav.scrollLeft = ziel;
+    }
+  }
+
+  const liste = link.closest('.nav-liste');
+  if(liste && liste.scrollHeight > liste.clientHeight + 1){
+    const listeKasten = liste.getBoundingClientRect();
+    const linkKasten = link.getBoundingClientRect();
+    if(linkKasten.top < listeKasten.top || linkKasten.bottom > listeKasten.bottom){
+      const ziel = Math.max(0, Math.min(
+        liste.scrollTop + linkKasten.top - listeKasten.top - (liste.clientHeight - linkKasten.height) / 2,
+        liste.scrollHeight - liste.clientHeight,
+      ));
+      liste.scrollTop = ziel;
+    }
+  }
 }
 
 function aktualisiereNavRaender(){

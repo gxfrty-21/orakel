@@ -13,6 +13,7 @@
  *   - der aktive Link bleibt auf schmalen Viewports sichtbar,
  *   - die Rand-Fades zeigen nur die Richtung mit weiteren Bereichen,
  *   - die Desktop-Sidebar bleibt auf langen Ansichten beim Scrollen sichtbar,
+ *   - der aktive Link bleibt auch in der intern scrollenden Sidebar sichtbar,
  *   - die Querformat-Navigation öffnet sich beim Verlassen des Raumschiffs.
  *
  * Der Test ist für die Seed-Datenbank gedacht und läuft ohne Test-Framework.
@@ -213,6 +214,43 @@ async function pruefeStickySidebar(page) {
 
   await page.locator('.nav[data-v="overview"]').click();
   await warteAufRoute(page, 'overview');
+
+  await page.setViewportSize({ width: 1280, height: 500 });
+  await page.goto(`${opts.url}/?v=sticky-kurz#/kb`, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => document.querySelectorAll('#hauptnav .nav[data-v]').length === 10);
+  await warteAufRoute(page, 'kb');
+
+  const aktiverStand = async () => page.evaluate(() => {
+    const liste = document.querySelector('.nav-liste');
+    const aktiv = liste?.querySelector('.nav[aria-current="page"]');
+    if (!liste || !aktiv) return { text: '', inListe: false, imViewport: false, scrollTop: 0 };
+    const listenKasten = liste.getBoundingClientRect();
+    const linkKasten = aktiv.getBoundingClientRect();
+    return {
+      text: aktiv.querySelector('b')?.textContent?.trim() || '',
+      inListe: linkKasten.top >= listenKasten.top - 1 && linkKasten.bottom <= listenKasten.bottom + 1,
+      imViewport: linkKasten.top >= -1 && linkKasten.bottom <= innerHeight + 1,
+      scrollTop: Math.round(liste.scrollTop),
+    };
+  });
+
+  let kurz = await aktiverStand();
+  pruefe(kurz.text === 'Wissensbank', `Kurzer Viewport: aktiver Link ist «${kurz.text}» statt «Wissensbank»`);
+  pruefe(kurz.scrollTop > 0, 'Kurzer Viewport: die Linkliste wurde für den Deep-Link nicht intern gescrollt');
+  pruefe(kurz.inListe, 'Kurzer Viewport: aktiver Link liegt nach dem Deep-Link ausserhalb der Linkliste');
+  pruefe(kurz.imViewport, 'Kurzer Viewport: aktiver Link liegt nach dem Deep-Link ausserhalb des Viewports');
+
+  await page.locator('.nav[data-v="overview"]').click();
+  await warteAufRoute(page, 'overview');
+  await page.evaluate(() => history.back());
+  await warteAufRoute(page, 'kb');
+  kurz = await aktiverStand();
+  pruefe(kurz.text === 'Wissensbank', `Kurzer Viewport: aktiver Link nach Zurück ist «${kurz.text}» statt «Wissensbank»`);
+  pruefe(kurz.inListe && kurz.imViewport,
+    'Kurzer Viewport: aktiver Link ist nach Zurück nicht sichtbar');
+  notiere('aktiver Sidebar-Link bei 1280 × 500 px nach Deep-Link und Zurück sichtbar');
+
+  await page.setViewportSize({ width: 1280, height: 800 });
   notiere('Desktop-Sidebar bleibt auf Lab, Spider und Wissensbank sichtbar und bedienbar');
 }
 
