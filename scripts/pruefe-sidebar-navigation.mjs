@@ -9,7 +9,9 @@
  *   - der Browser-Verlauf mit Zurück und Vorwärts,
  *   - die Fokussierung der jeweiligen Überschrift nach Maus- und Tastaturwahl,
  *   - der Skip-Link «Zum Inhalt» als erste Tastaturstation,
- *   - ein unbekannter Hash fällt auf «Übersicht» zurück.
+ *   - ein unbekannter Hash fällt auf «Übersicht» zurück,
+ *   - der aktive Link bleibt auf schmalen Viewports sichtbar,
+ *   - die Querformat-Navigation öffnet sich beim Verlassen des Raumschiffs.
  *
  * Der Test ist für die Seed-Datenbank gedacht und läuft ohne Test-Framework.
  *
@@ -101,6 +103,95 @@ async function oeffne(page, suffix = '') {
   await page.goto(`${opts.url}/?v=navigation${suffix}`, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => document.querySelectorAll('#hauptnav .nav[data-v]').length === 10);
   await warteAufRoute(page, 'overview');
+}
+
+async function pruefeSchmaleNavigation(browser) {
+  for (const breite of [360, 768]) {
+    const seite = await browser.newPage({ viewport: { width: breite, height: 800 } });
+    seite.on('pageerror', fehler => seitenfehler.push(fehler.message));
+    try {
+      await seite.goto(`${opts.url}/?v=schmal-${breite}#/kb`, { waitUntil: 'networkidle' });
+      await seite.waitForFunction(() => document.querySelectorAll('#hauptnav .nav[data-v]').length === 10);
+      await warteAufRoute(seite, 'kb');
+
+      const messe = async () => seite.evaluate(() => {
+        const nav = document.querySelector('#hauptnav');
+        const aktiv = nav?.querySelector('.nav[aria-current="page"]');
+        if (!nav || !aktiv) return { aktiv: '', sichtbar: false, ueberlaeuft: false };
+        const navKasten = nav.getBoundingClientRect();
+        const linkKasten = aktiv.getBoundingClientRect();
+        return {
+          aktiv: aktiv.querySelector('b')?.textContent?.trim() || '',
+          sichtbar: linkKasten.left >= navKasten.left - 1 && linkKasten.right <= navKasten.right + 1,
+          ueberlaeuft: nav.scrollWidth > nav.clientWidth + 1,
+        };
+      });
+
+      let stand = await messe();
+      pruefe(stand.aktiv === 'Wissensbank', `Aktiver Link bei ${breite} px ist «${stand.aktiv}» statt «Wissensbank»`);
+      pruefe(stand.ueberlaeuft, `Navigation bei ${breite} px überläuft nicht horizontal`);
+      pruefe(stand.sichtbar, `Aktiver Link bei ${breite} px liegt ausserhalb des sichtbaren Ausschnitts`);
+
+      await seite.reload({ waitUntil: 'networkidle' });
+      await warteAufRoute(seite, 'kb');
+      stand = await messe();
+      pruefe(stand.sichtbar, `Aktiver Link bei ${breite} px ist nach Reload nicht sichtbar`);
+
+      await seite.locator('.nav[data-v="overview"]').click();
+      await warteAufRoute(seite, 'overview');
+      await seite.evaluate(() => history.back());
+      await warteAufRoute(seite, 'kb');
+      stand = await messe();
+      pruefe(stand.sichtbar, `Aktiver Link bei ${breite} px ist nach Zurück nicht sichtbar`);
+      notiere(`aktiver Sidebar-Link bei ${breite} px nach Deep-Link, Reload und Zurück sichtbar`);
+    } finally {
+      await seite.close();
+    }
+  }
+}
+
+async function pruefeQuerformatNavigation(browser) {
+  const seite = await browser.newPage({ viewport: { width: 900, height: 450 } });
+  seite.on('pageerror', fehler => seitenfehler.push(fehler.message));
+  try {
+    await seite.goto(`${opts.url}/?v=querformat`, { waitUntil: 'networkidle' });
+    await seite.waitForFunction(() => document.querySelectorAll('#hauptnav .nav[data-v]').length === 10);
+    await warteAufRoute(seite, 'overview');
+
+    const navZustand = async () => seite.evaluate(() => {
+      const nav = document.querySelector('#hauptnav');
+      const toggle = document.querySelector('#navToggle');
+      return {
+        eingeklappt: document.body.classList.contains('nav-eingeklappt'),
+        navDisplay: nav ? getComputedStyle(nav).display : 'fehlt',
+        expanded: toggle?.getAttribute('aria-expanded') || '',
+      };
+    });
+
+    await seite.locator('.nav[data-v="ship"]').click();
+    await warteAufRoute(seite, 'ship');
+    await seite.waitForFunction(() => document.body.classList.contains('nav-eingeklappt'));
+    let stand = await navZustand();
+    pruefe(stand.eingeklappt, 'Querformat klappt die Navigation im Raumschiff nicht ein');
+    pruefe(stand.navDisplay === 'none', `Navigation im Raumschiff ist bei 900x450 sichtbar: ${stand.navDisplay}`);
+    pruefe(stand.expanded === 'false', `aria-expanded im Raumschiff ist «${stand.expanded}» statt «false»`);
+
+    await seite.evaluate(() => history.back());
+    await warteAufRoute(seite, 'overview');
+    await seite.waitForFunction(() => !document.body.classList.contains('nav-eingeklappt'));
+    stand = await navZustand();
+    pruefe(!stand.eingeklappt, 'Querformat öffnet die Navigation nach dem Verlassen des Raumschiffs nicht');
+    pruefe(stand.navDisplay !== 'none', 'Navigation bleibt nach dem Verlassen des Raumschiffs ausgeblendet');
+    pruefe(stand.expanded === 'true', `aria-expanded nach dem Verlassen ist «${stand.expanded}» statt «true»`);
+
+    await seite.locator('#navToggle').click();
+    await seite.waitForFunction(() => document.body.classList.contains('nav-eingeklappt'));
+    await seite.locator('#navToggle').click();
+    await seite.waitForFunction(() => !document.body.classList.contains('nav-eingeklappt'));
+    notiere('Querformat-Navigation öffnet nach dem Raumschiff und lässt sich weiter umschalten');
+  } finally {
+    await seite.close();
+  }
 }
 
 async function main() {
@@ -216,6 +307,9 @@ async function main() {
     pruefe(stand.currentBereiche[0] === 'research', 'Enter setzt aria-current nicht auf Research');
     pruefe(stand.fokusIstUeberschrift, 'Enter setzt den Fokus nicht auf die Research-Überschrift');
     notiere('Tastaturwahl per Enter mit Fokus auf der Überschrift');
+
+    await pruefeSchmaleNavigation(browser);
+    await pruefeQuerformatNavigation(browser);
 
     pruefe(seitenfehler.length === 0,
       `Seitenfehler: ${seitenfehler.join(' | ')}`);

@@ -36,14 +36,47 @@ function routeAusHash(){
   return treffer && sichtbareAnsichten.has(treffer[1]) ? treffer[1] : null;
 }
 
+function halteAktivenLinkSichtbar(link){
+  const nav = link.closest('#hauptnav');
+  if(!nav || nav.scrollWidth <= nav.clientWidth + 1) return;
+  const navKasten = nav.getBoundingClientRect();
+  const linkKasten = link.getBoundingClientRect();
+  if(linkKasten.left >= navKasten.left && linkKasten.right <= navKasten.right) return;
+  const ziel = Math.max(0, Math.min(
+    nav.scrollLeft + linkKasten.left - navKasten.left - (nav.clientWidth - linkKasten.width) / 2,
+    nav.scrollWidth - nav.clientWidth,
+  ));
+  nav.scrollLeft = ziel;
+}
+
 function setzeAktive(v){
+  let aktiverLink = null;
   navLinks.forEach(link => {
     const aktiv = link.dataset.v === v;
     link.classList.toggle('on', aktiv);
-    if(aktiv) link.setAttribute('aria-current', 'page');
-    else link.removeAttribute('aria-current');
+    if(aktiv){
+      link.setAttribute('aria-current', 'page');
+      aktiverLink = link;
+    }else{
+      link.removeAttribute('aria-current');
+    }
   });
+  if(aktiverLink) halteAktivenLinkSichtbar(aktiverLink);
 }
+
+function aktualisiereAktivenLink(){
+  const aktiv = navLinks.find(link => link.dataset.v === aktuelle);
+  if(aktiv) halteAktivenLinkSichtbar(aktiv);
+}
+
+let navGroesseRahmen = 0;
+window.addEventListener('resize', () => {
+  if(navGroesseRahmen) return;
+  navGroesseRahmen = requestAnimationFrame(() => {
+    navGroesseRahmen = 0;
+    aktualisiereAktivenLink();
+  });
+});
 
 function setzeTitel(v){
   const eintrag = navLinks.find(link => link.dataset.v === v);
@@ -63,9 +96,11 @@ function fokussiereAnsicht(v){
 
 function setzeAnsicht(v, { url = null, fokus = false } = {}){
   if(!ansichten[v]) return false;
+  const vorher = aktuelle;
   if(v !== aktuelle) ansichten[aktuelle]?.deaktiviere?.();
   aktuelle = v;
   if(v === 'ship') setzeNavEingeklappt(true);
+  else if(vorher === 'ship') setzeNavEingeklappt(false);
   ansichten[v]?.aktiviere?.();
   setzeAktive(v);
   setzeTitel(v);
