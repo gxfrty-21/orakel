@@ -67,8 +67,22 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .nav-liste{display:contents}
 
 @media (min-width:901px){
-  /* Die Höhe wird aus der tatsächlichen Position der Linkliste berechnet. */
-  .nav-liste{display:flex;flex-direction:column;gap:3px;position:sticky;top:0;max-height:var(--nav-sticky-max,100dvh);overflow-y:auto}
+  /* Die Höhe wird aus der tatsächlichen Position der Linkliste berechnet.
+     Die Fade-Variablen zeigen nur an den Enden mit weiterem Inhalt. */
+  .nav-liste{display:flex;flex-direction:column;gap:3px;position:sticky;top:0;
+    max-height:var(--nav-sticky-max,100dvh);overflow-y:auto;
+    --nav-fade-oben:0px;--nav-fade-unten:0px;
+    scrollbar-width:thin;scrollbar-color:#6b4a8f transparent;
+    mask-image:linear-gradient(180deg,transparent 0,#000 var(--nav-fade-oben),
+      #000 calc(100% - var(--nav-fade-unten)),transparent 100%);
+    -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 var(--nav-fade-oben),
+      #000 calc(100% - var(--nav-fade-unten)),transparent 100%)}
+  .nav-liste.fade-oben{--nav-fade-oben:18px}
+  .nav-liste.fade-unten{--nav-fade-unten:18px}
+  .nav-liste::-webkit-scrollbar{width:6px}
+  .nav-liste::-webkit-scrollbar-track{background:transparent}
+  .nav-liste::-webkit-scrollbar-thumb{background:#6b4a8f;border-radius:999px}
+  .nav-liste::-webkit-scrollbar-thumb:hover{background:var(--accent2)}
 }
 
 .nav{position:relative;display:flex;flex-direction:column;gap:1px;padding:9px 10px;border-radius:5px;border:0;background:none;text-align:left;color:var(--muted);

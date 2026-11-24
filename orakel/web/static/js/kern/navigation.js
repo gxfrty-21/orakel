@@ -13,6 +13,7 @@ let initialisiert = false;
 export function registriereAnsicht(name, modul){ ansichten[name] = modul; }
 
 const hauptnav = document.querySelector('#hauptnav');
+const navListe = hauptnav?.querySelector('.nav-liste');
 const navToggle = document.querySelector('#navToggle');
 const querformatAbfrage = window.matchMedia('(orientation: landscape) and (max-width: 950px) and (max-height: 500px)');
 
@@ -77,6 +78,16 @@ function aktualisiereNavHoehe(){
   hauptnav.style.setProperty('--nav-sticky-max', `${verfuegbar}px`);
 }
 
+function aktualisiereNavFades(){
+  if(!navListe) return;
+  const ueberlaeuft = navListe.scrollHeight > navListe.clientHeight + 1;
+  const oben = ueberlaeuft && navListe.scrollTop > 1;
+  const unten = ueberlaeuft
+    && navListe.scrollTop + navListe.clientHeight < navListe.scrollHeight - 1;
+  navListe.classList.toggle('fade-oben', oben);
+  navListe.classList.toggle('fade-unten', unten);
+}
+
 function aktualisiereNavRaender(){
   if(!hauptnav) return;
   const ueberlaeuft = hauptnav.scrollWidth > hauptnav.clientWidth + 1;
@@ -87,6 +98,7 @@ function aktualisiereNavRaender(){
   const rechtsVerdeckt = Boolean(letzter) && letzter.getBoundingClientRect().right > kasten.right + 1;
   hauptnav.classList.toggle('fade-links', ueberlaeuft && linksVerdeckt);
   hauptnav.classList.toggle('fade-rechts', ueberlaeuft && rechtsVerdeckt);
+  aktualisiereNavFades();
 }
 
 function setzeAktive(v){
@@ -123,6 +135,7 @@ window.addEventListener('resize', () => {
 });
 window.addEventListener('load', aktualisiereAktivenLink);
 if(hauptnav) hauptnav.addEventListener('scroll', aktualisiereNavRaender, { passive: true });
+if(navListe) navListe.addEventListener('scroll', aktualisiereNavFades, { passive: true });
 
 // Kopfzeile und Banner können ihre Höhe nach dem ersten Rendern ändern (z. B.
 // durch nachgeladene Statuschips). Dann muss die verfügbare Listenhöhe neu

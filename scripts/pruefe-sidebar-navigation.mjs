@@ -250,6 +250,56 @@ async function pruefeStickySidebar(page) {
       `${kontext}: Linkliste endet bei ${stand.listenUnten} px ausserhalb des Viewports`);
   };
 
+  const fadeStand = async () => page.evaluate(() => {
+    const liste = document.querySelector('.nav-liste');
+    if (!liste) return { ueberlaeuft: false, oben: false, unten: false, scrollbarWidth: '', scrollbarColor: '', scrollTop: 0 };
+    const stil = getComputedStyle(liste);
+    return {
+      ueberlaeuft: liste.scrollHeight > liste.clientHeight + 1,
+      oben: liste.classList.contains('fade-oben'),
+      unten: liste.classList.contains('fade-unten'),
+      scrollbarWidth: stil.scrollbarWidth,
+      scrollbarColor: stil.scrollbarColor,
+      scrollTop: Math.round(liste.scrollTop),
+    };
+  });
+
+  const setzeListeScroll = async ziel => {
+    await page.evaluate(position => {
+      const liste = document.querySelector('.nav-liste');
+      if (position === 'oben') liste.scrollTop = 0;
+      else if (position === 'unten') liste.scrollTop = liste.scrollHeight;
+      else liste.scrollTop = Math.round((liste.scrollHeight - liste.clientHeight) / 2);
+    }, ziel);
+    await page.waitForTimeout(60);
+  };
+
+  const pruefeVertikaleAffordanz = async kontext => {
+    let fade = await fadeStand();
+    pruefe(fade.ueberlaeuft, `${kontext}: Linkliste überläuft nicht für den Fade-Test`);
+    pruefe(fade.scrollbarWidth === 'thin', `${kontext}: Scrollbar ist nicht schmal (${fade.scrollbarWidth})`);
+    pruefe(fade.scrollbarColor !== 'auto' && fade.scrollbarColor !== '',
+      `${kontext}: Scrollbar hat keine sichtbare Farbe (${fade.scrollbarColor})`);
+
+    await setzeListeScroll('oben');
+    fade = await fadeStand();
+    pruefe(fade.scrollTop === 0, `${kontext}: Liste steht nicht am oberen Ende`);
+    pruefe(fade.oben === false, `${kontext}: Oben-Fade bleibt am oberen Ende sichtbar`);
+    pruefe(fade.unten === true, `${kontext}: Unten-Fade fehlt am oberen Ende`);
+
+    await setzeListeScroll('unten');
+    fade = await fadeStand();
+    pruefe(fade.scrollTop > 0, `${kontext}: Liste steht nicht am unteren Ende`);
+    pruefe(fade.oben === true, `${kontext}: Oben-Fade fehlt am unteren Ende`);
+    pruefe(fade.unten === false, `${kontext}: Unten-Fade bleibt am unteren Ende sichtbar`);
+
+    await setzeListeScroll('mitte');
+    fade = await fadeStand();
+    pruefe(fade.oben === true && fade.unten === true,
+      `${kontext}: Fades fehlen in der Mitte`);
+    notiere(`vertikale Scroll-Affordanz bei ${kontext}: Überlauf und beide Enden geprüft`);
+  };
+
   for (const breite of [1280, 1024]) {
     await page.setViewportSize({ width: breite, height: 500 });
     await page.goto(`${opts.url}/?v=sticky-kurz-${breite}#/kb`, { waitUntil: 'networkidle' });
@@ -275,6 +325,8 @@ async function pruefeStickySidebar(page) {
     pruefeDynamischeHoehe(kurz, `Kurzer Viewport ${breite} nach Zurück`);
     notiere(`aktiver Sidebar-Link bei ${breite} × 500 px nach Deep-Link und Zurück sichtbar`);
   }
+
+  await pruefeVertikaleAffordanz('1024 × 500');
 
   // 901 × 500 liegt wegen der Querformat-Regel (max-width: 950px und
   // max-height: 500px) noch im Querformat-Modus. Dort gibt es keine intern
@@ -334,6 +386,10 @@ async function pruefeStickySidebar(page) {
   pruefeDynamischeHoehe(resizeStand, 'Resize 1280 × 800');
   pruefe(resizeStand.text === 'Wissensbank' && resizeStand.inListe && resizeStand.imViewport,
     'Resize 1280 × 800: aktiver Link ist nicht sichtbar');
+  const ohneUeberlauf = await fadeStand();
+  pruefe(!ohneUeberlauf.ueberlaeuft, 'Resize 1280 × 800: Liste überläuft unerwartet');
+  pruefe(!ohneUeberlauf.oben && !ohneUeberlauf.unten,
+    'Resize 1280 × 800: Fades bleiben ohne Überlauf sichtbar');
 
   await page.setViewportSize({ width: 1024, height: 500 });
   await warteAufDynamischeHoehe();
