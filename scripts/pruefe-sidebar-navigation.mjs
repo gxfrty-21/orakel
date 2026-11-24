@@ -12,6 +12,7 @@
  *   - ein unbekannter Hash fällt auf «Übersicht» zurück,
  *   - der aktive Link bleibt auf schmalen Viewports sichtbar,
  *   - die Rand-Fades zeigen nur die Richtung mit weiteren Bereichen,
+ *   - die Desktop-Sidebar bleibt auf langen Ansichten beim Scrollen sichtbar,
  *   - die Querformat-Navigation öffnet sich beim Verlassen des Raumschiffs.
  *
  * Der Test ist für die Seed-Datenbank gedacht und läuft ohne Test-Framework.
@@ -168,6 +169,51 @@ async function pruefeSchmaleNavigation(browser) {
       await seite.close();
     }
   }
+}
+
+async function pruefeStickySidebar(page) {
+  for (const route of ['lab', 'spider', 'kb']) {
+    await page.goto(`${opts.url}/?v=sticky-${route}#/${route}`, { waitUntil: 'networkidle' });
+    await page.waitForFunction(() => document.querySelectorAll('#hauptnav .nav[data-v]').length === 10);
+    await warteAufRoute(page, route);
+
+    const position = await page.evaluate(() => {
+      const liste = document.querySelector('.nav-liste');
+      return {
+        position: getComputedStyle(liste).position,
+        top: Math.round(liste.getBoundingClientRect().top),
+      };
+    });
+    pruefe(position.position === 'sticky', `Sidebar ist auf #/${route} nicht sticky (${position.position})`);
+
+    await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+    await page.waitForTimeout(80);
+    const stand = await page.evaluate(() => {
+      const liste = document.querySelector('.nav-liste');
+      const kasten = liste.getBoundingClientRect();
+      const links = [...liste.querySelectorAll('.nav[data-v]')];
+      return {
+        scrollY: Math.round(scrollY),
+        top: Math.round(kasten.top),
+        bottom: Math.round(kasten.bottom),
+        links: links.length,
+        sichtbareLinks: links.filter(link => {
+          const linkKasten = link.getBoundingClientRect();
+          return linkKasten.top >= 0 && linkKasten.bottom <= innerHeight;
+        }).length,
+      };
+    });
+    pruefe(stand.scrollY > 0, `#/${route} ist nicht lang genug für den Sticky-Test`);
+    pruefe(stand.top >= -1 && stand.top <= 1,
+      `Sidebar beginnt auf #/${route} nach dem Scrollen bei ${stand.top} px statt am oberen Rand`);
+    pruefe(stand.bottom > 0, `Sidebar ist auf #/${route} nach dem Scrollen nicht sichtbar`);
+    pruefe(stand.sichtbareLinks === stand.links,
+      `Auf #/${route} sind nach dem Scrollen nur ${stand.sichtbareLinks}/${stand.links} Links sichtbar`);
+  }
+
+  await page.locator('.nav[data-v="overview"]').click();
+  await warteAufRoute(page, 'overview');
+  notiere('Desktop-Sidebar bleibt auf Lab, Spider und Wissensbank sichtbar und bedienbar');
 }
 
 async function pruefeQuerformatNavigation(browser) {
@@ -328,6 +374,7 @@ async function main() {
     pruefe(stand.fokusIstUeberschrift, 'Enter setzt den Fokus nicht auf die Research-Überschrift');
     notiere('Tastaturwahl per Enter mit Fokus auf der Überschrift');
 
+    await pruefeStickySidebar(page);
     await pruefeSchmaleNavigation(browser);
     await pruefeQuerformatNavigation(browser);
 
