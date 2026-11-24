@@ -340,6 +340,18 @@ jobs:
             exit 1
           fi
 
+          # Deep-Links, Browser-Verlauf, aria-current und Fokusführung der
+          # Sidebar laufen gegen denselben Seed-Server wie der Layout-Lauf.
+          if ! node scripts/pruefe-sidebar-navigation.mjs --url http://127.0.0.1:3000 \
+               --ergebnis artifacts/text250/navigation-ergebnis.json \
+               > artifacts/text250/navigation.log 2>&1; then
+            echo "--- Navigationsprüfung fehlgeschlagen ---"
+            cat artifacts/text250/navigation.log
+            tail -50 artifacts/text250/server.log
+            exit 1
+          fi
+          cat artifacts/text250/navigation.log
+
           if ! node scripts/pruefe-text250.mjs --bilder artifacts/text250 \
                --ergebnis artifacts/text250/ergebnis.json | tee artifacts/text250/lauf.log; then
             echo "--- Serverprotokoll ---"
@@ -519,6 +531,7 @@ jobs:
           path: |
             artifacts/text250/lauf.log
             artifacts/text250/negativtest.log
+            artifacts/text250/navigation.log
             artifacts/text250/ergebnis.json
             artifacts/text250/*-ergebnis.json
           if-no-files-found: error

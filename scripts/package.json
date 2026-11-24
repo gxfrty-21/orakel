@@ -7,6 +7,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "pruefe:navigation": "node pruefe-sidebar-navigation.mjs",
     "pruefe:text250": "node pruefe-text250.mjs",
     "pruefe:widerspruch-e2e": "node pruefe-widerspruch-e2e.mjs",
     "pruefe:touch": "node pruefe-touch.mjs"

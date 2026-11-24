@@ -1,7 +1,7 @@
 /* Einstieg: Ansichten registrieren, Kopfzeile, Bericht laden, Prüfbrücken. */
 import { R, lade, registriereNachLaden, registriereFehler } from './kern/daten.js';
 import { $, COL, MODE, esc } from './kern/helfer.js';
-import { registriereAnsicht, zeige, zeichne } from './kern/navigation.js';
+import { registriereAnsicht, zeige, zeichne, initialisiereNavigation } from './kern/navigation.js';
 import { renderOverview } from './ansichten/uebersicht.js';
 import { renderRisk } from './ansichten/risiko.js';
 import { renderLab, pausiertRenderWegenLabDetail, setzeLabNeuStatus } from './ansichten/lab.js';
@@ -27,6 +27,7 @@ registriereAnsicht('globe', {render: renderGlobe, aktiviere: globeAktiviere, dea
 registriereAnsicht('betrieb', {render: renderBetrieb, aktiviere: betriebAktiviere, deaktiviere: betriebDeaktiviere});
 registriereAnsicht('ship', {render: renderShip, aktiviere: shipAktiviere, deaktiviere: shipDeaktiviere});
 registriereAnsicht('spider', {render: renderSpider});
+initialisiereNavigation();
 
 function tabelleKarten(){
   document.querySelectorAll('main table.tbl').forEach(t=>{
