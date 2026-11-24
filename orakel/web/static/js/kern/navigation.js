@@ -12,6 +12,7 @@ let initialisiert = false;
 
 export function registriereAnsicht(name, modul){ ansichten[name] = modul; }
 
+const hauptnav = document.querySelector('#hauptnav');
 const navToggle = document.querySelector('#navToggle');
 const querformatAbfrage = window.matchMedia('(orientation: landscape) and (max-width: 950px) and (max-height: 500px)');
 
@@ -20,6 +21,7 @@ function querformatAktiv(){ return querformatAbfrage.matches; }
 export function setzeNavEingeklappt(eingeklappt){
   document.body.classList.toggle('nav-eingeklappt', Boolean(eingeklappt) && querformatAktiv());
   if(navToggle) navToggle.setAttribute('aria-expanded', String(!document.body.classList.contains('nav-eingeklappt')));
+  aktualisiereNavRaender();
 }
 
 if(navToggle){
@@ -49,6 +51,18 @@ function halteAktivenLinkSichtbar(link){
   nav.scrollLeft = ziel;
 }
 
+function aktualisiereNavRaender(){
+  if(!hauptnav) return;
+  const ueberlaeuft = hauptnav.scrollWidth > hauptnav.clientWidth + 1;
+  const kasten = hauptnav.getBoundingClientRect();
+  const erster = navLinks[0];
+  const letzter = navLinks[navLinks.length - 1];
+  const linksVerdeckt = Boolean(erster) && erster.getBoundingClientRect().left < kasten.left - 1;
+  const rechtsVerdeckt = Boolean(letzter) && letzter.getBoundingClientRect().right > kasten.right + 1;
+  hauptnav.classList.toggle('fade-links', ueberlaeuft && linksVerdeckt);
+  hauptnav.classList.toggle('fade-rechts', ueberlaeuft && rechtsVerdeckt);
+}
+
 function setzeAktive(v){
   let aktiverLink = null;
   navLinks.forEach(link => {
@@ -62,11 +76,13 @@ function setzeAktive(v){
     }
   });
   if(aktiverLink) halteAktivenLinkSichtbar(aktiverLink);
+  aktualisiereNavRaender();
 }
 
 function aktualisiereAktivenLink(){
   const aktiv = navLinks.find(link => link.dataset.v === aktuelle);
   if(aktiv) halteAktivenLinkSichtbar(aktiv);
+  aktualisiereNavRaender();
 }
 
 let navGroesseRahmen = 0;
@@ -77,6 +93,7 @@ window.addEventListener('resize', () => {
     aktualisiereAktivenLink();
   });
 });
+if(hauptnav) hauptnav.addEventListener('scroll', aktualisiereNavRaender, { passive: true });
 
 function setzeTitel(v){
   const eintrag = navLinks.find(link => link.dataset.v === v);

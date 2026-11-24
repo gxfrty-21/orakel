@@ -35,8 +35,16 @@
   .side{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);padding:8px 16px;
     scrollbar-width:none;-ms-overflow-style:none}
   .side::-webkit-scrollbar{display:none;height:0}
-  /* Fade am rechten Rand zeigt: hier geht es weiter */
-  .side{mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent)}
+  /* Die Ränder zeigen nur dann einen Fade, wenn in dieser Richtung weitere
+     Einträge liegen. Die Klassen setzt navigation.js anhand der Scrollposition. */
+  .side{
+    --nav-fade-links:0px;
+    --nav-fade-rechts:0px;
+    mask-image:linear-gradient(90deg,transparent 0,#000 var(--nav-fade-links),
+      #000 calc(100% - var(--nav-fade-rechts)),transparent 100%);
+  }
+  .side.fade-links{--nav-fade-links:28px}
+  .side.fade-rechts{--nav-fade-rechts:28px}
   .nav small{display:none}.nav{white-space:nowrap}
   /* Kopfzeile umbrechen statt abschneiden — kein zweiter Scrollbalken */
   .top{flex-wrap:wrap;white-space:normal;overflow-x:visible;row-gap:6px}

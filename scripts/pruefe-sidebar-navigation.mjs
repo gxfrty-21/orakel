@@ -11,6 +11,7 @@
  *   - der Skip-Link «Zum Inhalt» als erste Tastaturstation,
  *   - ein unbekannter Hash fällt auf «Übersicht» zurück,
  *   - der aktive Link bleibt auf schmalen Viewports sichtbar,
+ *   - die Rand-Fades zeigen nur die Richtung mit weiteren Bereichen,
  *   - die Querformat-Navigation öffnet sich beim Verlassen des Raumschiffs.
  *
  * Der Test ist für die Seed-Datenbank gedacht und läuft ohne Test-Framework.
@@ -117,13 +118,15 @@ async function pruefeSchmaleNavigation(browser) {
       const messe = async () => seite.evaluate(() => {
         const nav = document.querySelector('#hauptnav');
         const aktiv = nav?.querySelector('.nav[aria-current="page"]');
-        if (!nav || !aktiv) return { aktiv: '', sichtbar: false, ueberlaeuft: false };
+        if (!nav || !aktiv) return { aktiv: '', sichtbar: false, ueberlaeuft: false, fadeLinks: false, fadeRechts: false };
         const navKasten = nav.getBoundingClientRect();
         const linkKasten = aktiv.getBoundingClientRect();
         return {
           aktiv: aktiv.querySelector('b')?.textContent?.trim() || '',
           sichtbar: linkKasten.left >= navKasten.left - 1 && linkKasten.right <= navKasten.right + 1,
           ueberlaeuft: nav.scrollWidth > nav.clientWidth + 1,
+          fadeLinks: nav.classList.contains('fade-links'),
+          fadeRechts: nav.classList.contains('fade-rechts'),
         };
       });
 
@@ -131,19 +134,36 @@ async function pruefeSchmaleNavigation(browser) {
       pruefe(stand.aktiv === 'Wissensbank', `Aktiver Link bei ${breite} px ist «${stand.aktiv}» statt «Wissensbank»`);
       pruefe(stand.ueberlaeuft, `Navigation bei ${breite} px überläuft nicht horizontal`);
       pruefe(stand.sichtbar, `Aktiver Link bei ${breite} px liegt ausserhalb des sichtbaren Ausschnitts`);
+      pruefe(stand.fadeRechts === false, `Rechts-Fade bleibt bei ${breite} px am rechten Ende sichtbar`);
+      pruefe(stand.fadeLinks === true, `Links-Fade fehlt bei ${breite} px am rechten Ende`);
 
       await seite.reload({ waitUntil: 'networkidle' });
       await warteAufRoute(seite, 'kb');
       stand = await messe();
       pruefe(stand.sichtbar, `Aktiver Link bei ${breite} px ist nach Reload nicht sichtbar`);
+      pruefe(stand.fadeRechts === false, `Rechts-Fade bleibt bei ${breite} px nach Reload sichtbar`);
+
+      await seite.evaluate(() => {
+        const nav = document.querySelector('#hauptnav');
+        nav.scrollLeft = 100;
+        nav.dispatchEvent(new Event('scroll'));
+      });
+      stand = await messe();
+      pruefe(stand.fadeLinks && stand.fadeRechts,
+        `Richtungsabhängige Ränder fehlen bei ${breite} px in der Mitte`);
 
       await seite.locator('.nav[data-v="overview"]').click();
       await warteAufRoute(seite, 'overview');
+      stand = await messe();
+      pruefe(stand.fadeLinks === false, `Links-Fade bleibt bei ${breite} px am linken Ende sichtbar`);
+      pruefe(stand.fadeRechts === true, `Rechts-Fade fehlt bei ${breite} px am linken Ende`);
+
       await seite.evaluate(() => history.back());
       await warteAufRoute(seite, 'kb');
       stand = await messe();
       pruefe(stand.sichtbar, `Aktiver Link bei ${breite} px ist nach Zurück nicht sichtbar`);
-      notiere(`aktiver Sidebar-Link bei ${breite} px nach Deep-Link, Reload und Zurück sichtbar`);
+      pruefe(stand.fadeRechts === false, `Rechts-Fade bleibt bei ${breite} px nach Zurück sichtbar`);
+      notiere(`aktiver Sidebar-Link und richtungsabhängige Ränder bei ${breite} px geprüft`);
     } finally {
       await seite.close();
     }
