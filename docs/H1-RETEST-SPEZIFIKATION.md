@@ -115,14 +115,16 @@ Nachbildung eines Broker-Swaps:
 - Die ausgelieferten Rasterwerte sind Startwerte, keine validierte
   Optimierung.
 
-## Offene Backtest-Integrationspunkte
+## Backtest-Integrationspunkte
 
 1. **Broker-nahe Finanzierung:** Falls die Finanzierung später einem
    konkreten Broker entsprechen soll, braucht es dessen Rollover-Zeitpunkt,
    Triple-Swap-Regel und eine Bewertung des Notionals zum Buchungszeitpunkt.
    Das ist bewusst nicht Teil dieser vereinfachten Annahme.
-2. **Kennzahlen:** `finanzierung` steht im Backtest-Ergebnis; das
-   Berichtsschema und die Web-Ansichten bleiben unverändert.
+2. **Kennzahlen:** `finanzierung` steht im Backtest-Ergebnis. Der Bericht
+   führt den Tagessatz additiv unter `kosten.finanzierung_bps_pro_tag`; Lab
+   und Strategien zeigen die gebuchten Finanzierungskosten getrennt von den
+   Gebühren. Das Schema 2 bleibt für bestehende Leser unverändert.
 3. **Parameterprüfung:** Das H1-Raster und der Stop-Puffer müssen an echten
    H1-Daten validiert werden; die aktuellen Werte sind nur ein testbarer
    Startpunkt.

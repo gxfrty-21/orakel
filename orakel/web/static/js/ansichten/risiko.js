@@ -34,6 +34,7 @@ function renderRisk(){
     <tr><td>Kommission pro Stück</td><td class="m">USD ${c.commission_per_share}</td></tr>
     <tr><td>Mindestkommission</td><td class="m">USD ${c.min_commission}</td></tr>
     <tr><td>Slippage pro Ausführung</td><td class="m">${c.slippage_bps} bps</td></tr>
+    <tr><td>Finanzierung pro Kalendertag</td><td class="m">${c.finanzierung_bps_pro_tag==null?'–':num(c.finanzierung_bps_pro_tag,2)+' bps'+(Number(c.finanzierung_bps_pro_tag)===0?' (aus)':'')}</td></tr>
     <tr><td>Ausführung</td><td class="m">Eröffnung der Folgekerze</td></tr></tbody></table>`;
   $('#live').innerHTML = `<span><span class="pill r">GESPERRT</span></span><div class="reasons">
     ${(R.live?.gruende||[]).map(g=>`<span class="x">${esc(g)}</span>`).join('')}</div>`;

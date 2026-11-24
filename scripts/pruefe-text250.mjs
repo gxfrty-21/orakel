@@ -2696,7 +2696,7 @@ async function pruefeInhalte(page, ansicht) {
       }
       const tabelle = eins('#stratDetail table.tbl');
       const zeilen = tabelle ? [...tabelle.querySelectorAll('tbody tr')].map(tr => sauber(tr.cells[0])) : [];
-      const erwarteteZeilen = ['Nettogewinn gesamt', 'Rendite gesamt', 'Kaufen und Halten (ungesehen)', 'Gebühren gesamt', 'Zeit im Markt'];
+      const erwarteteZeilen = ['Nettogewinn gesamt', 'Rendite gesamt', 'Kaufen und Halten (ungesehen)', 'Gebühren gesamt', 'Finanzierung gesamt', 'Zeit im Markt'];
       if (zeilen.length !== erwarteteZeilen.length || zeilen.some((x, i) => x !== erwarteteZeilen[i])) {
         befunde.push(`Strategie-Kerntabelle unvollständig (${zeilen.join(', ') || 'keine'})`);
       }

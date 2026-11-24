@@ -447,6 +447,12 @@ Meldung ab, statt eine falsche Währung zu buchen. `[kosten]` (inklusive
 Devisenpaare bringen ihr Profil mit, für sie muss in `config.toml` nichts je
 Symbol eingestellt werden.
 
+Optional bucht `finanzierung_bps_pro_tag` Finanzierungskosten pro UTC-Kalendertag
+auf das Einstiegsnotional. Der Bericht führt den Tagessatz additiv unter
+`kosten.finanzierung_bps_pro_tag`; Lab und Strategien zeigen die gebuchten
+Finanzierungskosten getrennt von den Gebühren. Das Berichtsschema bleibt bei 2,
+neue Felder sind für bestehende Leser additiv.
+
 ## Aufbau
 
 ```
