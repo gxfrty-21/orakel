@@ -600,9 +600,13 @@
 
 .px-room::after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 14px rgba(0,0,0,.55)}
 
-.px-room:hover,.px-room:focus-visible{outline:2px solid var(--dept,#38e8ff);outline-offset:-2px;z-index:2;filter:brightness(1.12)}
+.px-room:hover{outline:2px solid var(--dept,#38e8ff);outline-offset:-2px;z-index:2;filter:brightness(1.12)}
+
+.px-room:focus-visible{outline:3px solid #fff;outline-offset:-3px;z-index:4;filter:brightness(1.2);box-shadow:0 0 0 1px var(--dept,#38e8ff)}
 
 .px-room.on{outline:3px solid #ff3fa4;outline-offset:-3px;z-index:3;box-shadow:0 0 18px rgba(255,63,164,.7)}
+
+.px-room.on:focus-visible{outline-color:#fff;box-shadow:0 0 0 1px #ff3fa4,0 0 18px rgba(255,63,164,.7)}
 
 .px-void{cursor:default}
 

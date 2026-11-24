@@ -235,6 +235,21 @@ der erzeugte Rohbericht liegt nach dem Lauf unter
 | Cockpit | Bot-Zustand, Kontostand, Gewinn/Verlust (heute, 7 Tage, 1 Monat) und offene Positionen mit letztem Kurs, alles aus SQLite |
 | Dauerbetrieb | persistenter Plan, Backoff, Ressourcenlimits, Jobprotokoll und Betriebsansicht |
 
+### Navigation und Deep-Links
+
+Die zehn Sidebar-Bereiche sind echte Links mit stabilen Hash-Routen, etwa
+`#/lab` oder `#/spider`. Ein direkter Aufruf oder ein Reload öffnet den
+gewählten Bereich; Zurück und Vorwärts folgen dem Browser-Verlauf. Der aktive
+Eintrag trägt `aria-current="page"`, der Dokumenttitel nennt den Bereich, und
+nach einem Wechsel liegt der Fokus auf dessen Überschrift. Der Skip-Link
+«Zum Inhalt» ist die erste Tastaturstation und springt zu `main#inhalt`.
+Unbekannte oder nicht sichtbare Bereiche fallen auf «Übersicht» zurück.
+
+Der Browser-Test dafür ist
+`node scripts/pruefe-sidebar-navigation.mjs --url http://127.0.0.1:3000`.
+Er prüft die zehn unveränderten Einträge, Deep-Links, Reload, den
+Browser-Verlauf, `aria-current`, Skip-Link und die Fokusführung.
+
 Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswahl einmal geöffnet; scheitert er, gibt es keinen Ersatzkandidaten. Im Lab zeigt ein Chart die aggregierte Kapitalkurve der Testfenster; beim Überfahren nennt ein Tooltip Kapitalstand, Veränderung seit dem Start in Prozent, Datum sowie den bisherigen Höchststand mit Abstand in Prozent; per Tastatur (Tab, Pfeiltasten, Home/Ende) ist dieselbe Anzeige erreichbar. Solange der Tastaturfokus im sichtbaren Lab-Detail liegt, pausiert der Auto-Refresh nur den Ansichts-Render, damit die Anzeige beim Ablesen nicht neu aufgebaut wird; Daten und Kopfzeile werden weiter aktualisiert; ein Status in der Listenkopfzeile (`#labNeu`, höfliche Live-Region) zeigt «Neue Daten verfügbar», und beim Verlassen des Details wird sofort neu gezeichnet statt auf den nächsten Takt zu warten. Ein Fokus auf der Lab-Liste oder einem anderen Lab-Element blockiert den Render nicht; ein ausgeblendetes Lab ebenfalls nicht. Der Refresh baut die Liste nicht neu auf: Vorhandene Einträge werden über eine stabile Kandidatenkennung in die neue Reihenfolge gebracht, Auswahl, Fokus und Scrollposition bleiben erhalten. Der Acht-Sekunden-Takt startet keinen zweiten Aufruf, solange eine Antwort läuft, pausiert im Hintergrundtab und lädt beim Zurückkehren sofort nach. Dort und in der Strategien-Ansicht lässt sich zudem bei jedem Kandidaten die Liste der Walk-Forward-Fenster aufklappen: Trainings- und Testblock, gewählter Parameter, Trades, Profit Factor und Netto je Fenster.
 
 Der isolierte [Monte-Carlo-Perturbationstest](docs/ROBUSTHEIT.md) prüft einen bereits festgelegten Kandidaten zusätzlich gegen kleine Preis- und Parameteränderungen. Er ist nicht Teil des Richters und ändert weder Risiko noch Paper-Sperre.

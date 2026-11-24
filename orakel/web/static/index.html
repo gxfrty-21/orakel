@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="/static/style.css?v=101">
 </head>
 <body>
+<a class="skip-link" href="#inhalt">Zum Inhalt</a>
 <div class="app">
   <header class="top">
     <span class="brand">ORAKEL <b>/</b> TRADING-AGENTEN</span>
@@ -26,19 +27,19 @@
   <div class="banner b-none" id="banner"><b>KEIN LAUF</b>Noch keine Daten. Auf «Lauf starten» klicken.</div>
 
   <nav class="side" id="hauptnav" aria-label="Bereiche">
-    <button class="nav on" data-v="overview"><b>Übersicht</b><small>Konto, Entscheide, Ereignisse</small></button>
-    <button class="nav" data-v="risk"><b>Risiko &amp; Daten</b><small>Grenzen, Qualität, Live-Sperre</small></button>
-    <button class="nav" data-v="lab"><b>Lab</b><small>Validierung jeder Strategie</small></button>
-    <button class="nav" data-v="strat"><b>Strategien</b><small>Bestandene Auswahl</small></button>
-    <button class="nav" data-v="research"><b>Research</b><small>Ablauf der Engine</small></button>
-    <button class="nav" data-v="globe"><b>Weltkugel</b><small>Intelligence-Netzwerk</small></button>
-    <button class="nav" data-v="betrieb"><b>Betrieb</b><small>Takt, Backoff, Grenzen</small></button>
-    <button class="nav" data-v="ship"><b>Raumschiff</b><small>Abteilungen und Agenten</small></button>
-    <button class="nav" data-v="spider"><b>Spider</b><small>Quellen und Erkenntnisse</small></button>
-    <button class="nav" data-v="kb"><b>Wissensbank</b><small>Schlüsse aus Ergebnissen</small></button>
+    <a class="nav on" data-v="overview" href="#/overview" aria-current="page"><b>Übersicht</b><small>Konto, Entscheide, Ereignisse</small></a>
+    <a class="nav" data-v="risk" href="#/risk"><b>Risiko &amp; Daten</b><small>Grenzen, Qualität, Live-Sperre</small></a>
+    <a class="nav" data-v="lab" href="#/lab"><b>Lab</b><small>Validierung jeder Strategie</small></a>
+    <a class="nav" data-v="strat" href="#/strat"><b>Strategien</b><small>Bestandene Auswahl</small></a>
+    <a class="nav" data-v="research" href="#/research"><b>Research</b><small>Ablauf der Engine</small></a>
+    <a class="nav" data-v="globe" href="#/globe"><b>Weltkugel</b><small>Intelligence-Netzwerk</small></a>
+    <a class="nav" data-v="betrieb" href="#/betrieb"><b>Betrieb</b><small>Takt, Backoff, Grenzen</small></a>
+    <a class="nav" data-v="ship" href="#/ship"><b>Raumschiff</b><small>Abteilungen und Agenten</small></a>
+    <a class="nav" data-v="spider" href="#/spider"><b>Spider</b><small>Quellen und Erkenntnisse</small></a>
+    <a class="nav" data-v="kb" href="#/kb"><b>Wissensbank</b><small>Schlüsse aus Ergebnissen</small></a>
   </nav>
 
-  <main>
+  <main id="inhalt" tabindex="-1">
     <section class="view" id="v-overview">
       <div><h1>Übersicht</h1><p class="sub">Zustand des letzten Laufs. Jede Zahl stammt aus der Fakten-Datenbank. Fehlt eine Grundlage, steht «–».</p></div>
       <div class="cockpit" id="cockpit"></div>

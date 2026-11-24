@@ -211,6 +211,10 @@
       "ziel": "dateien/scripts/pruefe-text250.mjs"
     },
     {
+      "quelle": "scripts/pruefe-sidebar-navigation.mjs",
+      "ziel": "dateien/scripts/pruefe-sidebar-navigation.mjs"
+    },
+    {
       "quelle": "scripts/pruefe-widerspruch-e2e.mjs",
       "ziel": "dateien/scripts/pruefe-widerspruch-e2e.mjs"
     },
