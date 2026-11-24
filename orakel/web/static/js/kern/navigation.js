@@ -68,6 +68,15 @@ function halteAktivenLinkSichtbar(link){
   }
 }
 
+function aktualisiereNavHoehe(){
+  if(!hauptnav) return;
+  const liste = hauptnav.querySelector('.nav-liste');
+  if(!liste) return;
+  const abstand = Math.max(0, liste.offsetTop);
+  const verfuegbar = Math.max(0, window.innerHeight - abstand);
+  hauptnav.style.setProperty('--nav-sticky-max', `${verfuegbar}px`);
+}
+
 function aktualisiereNavRaender(){
   if(!hauptnav) return;
   const ueberlaeuft = hauptnav.scrollWidth > hauptnav.clientWidth + 1;
@@ -92,11 +101,13 @@ function setzeAktive(v){
       link.removeAttribute('aria-current');
     }
   });
+  aktualisiereNavHoehe();
   if(aktiverLink) halteAktivenLinkSichtbar(aktiverLink);
   aktualisiereNavRaender();
 }
 
 function aktualisiereAktivenLink(){
+  aktualisiereNavHoehe();
   const aktiv = navLinks.find(link => link.dataset.v === aktuelle);
   if(aktiv) halteAktivenLinkSichtbar(aktiv);
   aktualisiereNavRaender();
@@ -110,7 +121,18 @@ window.addEventListener('resize', () => {
     aktualisiereAktivenLink();
   });
 });
+window.addEventListener('load', aktualisiereAktivenLink);
 if(hauptnav) hauptnav.addEventListener('scroll', aktualisiereNavRaender, { passive: true });
+
+// Kopfzeile und Banner können ihre Höhe nach dem ersten Rendern ändern (z. B.
+// durch nachgeladene Statuschips). Dann muss die verfügbare Listenhöhe neu
+// berechnet und der aktive Link erneut ausgerichtet werden.
+if(typeof ResizeObserver === 'function'){
+  const beobachter = new ResizeObserver(() => aktualisiereAktivenLink());
+  [document.querySelector('.top'), document.querySelector('.banner')]
+    .filter(Boolean)
+    .forEach(element => beobachter.observe(element));
+}
 
 function setzeTitel(v){
   const eintrag = navLinks.find(link => link.dataset.v === v);

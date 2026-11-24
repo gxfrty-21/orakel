@@ -215,40 +215,48 @@ async function pruefeStickySidebar(page) {
   await page.locator('.nav[data-v="overview"]').click();
   await warteAufRoute(page, 'overview');
 
-  await page.setViewportSize({ width: 1280, height: 500 });
-  await page.goto(`${opts.url}/?v=sticky-kurz#/kb`, { waitUntil: 'networkidle' });
-  await page.waitForFunction(() => document.querySelectorAll('#hauptnav .nav[data-v]').length === 10);
-  await warteAufRoute(page, 'kb');
-
   const aktiverStand = async () => page.evaluate(() => {
     const liste = document.querySelector('.nav-liste');
     const aktiv = liste?.querySelector('.nav[aria-current="page"]');
-    if (!liste || !aktiv) return { text: '', inListe: false, imViewport: false, scrollTop: 0 };
+    if (!liste || !aktiv) return { text: '', inListe: false, imViewport: false, listenUnten: 0, listenAbstand: 0, maxHoehe: 0, scrollTop: 0 };
     const listenKasten = liste.getBoundingClientRect();
     const linkKasten = aktiv.getBoundingClientRect();
     return {
       text: aktiv.querySelector('b')?.textContent?.trim() || '',
       inListe: linkKasten.top >= listenKasten.top - 1 && linkKasten.bottom <= listenKasten.bottom + 1,
       imViewport: linkKasten.top >= -1 && linkKasten.bottom <= innerHeight + 1,
+      listenUnten: Math.round(listenKasten.bottom),
+      listenAbstand: Math.round(liste.offsetTop),
+      maxHoehe: Math.round(parseFloat(getComputedStyle(liste).maxHeight)),
       scrollTop: Math.round(liste.scrollTop),
     };
   });
 
-  let kurz = await aktiverStand();
-  pruefe(kurz.text === 'Wissensbank', `Kurzer Viewport: aktiver Link ist «${kurz.text}» statt «Wissensbank»`);
-  pruefe(kurz.scrollTop > 0, 'Kurzer Viewport: die Linkliste wurde für den Deep-Link nicht intern gescrollt');
-  pruefe(kurz.inListe, 'Kurzer Viewport: aktiver Link liegt nach dem Deep-Link ausserhalb der Linkliste');
-  pruefe(kurz.imViewport, 'Kurzer Viewport: aktiver Link liegt nach dem Deep-Link ausserhalb des Viewports');
+  for (const breite of [1280, 1024]) {
+    await page.setViewportSize({ width: breite, height: 500 });
+    await page.goto(`${opts.url}/?v=sticky-kurz-${breite}#/kb`, { waitUntil: 'networkidle' });
+    await page.waitForFunction(() => document.querySelectorAll('#hauptnav .nav[data-v]').length === 10);
+    await warteAufRoute(page, 'kb');
 
-  await page.locator('.nav[data-v="overview"]').click();
-  await warteAufRoute(page, 'overview');
-  await page.evaluate(() => history.back());
-  await warteAufRoute(page, 'kb');
-  kurz = await aktiverStand();
-  pruefe(kurz.text === 'Wissensbank', `Kurzer Viewport: aktiver Link nach Zurück ist «${kurz.text}» statt «Wissensbank»`);
-  pruefe(kurz.inListe && kurz.imViewport,
-    'Kurzer Viewport: aktiver Link ist nach Zurück nicht sichtbar');
-  notiere('aktiver Sidebar-Link bei 1280 × 500 px nach Deep-Link und Zurück sichtbar');
+    let kurz = await aktiverStand();
+    pruefe(kurz.text === 'Wissensbank', `Kurzer Viewport ${breite}: aktiver Link ist «${kurz.text}» statt «Wissensbank»`);
+    pruefe(kurz.scrollTop > 0, `Kurzer Viewport ${breite}: die Linkliste wurde für den Deep-Link nicht intern gescrollt`);
+    pruefe(kurz.inListe, `Kurzer Viewport ${breite}: aktiver Link liegt nach dem Deep-Link ausserhalb der Linkliste`);
+    pruefe(kurz.imViewport, `Kurzer Viewport ${breite}: aktiver Link liegt nach dem Deep-Link ausserhalb des Viewports`);
+    pruefe(kurz.listenUnten <= 501, `Kurzer Viewport ${breite}: Linkliste endet bei ${kurz.listenUnten} px ausserhalb des Viewports`);
+    pruefe(kurz.maxHoehe === 500 - kurz.listenAbstand,
+      `Kurzer Viewport ${breite}: max-height ${kurz.maxHoehe} px passt nicht zur Listenposition ${kurz.listenAbstand} px`);
+
+    await page.locator('.nav[data-v="overview"]').click();
+    await warteAufRoute(page, 'overview');
+    await page.evaluate(() => history.back());
+    await warteAufRoute(page, 'kb');
+    kurz = await aktiverStand();
+    pruefe(kurz.text === 'Wissensbank', `Kurzer Viewport ${breite}: aktiver Link nach Zurück ist «${kurz.text}» statt «Wissensbank»`);
+    pruefe(kurz.inListe && kurz.imViewport,
+      `Kurzer Viewport ${breite}: aktiver Link ist nach Zurück nicht sichtbar`);
+    notiere(`aktiver Sidebar-Link bei ${breite} × 500 px nach Deep-Link und Zurück sichtbar`);
+  }
 
   await page.setViewportSize({ width: 1280, height: 800 });
   notiere('Desktop-Sidebar bleibt auf Lab, Spider und Wissensbank sichtbar und bedienbar');
