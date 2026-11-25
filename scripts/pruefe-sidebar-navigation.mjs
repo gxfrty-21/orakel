@@ -17,6 +17,8 @@
  *   - echte Viewport-Wechsel 1024 × 500 → 1280 × 800 → 1024 × 500,
  *   - der Querformat-Grenzfall 901 × 500,
  *   - eine explizite Änderung der Header-Höhe mit Neuberechnung der max-height,
+ *   - Tab und Shift+Tab durch alle zehn Links bei 1024 × 500 und 1280 × 500,
+ *     jeweils mit sichtbarem Fokus in Liste und Viewport,
  *   - die Querformat-Navigation öffnet sich beim Verlassen des Raumschiffs.
  *
  * Der Test ist für die Seed-Datenbank gedacht und läuft ohne Test-Framework.
@@ -300,6 +302,101 @@ async function pruefeStickySidebar(page) {
     notiere(`vertikale Scroll-Affordanz bei ${kontext}: Überlauf und beide Enden geprüft`);
   };
 
+  const pruefeTastaturListe = async breite => {
+    const kontext = `Tastatur ${breite} × 500`;
+    await page.setViewportSize({ width: breite, height: 500 });
+    await page.goto(`${opts.url}/?v=tastatur-liste-${breite}#/overview`, { waitUntil: 'networkidle' });
+    await page.waitForFunction(() => document.querySelectorAll('#hauptnav .nav[data-v]').length === 10);
+    await warteAufRoute(page, 'overview');
+    await warteAufDynamischeHoehe();
+
+    const ueberlauf = await fadeStand();
+    pruefe(ueberlauf.ueberlaeuft,
+      `${kontext}: Linkliste überläuft nicht, der Tastaturfall braucht den internen Scrollbereich`);
+
+    const fokusStand = () => page.evaluate(() => {
+      const liste = document.querySelector('.nav-liste');
+      const aktiv = document.activeElement;
+      const link = aktiv?.closest?.('.nav[data-v]');
+      const linkKasten = aktiv?.getBoundingClientRect();
+      const listenKasten = liste?.getBoundingClientRect();
+      const stil = aktiv ? getComputedStyle(aktiv) : null;
+      const messbar = Boolean(linkKasten && listenKasten);
+      return {
+        v: link?.dataset.v || '',
+        text: link?.querySelector('b')?.textContent?.trim() || aktiv?.textContent?.trim() || '',
+        istLink: Boolean(link),
+        focusVisible: Boolean(aktiv?.matches?.(':focus-visible')),
+        outlineStil: stil?.outlineStyle || '',
+        outlineBreite: stil ? parseFloat(stil.outlineWidth) || 0 : 0,
+        inListe: messbar
+          && linkKasten.top >= listenKasten.top - 1 && linkKasten.bottom <= listenKasten.bottom + 1,
+        imViewport: Boolean(linkKasten) && linkKasten.top >= -1 && linkKasten.bottom <= innerHeight + 1,
+        abstandOben: messbar ? Math.round(linkKasten.top - listenKasten.top) : -1,
+        abstandUnten: messbar ? Math.round(listenKasten.bottom - linkKasten.bottom) : -1,
+        fadeOben: liste?.classList.contains('fade-oben') || false,
+        fadeUnten: liste?.classList.contains('fade-unten') || false,
+        scrollTop: Math.round(liste?.scrollTop || 0),
+      };
+    });
+
+    const pruefeFokus = (stand, erwartet, richtung) => {
+      pruefe(stand.v === erwartet[0] && stand.text === erwartet[1],
+        `${kontext}: ${richtung} führt zu «${stand.text || stand.v || 'keinem Link'}» statt «${erwartet[1]}»`);
+      pruefe(stand.focusVisible && stand.outlineStil === 'solid' && stand.outlineBreite >= 2,
+        `${kontext}: «${erwartet[1]}» zeigt keinen sichtbaren Fokusrahmen (${stand.outlineStil} ${stand.outlineBreite} px)`);
+      pruefe(stand.inListe,
+        `${kontext}: «${erwartet[1]}» liegt ausserhalb der Linkliste (oben ${stand.abstandOben} px, unten ${stand.abstandUnten} px)`);
+      pruefe(stand.imViewport, `${kontext}: «${erwartet[1]}» liegt ausserhalb des Viewports`);
+      pruefe(!stand.fadeOben || stand.abstandOben >= 18,
+        `${kontext}: «${erwartet[1]}» liegt im oberen Fade (${stand.abstandOben} px Abstand)`);
+      pruefe(!stand.fadeUnten || stand.abstandUnten >= 18,
+        `${kontext}: «${erwartet[1]}» liegt im unteren Fade (${stand.abstandUnten} px Abstand)`);
+    };
+
+    // Der erste Link wird über den vorherigen Fokus und Tab angesteuert, damit
+    // auch er den Tastatur-Fokusrahmen (focus-visible) trägt.
+    await page.locator('.nav[data-v="overview"]').focus();
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Tab');
+    await page.waitForTimeout(60);
+
+    let stand = await fokusStand();
+    pruefeFokus(stand, ERWARTETE_BEREICHE[0], 'Tab');
+    pruefe(stand.scrollTop === 0, `${kontext}: Linkliste steht beim ersten Link nicht am oberen Ende`);
+
+    for (let i = 1; i < ERWARTETE_BEREICHE.length; i++) {
+      await page.keyboard.press('Tab');
+      await page.waitForTimeout(60);
+      stand = await fokusStand();
+      pruefeFokus(stand, ERWARTETE_BEREICHE[i], `Tab ${i + 1}`);
+    }
+    pruefe(stand.scrollTop > 0,
+      `${kontext}: Linkliste wurde beim Tabben zum letzten Link nicht intern gescrollt`);
+
+    // Nach dem letzten Link verlässt Tab die Liste; Shift+Tab kehrt zurück.
+    await page.keyboard.press('Tab');
+    await page.waitForTimeout(60);
+    const nachListe = await fokusStand();
+    pruefe(!nachListe.istLink,
+      `${kontext}: Tab nach dem letzten Link bleibt mit «${nachListe.text}» in der Liste`);
+
+    await page.keyboard.press('Shift+Tab');
+    await page.waitForTimeout(60);
+    stand = await fokusStand();
+    pruefeFokus(stand, ERWARTETE_BEREICHE[ERWARTETE_BEREICHE.length - 1], 'Shift+Tab');
+
+    for (let i = ERWARTETE_BEREICHE.length - 2; i >= 0; i--) {
+      await page.keyboard.press('Shift+Tab');
+      await page.waitForTimeout(60);
+      stand = await fokusStand();
+      pruefeFokus(stand, ERWARTETE_BEREICHE[i], `Shift+Tab ${ERWARTETE_BEREICHE.length - i}`);
+    }
+    pruefe(stand.scrollTop === 0,
+      `${kontext}: Linkliste steht nach Shift+Tab zum ersten Link bei ${stand.scrollTop} px statt 0`);
+    notiere(`Tastaturfokus bei ${kontext}: Tab und Shift+Tab durch alle zehn Links sichtbar`);
+  };
+
   for (const breite of [1280, 1024]) {
     await page.setViewportSize({ width: breite, height: 500 });
     await page.goto(`${opts.url}/?v=sticky-kurz-${breite}#/kb`, { waitUntil: 'networkidle' });
@@ -327,6 +424,8 @@ async function pruefeStickySidebar(page) {
   }
 
   await pruefeVertikaleAffordanz('1024 × 500');
+
+  for (const breite of [1024, 1280]) await pruefeTastaturListe(breite);
 
   // 901 × 500 liegt wegen der Querformat-Regel (max-width: 950px und
   // max-height: 500px) noch im Querformat-Modus. Dort gibt es keine intern

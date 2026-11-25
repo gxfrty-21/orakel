@@ -253,6 +253,8 @@ intern. Ihre Höhe ergibt sich aus der tatsächlichen Position der Linkliste
 unter Kopfzeile und Banner, und der aktive Link wird auch dort sichtbar
 gehalten. Bei überlaufender Desktop-Liste zeigen dezente Fades an den
 Enden weiteren Inhalt an; eine schlanke, farbige Scrollbar bleibt sichtbar.
+Per Tab und Shift+Tab bleiben die fokussierten Links in der Liste und im
+Viewport sichtbar; ein Scroll-Abstand hält Fokusrahmen aus den Fade-Zonen.
 Im Querformat wird die Navigation beim Verlassen des Raumschiffs wieder
 geöffnet.
 
@@ -263,9 +265,11 @@ Browser-Verlauf, `aria-current`, Skip-Link, die Fokusführung, die
 responsive Sichtbarkeit, die richtungsabhängigen Ränder, die mitscrollende
 Desktop-Sidebar auf langen Ansichten, den aktiven Link bei
 1280/1024 × 500 px (Deep-Link und Zurück), echte Resize-Übergänge
-1024 × 500 → 1280 × 800 → 1024 × 500, den Querformat-Grenzfall 901 × 500,
-eine explizite Header-Höhenänderung, Überlauf und beide Enden der vertikalen
-Scroll-Affordanz sowie das Querformat-Verhalten.
+1024 × 500 → 1280 × 800 → 1024 × 500, Tab und Shift+Tab durch alle zehn
+Links bei 1024/1280 × 500 px mit sichtbarem Fokus in Liste und Viewport,
+den Querformat-Grenzfall 901 × 500, eine explizite Header-Höhenänderung,
+Überlauf und beide Enden der vertikalen Scroll-Affordanz sowie das
+Querformat-Verhalten.
 
 Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswahl einmal geöffnet; scheitert er, gibt es keinen Ersatzkandidaten. Im Lab zeigt ein Chart die aggregierte Kapitalkurve der Testfenster; beim Überfahren nennt ein Tooltip Kapitalstand, Veränderung seit dem Start in Prozent, Datum sowie den bisherigen Höchststand mit Abstand in Prozent; per Tastatur (Tab, Pfeiltasten, Home/Ende) ist dieselbe Anzeige erreichbar. Solange der Tastaturfokus im sichtbaren Lab-Detail liegt, pausiert der Auto-Refresh nur den Ansichts-Render, damit die Anzeige beim Ablesen nicht neu aufgebaut wird; Daten und Kopfzeile werden weiter aktualisiert; ein Status in der Listenkopfzeile (`#labNeu`, höfliche Live-Region) zeigt «Neue Daten verfügbar», und beim Verlassen des Details wird sofort neu gezeichnet statt auf den nächsten Takt zu warten. Ein Fokus auf der Lab-Liste oder einem anderen Lab-Element blockiert den Render nicht; ein ausgeblendetes Lab ebenfalls nicht. Der Refresh baut die Liste nicht neu auf: Vorhandene Einträge werden über eine stabile Kandidatenkennung in die neue Reihenfolge gebracht, Auswahl, Fokus und Scrollposition bleiben erhalten. Der Acht-Sekunden-Takt startet keinen zweiten Aufruf, solange eine Antwort läuft, pausiert im Hintergrundtab und lädt beim Zurückkehren sofort nach. Dort und in der Strategien-Ansicht lässt sich zudem bei jedem Kandidaten die Liste der Walk-Forward-Fenster aufklappen: Trainings- und Testblock, gewählter Parameter, Trades, Profit Factor und Netto je Fenster.
 
