@@ -17,6 +17,8 @@
  *   - die vollständige Tab-Reihenfolge bei 360 und 1024 px:
  *     Skip-Link, Kopfzeilen-Aktion, zehn Sidebar-Links, Hauptinhalt,
  *     ohne ausgeblendete oder unsichtbare Stopps,
+ *   - bei «Bewegung reduzieren» unveränderte Fades, Scroll- und
+ *     Fokusführung ohne Animationen oder Übergänge an der Navigation,
  *   - die Desktop-Sidebar bleibt auf langen Ansichten beim Scrollen sichtbar,
  *   - der aktive Link bleibt auch in der intern scrollenden Sidebar sichtbar,
  *   - echte Viewport-Wechsel 1024 × 500 → 1280 × 800 → 1024 × 500,
@@ -766,6 +768,260 @@ async function pruefeStickySidebar(page) {
   notiere('Desktop-Sidebar bleibt auf Lab, Spider und Wissensbank sichtbar und bedienbar');
 }
 
+async function pruefeReduzierteBewegung(browser) {
+  const warteAufListe = seite => seite.waitForFunction(() => {
+    const liste = document.querySelector('.nav-liste');
+    return Boolean(liste)
+      && Math.abs(parseFloat(getComputedStyle(liste).maxHeight) - (innerHeight - liste.offsetTop)) <= 1;
+  });
+
+  const pruefeOhneAnimation = async (seite, kontext) => {
+    const stand = await seite.evaluate(() => ['#hauptnav', '.nav-liste', '.nav'].map(selektor => {
+      const element = document.querySelector(selektor);
+      const stil = getComputedStyle(element);
+      return {
+        selektor,
+        animation: stil.animationName,
+        transition: stil.transitionDuration,
+        scrollBehavior: stil.scrollBehavior,
+      };
+    }));
+    for (const eintrag of stand) {
+      pruefe(eintrag.animation === 'none',
+        `${kontext}: ${eintrag.selektor} hat eine Animation (${eintrag.animation})`);
+      pruefe(eintrag.transition.split(',').every(dauer => parseFloat(dauer) === 0),
+        `${kontext}: ${eintrag.selektor} hat einen Übergang (${eintrag.transition})`);
+      pruefe(eintrag.scrollBehavior === 'auto',
+        `${kontext}: ${eintrag.selektor} scrollt animiert (${eintrag.scrollBehavior})`);
+    }
+  };
+
+  const desktop = await browser.newPage({ viewport: { width: 1024, height: 500 }, reducedMotion: 'reduce' });
+  desktop.on('pageerror', fehler => seitenfehler.push(fehler.message));
+  try {
+    await desktop.goto(`${opts.url}/?v=reduziert-desktop#/kb`, { waitUntil: 'networkidle' });
+    await desktop.waitForFunction(() => document.querySelectorAll('#hauptnav .nav[data-v]').length === 10);
+    await warteAufRoute(desktop, 'kb');
+    await warteAufListe(desktop);
+
+    const medium = await desktop.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
+    pruefe(medium, 'Reduzierte Bewegung: Medienabfrage ist auf dem Desktop nicht aktiv');
+
+    const desktopStand = await desktop.evaluate(() => {
+      const liste = document.querySelector('.nav-liste');
+      const aktiv = liste.querySelector('.nav[aria-current="page"]');
+      const listenKasten = liste.getBoundingClientRect();
+      const linkKasten = aktiv.getBoundingClientRect();
+      const stil = getComputedStyle(liste);
+      return {
+        sticky: stil.position,
+        maxHoehe: Math.round(parseFloat(stil.maxHeight)),
+        erwarteteHoehe: Math.round(innerHeight - liste.offsetTop),
+        ueberlaeuft: liste.scrollHeight > liste.clientHeight + 1,
+        scrollTop: Math.round(liste.scrollTop),
+        aktiv: aktiv.querySelector('b')?.textContent?.trim() || '',
+        aktivImAusschnitt: linkKasten.top >= listenKasten.top - 1 && linkKasten.bottom <= listenKasten.bottom + 1,
+        aktivImViewport: linkKasten.top >= -1 && linkKasten.bottom <= innerHeight + 1,
+      };
+    });
+    pruefe(desktopStand.sticky === 'sticky', `Reduzierte Bewegung Desktop: Sidebar ist nicht sticky (${desktopStand.sticky})`);
+    pruefe(Math.abs(desktopStand.maxHoehe - desktopStand.erwarteteHoehe) <= 1,
+      `Reduzierte Bewegung Desktop: max-height ${desktopStand.maxHoehe} px statt ${desktopStand.erwarteteHoehe} px`);
+    pruefe(desktopStand.ueberlaeuft, 'Reduzierte Bewegung Desktop: Linkliste überläuft nicht');
+    pruefe(desktopStand.scrollTop > 0, 'Reduzierte Bewegung Desktop: Deep-Link scrollt die Liste nicht intern');
+    pruefe(desktopStand.aktiv === 'Wissensbank', `Reduzierte Bewegung Desktop: aktiver Link ist «${desktopStand.aktiv}»`);
+    pruefe(desktopStand.aktivImAusschnitt && desktopStand.aktivImViewport,
+      'Reduzierte Bewegung Desktop: aktiver Link ist nicht sichtbar');
+    await pruefeOhneAnimation(desktop, 'Reduzierte Bewegung Desktop 1024 × 500');
+
+    const desktopFades = async ziel => {
+      await desktop.evaluate(position => {
+        const liste = document.querySelector('.nav-liste');
+        if (position === 'oben') liste.scrollTop = 0;
+        else if (position === 'unten') liste.scrollTop = liste.scrollHeight;
+        else liste.scrollTop = Math.round((liste.scrollHeight - liste.clientHeight) / 2);
+      }, ziel);
+      await desktop.waitForTimeout(80);
+      return desktop.evaluate(() => {
+        const liste = document.querySelector('.nav-liste');
+        return {
+          oben: liste.classList.contains('fade-oben'),
+          unten: liste.classList.contains('fade-unten'),
+          scrollTop: Math.round(liste.scrollTop),
+        };
+      });
+    };
+
+    let fades = await desktopFades('oben');
+    pruefe(fades.scrollTop === 0 && !fades.oben && fades.unten,
+      'Reduzierte Bewegung Desktop: Fades am oberen Ende sind falsch');
+    fades = await desktopFades('unten');
+    pruefe(fades.scrollTop > 0 && fades.oben && !fades.unten,
+      'Reduzierte Bewegung Desktop: Fades am unteren Ende sind falsch');
+    fades = await desktopFades('mitte');
+    pruefe(fades.oben && fades.unten,
+      'Reduzierte Bewegung Desktop: Fades fehlen in der Mitte');
+
+    await desktop.goto(`${opts.url}/?v=reduziert-desktop-fokus#/overview`, { waitUntil: 'networkidle' });
+    await desktop.waitForFunction(() => document.querySelectorAll('#hauptnav .nav[data-v]').length === 10);
+    await warteAufRoute(desktop, 'overview');
+    await warteAufListe(desktop);
+
+    const desktopFokus = () => desktop.evaluate(() => {
+      const el = document.activeElement;
+      const link = el?.closest?.('.nav[data-v]');
+      const liste = document.querySelector('.nav-liste');
+      const linkKasten = el?.getBoundingClientRect();
+      const listenKasten = liste?.getBoundingClientRect();
+      const stil = el ? getComputedStyle(el) : null;
+      return {
+        v: link?.dataset.v || '',
+        text: link?.querySelector('b')?.textContent?.trim() || '',
+        focusVisible: Boolean(el?.matches?.(':focus-visible')),
+        outline: stil?.outlineStyle === 'solid' && (parseFloat(stil.outlineWidth) || 0) >= 2,
+        imListe: Boolean(linkKasten && listenKasten)
+          && linkKasten.top >= listenKasten.top - 1 && linkKasten.bottom <= listenKasten.bottom + 1,
+        imViewport: Boolean(linkKasten) && linkKasten.top >= -1 && linkKasten.bottom <= innerHeight + 1,
+        scrollTop: Math.round(liste?.scrollTop || 0),
+      };
+    });
+
+    await desktop.locator('.nav[data-v="overview"]').focus();
+    await desktop.keyboard.press('Shift+Tab');
+    await desktop.keyboard.press('Tab');
+    await desktop.waitForTimeout(60);
+    for (let i = 0; i < ERWARTETE_BEREICHE.length; i++) {
+      if (i > 0) {
+        await desktop.keyboard.press('Tab');
+        await desktop.waitForTimeout(60);
+      }
+      const stand = await desktopFokus();
+      const [v, text] = ERWARTETE_BEREICHE[i];
+      pruefe(stand.v === v && stand.text === text,
+        `Reduzierte Bewegung Desktop: Tab ${i + 1} fokussiert «${stand.text || stand.v}» statt «${text}»`);
+      pruefe(stand.focusVisible && stand.outline,
+        `Reduzierte Bewegung Desktop: «${text}» zeigt keinen sichtbaren Fokusrahmen`);
+      pruefe(stand.imListe, `Reduzierte Bewegung Desktop: «${text}» liegt ausserhalb der Liste`);
+      pruefe(stand.imViewport, `Reduzierte Bewegung Desktop: «${text}» liegt ausserhalb des Viewports`);
+    }
+    pruefe((await desktopFokus()).scrollTop > 0,
+      'Reduzierte Bewegung Desktop: Liste wurde beim Tabben nicht intern gescrollt');
+    notiere('reduzierte Bewegung 1024 × 500: Sticky-Scroll, Fades und Tab-Fokus unverändert');
+  } finally {
+    await desktop.close();
+  }
+
+  for (const breite of [360, 768]) {
+    const kontext = `Reduzierte Bewegung ${breite} px`;
+    const seite = await browser.newPage({ viewport: { width: breite, height: 800 }, reducedMotion: 'reduce' });
+    seite.on('pageerror', fehler => seitenfehler.push(fehler.message));
+    try {
+      await seite.goto(`${opts.url}/?v=reduziert-schmal-${breite}#/overview`, { waitUntil: 'networkidle' });
+      await seite.waitForFunction(() => document.querySelectorAll('#hauptnav .nav[data-v]').length === 10);
+      await warteAufRoute(seite, 'overview');
+
+      const medium = await seite.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
+      pruefe(medium, `${kontext}: Medienabfrage ist nicht aktiv`);
+
+      const ueberlauf = await seite.evaluate(() => {
+        const nav = document.querySelector('#hauptnav');
+        return nav.scrollWidth > nav.clientWidth + 1;
+      });
+      pruefe(ueberlauf, `${kontext}: Navigation überläuft nicht horizontal`);
+      await pruefeOhneAnimation(seite, kontext);
+
+      const mobileFades = async ziel => {
+        await seite.evaluate(position => {
+          const nav = document.querySelector('#hauptnav');
+          if (position === 'links') nav.scrollLeft = 0;
+          else if (position === 'rechts') nav.scrollLeft = nav.scrollWidth;
+          else nav.scrollLeft = Math.round((nav.scrollWidth - nav.clientWidth) / 2);
+        }, ziel);
+        await seite.waitForTimeout(80);
+        return seite.evaluate(() => {
+          const nav = document.querySelector('#hauptnav');
+          return {
+            links: nav.classList.contains('fade-links'),
+            rechts: nav.classList.contains('fade-rechts'),
+            scrollLeft: Math.round(nav.scrollLeft),
+          };
+        });
+      };
+
+      let fades = await mobileFades('links');
+      pruefe(fades.scrollLeft === 0 && !fades.links && fades.rechts,
+        `${kontext}: Fades am linken Ende sind falsch`);
+      fades = await mobileFades('rechts');
+      pruefe(fades.scrollLeft > 0 && fades.links && !fades.rechts,
+        `${kontext}: Fades am rechten Ende sind falsch`);
+      fades = await mobileFades('mitte');
+      pruefe(fades.links && fades.rechts, `${kontext}: Fades fehlen in der Mitte`);
+
+      await seite.goto(`${opts.url}/?v=reduziert-schmal-fokus-${breite}#/overview`, { waitUntil: 'networkidle' });
+      await seite.waitForFunction(() => document.querySelectorAll('#hauptnav .nav[data-v]').length === 10);
+      await warteAufRoute(seite, 'overview');
+
+      const mobileFokus = () => seite.evaluate(() => {
+        const el = document.activeElement;
+        const link = el?.closest?.('.nav[data-v]');
+        const nav = document.querySelector('#hauptnav');
+        const linkKasten = el?.getBoundingClientRect();
+        const navKasten = nav?.getBoundingClientRect();
+        const stil = el ? getComputedStyle(el) : null;
+        const messbar = Boolean(linkKasten && navKasten);
+        return {
+          v: link?.dataset.v || '',
+          text: link?.querySelector('b')?.textContent?.trim() || '',
+          focusVisible: Boolean(el?.matches?.(':focus-visible')),
+          outline: stil?.outlineStyle === 'solid' && (parseFloat(stil.outlineWidth) || 0) >= 2,
+          imAusschnitt: messbar
+            && linkKasten.left >= navKasten.left - 1 && linkKasten.right <= navKasten.right + 1,
+          imViewport: Boolean(linkKasten) && linkKasten.left >= -1 && linkKasten.right <= innerWidth + 1,
+          abstandLinks: messbar ? Math.round(linkKasten.left - navKasten.left) : -1,
+          abstandRechts: messbar ? Math.round(navKasten.right - linkKasten.right) : -1,
+          fadeLinks: nav?.classList.contains('fade-links') || false,
+          fadeRechts: nav?.classList.contains('fade-rechts') || false,
+          scrollLeft: Math.round(nav?.scrollLeft || 0),
+        };
+      });
+
+      await seite.locator('.nav[data-v="overview"]').focus();
+      await seite.keyboard.press('Shift+Tab');
+      await seite.keyboard.press('Tab');
+      await seite.waitForTimeout(60);
+      for (let i = 0; i < ERWARTETE_BEREICHE.length; i++) {
+        if (i > 0) {
+          await seite.keyboard.press('Tab');
+          await seite.waitForTimeout(60);
+        }
+        const stand = await mobileFokus();
+        const [v, text] = ERWARTETE_BEREICHE[i];
+        pruefe(stand.v === v && stand.text === text,
+          `${kontext}: Tab ${i + 1} fokussiert «${stand.text || stand.v}» statt «${text}»`);
+        pruefe(stand.focusVisible && stand.outline,
+          `${kontext}: «${text}» zeigt keinen sichtbaren Fokusrahmen`);
+        pruefe(stand.imAusschnitt && stand.imViewport,
+          `${kontext}: «${text}» ist nicht sichtbar (links ${stand.abstandLinks} px, rechts ${stand.abstandRechts} px)`);
+        pruefe(!stand.fadeLinks || stand.abstandLinks >= 28,
+          `${kontext}: «${text}» liegt im linken Fade`);
+        pruefe(!stand.fadeRechts || stand.abstandRechts >= 28,
+          `${kontext}: «${text}» liegt im rechten Fade`);
+      }
+      pruefe((await mobileFokus()).scrollLeft > 0,
+        `${kontext}: Navigation wurde beim Tabben nicht horizontal gescrollt`);
+
+      await seite.keyboard.press('Shift+Tab');
+      await seite.waitForTimeout(60);
+      const zurueck = await mobileFokus();
+      pruefe(zurueck.v === 'spider' && zurueck.focusVisible && zurueck.imAusschnitt,
+        `${kontext}: Shift+Tab kehrt nicht sichtbar zu «Spider» zurück`);
+      notiere(`reduzierte Bewegung ${breite} px: Fades, horizontales Scrollen und Tab-Fokus unverändert`);
+    } finally {
+      await seite.close();
+    }
+  }
+}
+
 async function pruefeQuerformatNavigation(browser) {
   const seite = await browser.newPage({ viewport: { width: 900, height: 450 } });
   seite.on('pageerror', fehler => seitenfehler.push(fehler.message));
@@ -928,6 +1184,7 @@ async function main() {
     await pruefeSchmaleNavigation(browser);
     await pruefeSchmaleTastatur(browser);
     await pruefeTabReihenfolge(browser);
+    await pruefeReduzierteBewegung(browser);
     await pruefeQuerformatNavigation(browser);
 
     pruefe(seitenfehler.length === 0,
