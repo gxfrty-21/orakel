@@ -177,13 +177,8 @@ def aufteilung(n: int, cfg: Config) -> tuple[int, int, int, list[int]] | None:
 
 @dataclass(frozen=True, slots=True)
 class Parameterwahl:
-    """Ergebnis der Parameterwahl im Trainingsfenster.
+    """Gewählter Rasterpunkt mit Kennzahlen; ``grund`` nennt sonst den Ablehnungsgrund."""
 
-    ``parameter is None`` bedeutet: kein Rasterpunkt erfüllte die Bedingungen.
-    ``grund`` nennt dann den tatsächlichen Ablehnungsgrund, damit der Richter
-    ihn unverändert in sein Urteil übernehmen kann — fehlende Trades und ein
-    negatives Netto sind unterschiedliche Befunde und werden nicht vermischt.
-    """
 
     parameter: dict[str, Any] | None
     kennzahlen: dict[str, Any] | None = None
@@ -199,7 +194,7 @@ def _train_parameter(
     min_trades = int(v.get("min_train_trades", 5))
     prefix = df.iloc[:train_end].reset_index(drop=True)
     if prefix.empty or train_start >= train_end:
-        return Parameterwahl(None, None, "Im Trainingsfenster standen keine Kerzen zur Verfügung")
+        return Parameterwahl(None, None, "Im Trainingsfenster stand kein auswertbarer Zeitraum zur Verfügung")
 
     best: tuple[tuple[float, float], dict[str, Any], dict[str, Any]] | None = None
     mit_trades = 0
@@ -223,15 +218,24 @@ def _train_parameter(
         if best is None or score > best[0]:
             best = (score, dict(parameter), k)
     if best is None:
+        # Bei mit_trades > 0 ist bestes_netto gesetzt; sonst bleibt 0.0.
+        bestwert = 0.0 if bestes_netto is None else bestes_netto
         if mit_trades == 0:
-            grund = ("Im finalen Trainingsfenster erreichte kein Parameter die "
+            grund = ("Im Trainingsfenster erreichte kein Parameter die "
                      f"Mindestzahl von {min_trades} Trades")
-        elif bestes_netto is not None and bestes_netto <= 0:
-            grund = ("Im finalen Trainingsfenster blieb jeder Parameter mit mindestens "
-                     f"{min_trades} Trades netto negativ (bester: {bestes_netto:.2f} USD)")
+        elif bestwert > 0:
+            grund = ("Im Trainingsfenster hatte kein Parameter mit mindestens "
+                     f"{min_trades} Trades einen belastbaren Profit-Faktor (Netto positiv, "
+                     "Profit-Faktor nicht bestimmbar)")
+        elif round(bestwert, 2) < 0:
+            grund = ("Im Trainingsfenster blieb jeder Parameter mit mindestens "
+                     f"{min_trades} Trades netto negativ (bester: {bestwert:.2f} USD)")
         else:
-            grund = ("Im finalen Trainingsfenster hatte kein Parameter mit mindestens "
-                     f"{min_trades} Trades einen belastbaren Profit-Faktor")
+            # Wie im Zahlformat auf Cent gerundet, damit Aussage und Betrag
+            # zusammenpassen: ein Rundungsrest wie -1e-9 ist kein Verlust.
+            grund = ("Im Trainingsfenster erreichte kein Parameter mit mindestens "
+                     f"{min_trades} Trades ein positives Netto; das beste Netto lag bei "
+                     "0.00 USD")
         return Parameterwahl(None, None, grund)
     return Parameterwahl(best[1], best[2])
 
@@ -429,7 +433,8 @@ def beurteile_walk_forward(
     final_start = max(0, dev_n - train_bars)
     final = _train_parameter(df, strategie, cfg, grenzen, final_start, dev_n, symbol=symbol)
     if final.parameter is None or final.kennzahlen is None:
-        u.gruende.append(final.grund or "Im finalen Trainingsfenster wurde kein Parameter gewählt")
+        # Ohne Parameter nennt _train_parameter immer einen Grund.
+        u.gruende.append(final.grund)
         return u
     u.parameter, u.in_sample = final.parameter, final.kennzahlen
     u.schluessel = strategie.schluessel(u.parameter)

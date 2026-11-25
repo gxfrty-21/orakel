@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from orakel.kern import judge
 from orakel.kern.backtest import BacktestErgebnis
@@ -90,6 +91,39 @@ def test_parameterwahl_meldet_negatives_netto(cfg, kerzen, monkeypatch):
     assert "Mindestzahl" not in wahl.grund
 
 
+@pytest.mark.parametrize(
+    ("netto", "profit_factor", "erwartet", "verboten"),
+    [
+        (0.0, 0.5, "ein positives Netto", "negativ"),
+        (-0.0, 0.5, "ein positives Netto", "negativ"),
+        (-0.004, 0.5, "ein positives Netto", "negativ"),
+        (-1e-9, 0.5, "ein positives Netto", "negativ"),
+        (1e-9, None, "belastbaren Profit-Faktor", "ein positives Netto"),
+        (1_200.0, None, "belastbaren Profit-Faktor", "negativ"),
+    ],
+)
+def test_parameterwahl_trennt_rundungsnull_von_verlust(
+    cfg, kerzen, monkeypatch, netto, profit_factor, erwartet, verboten,
+):
+    """Die exakte Null und Rundungsreste gelten nicht als Verlust."""
+    def fake_backtest(df, signale, cfg_, grenzen, start=0, ende=None, **kwargs):
+        ende = len(df) if ende is None else int(ende)
+        erg = _ergebnis(df, int(start), ende, gut=False)
+        erg.kennzahlen["netto"] = netto
+        erg.kennzahlen["profit_factor"] = profit_factor
+        return erg
+
+    monkeypatch.setattr(judge, "backtest", fake_backtest)
+    strategie = strategien(cfg)["momentum"]
+    grenzen = RisikoGrenzen.aus_config(cfg)
+
+    wahl = judge._train_parameter(kerzen, strategie, cfg, grenzen, 0, len(kerzen))
+
+    assert wahl.parameter is None
+    assert erwartet in wahl.grund
+    assert verboten not in wahl.grund
+
+
 def test_ohne_parameter_bleibt_der_schluessel_strategieeindeutig(cfg, kerzen, monkeypatch):
     """Auch ohne gewählten Parameter ist jede Strategie über den Schlüssel trennbar."""
     cfg["validierung"]["zufallslaeufe"] = 0
@@ -107,6 +141,24 @@ def test_ohne_parameter_bleibt_der_schluessel_strategieeindeutig(cfg, kerzen, mo
     assert schluessel["rsi_reversion"] == "rsi_reversion|kein_parameter"
     assert all(u.urteil == "abgelehnt" for u in urteile.values())
     assert all("netto negativ" in u.gruende[0] for u in urteile.values())
+
+
+def test_fruehe_ausstiege_behalten_einen_eindeutigen_schluessel(cfg, kerzen, monkeypatch):
+    """Auch ohne Trainingsfenster bleibt der Schlüssel gesetzt und strategieeindeutig."""
+    grenzen = RisikoGrenzen.aus_config(cfg)
+    strategie = strategien(cfg)["momentum"]
+    min_kerzen = int(cfg["daten"]["min_kerzen"])
+
+    kurz = kerzen.iloc[: min_kerzen - 1].reset_index(drop=True)
+    zu_kurz = beurteile_walk_forward(kurz, "TEST", strategie, cfg, grenzen)
+
+    monkeypatch.setattr(judge, "_aufteilung", lambda n, v: None)
+    ohne_fenster = beurteile_walk_forward(kerzen, "TEST", strategie, cfg, grenzen)
+
+    assert zu_kurz.urteil == "zu wenig Daten"
+    assert ohne_fenster.urteil == "zu wenig Daten"
+    assert zu_kurz.gruende and ohne_fenster.gruende
+    assert {u.schluessel for u in (zu_kurz, ohne_fenster)} == {"momentum|kein_parameter"}
 
 
 def test_holdout_gate_nutzt_nur_letzten_block(cfg, kerzen, monkeypatch):
