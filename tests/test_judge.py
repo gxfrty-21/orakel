@@ -75,6 +75,40 @@ def test_walk_forward_oeffnet_holdout_nicht(cfg, kerzen, monkeypatch):
     assert u.walk_forward_folds[-1]["test_bis"] <= u.holdout_ab
 
 
+def test_parameterwahl_meldet_negatives_netto(cfg, kerzen, monkeypatch):
+    """Ohne positiven Parameter nennt der Grund das Netto, nicht die Trade-Zahl."""
+    _fakes(monkeypatch, [], gut=False)
+    strategie = strategien(cfg)["momentum"]
+    grenzen = RisikoGrenzen.aus_config(cfg)
+
+    wahl = judge._train_parameter(kerzen, strategie, cfg, grenzen, 0, len(kerzen))
+
+    assert wahl.parameter is None
+    assert wahl.kennzahlen is None
+    assert "netto negativ" in wahl.grund
+    assert "-2000.00 USD" in wahl.grund
+    assert "Mindestzahl" not in wahl.grund
+
+
+def test_ohne_parameter_bleibt_der_schluessel_strategieeindeutig(cfg, kerzen, monkeypatch):
+    """Auch ohne gewählten Parameter ist jede Strategie über den Schlüssel trennbar."""
+    cfg["validierung"]["zufallslaeufe"] = 0
+    cfg["validierung"]["monte_carlo_laeufe"] = 0
+    _fakes(monkeypatch, [], gut=False)
+    grenzen = RisikoGrenzen.aus_config(cfg)
+
+    urteile = {name: beurteile_walk_forward(kerzen, "TEST", strategie, cfg, grenzen)
+               for name, strategie in strategien(cfg).items()}
+
+    schluessel = {name: u.schluessel for name, u in urteile.items()}
+    assert all(schluessel.values()), schluessel
+    assert len(set(schluessel.values())) == len(schluessel)
+    assert schluessel["momentum"] == "momentum|kein_parameter"
+    assert schluessel["rsi_reversion"] == "rsi_reversion|kein_parameter"
+    assert all(u.urteil == "abgelehnt" for u in urteile.values())
+    assert all("netto negativ" in u.gruende[0] for u in urteile.values())
+
+
 def test_holdout_gate_nutzt_nur_letzten_block(cfg, kerzen, monkeypatch):
     aufrufe: list[tuple[int, int, int]] = []
     _fakes(monkeypatch, aufrufe, gut=True)
