@@ -211,6 +211,16 @@ export function initialisiereNavigation(){
   setzeAnsicht(start, { url: 'replace' });
 }
 
+// Bei Tastaturfokus scrollt der Browser teilweise sichtbare Links nicht in
+// den Ausschnitt. Das Zentrieren hält den Fokus auch horizontal sichtbar.
+navLinks.forEach(link => {
+  link.addEventListener('focus', () => {
+    if(!link.matches(':focus-visible')) return;
+    const nav = link.closest('#hauptnav');
+    if(nav && nav.scrollWidth > nav.clientWidth + 1) halteAktivenLinkSichtbar(link);
+  });
+});
+
 navLinks.forEach(link => {
   link.addEventListener('click', ev => {
     // Modifizierte Klicks sollen weiter in einem neuen Tab/Fenster öffnen.

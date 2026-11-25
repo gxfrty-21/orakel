@@ -12,6 +12,8 @@
  *   - ein unbekannter Hash fällt auf «Übersicht» zurück,
  *   - der aktive Link bleibt auf schmalen Viewports sichtbar,
  *   - die Rand-Fades zeigen nur die Richtung mit weiteren Bereichen,
+ *   - Tab und Shift+Tab durch alle zehn Links bei 360 und 768 px,
+ *     jeweils sichtbar im Ausschnitt und ausserhalb der Rand-Fades,
  *   - die Desktop-Sidebar bleibt auf langen Ansichten beim Scrollen sichtbar,
  *   - der aktive Link bleibt auch in der intern scrollenden Sidebar sichtbar,
  *   - echte Viewport-Wechsel 1024 × 500 → 1280 × 800 → 1024 × 500,
@@ -171,6 +173,109 @@ async function pruefeSchmaleNavigation(browser) {
       pruefe(stand.sichtbar, `Aktiver Link bei ${breite} px ist nach Zurück nicht sichtbar`);
       pruefe(stand.fadeRechts === false, `Rechts-Fade bleibt bei ${breite} px nach Zurück sichtbar`);
       notiere(`aktiver Sidebar-Link und richtungsabhängige Ränder bei ${breite} px geprüft`);
+    } finally {
+      await seite.close();
+    }
+  }
+}
+
+async function pruefeSchmaleTastatur(browser) {
+  for (const breite of [360, 768]) {
+    const kontext = `Schmale Tastatur ${breite} px`;
+    const seite = await browser.newPage({ viewport: { width: breite, height: 800 } });
+    seite.on('pageerror', fehler => seitenfehler.push(fehler.message));
+    try {
+      await seite.goto(`${opts.url}/?v=schmal-tastatur-${breite}#/overview`, { waitUntil: 'networkidle' });
+      await seite.waitForFunction(() => document.querySelectorAll('#hauptnav .nav[data-v]').length === 10);
+      await warteAufRoute(seite, 'overview');
+
+      const ueberlauf = await seite.evaluate(() => {
+        const nav = document.querySelector('#hauptnav');
+        return nav.scrollWidth > nav.clientWidth + 1;
+      });
+      pruefe(ueberlauf, `${kontext}: Navigation überläuft nicht horizontal`);
+
+      const fokusStand = () => seite.evaluate(() => {
+        const nav = document.querySelector('#hauptnav');
+        const aktiv = document.activeElement;
+        const link = aktiv?.closest?.('.nav[data-v]');
+        const navKasten = nav?.getBoundingClientRect();
+        const linkKasten = aktiv?.getBoundingClientRect();
+        const stil = aktiv ? getComputedStyle(aktiv) : null;
+        const messbar = Boolean(navKasten && linkKasten);
+        return {
+          v: link?.dataset.v || '',
+          text: link?.querySelector('b')?.textContent?.trim() || aktiv?.textContent?.trim() || '',
+          istLink: Boolean(link),
+          focusVisible: Boolean(aktiv?.matches?.(':focus-visible')),
+          outlineStil: stil?.outlineStyle || '',
+          outlineBreite: stil ? parseFloat(stil.outlineWidth) || 0 : 0,
+          imAusschnitt: messbar
+            && linkKasten.left >= navKasten.left - 1 && linkKasten.right <= navKasten.right + 1,
+          imViewport: Boolean(linkKasten) && linkKasten.left >= -1 && linkKasten.right <= innerWidth + 1,
+          abstandLinks: messbar ? Math.round(linkKasten.left - navKasten.left) : -1,
+          abstandRechts: messbar ? Math.round(navKasten.right - linkKasten.right) : -1,
+          fadeLinks: nav?.classList.contains('fade-links') || false,
+          fadeRechts: nav?.classList.contains('fade-rechts') || false,
+          scrollLeft: Math.round(nav?.scrollLeft || 0),
+        };
+      });
+
+      const pruefeFokus = (stand, erwartet, richtung) => {
+        pruefe(stand.v === erwartet[0] && stand.text === erwartet[1],
+          `${kontext}: ${richtung} führt zu «${stand.text || stand.v || 'keinem Link'}» statt «${erwartet[1]}»`);
+        pruefe(stand.focusVisible && stand.outlineStil === 'solid' && stand.outlineBreite >= 2,
+          `${kontext}: «${erwartet[1]}» zeigt keinen sichtbaren Fokusrahmen (${stand.outlineStil} ${stand.outlineBreite} px)`);
+        pruefe(stand.imAusschnitt,
+          `${kontext}: «${erwartet[1]}» liegt ausserhalb des Ausschnitts (links ${stand.abstandLinks} px, rechts ${stand.abstandRechts} px)`);
+        pruefe(stand.imViewport, `${kontext}: «${erwartet[1]}» liegt ausserhalb des Viewports`);
+        pruefe(!stand.fadeLinks || stand.abstandLinks >= 28,
+          `${kontext}: «${erwartet[1]}» liegt im linken Fade (${stand.abstandLinks} px Abstand)`);
+        pruefe(!stand.fadeRechts || stand.abstandRechts >= 28,
+          `${kontext}: «${erwartet[1]}» liegt im rechten Fade (${stand.abstandRechts} px Abstand)`);
+      };
+
+      // Der erste Link wird über den vorherigen Fokus und Tab angesteuert, damit
+      // auch er den Tastatur-Fokusrahmen (focus-visible) trägt.
+      await seite.locator('.nav[data-v="overview"]').focus();
+      await seite.keyboard.press('Shift+Tab');
+      await seite.keyboard.press('Tab');
+      await seite.waitForTimeout(60);
+
+      let stand = await fokusStand();
+      pruefeFokus(stand, ERWARTETE_BEREICHE[0], 'Tab');
+      pruefe(stand.scrollLeft === 0, `${kontext}: Navigation steht beim ersten Link nicht am linken Ende`);
+
+      for (let i = 1; i < ERWARTETE_BEREICHE.length; i++) {
+        await seite.keyboard.press('Tab');
+        await seite.waitForTimeout(60);
+        stand = await fokusStand();
+        pruefeFokus(stand, ERWARTETE_BEREICHE[i], `Tab ${i + 1}`);
+      }
+      pruefe(stand.scrollLeft > 0,
+        `${kontext}: Navigation wurde beim Tabben zum letzten Link nicht horizontal gescrollt`);
+
+      // Nach dem letzten Link verlässt Tab die Navigation; Shift+Tab kehrt zurück.
+      await seite.keyboard.press('Tab');
+      await seite.waitForTimeout(60);
+      const nachListe = await fokusStand();
+      pruefe(!nachListe.istLink,
+        `${kontext}: Tab nach dem letzten Link bleibt mit «${nachListe.text}» in der Navigation`);
+
+      await seite.keyboard.press('Shift+Tab');
+      await seite.waitForTimeout(60);
+      stand = await fokusStand();
+      pruefeFokus(stand, ERWARTETE_BEREICHE[ERWARTETE_BEREICHE.length - 1], 'Shift+Tab');
+
+      for (let i = ERWARTETE_BEREICHE.length - 2; i >= 0; i--) {
+        await seite.keyboard.press('Shift+Tab');
+        await seite.waitForTimeout(60);
+        stand = await fokusStand();
+        pruefeFokus(stand, ERWARTETE_BEREICHE[i], `Shift+Tab ${ERWARTETE_BEREICHE.length - i}`);
+      }
+      pruefe(stand.scrollLeft === 0,
+        `${kontext}: Navigation steht nach Shift+Tab zum ersten Link bei ${stand.scrollLeft} px statt 0`);
+      notiere(`Tastaturfokus bei ${kontext}: Tab und Shift+Tab durch alle zehn Links sichtbar`);
     } finally {
       await seite.close();
     }
@@ -693,6 +798,7 @@ async function main() {
 
     await pruefeStickySidebar(page);
     await pruefeSchmaleNavigation(browser);
+    await pruefeSchmaleTastatur(browser);
     await pruefeQuerformatNavigation(browser);
 
     pruefe(seitenfehler.length === 0,
