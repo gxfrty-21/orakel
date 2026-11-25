@@ -243,7 +243,10 @@ gewählten Bereich; Zurück und Vorwärts folgen dem Browser-Verlauf. Der aktive
 Eintrag trägt `aria-current="page"`, der Dokumenttitel nennt den Bereich, und
 nach einem Wechsel liegt der Fokus auf dessen Überschrift. Der Skip-Link
 «Zum Inhalt» ist die erste Tastaturstation und springt zu `main#inhalt`.
-Unbekannte oder nicht sichtbare Bereiche fallen auf «Übersicht» zurück.
+Danach folgen die Aktion der Kopfzeile, die zehn Sidebar-Links und der
+Hauptinhalt; kein ausgeblendeter Link und kein unsichtbares Bedienelement
+wird per Tab fokussiert. Unbekannte oder nicht sichtbare Bereiche fallen
+auf «Übersicht» zurück.
 Auf schmalen Viewports hält die Navigation den aktiven Eintrag automatisch
 im sichtbaren Ausschnitt. Per Tab und Shift+Tab bleibt auch der fokussierte
 Eintrag im horizontalen Ausschnitt; ein Fokus-Scroll hält ihn aus den
@@ -270,7 +273,9 @@ Desktop-Sidebar auf langen Ansichten, den aktiven Link bei
 1024 × 500 → 1280 × 800 → 1024 × 500, Tab und Shift+Tab durch alle zehn
 Links bei 1024/1280 × 500 px mit sichtbarem Fokus in Liste und Viewport
 sowie bei 360/768 px im horizontalen Ausschnitt und ausserhalb der
-Rand-Fades, den Querformat-Grenzfall 901 × 500, eine explizite
+Rand-Fades, die vollständige Tab-Reihenfolge bei 360/1024 px (Skip-Link,
+Kopfzeilen-Aktion, zehn Sidebar-Links, Hauptinhalt) ohne ausgeblendete
+oder unsichtbare Stopps, den Querformat-Grenzfall 901 × 500, eine explizite
 Header-Höhenänderung, Überlauf und beide Enden der vertikalen
 Scroll-Affordanz sowie das Querformat-Verhalten.
 

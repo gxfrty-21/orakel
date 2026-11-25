@@ -14,6 +14,9 @@
  *   - die Rand-Fades zeigen nur die Richtung mit weiteren Bereichen,
  *   - Tab und Shift+Tab durch alle zehn Links bei 360 und 768 px,
  *     jeweils sichtbar im Ausschnitt und ausserhalb der Rand-Fades,
+ *   - die vollständige Tab-Reihenfolge bei 360 und 1024 px:
+ *     Skip-Link, Kopfzeilen-Aktion, zehn Sidebar-Links, Hauptinhalt,
+ *     ohne ausgeblendete oder unsichtbare Stopps,
  *   - die Desktop-Sidebar bleibt auf langen Ansichten beim Scrollen sichtbar,
  *   - der aktive Link bleibt auch in der intern scrollenden Sidebar sichtbar,
  *   - echte Viewport-Wechsel 1024 × 500 → 1280 × 800 → 1024 × 500,
@@ -276,6 +279,131 @@ async function pruefeSchmaleTastatur(browser) {
       pruefe(stand.scrollLeft === 0,
         `${kontext}: Navigation steht nach Shift+Tab zum ersten Link bei ${stand.scrollLeft} px statt 0`);
       notiere(`Tastaturfokus bei ${kontext}: Tab und Shift+Tab durch alle zehn Links sichtbar`);
+    } finally {
+      await seite.close();
+    }
+  }
+}
+
+async function pruefeTabReihenfolge(browser) {
+  for (const breite of [360, 1024]) {
+    const kontext = `Tab-Reihenfolge ${breite} px`;
+    const seite = await browser.newPage({ viewport: { width: breite, height: 800 } });
+    seite.on('pageerror', fehler => seitenfehler.push(fehler.message));
+    try {
+      await seite.goto(`${opts.url}/?v=tab-reihenfolge-${breite}#/overview`, { waitUntil: 'networkidle' });
+      await seite.waitForFunction(() => document.querySelectorAll('#hauptnav .nav[data-v]').length === 10);
+      await warteAufRoute(seite, 'overview');
+
+      const toggleSichtbar = await seite.evaluate(() => {
+        const toggle = document.querySelector('#navToggle');
+        return Boolean(toggle) && getComputedStyle(toggle).display !== 'none';
+      });
+      pruefe(!toggleSichtbar, `${kontext}: Der «Bereiche»-Schalter ist bei dieser Breite sichtbar`);
+
+      await seite.evaluate(() => document.activeElement?.blur?.());
+      const stops = [];
+      let ende = false;
+      for (let i = 0; i < 200; i++) {
+        await seite.keyboard.press('Tab');
+        await seite.waitForTimeout(10);
+        const stand = await seite.evaluate(() => {
+          const el = document.activeElement;
+          if (!el || el === document.body || el === document.documentElement) return { ende: true };
+          const kasten = el.getBoundingClientRect();
+          const stil = getComputedStyle(el);
+          let versteckterVorfahr = '';
+          for (let vorfahr = el; vorfahr; vorfahr = vorfahr.parentElement) {
+            if (vorfahr.hasAttribute?.('hidden')) {
+              versteckterVorfahr = vorfahr.id
+                || (typeof vorfahr.className === 'string' ? vorfahr.className : '')
+                || vorfahr.tagName;
+              break;
+            }
+            const vorfahrStil = getComputedStyle(vorfahr);
+            if (vorfahrStil.display === 'none' || vorfahrStil.visibility === 'hidden') {
+              versteckterVorfahr = vorfahr.id
+                || (typeof vorfahr.className === 'string' ? vorfahr.className : '')
+                || vorfahr.tagName;
+              break;
+            }
+          }
+          const ansicht = el.closest('.view');
+          return {
+            ende: false,
+            tag: el.tagName,
+            id: el.id || '',
+            klasse: typeof el.className === 'string' ? el.className : '',
+            text: (el.textContent || '').trim().slice(0, 40),
+            v: el.dataset?.v || '',
+            istSkip: el.classList.contains('skip-link'),
+            inKopfzeile: Boolean(el.closest('header.top')),
+            imSidebar: Boolean(el.closest('#hauptnav')),
+            imHauptinhalt: Boolean(el.closest('main#inhalt')),
+            inInaktiverAnsicht: Boolean(ansicht?.hidden),
+            breite: Math.round(kasten.width),
+            hoehe: Math.round(kasten.height),
+            imViewport: kasten.width > 0 && kasten.height > 0
+              && kasten.bottom > 0 && kasten.top < innerHeight
+              && kasten.right > 0 && kasten.left < innerWidth,
+            display: stil.display,
+            visibility: stil.visibility,
+            opacity: Number(stil.opacity),
+            versteckterVorfahr,
+          };
+        });
+        if (stand.ende) { ende = true; break; }
+        stops.push(stand);
+      }
+
+      pruefe(ende, `${kontext}: Die Tab-Reihenfolge endet nicht am Dokumentende`);
+      pruefe(stops.length > 0, `${kontext}: Kein Tastaturstopp gefunden`);
+      pruefe(stops[0].istSkip,
+        `${kontext}: Erster Stopp ist «${stops[0].text || stops[0].tag}» statt der Skip-Link`);
+
+      const navIndizes = stops.map((s, i) => s.v ? i : -1).filter(i => i >= 0);
+      pruefe(navIndizes.length === 10, `${kontext}: ${navIndizes.length} statt 10 Sidebar-Stopps`);
+      pruefe(navIndizes.every((index, position) => index === navIndizes[0] + position),
+        `${kontext}: Die Sidebar-Links sind nicht zusammenhängend`);
+      const navFolge = navIndizes.map(index => stops[index].v);
+      pruefe(navFolge.join(',') === ERWARTETE_BEREICHE.map(([v]) => v).join(','),
+        `${kontext}: Sidebar-Reihenfolge ist «${navFolge.join(', ')}»`);
+
+      const navStart = navIndizes[0];
+      const navEnde = navIndizes[navIndizes.length - 1];
+      const davor = stops.slice(0, navStart);
+      // Die Kopfzeile liegt im DOM vor der Sidebar; ihr einziges Bedienelement
+      // «Lauf starten» ist deshalb der zweite Stopp. Skip-Link, Sidebar und
+      // Hauptinhalt bleiben in der geforderten Reihenfolge.
+      pruefe(davor.every(s => s.istSkip || s.inKopfzeile),
+        `${kontext}: Vor der Sidebar steht «${davor.find(s => !s.istSkip && !s.inKopfzeile)?.text}»`);
+      pruefe(davor.filter(s => s.istSkip).length === 1 && davor[0].istSkip,
+        `${kontext}: Der Skip-Link steht nicht vor der Sidebar`);
+      pruefe(!stops.some(s => s.id === 'navToggle'),
+        `${kontext}: Der ausgeblendete «Bereiche»-Schalter ist fokussierbar`);
+
+      const hauptIndizes = stops.map((s, i) => s.imHauptinhalt ? i : -1).filter(i => i >= 0);
+      pruefe(hauptIndizes.length > 0, `${kontext}: Der Hauptinhalt hat keinen Tastaturstopp`);
+      pruefe(hauptIndizes[0] > navEnde,
+        `${kontext}: Hauptinhalt erscheint vor dem Ende der Sidebar`);
+      const nachSidebar = stops.slice(navEnde + 1);
+      pruefe(nachSidebar.every(s => s.imHauptinhalt),
+        `${kontext}: Nach der Sidebar steht «${nachSidebar.find(s => !s.imHauptinhalt)?.text}» statt Hauptinhalt`);
+
+      for (const [position, s] of stops.entries()) {
+        const name = `Stopp ${position + 1} «${(s.text || s.tag).slice(0, 30)}»`;
+        pruefe(s.istSkip || s.inKopfzeile || s.imSidebar || s.imHauptinhalt,
+          `${kontext}: ${name} liegt ausserhalb der erwarteten Bereiche`);
+        pruefe(!s.versteckterVorfahr,
+          `${kontext}: ${name} liegt in einem ausgeblendeten Bereich (${s.versteckterVorfahr})`);
+        pruefe(!s.inInaktiverAnsicht, `${kontext}: ${name} liegt in einer inaktiven Ansicht`);
+        pruefe(s.display !== 'none' && s.visibility !== 'hidden' && s.opacity > 0,
+          `${kontext}: ${name} ist unsichtbar (${s.display}, ${s.visibility}, Opazität ${s.opacity})`);
+        pruefe(s.breite > 0 && s.hoehe > 0 && s.imViewport,
+          `${kontext}: ${name} hat keine sichtbare Fläche (${s.breite} × ${s.hoehe})`);
+      }
+
+      notiere(`Tab-Reihenfolge ${breite} px: Skip-Link → ${davor.length - 1} Kopfzeilen-Stopp(s) → zehn Sidebar-Links → ${nachSidebar.length} Hauptinhalt-Stopps, keine unsichtbaren Stopps`);
     } finally {
       await seite.close();
     }
@@ -799,6 +927,7 @@ async function main() {
     await pruefeStickySidebar(page);
     await pruefeSchmaleNavigation(browser);
     await pruefeSchmaleTastatur(browser);
+    await pruefeTabReihenfolge(browser);
     await pruefeQuerformatNavigation(browser);
 
     pruefe(seitenfehler.length === 0,
