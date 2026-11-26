@@ -247,6 +247,42 @@ def test_deduplizieren_laesst_abweichendes_urteil_stehen(tmp_path: Path) -> None
     assert urteile == ["bestanden", "abgelehnt"]
 
 
+def test_deduplizieren_laesst_ereignisse_und_konferenzen_stehen(tmp_path: Path) -> None:
+    """Die Bereinigung räumt keine datierte Historie weg."""
+    pfad = tmp_path / "orakel.db"
+    _altbestand(pfad)
+    db = Facts(pfad)
+    with db.conn() as c:
+        c.execute(
+            "INSERT INTO ereignisse(zeit,stufe,quelle,text) VALUES (?,?,?,?)",
+            ("2026-11-08T16:30:00+01:00", "info", "Engine",
+             "Lauf beendet (24 Prüfungen, 1 ausgewählt)"))
+        c.execute(
+            "INSERT INTO ereignisse(zeit,stufe,quelle,text) VALUES (?,?,?,?)",
+            ("2026-11-26T07:40:00+01:00", "info", "Engine",
+             "Lauf beendet (8 Prüfungen, 0 ausgewählt)"))
+        c.execute(
+            "INSERT INTO konferenzen(zeit,protokoll) VALUES (?,?)",
+            ("2026-11-08T17:30:33+01:00",
+             '{"beschluss": "2 Strategien bleiben freigegeben"}'))
+    with sqlite3.connect(pfad) as c:
+        vorher_ereignisse = c.execute(
+            "SELECT id,zeit,stufe,quelle,text FROM ereignisse ORDER BY id").fetchall()
+        vorher_konferenzen = c.execute(
+            "SELECT id,zeit,protokoll FROM konferenzen ORDER BY id").fetchall()
+
+    validierungen_deduplizieren(pfad, log=_ruhig)
+
+    with sqlite3.connect(pfad) as c:
+        assert c.execute(
+            "SELECT id,zeit,stufe,quelle,text FROM ereignisse ORDER BY id").fetchall() \
+            == vorher_ereignisse
+        assert c.execute(
+            "SELECT id,zeit,protokoll FROM konferenzen ORDER BY id").fetchall() \
+            == vorher_konferenzen
+        assert c.execute("SELECT COUNT(*) FROM validierungen").fetchone()[0] == 1
+
+
 def test_deduplizieren_als_befehl(tmp_path: Path) -> None:
     pfad = tmp_path / "orakel.db"
     _altbestand(pfad)
