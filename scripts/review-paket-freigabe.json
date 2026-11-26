@@ -1079,6 +1079,10 @@
       "ziel": "dateien/docs/TRANSPORT-WINDOWS.md"
     },
     {
+      "quelle": "docs/ABNAHME-PR-302.md",
+      "ziel": "dateien/docs/ABNAHME-PR-302.md"
+    },
+    {
       "quelle": "scripts/transport_client.py",
       "ziel": "dateien/scripts/transport_client.py"
     },
