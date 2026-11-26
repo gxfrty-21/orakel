@@ -383,13 +383,13 @@ def _handler_fuer(kennung: str, aufgabe: str) -> str:
             return "videos"
         if "quelle" in text:
             return "quellen"
-        if "dublette" in text:
+        if "doppelte" in text or "dublette" in text:
             return "dubletten"
-        if "widerspruch" in text:
+        if "widerspruch" in text or "widersprüch" in text:
             return "mehrdeutig"
         if "veraltet" in text or "aktualität" in text:
             return "aktualitaet"
-        if "weiterleiter" in text:
+        if "weiterleit" in text or "zuordnen" in text:
             return "weiterleitungen"
         if "limit" in text:
             return "limits"

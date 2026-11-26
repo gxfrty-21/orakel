@@ -47,6 +47,15 @@ def test_roster_hat_103_eindeutige_profile():
     assert len({p.rufname for p in PROFILES}) == 103
 
 
+def test_b_agenten_erhalten_ihren_fachhandler():
+    from orakel.agents import ROSTER, _handler_fuer
+
+    erwartet = {"B6": "dubletten", "B7": "mehrdeutig", "B9": "weiterleitungen"}
+    gefunden = {kennung: _handler_fuer(kennung, aufgabe)
+                for kennung, _, _, aufgabe in ROSTER if kennung in erwartet}
+    assert gefunden == erwartet
+
+
 def test_schiff_zahlen_nennen_elf_cluster_und_103_agenten(cfg):
     _, store = _store(cfg)
 
