@@ -430,6 +430,24 @@ def test_ordner_import_max_alter_stunden_ueberschreibt_grenze(cfg):
     assert db.datenimporte() == []
 
 
+def test_ordner_warnung_nutzt_die_frischegrenze_aus_der_option(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    ende = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=100)
+    start = ende - pd.Timedelta(minutes=15 * 1299)
+    alt = synthetische_kerzen("EURUSD", kerzen=1300, seed=21,
+                              start=start.isoformat())
+    (ordner / "EURUSD_M15.csv").write_text(_als_mt5(alt), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    # Die Konfiguration erlaubt nur vier Stunden; die Option hebt die Grenze
+    # bewusst an. Dann darf auch die Warnung nach dem Import nicht anschlagen.
+    assert sicherstellen_daten(cfg, db, max_alter_stunden=1000) == (
+        ["EURUSD"], "csv")
+    assert not any("jüngste Kerze" in zeile["text"] for zeile in db.ereignisse())
+
+
 def test_pruefen_gibt_frischeoptionen_an_die_pipeline(monkeypatch):
     from orakel import __main__ as cli
 

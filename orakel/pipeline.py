@@ -159,13 +159,13 @@ def sicherstellen_daten(
                     juengste = letzte.get((symbol, tf))
                     if juengste is None:
                         continue
-                    kennzahl = frische_kennzahl(juengste, cfg["daten"], tf)
+                    kennzahl = frische_kennzahl(
+                        juengste, cfg["daten"], tf,
+                        max_alter_stunden=max_alter_stunden)
                     if kennzahl and not kennzahl["frisch"]:
                         db.ereignis(
                             "warnung", "Daten",
-                            f"{symbol} {tf}: jüngste Kerze "
-                            f"{kennzahl['alter_stunden']:.1f} h alt "
-                            f"(Grenze {kennzahl['max_alter_stunden']:.1f} h)",
+                            f"{symbol} {tf}: {frische_text(kennzahl)}",
                         )
         except Exception as exc:  # noqa: BLE001 - Frische ist nur eine Warnung
             db.ereignis("warnung", "Daten", f"Frischeprüfung nicht möglich: {exc}")
