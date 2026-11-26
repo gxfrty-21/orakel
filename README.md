@@ -235,6 +235,10 @@ der erzeugte Rohbericht liegt nach dem Lauf unter
 | Cockpit | Bot-Zustand, Kontostand, Gewinn/Verlust (heute, 7 Tage, 1 Monat) und offene Positionen mit letztem Kurs, alles aus SQLite |
 | Dauerbetrieb | persistenter Plan, Backoff, Ressourcenlimits, Jobprotokoll und Betriebsansicht |
 
+Der Richter schreibt jede Bewertung mit ihren Trades in die Fakten-DB. Läuft er über unveränderte Kerzen erneut, entsteht kein zweiter Datensatz: gleiche Konfiguration, gleiche Trades und dasselbe Urteil werden erkannt und dem aktuellen Lauf zugeordnet, wobei Erstellungszeitpunkt und Lauf gemeinsam wandern. Ein geändertes Urteil bleibt eine eigene Zeile; die frühere Bewertung wird nicht überschrieben. Sonst würde jede Auswertung dieselben Trades mehrfach zählen, und `trades` wüchse mit jedem Takt.
+
+Seit dem Walk-Forward-Umbau prüft der Richter je Strategie und Symbol genau einen Kandidaten: den Parameter wählt er in den Trainingsfenstern selbst, statt mehrere Rasterpunkte nacheinander zu bewerten. Ein vollständiger Lauf erzeugt damit eine Zeile je Paar — mit den vier freigegebenen Strategien und den zwei Symbolen des Seeds sind das acht Zeilen. Die 24 Validierungen im Seed stammen noch aus dem alten Raster, das je Strategie zwei bis vier Rasterpunkte einzeln bewertete (je Punkt und Symbol eine Zeile); sie sind keine Regression.
+
 ### Navigation und Deep-Links
 
 Die zehn Sidebar-Bereiche sind echte Links mit stabilen Hash-Routen, etwa

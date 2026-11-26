@@ -257,7 +257,32 @@ class Facts:
         urteil: str, beschreibung: str, bericht: dict[str, Any],
         trades: Sequence[dict[str, Any]] = (), lauf: str = "",
     ) -> int:
+        """Speichert eine Bewertung; ein unverändertes Ergebnis bleibt eine Zeile.
+
+        Der Richter rechnet bei jedem Lauf über dieselben Kerzen dasselbe
+        Ergebnis. Ohne diese Prüfung entstünde je Takt eine neue Validierung
+        samt vollständiger Trade-Liste: ``trades`` wüchse mit der Zahl der
+        Läufe, und jede Zählung über die Tabelle wäre um genau diesen Faktor
+        zu hoch.
+
+        Gleich heisst: gleiche Konfiguration, gleiche Trades **und dasselbe
+        Urteil**. Dann wird die vorhandene Zeile dem aktuellen Lauf
+        zugeordnet; ``erstellt`` und ``lauf`` wandern gemeinsam, damit eine
+        Zeile nie einen alten Erstellungszeitpunkt mit einem neuen Lauf trägt.
+        Ein anderes Urteil ist eine neue Bewertung und wird eingefügt — die
+        frühere Zeile bleibt mit ihrem Urteil und ihrem Lauf erhalten.
+        """
         with self.conn() as c:
+            gleich = self._gleiche_validierung(c, symbol, strategie, schluessel,
+                                               urteil, trades)
+            if gleich is not None:
+                c.execute(
+                    "UPDATE validierungen SET erstellt=?, lauf=?, parameter=?,"
+                    " beschreibung=?, bericht=? WHERE id=?",
+                    (jetzt(), lauf, json.dumps(parameter, ensure_ascii=False), beschreibung,
+                     json.dumps(bericht, ensure_ascii=False), gleich),
+                )
+                return gleich
             cur = c.execute(
                 "INSERT INTO validierungen(erstellt,lauf,symbol,strategie,schluessel,parameter,urteil,beschreibung,bericht)"
                 " VALUES (?,?,?,?,?,?,?,?,?)",
@@ -274,6 +299,44 @@ class Facts:
                       t["rendite_pct"], t["grund"]) for t in trades],
                 )
         return vid
+
+    @staticmethod
+    def _gleiche_validierung(
+        c: sqlite3.Connection, symbol: str, strategie: str, schluessel: str,
+        urteil: str, trades: Sequence[dict[str, Any]],
+    ) -> int | None:
+        """id einer bereits gespeicherten, inhaltsgleichen Bewertung.
+
+        Das Urteil gehört zur Identität: eine andere Bewertung darf die
+        gespeicherte nicht ersetzen. Bei gleichem Urteil sind die Trades der
+        Beleg — gleiche Konfiguration, gleiche Kurse und gleiche Ausstiege
+        bedeuten dieselbe Bewertung. Ohne Trades bleibt nur das Urteil als
+        Unterscheidung; feiner ist die Bewertung dann nicht belegt.
+        """
+        kandidaten = c.execute(
+            "SELECT id, urteil FROM validierungen"
+            " WHERE symbol=? AND strategie=? AND schluessel=? ORDER BY id",
+            (symbol, strategie, schluessel),
+        ).fetchall()
+        if not kandidaten:
+            return None
+        neu = [(str(t["einstieg"]), str(t["ausstieg"]), float(t["stueck"]),
+                float(t["netto"]), float(t["rendite_pct"]), str(t["grund"]))
+               for t in trades]
+        for zeile in kandidaten:
+            if zeile["urteil"] != urteil:
+                continue
+            vid = int(zeile["id"])
+            if not neu:
+                return vid
+            alt = [(str(r["einstieg"]), str(r["ausstieg"]), float(r["stueck"]),
+                    float(r["netto"]), float(r["rendite_pct"]), str(r["grund"]))
+                   for r in c.execute(
+                       "SELECT einstieg,ausstieg,stueck,netto,rendite_pct,grund"
+                       " FROM trades WHERE validierung_id=? ORDER BY id", (vid,))]
+            if alt == neu:
+                return vid
+        return None
 
     def letzte_validierungen(self, lauf: str | None = None) -> list[sqlite3.Row]:
         with self.conn() as c:
