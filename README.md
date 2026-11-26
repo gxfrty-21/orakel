@@ -235,6 +235,12 @@ der erzeugte Rohbericht liegt nach dem Lauf unter
 | Cockpit | Bot-Zustand, Kontostand, Gewinn/Verlust (heute, 7 Tage, 1 Monat) und offene Positionen mit letztem Kurs, alles aus SQLite |
 | Dauerbetrieb | persistenter Plan, Backoff, Ressourcenlimits, Jobprotokoll und Betriebsansicht |
 
+Der Richter schreibt jede Bewertung mit ihren Trades in die Fakten-DB. Läuft er über unveränderte Kerzen erneut, entsteht kein zweiter Datensatz: gleiche Konfiguration, gleiche Trades und dasselbe Urteil werden erkannt und dem aktuellen Lauf zugeordnet, wobei Erstellungszeitpunkt und Lauf gemeinsam wandern. Ein geändertes Urteil bleibt eine eigene Zeile; die frühere Bewertung wird nicht überschrieben. Sonst würde jede Auswertung dieselben Trades mehrfach zählen, und `trades` wüchse mit jedem Takt.
+
+Seit dem Walk-Forward-Umbau prüft der Richter je Strategie und Symbol genau einen Kandidaten: den Parameter wählt er in den Trainingsfenstern selbst, statt mehrere Rasterpunkte nacheinander zu bewerten. Ein vollständiger Lauf erzeugt damit eine Zeile je Paar — mit den vier freigegebenen Strategien und den zwei Symbolen des Seeds sind das acht Zeilen. Der mitgelieferte Seed enthält genau diese acht Zeilen aus einem Lauf mit dem aktuellen Raster; ältere Stände mit 24 Zeilen stammten aus dem Raster, das je Strategie zwei bis vier Punkte einzeln bewertete.
+
+Im Seed besteht keine Strategie: alle acht Kandidaten sind abgelehnt, die Auswahl ist leer. Die Ansichten sind darauf vorbereitet und verlangen keine gewählte Strategie. Die Übersicht nennt «0 ausgewählt» und «Keine Strategie ausgewählt»; die Strategien-Ansicht schreibt «Der Richter hat keine Strategie freigegeben. Deshalb wird nicht gehandelt.»; das Lab listet die acht abgelehnten Kandidaten mit Begründung, Kennzahlen und Kurve, und ein leerer Filter (etwa «Bestanden») erklärt im Detail, warum dort nichts steht; die Labor-Abteilung des Raumschiffs und der Betrieb zeigen weiterhin ihre Agenten und Jobs aus SQLite. Fehlende Grundlagen bleiben leer — es werden keine Kurven, Kennzahlen oder Auswahlen ergänzt.
+
 ### Navigation und Deep-Links
 
 Die zehn Sidebar-Bereiche sind echte Links mit stabilen Hash-Routen, etwa
@@ -243,18 +249,44 @@ gewählten Bereich; Zurück und Vorwärts folgen dem Browser-Verlauf. Der aktive
 Eintrag trägt `aria-current="page"`, der Dokumenttitel nennt den Bereich, und
 nach einem Wechsel liegt der Fokus auf dessen Überschrift. Der Skip-Link
 «Zum Inhalt» ist die erste Tastaturstation und springt zu `main#inhalt`.
-Unbekannte oder nicht sichtbare Bereiche fallen auf «Übersicht» zurück.
+Danach folgen die Aktion der Kopfzeile, die zehn Sidebar-Links und der
+Hauptinhalt; kein ausgeblendeter Link und kein unsichtbares Bedienelement
+wird per Tab fokussiert. Unbekannte oder nicht sichtbare Bereiche fallen
+auf «Übersicht» zurück.
 Auf schmalen Viewports hält die Navigation den aktiven Eintrag automatisch
-im sichtbaren Ausschnitt. Die Rand-Fades erscheinen nur in die Richtung,
-in der weitere Bereiche liegen; am jeweiligen Ende und beim aktiven
-Eintrag entfällt die Ausblendung. Im Querformat wird die Navigation beim
-Verlassen des Raumschiffs wieder geöffnet.
+im sichtbaren Ausschnitt. Per Tab und Shift+Tab bleibt auch der fokussierte
+Eintrag im horizontalen Ausschnitt; ein Fokus-Scroll hält ihn aus den
+Rand-Fades. Die Rand-Fades erscheinen nur in die Richtung, in der weitere
+Bereiche liegen; am jeweiligen Ende und beim aktiven Eintrag entfällt die
+Ausblendung. Mit «Bewegung reduzieren» bleiben Fades, Scrollen und
+Fokusführung unverändert; die Navigation nutzt keine Animationen oder
+Übergänge. Auf Desktop bleibt die Linkliste beim
+Scrollen langer Ansichten sichtbar; bei kurzen Viewports scrollt sie
+intern. Ihre Höhe ergibt sich aus der tatsächlichen Position der Linkliste
+unter Kopfzeile und Banner, und der aktive Link wird auch dort sichtbar
+gehalten. Bei überlaufender Desktop-Liste zeigen dezente Fades an den
+Enden weiteren Inhalt an; eine schlanke, farbige Scrollbar bleibt sichtbar.
+Per Tab und Shift+Tab bleiben die fokussierten Links in der Liste und im
+Viewport sichtbar; ein Scroll-Abstand hält Fokusrahmen aus den Fade-Zonen.
+Im Querformat wird die Navigation beim Verlassen des Raumschiffs wieder
+geöffnet.
 
 Der Browser-Test dafür ist
 `node scripts/pruefe-sidebar-navigation.mjs --url http://127.0.0.1:3000`.
 Er prüft die zehn unveränderten Einträge, Deep-Links, Reload, den
 Browser-Verlauf, `aria-current`, Skip-Link, die Fokusführung, die
-responsive Sichtbarkeit, die richtungsabhängigen Ränder und das
+responsive Sichtbarkeit, die richtungsabhängigen Ränder, die mitscrollende
+Desktop-Sidebar auf langen Ansichten, den aktiven Link bei
+1280/1024 × 500 px (Deep-Link und Zurück), echte Resize-Übergänge
+1024 × 500 → 1280 × 800 → 1024 × 500, Tab und Shift+Tab durch alle zehn
+Links bei 1024/1280 × 500 px mit sichtbarem Fokus in Liste und Viewport
+sowie bei 360/768 px im horizontalen Ausschnitt und ausserhalb der
+Rand-Fades, die vollständige Tab-Reihenfolge bei 360/1024 px (Skip-Link,
+Kopfzeilen-Aktion, zehn Sidebar-Links, Hauptinhalt) ohne ausgeblendete
+oder unsichtbare Stopps, den Querformat-Grenzfall 901 × 500, eine explizite
+Header-Höhenänderung, Überlauf und beide Enden der vertikalen
+Scroll-Affordanz, das Verhalten bei reduzierter Bewegung (Fades,
+Scrollen, Fokus, keine Animationen oder Übergänge) sowie das
 Querformat-Verhalten.
 
 Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswahl einmal geöffnet; scheitert er, gibt es keinen Ersatzkandidaten. Im Lab zeigt ein Chart die aggregierte Kapitalkurve der Testfenster; beim Überfahren nennt ein Tooltip Kapitalstand, Veränderung seit dem Start in Prozent, Datum sowie den bisherigen Höchststand mit Abstand in Prozent; per Tastatur (Tab, Pfeiltasten, Home/Ende) ist dieselbe Anzeige erreichbar. Solange der Tastaturfokus im sichtbaren Lab-Detail liegt, pausiert der Auto-Refresh nur den Ansichts-Render, damit die Anzeige beim Ablesen nicht neu aufgebaut wird; Daten und Kopfzeile werden weiter aktualisiert; ein Status in der Listenkopfzeile (`#labNeu`, höfliche Live-Region) zeigt «Neue Daten verfügbar», und beim Verlassen des Details wird sofort neu gezeichnet statt auf den nächsten Takt zu warten. Ein Fokus auf der Lab-Liste oder einem anderen Lab-Element blockiert den Render nicht; ein ausgeblendetes Lab ebenfalls nicht. Der Refresh baut die Liste nicht neu auf: Vorhandene Einträge werden über eine stabile Kandidatenkennung in die neue Reihenfolge gebracht, Auswahl, Fokus und Scrollposition bleiben erhalten. Der Acht-Sekunden-Takt startet keinen zweiten Aufruf, solange eine Antwort läuft, pausiert im Hintergrundtab und lädt beim Zurückkehren sofort nach. Dort und in der Strategien-Ansicht lässt sich zudem bei jedem Kandidaten die Liste der Walk-Forward-Fenster aufklappen: Trainings- und Testblock, gewählter Parameter, Trades, Profit Factor und Netto je Fenster.
@@ -987,9 +1019,9 @@ erwartet `apt-get`, `dpkg-deb`, `npm` und Node.js >= 20. Die heruntergeladenen
 Pakete liegen nur in `.playwright-local/`; dieses Verzeichnis wird nicht
 versioniert.
 
-Die Seed-Kurve der neuesten US500-Validierungen beginnt bewusst mit zwei
-unterschiedlichen Punkten (USD 100'000 und 100'100). Damit prüft der Status-Test
-bei Pfeil rechts im CI eine echte Textänderung.
+Die Kapitalkurve der neuesten US500-Validierungen im Seed beginnt mit zwei
+unterschiedlichen Punkten (USD 99'994.89 und 100'004.70). Damit prüft der
+Status-Test bei Pfeil rechts im CI eine echte Textänderung.
 
 Einschränken lässt sich der Lauf mit `--ansichten lab,kb --breiten 360,280`,
 die Adresse mit `--url http://127.0.0.1:8000`, Tabellen mit `--ohne-tabellen`.

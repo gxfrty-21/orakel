@@ -242,7 +242,8 @@ function renderLab(){
   }
   if(labSel>=items.length) labSel = 0;
   if(!items.length){
-    liste.innerHTML = '<div class="empty">Keine Einträge.</div>';
+    liste.innerHTML = `<div class="empty">${!v.length ? 'Noch keine Kandidaten geprüft.'
+      : labFilter==='bestanden' ? 'Keine bestandene Strategie.' : 'Keine Einträge in diesem Filter.'}</div>`;
   }else{
     liste.querySelector('.empty')?.remove();
     const frei = new Map();
@@ -287,7 +288,14 @@ function renderLab(){
     liste.scrollTop = scroll;
   }
   const o = items[labSel];
-  if(!o){ $('#labDetail').innerHTML = '<div class="empty">Keine Auswahl.</div>'; return; }
+  if(!o){
+    // Ein leerer Filter ist ein Ergebnis, kein fehlender Klick: Das Detail
+    // nennt den Grund, statt nur «Keine Auswahl.» zu zeigen.
+    $('#labDetail').innerHTML = `<div class="empty">${!v.length ? 'Noch keine Kandidaten geprüft. Ein Lauf füllt das Lab.'
+      : labFilter==='bestanden' ? 'Der Richter hat keinen Kandidaten freigegeben. Die Begründungen stehen bei den abgelehnten Kandidaten.'
+      : 'Dieser Filter enthält keine Kandidaten. Unter «Alle» stehen alle geprüften.'}</div>`;
+    return;
+  }
   const I=o.in_sample||{}, O=o.out_of_sample||{}, G=o.gesamt||{}, H=o.holdout||{}, Hk=H.kennzahlen||{};
   const mrow = (n,k,f) => `<tr><td>${n}</td><td class="m">${f(I[k])}</td><td class="m">${f(O[k])}</td><td class="m">${f(G[k])}</td></tr>`;
   const usd = v => v==null?'–':(v>=0?'+':'-')+'USD '+num(Math.abs(v),0);

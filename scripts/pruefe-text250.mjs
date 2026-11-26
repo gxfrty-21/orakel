@@ -2923,8 +2923,13 @@ async function pruefeNegativtest(opt) {
         name: 'Strategie-KPI',
         mutieren: () => page.evaluate(() => {
           const el = document.querySelector('#stratDetail .kpis .kpi .v');
-          if (!el) throw new Error('Strategie-KPI nicht gefunden');
-          el.textContent = '999.999';
+          if (el) { el.textContent = '999.999'; return; }
+          // Ohne bestandene Strategie fehlt der KPI. Dann muss derselbe Fall
+          // belegen, dass eine erfundene Strategie in der Liste auffällt.
+          const liste = document.querySelector('#stratList');
+          if (!liste) throw new Error('Strategieliste nicht gefunden');
+          liste.innerHTML = '<button class="li on" type="button"><span><b>EURUSD · momentum</b>'
+            + '<small>fast=20</small></span><span class="r">PF 999.999</span></button>';
         }),
       },
       {

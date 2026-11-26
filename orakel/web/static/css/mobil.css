@@ -635,6 +635,7 @@ h1,h2,.sub,.lbl,.empty,.reasons,.ph,.ph .tag,.station,.station small,
   .side{display:flex;flex-direction:row;align-items:center;overflow-x:auto;border-right:0;
     border-bottom:1px solid var(--line);padding:8px 16px;scrollbar-width:none;-ms-overflow-style:none}
   .side::-webkit-scrollbar{display:none;height:0}
+  .nav-liste{display:contents}
   .nav small{display:none}
   .nav{min-height:44px;white-space:nowrap}
 
