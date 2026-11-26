@@ -12,6 +12,8 @@ let initialisiert = false;
 
 export function registriereAnsicht(name, modul){ ansichten[name] = modul; }
 
+const hauptnav = document.querySelector('#hauptnav');
+const navListe = hauptnav?.querySelector('.nav-liste');
 const navToggle = document.querySelector('#navToggle');
 const querformatAbfrage = window.matchMedia('(orientation: landscape) and (max-width: 950px) and (max-height: 500px)');
 
@@ -20,6 +22,7 @@ function querformatAktiv(){ return querformatAbfrage.matches; }
 export function setzeNavEingeklappt(eingeklappt){
   document.body.classList.toggle('nav-eingeklappt', Boolean(eingeklappt) && querformatAktiv());
   if(navToggle) navToggle.setAttribute('aria-expanded', String(!document.body.classList.contains('nav-eingeklappt')));
+  aktualisiereNavRaender();
 }
 
 if(navToggle){
@@ -36,13 +39,112 @@ function routeAusHash(){
   return treffer && sichtbareAnsichten.has(treffer[1]) ? treffer[1] : null;
 }
 
+function halteAktivenLinkSichtbar(link){
+  const nav = link.closest('#hauptnav');
+  if(!nav) return;
+
+  if(nav.scrollWidth > nav.clientWidth + 1){
+    const navKasten = nav.getBoundingClientRect();
+    const linkKasten = link.getBoundingClientRect();
+    if(linkKasten.left < navKasten.left || linkKasten.right > navKasten.right){
+      const ziel = Math.max(0, Math.min(
+        nav.scrollLeft + linkKasten.left - navKasten.left - (nav.clientWidth - linkKasten.width) / 2,
+        nav.scrollWidth - nav.clientWidth,
+      ));
+      nav.scrollLeft = ziel;
+    }
+  }
+
+  const liste = link.closest('.nav-liste');
+  if(liste && liste.scrollHeight > liste.clientHeight + 1){
+    const listeKasten = liste.getBoundingClientRect();
+    const linkKasten = link.getBoundingClientRect();
+    if(linkKasten.top < listeKasten.top || linkKasten.bottom > listeKasten.bottom){
+      const ziel = Math.max(0, Math.min(
+        liste.scrollTop + linkKasten.top - listeKasten.top - (liste.clientHeight - linkKasten.height) / 2,
+        liste.scrollHeight - liste.clientHeight,
+      ));
+      liste.scrollTop = ziel;
+    }
+  }
+}
+
+function aktualisiereNavHoehe(){
+  if(!hauptnav) return;
+  const liste = hauptnav.querySelector('.nav-liste');
+  if(!liste) return;
+  const abstand = Math.max(0, liste.offsetTop);
+  const verfuegbar = Math.max(0, window.innerHeight - abstand);
+  hauptnav.style.setProperty('--nav-sticky-max', `${verfuegbar}px`);
+}
+
+function aktualisiereNavFades(){
+  if(!navListe) return;
+  const ueberlaeuft = navListe.scrollHeight > navListe.clientHeight + 1;
+  const oben = ueberlaeuft && navListe.scrollTop > 1;
+  const unten = ueberlaeuft
+    && navListe.scrollTop + navListe.clientHeight < navListe.scrollHeight - 1;
+  navListe.classList.toggle('fade-oben', oben);
+  navListe.classList.toggle('fade-unten', unten);
+}
+
+function aktualisiereNavRaender(){
+  if(!hauptnav) return;
+  const ueberlaeuft = hauptnav.scrollWidth > hauptnav.clientWidth + 1;
+  const kasten = hauptnav.getBoundingClientRect();
+  const erster = navLinks[0];
+  const letzter = navLinks[navLinks.length - 1];
+  const linksVerdeckt = Boolean(erster) && erster.getBoundingClientRect().left < kasten.left - 1;
+  const rechtsVerdeckt = Boolean(letzter) && letzter.getBoundingClientRect().right > kasten.right + 1;
+  hauptnav.classList.toggle('fade-links', ueberlaeuft && linksVerdeckt);
+  hauptnav.classList.toggle('fade-rechts', ueberlaeuft && rechtsVerdeckt);
+  aktualisiereNavFades();
+}
+
 function setzeAktive(v){
+  let aktiverLink = null;
   navLinks.forEach(link => {
     const aktiv = link.dataset.v === v;
     link.classList.toggle('on', aktiv);
-    if(aktiv) link.setAttribute('aria-current', 'page');
-    else link.removeAttribute('aria-current');
+    if(aktiv){
+      link.setAttribute('aria-current', 'page');
+      aktiverLink = link;
+    }else{
+      link.removeAttribute('aria-current');
+    }
   });
+  aktualisiereNavHoehe();
+  if(aktiverLink) halteAktivenLinkSichtbar(aktiverLink);
+  aktualisiereNavRaender();
+}
+
+function aktualisiereAktivenLink(){
+  aktualisiereNavHoehe();
+  const aktiv = navLinks.find(link => link.dataset.v === aktuelle);
+  if(aktiv) halteAktivenLinkSichtbar(aktiv);
+  aktualisiereNavRaender();
+}
+
+let navGroesseRahmen = 0;
+window.addEventListener('resize', () => {
+  if(navGroesseRahmen) return;
+  navGroesseRahmen = requestAnimationFrame(() => {
+    navGroesseRahmen = 0;
+    aktualisiereAktivenLink();
+  });
+});
+window.addEventListener('load', aktualisiereAktivenLink);
+if(hauptnav) hauptnav.addEventListener('scroll', aktualisiereNavRaender, { passive: true });
+if(navListe) navListe.addEventListener('scroll', aktualisiereNavFades, { passive: true });
+
+// Kopfzeile und Banner können ihre Höhe nach dem ersten Rendern ändern (z. B.
+// durch nachgeladene Statuschips). Dann muss die verfügbare Listenhöhe neu
+// berechnet und der aktive Link erneut ausgerichtet werden.
+if(typeof ResizeObserver === 'function'){
+  const beobachter = new ResizeObserver(() => aktualisiereAktivenLink());
+  [document.querySelector('.top'), document.querySelector('.banner')]
+    .filter(Boolean)
+    .forEach(element => beobachter.observe(element));
 }
 
 function setzeTitel(v){
@@ -63,9 +165,11 @@ function fokussiereAnsicht(v){
 
 function setzeAnsicht(v, { url = null, fokus = false } = {}){
   if(!ansichten[v]) return false;
+  const vorher = aktuelle;
   if(v !== aktuelle) ansichten[aktuelle]?.deaktiviere?.();
   aktuelle = v;
   if(v === 'ship') setzeNavEingeklappt(true);
+  else if(vorher === 'ship') setzeNavEingeklappt(false);
   ansichten[v]?.aktiviere?.();
   setzeAktive(v);
   setzeTitel(v);
@@ -106,6 +210,16 @@ export function initialisiereNavigation(){
   const start = routeAusHash() || STANDARD;
   setzeAnsicht(start, { url: 'replace' });
 }
+
+// Bei Tastaturfokus scrollt der Browser teilweise sichtbare Links nicht in
+// den Ausschnitt. Das Zentrieren hält den Fokus auch horizontal sichtbar.
+navLinks.forEach(link => {
+  link.addEventListener('focus', () => {
+    if(!link.matches(':focus-visible')) return;
+    const nav = link.closest('#hauptnav');
+    if(nav && nav.scrollWidth > nav.clientWidth + 1) halteAktivenLinkSichtbar(link);
+  });
+});
 
 navLinks.forEach(link => {
   link.addEventListener('click', ev => {
