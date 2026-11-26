@@ -835,6 +835,10 @@
       "ziel": "dateien/tests/test_seed.py"
     },
     {
+      "quelle": "tests/test_seed_konsistenz.py",
+      "ziel": "dateien/tests/test_seed_konsistenz.py"
+    },
+    {
       "quelle": "tests/test_sekretariat.py",
       "ziel": "dateien/tests/test_sekretariat.py"
     },
