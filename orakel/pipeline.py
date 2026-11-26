@@ -424,6 +424,7 @@ def lauf(
 
     # Synthetische Kurse sind keine Marktaussage: Dashboard zeigt dann SIMULATION.
     bericht_modus = "simulation" if (datenquelle == "synthetisch" and modus != "paper") else modus
+    db.zustand_setzen("letzter_lauf_id", lauf_id)
 
     # ---------- Agenten + Konferenz ----------
     ctx = {
@@ -451,9 +452,12 @@ def lauf(
             db.ereignis("fehler", "Konferenz", f"Konferenz fehlgeschlagen: {exc}")
             fehler.append(f"Konferenz: {exc}")
 
-    db.zustand_setzen("letzter_lauf_id", lauf_id)
-    bericht = baue_bericht(cfg, db, modus=bericht_modus, datenquelle=datenquelle,
-                           qualitaet=qualitaet, plan=plan, fehler=fehler)
+    bericht = ctx["bericht"]
+    bericht["ereignisse"] = [
+        {"zeit": r["zeit"], "stufe": r["stufe"], "quelle": r["quelle"], "text": r["text"]}
+        for r in db.ereignisse(40)
+    ]
+    bericht["fehler"] = fehler
     bericht["agenten"] = agenten_ergebnisse
     bericht["konferenz"] = protokoll
     bericht["markt"] = markt
