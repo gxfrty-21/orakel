@@ -64,8 +64,7 @@ function Get-LokaleStartzeit {
     }
     $teile = $Start.Split(':')
     $versatz = New-TimeSpan -Hours ([int]$teile[0]) -Minutes ([int]$teile[1])
-    $roh = Resolve-ServerZeitzone -Zone $Zone
-    $tz = [TimeZoneInfo]::FindSystemTimeZoneById($roh.Id)
+    $tz = Resolve-ServerZeitzone -Zone $Zone
     $serverJetzt = [TimeZoneInfo]::ConvertTimeFromUtc([DateTime]::UtcNow, $tz)
     $serverTag = $serverJetzt.Date
     if ($serverJetzt.TimeOfDay -ge $versatz) {

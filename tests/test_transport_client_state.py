@@ -5,8 +5,10 @@ import hashlib
 import importlib.util
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 JETZT = datetime(2025, 1, 3, 0, 15, tzinfo=timezone.utc)
@@ -289,3 +291,67 @@ def test_belegtes_lock_beendet_ohne_upload(tmp_path):
         sperre.freigeben()
     assert fake.abrufe == []
     assert sender.aufrufe == []
+
+
+def test_lockfehler_ist_fail_closed(tmp_path):
+    modul = _modul()
+    cfg = modul.load_config(_konfiguration(tmp_path))
+    _state_schreiben(cfg, {})
+    (cfg.state.pfad / "lock").mkdir()
+    fake = FakeMT5()
+    sender = FakeSender()
+
+    assert _lauf(cfg, fake, sender) == 5
+    assert fake.abrufe == []
+    assert sender.aufrufe == []
+    assert _status(cfg)["grund"] == "lock_fehler"
+
+
+def test_unbekannter_upload_status_blockiert(tmp_path):
+    modul = _modul()
+    cfg = modul.load_config(_konfiguration(tmp_path))
+    dateiname = "EURUSD_M15_20250102.csv"
+    _state_schreiben(cfg, {f"EURUSD|M15|2025-01-02": _upload(
+        dateiname, hashlib.sha256(b"erwartet").hexdigest(), status="kaputt")})
+    fake = FakeMT5()
+    sender = FakeSender()
+
+    assert _lauf(cfg, fake, sender) == 5
+    assert fake.abrufe == []
+    assert sender.aufrufe == []
+    assert _status(cfg)["grund"] == "state_unlesbar"
+
+
+def test_verbrauchtes_versuchsbudget_blockiert_vor_http(tmp_path):
+    modul = _modul()
+    cfg = modul.load_config(_konfiguration(tmp_path))
+    body = (
+        "<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>\n"
+        "2025.01.02\t23:45:00\t1.1\t1.2\t1.0\t1.15\t10\t0\t2\n"
+    ).encode("utf-8")
+    dateiname = "EURUSD_M15_20250102.csv"
+    (cfg.state.pfad / "staging").mkdir(parents=True)
+    (cfg.state.pfad / "staging" / dateiname).write_bytes(body)
+    eintrag = _upload(dateiname, hashlib.sha256(body).hexdigest())
+    eintrag["versuche"] = 6
+    _state_schreiben(cfg, {f"EURUSD|M15|2025-01-02": eintrag})
+    fake = FakeMT5()
+    sender = FakeSender()
+
+    assert _lauf(cfg, fake, sender) == 3
+    assert fake.abrufe == []
+    assert sender.aufrufe == []
+    assert json.loads((cfg.state.pfad / "state.json").read_text(encoding="utf-8"))[
+        "uploads"]["EURUSD|M15|2025-01-02"]["grund"] == "budget"
+
+
+def test_frische_lehnt_kerze_eines_anderen_handelstags_ab(tmp_path):
+    modul = _modul()
+    cfg = modul.load_config(_konfiguration(tmp_path))
+
+    with pytest.raises(modul.SerienFehler) as fehler:
+        modul._pruefe_frische_zeit(
+            datetime(2025, 1, 1, 23, 45), date(2025, 1, 2), "M15", cfg, JETZT
+        )
+
+    assert fehler.value.grund == "fremder_tag"

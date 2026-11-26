@@ -29,6 +29,3 @@ http_versuche = 2
 basis_sekunden = 60
 retry_after_max_sekunden = 120
 jitter_sekunden = 2
-
-[schedule]
-upload_start_server = "00:15"

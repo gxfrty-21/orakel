@@ -13,6 +13,7 @@ geschrieben. Er kommt aus der konfigurierten Umgebungsvariable.
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import math
@@ -39,11 +40,13 @@ KOPFZEILE = (
     "<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>"
     "\t<TICKVOL>\t<VOL>\t<SPREAD>"
 )
-ZEITRAHMEN = {"M15": 15, "H1": 60}
+ZEITRAHMEN = frozenset({"M15", "H1"})
 SYMBOL_MUSTER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,31}")
 KEY_ID_MUSTER = re.compile(r"[A-Za-z0-9._-]{1,64}")
+SHA256_MUSTER = re.compile(r"[0-9a-f]{64}")
 OFFENE_STATUS = frozenset({"vorbereitet", "wartend"})
 ERFOLGS_STATUS = frozenset({"erfolgreich", "erfolgreich_degraded"})
+UPLOAD_STATUS = OFFENE_STATUS | ERFOLGS_STATUS | {"blockiert", "quarantaene"}
 MAX_VERSUCHE = 6
 
 
@@ -132,7 +135,6 @@ class ClientKonfiguration:
     export: ExportKonfiguration
     state: StateKonfiguration
     retry: RetryKonfiguration
-    upload_start: str
     config_hash: str
 
 
@@ -366,12 +368,10 @@ def load_config(pfad: str | Path) -> ClientKonfiguration:
         jitter_sekunden=_zahl(roh_retry, "jitter_sekunden", standard=2.0, minimum=0.0, maximum=30.0),
     )
 
-    roh_schedule = _abschnitt(daten, "schedule")
-    upload_start = _text(roh_schedule, "upload_start_server", standard="00:15")
-    try:
-        datetime.strptime(upload_start, "%H:%M")
-    except ValueError as exc:
-        raise KonfigurationsFehler("konfiguration", "upload_start_server muss HH:MM sein.") from exc
+    if zone_text is None and versatz_zahl is None:
+        raise KonfigurationsFehler(
+            "konfiguration", "server_zeitzone oder server_versatz_stunden muss gesetzt sein."
+        )
 
     endpoint = EndpointKonfiguration(
         url=url, key_id=key_id, token_env=token_env,
@@ -379,7 +379,6 @@ def load_config(pfad: str | Path) -> ClientKonfiguration:
     )
     return ClientKonfiguration(
         pfad=p, endpoint=endpoint, export=export, state=state, retry=retry,
-        upload_start=upload_start,
         config_hash=_konfigurations_hash(endpoint, export),
     )
 
@@ -389,7 +388,9 @@ def _zone(cfg: ClientKonfiguration) -> timezone | ZoneInfo:
         return ZoneInfo(cfg.export.server_zeitzone)
     if cfg.export.server_versatz_stunden is not None:
         return timezone(timedelta(hours=cfg.export.server_versatz_stunden))
-    return timezone.utc
+    raise KonfigurationsFehler(
+        "konfiguration", "server_zeitzone oder server_versatz_stunden fehlt."
+    )
 
 
 def _als_utc(zeit: datetime, cfg: ClientKonfiguration) -> datetime:
@@ -465,8 +466,6 @@ def _pruefe_tagesblock(kerzen: Sequence[Kerze], tag: date, zeitrahmen: str,
         raise TransientFehler("keine_kerzen", f"Keine Kerzen für {tag}.")
     if any(k.zeit.date() != tag for k in kerzen):
         raise TransientFehler("fremder_tag", f"Der Block für {tag} enthält Kerzen eines anderen Tages.")
-    if any(a.zeit > b.zeit for a, b in zip(kerzen, kerzen[1:])):
-        raise TransientFehler("unsortiert", f"Der Block für {tag} ist nicht sortiert.")
     for kerze in kerzen:
         if (not all(math.isfinite(w) for w in (kerze.open, kerze.high, kerze.low, kerze.close))
                 or min(kerze.open, kerze.high, kerze.low, kerze.close) <= 0
@@ -483,6 +482,11 @@ def _pruefe_tagesblock(kerzen: Sequence[Kerze], tag: date, zeitrahmen: str,
 
 def _pruefe_frische_zeit(zeit: datetime, tag: date, zeitrahmen: str,
                          cfg: ClientKonfiguration, jetzt: datetime) -> None:
+    if zeit.date() != tag:
+        raise SerienFehler(
+            "fremder_tag",
+            f"Letzte Kerze {zeit} gehört nicht zum Handelstag {tag}.",
+        )
     alter = (jetzt - _als_utc(zeit, cfg)).total_seconds() / 3600.0
     grenze = cfg.export.max_alter_stunden[zeitrahmen]
     if alter > grenze:
@@ -490,11 +494,6 @@ def _pruefe_frische_zeit(zeit: datetime, tag: date, zeitrahmen: str,
             "daten_veraltet",
             f"{tag} ist mit {alter:.1f} h älter als die Grenze von {grenze:.1f} h; kein Upload.",
         )
-
-
-def _pruefe_frische(kerze: Kerze, tag: date, zeitrahmen: str,
-                    cfg: ClientKonfiguration, jetzt: datetime) -> None:
-    _pruefe_frische_zeit(kerze.zeit, tag, zeitrahmen, cfg, jetzt)
 
 
 def _server_jetzt(mt5: Any, symbol: str, zeitrahmen: str, cfg: ClientKonfiguration,
@@ -576,18 +575,14 @@ def _sicherer_pfad(root: Path, relativ: str) -> Path:
     return p
 
 
-def _lade_zustand(cfg: ClientKonfiguration, *, init_erlaubt: bool = False) -> dict[str, Any]:
+def _lade_zustand(cfg: ClientKonfiguration) -> dict[str, Any]:
     root = _root(cfg)
     root.mkdir(parents=True, exist_ok=True)
     pfad = root / "state.json"
     if not pfad.exists():
         if _dateien_vorhanden(cfg):
             raise ZustandsFehler("state_fehlt", "state.json fehlt, aber staging/ oder sent/ enthält Dateien.")
-        if not init_erlaubt:
-            raise ZustandsFehler("state_fehlt_init", "state.json fehlt; Initialisierung nur mit --init-state.")
-        zustand = _leerer_zustand(cfg.config_hash)
-        _speichere_zustand(cfg, zustand)
-        return zustand
+        raise ZustandsFehler("state_fehlt_init", "state.json fehlt; Initialisierung nur mit --init-state.")
     try:
         roh = pfad.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
@@ -608,18 +603,63 @@ def _lade_zustand(cfg: ClientKonfiguration, *, init_erlaubt: bool = False) -> di
     return zustand
 
 
+def _state_zeit(wert: Any, schluessel: str, feld: str) -> datetime:
+    if not isinstance(wert, str) or not wert:
+        raise ZustandsFehler("state_unlesbar", f"Upload {schluessel} hat kein gültiges {feld}.")
+    try:
+        return datetime.fromisoformat(wert)
+    except ValueError as exc:
+        raise ZustandsFehler(
+            "state_unlesbar", f"Upload {schluessel} hat ein ungültiges {feld}."
+        ) from exc
+
+
 def _pruefe_state_dateien(cfg: ClientKonfiguration, zustand: Mapping[str, Any]) -> None:
     root = _root(cfg)
+    for schluessel, serie in zustand["serien"].items():
+        if not isinstance(schluessel, str) or not isinstance(serie, dict):
+            raise ZustandsFehler("state_unlesbar", f"Serie {schluessel} ist kein Objekt.")
     for schluessel, rec in zustand["uploads"].items():
         if not isinstance(rec, dict):
             raise ZustandsFehler("state_unlesbar", f"Upload {schluessel} ist kein Objekt.")
-        dateiname = rec.get("dateiname")
-        sha = rec.get("sha256")
+        symbol = rec.get("symbol")
+        zeitrahmen = rec.get("zeitrahmen")
+        tag_wert = rec.get("handelstag")
         status = rec.get("status")
-        if not isinstance(dateiname, str) or not dateiname or not isinstance(sha, str):
-            raise ZustandsFehler("state_unlesbar", f"Upload {schluessel} hat keinen Dateinamen/Hash.")
-        if not re.fullmatch(r"[A-Za-z0-9._-]+\.csv", dateiname):
+        sha = rec.get("sha256")
+        if not isinstance(symbol, str) or not SYMBOL_MUSTER.fullmatch(symbol):
+            raise ZustandsFehler("state_unlesbar", f"Upload {schluessel} hat kein gültiges Symbol.")
+        if not isinstance(zeitrahmen, str) or zeitrahmen not in ZEITRAHMEN:
+            raise ZustandsFehler("state_unlesbar", f"Upload {schluessel} hat keinen gültigen Zeitrahmen.")
+        if not isinstance(tag_wert, str):
+            raise ZustandsFehler("state_unlesbar", f"Upload {schluessel} hat keinen Handelstag.")
+        try:
+            tag = date.fromisoformat(tag_wert)
+        except ValueError as exc:
+            raise ZustandsFehler("state_unlesbar", f"Upload {schluessel} hat einen ungültigen Handelstag.") from exc
+        dateiname = rec.get("dateiname")
+        if not isinstance(dateiname, str) or dateiname != _dateiname(symbol, zeitrahmen, tag):
             raise ZustandsFehler("state_unlesbar", f"Upload {schluessel} hat einen ungültigen Dateinamen.")
+        if schluessel != _upload_schluessel(symbol, zeitrahmen, tag):
+            raise ZustandsFehler("state_unlesbar", f"Upload {schluessel} passt nicht zu seinen Feldern.")
+        if not isinstance(status, str) or status not in UPLOAD_STATUS:
+            raise ZustandsFehler("state_unlesbar", f"Upload {schluessel} hat einen unbekannten Status.")
+        if not isinstance(sha, str) or (status in OFFENE_STATUS | ERFOLGS_STATUS and not SHA256_MUSTER.fullmatch(sha)):
+            raise ZustandsFehler("state_unlesbar", f"Upload {schluessel} hat keinen gültigen Hash.")
+        if sha and not SHA256_MUSTER.fullmatch(sha):
+            raise ZustandsFehler("state_unlesbar", f"Upload {schluessel} hat keinen gültigen Hash.")
+        request_id = rec.get("request_id")
+        if request_id is not None and (
+                not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", request_id)):
+            raise ZustandsFehler("state_unlesbar", f"Upload {schluessel} hat eine ungültige Request-ID.")
+        versuche = rec.get("versuche", 0)
+        if isinstance(versuche, bool) or not isinstance(versuche, int) or versuche < 0:
+            raise ZustandsFehler("state_unlesbar", f"Upload {schluessel} hat ungültige Versuche.")
+        letzte_kerze = rec.get("letzte_kerze")
+        if letzte_kerze is not None:
+            _state_zeit(letzte_kerze, schluessel, "letzte_kerze")
+        elif status in OFFENE_STATUS | ERFOLGS_STATUS:
+            raise ZustandsFehler("state_unlesbar", f"Upload {schluessel} hat keine letzte Kerze.")
         pfad: Path | None = None
         for relativ in (rec.get("staged_path"), f"staging/{dateiname}", f"sent/{dateiname}"):
             if not isinstance(relativ, str) or not relativ:
@@ -698,6 +738,17 @@ def _log(cfg: ClientKonfiguration, ereignis: str, **felder: Any) -> None:
         print(f"WARNUNG Log nicht schreibbar: {exc}", file=sys.stderr)
 
 
+def _lock_belegt(exc: OSError) -> bool:
+    """Nur echte Sperrkonflikte gelten als «bereits aktiv»."""
+    if getattr(exc, "winerror", None) in {32, 33}:
+        return True
+    if exc.errno in {errno.EAGAIN, errno.EWOULDBLOCK}:
+        return True
+    # msvcrt.locking meldet einen belegten Lock auf Windows als EACCES,
+    # ohne winerror; das Öffnen der Datei ist zu diesem Zeitpunkt bereits gelungen.
+    return os.name == "nt" and exc.errno == errno.EACCES
+
+
 class Dateisperre:
     """Prozessübergreifende Sperre ohne veraltete Lockfile-Reste."""
 
@@ -706,9 +757,13 @@ class Dateisperre:
         self._datei: Any = None
 
     def erwerben(self) -> bool:
-        self.pfad.parent.mkdir(parents=True, exist_ok=True)
         try:
+            self.pfad.parent.mkdir(parents=True, exist_ok=True)
             self._datei = self.pfad.open("a+b")
+        except OSError as exc:
+            self.freigeben()
+            raise ZustandsFehler("lock_fehler", f"Sperrdatei {self.pfad} ist nicht öffnbar: {exc}") from exc
+        try:
             self._datei.seek(0, os.SEEK_END)
             if self._datei.tell() == 0:
                 self._datei.write(b"\0")
@@ -721,9 +776,11 @@ class Dateisperre:
                 import fcntl
                 fcntl.flock(self._datei.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             return True
-        except (OSError, ImportError):
+        except (OSError, ImportError) as exc:
             self.freigeben()
-            return False
+            if isinstance(exc, OSError) and _lock_belegt(exc):
+                return False
+            raise ZustandsFehler("lock_fehler", f"Sperre {self.pfad} ist nicht nutzbar: {exc}") from exc
 
     def freigeben(self) -> None:
         if self._datei is None:
@@ -907,10 +964,10 @@ def _quarantaene(cfg: ClientKonfiguration, rec: dict[str, Any], fehler: str) -> 
     root = _root(cfg)
     dateiname = str(rec["dateiname"])
     zielordner = root / "quarantine"
-    zielordner.mkdir(parents=True, exist_ok=True)
     ziel = zielordner / dateiname
     quelle = _datei_fuer_upload(cfg, rec)
     try:
+        zielordner.mkdir(parents=True, exist_ok=True)
         if quelle is not None and quelle.resolve() != ziel.resolve():
             if ziel.exists():
                 ziel = zielordner / f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}_{dateiname}"
@@ -928,7 +985,10 @@ def _quarantaene(cfg: ClientKonfiguration, rec: dict[str, Any], fehler: str) -> 
 
 def _sende(cfg: ClientKonfiguration, sender: Any, rec: dict[str, Any], pfad: Path,
            token: str, zustand: dict[str, Any], schlaf: Callable[[float], None]) -> Klassifikation:
-    body = pfad.read_bytes()
+    try:
+        body = pfad.read_bytes()
+    except OSError as exc:
+        raise ZustandsFehler("datei_fehlt", f"{pfad.name} ist nicht lesbar: {exc}") from exc
     if len(body) > cfg.endpoint.max_bytes:
         raise SerienFehler("datei_zu_gross", "Die Tagesdatei überschreitet die Grösse des Endpunkts.",
                            quarantaene=True)
@@ -968,7 +1028,6 @@ def _sende(cfg: ClientKonfiguration, sender: Any, rec: dict[str, Any], pfad: Pat
             schlaf(_wartezeit(cfg, klass.retry_after))
             continue
         return klass
-    return Klassifikation("transient", "unbekannt", None)
 
 
 def _server_kennzahlen(rec: dict[str, Any], klass: Klassifikation) -> None:
@@ -983,7 +1042,10 @@ def _verarbeite_serie(cfg: ClientKonfiguration, zustand: dict[str, Any], mt5: An
                       jetzt: datetime, schlaf: Callable[[float], None]) -> int:
     offen = _offener_upload(zustand, symbol, zeitrahmen)
     if offen is not None:
-        tag = date.fromisoformat(str(offen["handelstag"]))
+        try:
+            tag = date.fromisoformat(str(offen["handelstag"]))
+        except ValueError as exc:
+            raise ZustandsFehler("state_unlesbar", "Ungültiger Handelstag im Zustand.") from exc
         rec = offen
         pfad = _datei_fuer_upload(cfg, rec)
         if pfad is None:
@@ -1014,7 +1076,7 @@ def _verarbeite_serie(cfg: ClientKonfiguration, zustand: dict[str, Any], mt5: An
             return 3
         _pruefe_tagesblock(kerzen, tag, zeitrahmen, cfg)
         try:
-            _pruefe_frische(kerzen[-1], tag, zeitrahmen, cfg, jetzt)
+            _pruefe_frische_zeit(kerzen[-1].zeit, tag, zeitrahmen, cfg, jetzt)
         except SerienFehler as exc:
             _blockiere_ohne_datei(cfg, zustand, symbol, zeitrahmen, tag, exc.grund)
             raise
@@ -1163,15 +1225,14 @@ def run(cfg: ClientKonfiguration, *, mt5: Any = None, sender: Any = None,
     """Führt genau einen Lauf aus und liefert den definierten Exit-Code."""
     jetzt = jetzt or datetime.now(timezone.utc)
     root = _root(cfg)
-    root.mkdir(parents=True, exist_ok=True)
     sperre = Dateisperre(root / "lock")
-    if not sperre.erwerben():
-        _log(cfg, "lauf_bereits_aktiv")
-        return 0
     mt5_obj = mt5
     gestartet = False
     try:
         try:
+            if not sperre.erwerben():
+                _log(cfg, "lauf_bereits_aktiv")
+                return 0
             zustand = _lade_zustand(cfg)
             if _synchronisiere_sent(cfg, zustand):
                 _speichere_zustand(cfg, zustand)
@@ -1198,17 +1259,8 @@ def run(cfg: ClientKonfiguration, *, mt5: Any = None, sender: Any = None,
                     except SerienFehler as exc:
                         codes.append(3)
                         _log(cfg, "serie_blockiert", symbol=symbol, zeitrahmen=zeitrahmen, grund=exc.grund)
-            gesamt = 0
-            if 5 in codes:
-                gesamt = 5
-            elif 4 in codes:
-                gesamt = 4
-            elif 3 in codes:
-                gesamt = 3
-            elif 2 in codes:
-                gesamt = 2
-            _status_schreiben(cfg, {0: "erfolg", 2: "transient", 3: "blockiert",
-                                    4: "mt5_nicht_verfuegbar", 5: "fehler"}[gesamt],
+            gesamt = max(codes, default=0)
+            _status_schreiben(cfg, {0: "erfolg", 2: "transient", 3: "blockiert"}[gesamt],
                               details={"codes": codes, "serien": zustand.get("serien", {})})
             return gesamt
         except ZustandsFehler as exc:
@@ -1242,7 +1294,6 @@ def run(cfg: ClientKonfiguration, *, mt5: Any = None, sender: Any = None,
 
 def _initialisiere_state(cfg: ClientKonfiguration) -> int:
     root = _root(cfg)
-    root.mkdir(parents=True, exist_ok=True)
     if _dateien_vorhanden(cfg):
         print("FEHLER state.json fehlt, aber staging/ oder sent/ enthält Dateien. "
               "Zuerst Dateien prüfen und manuell nach quarantine/ verschieben.", file=sys.stderr)
@@ -1252,13 +1303,17 @@ def _initialisiere_state(cfg: ClientKonfiguration) -> int:
         print("FEHLER state.json existiert bereits; --init-state überschreibt nichts.", file=sys.stderr)
         return 5
     sperre = Dateisperre(root / "lock")
-    if not sperre.erwerben():
-        return 0
     try:
+        if not sperre.erwerben():
+            return 0
         _speichere_zustand(cfg, _leerer_zustand(cfg.config_hash))
         _status_schreiben(cfg, "erfolg", details={"hinweis": "leerer Zustand angelegt"})
         print(f"Leerer Zustand angelegt: {root / 'state.json'}")
         return 0
+    except ZustandsFehler as exc:
+        _status_schreiben(cfg, "state_reparatur_erforderlich", exc.grund)
+        print(f"FEHLER {exc.text}", file=sys.stderr)
+        return 5
     finally:
         sperre.freigeben()
 

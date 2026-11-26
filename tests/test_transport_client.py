@@ -31,8 +31,9 @@ def _modul():
 
 def _konfiguration(tmp_path: Path, *, url: str = "https://orakel.example/api/daten/import",
                     zeitrahmen: str = '"M15"', symbole: str = '"EURUSD"',
-                    zeitzone: str = '"UTC"', extra: str = "") -> Path:
+                    zeitzone: str | None = '"UTC"') -> Path:
     pfad = tmp_path / "transport.toml"
+    zone_zeile = "" if zeitzone is None else f"server_zeitzone = {zeitzone}\n"
     pfad.write_text(
         f'''
 [endpoint]
@@ -45,7 +46,7 @@ max_bytes = 5242880
 [export]
 symbole = [{symbole}]
 zeitrahmen = [{zeitrahmen}]
-server_zeitzone = {zeitzone}
+{zone_zeile}
 min_kerzen_pro_tag = {{ M15 = 90, H1 = 20 }}
 max_alter_stunden = {{ M15 = 4, H1 = 24 }}
 lookback_tage = 10
@@ -61,10 +62,6 @@ http_versuche = 2
 basis_sekunden = 0
 retry_after_max_sekunden = 120
 jitter_sekunden = 0
-
-[schedule]
-upload_start_server = "00:15"
-{extra}
 ''',
         encoding="utf-8",
     )
@@ -290,6 +287,7 @@ def test_serverfehler_nutzt_maximal_zwei_versuche_und_bleibt_wartend(tmp_path):
     assert len(sender.aufrufe) == 2
     assert [a[2]["X-Orakel-Content-SHA256"] for a in sender.aufrufe] == [
         sender.aufrufe[0][2]["X-Orakel-Content-SHA256"]] * 2
+    assert len({a[2]["X-Orakel-Request-Id"] for a in sender.aufrufe}) == 1
     assert next(iter(_state(cfg)["uploads"].values()))["status"] == "wartend"
 
 
@@ -338,6 +336,8 @@ def test_konfiguration_erzwingt_https_und_m15(tmp_path):
         modul.load_config(_konfiguration(tmp_path, url="http://orakel.example/api/daten/import"))
     with pytest.raises(modul.KonfigurationsFehler):
         modul.load_config(_konfiguration(tmp_path, zeitrahmen='"H1"'))
+    with pytest.raises(modul.KonfigurationsFehler):
+        modul.load_config(_konfiguration(tmp_path, zeitzone=None))
     assert modul.load_config(_konfiguration(
         tmp_path, url="http://127.0.0.1:8000/api/daten/import"))
 

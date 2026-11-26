@@ -59,9 +59,6 @@ http_versuche = 2
 basis_sekunden = 60
 retry_after_max_sekunden = 120
 jitter_sekunden = 2
-
-[schedule]
-upload_start_server = "00:15"
 ```
 
 Regeln:
@@ -73,7 +70,8 @@ Regeln:
   Richter-Zeitrahmen `H1` ist.
 - `server_zeitzone` und `server_versatz_stunden` schliessen sich aus. Die Werte
   müssen zur Serverkonfiguration passen; eine Änderung erzeugt einen neuen
-  Konfigurationsfingerabdruck und blockiert den alten lokalen Zustand.
+  Konfigurationsfingerabdruck und blockiert den alten lokalen Zustand. Genau
+  einer der beiden Werte ist Pflicht; der Client rät keine Zeitzone.
 - Die Mindestzahlen sind eine lokale Vorprüfung. Die endgültige Entscheidung
   bleibt beim Server.
 
@@ -124,6 +122,8 @@ Regeln:
    Windows PowerShell 5.1 kennt nicht alle IANA-Zonen. Der Installer übersetzt
    die dokumentierten Zonen `Europe/Athens`, `Europe/Berlin`, `Europe/Zurich`,
    `Europe/Vienna` und `UTC`; alternativ eine Windows-Zeitzonen-ID übergeben.
+   `-ServerZeitzone` muss zu `server_zeitzone` in der TOML passen; der Installer
+   liest die TOML nicht.
 
 7. Task entfernen:
 
@@ -135,7 +135,7 @@ Regeln:
 
 Der Installer registriert:
 
-- einen täglichen Trigger zu `upload_start_server`, umgerechnet in lokale
+- einen täglichen Trigger zu `-UploadStart`, umgerechnet in lokale
   Windows-Zeit,
 - `StartWhenAvailable` für einen verpassten Lauf nach Login oder Boot,
 - `MultipleInstances = IgnoreNew`,
@@ -176,13 +176,14 @@ ausgeführt:
 
 - `state.json` fehlt oder ist unlesbar, während `staging/` oder `sent/` eine
   Datei enthält,
+- die Sperrdatei nicht geöffnet oder gesperrt werden kann (`lock_fehler`),
 - der SHA-256 einer Staging- oder Sent-Datei weicht vom Zustand ab,
 - eine im Zustand referenzierte offene Datei fehlt.
 
 Der Lauf endet mit Exit 5, schreibt `status=state_reparatur_erforderlich` und
-den Grund (`state_fehlt`, `state_unlesbar`, `hash_mismatch`, `datei_fehlt`) in
-`status.json`. `.bak` wird **nicht automatisch** übernommen und Dateien werden
-nicht automatisch verschoben oder gelöscht.
+den Grund (`state_fehlt`, `state_unlesbar`, `hash_mismatch`, `datei_fehlt`,
+`lock_fehler`) in `status.json`. `.bak` wird **nicht automatisch** übernommen
+und Dateien werden nicht automatisch verschoben oder gelöscht.
 
 ### Bedieneraktion bei Fail-closed
 
@@ -215,7 +216,7 @@ als leerer Zustand behandelt.
 | `2` | transient; Scheduler darf erneut starten |
 | `3` | Bedienerentscheidung nötig (Bootstrap, veraltet, Auth, Konfiguration) |
 | `4` | MT5 nicht verfügbar oder keine Daten |
-| `5` | lokaler Zustand, Lock oder Konfiguration beschädigt; Fail-closed |
+| `5` | lokaler Zustand oder Lock beschädigt; Fail-closed |
 
 ## HTTP-Klassifikation
 
