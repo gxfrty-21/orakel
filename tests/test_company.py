@@ -60,7 +60,8 @@ def test_h_agenten_erhalten_ihren_eigenen_handler():
     from orakel.agents import ROSTER, _handler_fuer
 
     erwartet = {
-        "H2": "konfiguration", "H5": "performance", "H7": "fehler",
+        "H2": "konfiguration", "H3": "test", "H4": "schema",
+        "H5": "performance", "H6": "paper_sperre", "H7": "fehler",
         "H8": "version", "H10": "regression",
     }
     gefunden = {kennung: _handler_fuer(kennung, aufgabe)
@@ -92,6 +93,33 @@ def test_h_handler_pruefen_ihre_eigene_aufgabe(cfg):
     assert _hdl_regression(ctx) == (True, "1 von 1 Agenten unverändert")
     db.agenten_lauf("H10:Test", "H", "Test", "anders", True)
     assert _hdl_regression(ctx) == (True, "0 von 1 Agenten unverändert")
+
+
+def test_h3_respektiert_die_test_sperre(cfg, monkeypatch):
+    from orakel.agents import _hdl_test
+
+    assert _hdl_test({"cfg": cfg}) == (
+        False, "Test-Suite als Agenten-Subprozess ist in Phase 1 deaktiviert")
+
+    cfg._d.setdefault("unternehmen", {})["allow_tests"] = True
+
+    class Ergebnis:
+        returncode = 0
+        stdout = "731 passed in 1s\n"
+        stderr = ""
+
+    monkeypatch.setattr("subprocess.run", lambda *args, **kwargs: Ergebnis())
+    assert _hdl_test({"cfg": cfg}) == (True, "731 passed in 1s")
+
+
+def test_h4_prueft_den_bericht_gegen_schema_2(cfg):
+    from orakel.agents import _hdl_schema
+    from orakel.report import baue_bericht
+
+    db = _db(cfg)
+    bericht = baue_bericht(cfg, db)
+    assert _hdl_schema({"bericht": bericht}) == (True, "Schema 2 gültig")
+    assert _hdl_schema({})[0] is False
 
 
 def test_import_handler_laedt_aktuelle_kernmodule():

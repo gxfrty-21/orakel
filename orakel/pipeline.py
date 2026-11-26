@@ -422,6 +422,10 @@ def lauf(
         db.ereignis("fehler", "Intel", f"Intelligence fehlgeschlagen: {exc}")
         fehler.append(f"Intel: {exc}")
 
+    # Synthetische Kurse sind keine Marktaussage: Dashboard zeigt dann SIMULATION.
+    bericht_modus = "simulation" if (datenquelle == "synthetisch" and modus != "paper") else modus
+    db.zustand_setzen("letzter_lauf_id", lauf_id)
+
     # ---------- Agenten + Konferenz ----------
     ctx = {
         "cfg": cfg, "grenzen": grenzen, "validierungen": urteil_liste,
@@ -430,6 +434,8 @@ def lauf(
                   "drawdown_pct": konto.drawdown_pct},
         "plan": plan, "modus": modus, "db": db, "markt": markt,
         "intel": intel_ergebnis,
+        "bericht": baue_bericht(cfg, db, modus=bericht_modus, datenquelle=datenquelle,
+                                qualitaet=qualitaet, plan=plan, fehler=fehler),
     }
     agenten_ergebnisse: list[dict[str, Any]] = []
     protokoll: dict[str, Any] | None = None
@@ -446,11 +452,12 @@ def lauf(
             db.ereignis("fehler", "Konferenz", f"Konferenz fehlgeschlagen: {exc}")
             fehler.append(f"Konferenz: {exc}")
 
-    # Synthetische Kurse sind keine Marktaussage: Dashboard zeigt dann SIMULATION.
-    bericht_modus = "simulation" if (datenquelle == "synthetisch" and modus != "paper") else modus
-    db.zustand_setzen("letzter_lauf_id", lauf_id)
-    bericht = baue_bericht(cfg, db, modus=bericht_modus, datenquelle=datenquelle,
-                           qualitaet=qualitaet, plan=plan, fehler=fehler)
+    bericht = ctx["bericht"]
+    bericht["ereignisse"] = [
+        {"zeit": r["zeit"], "stufe": r["stufe"], "quelle": r["quelle"], "text": r["text"]}
+        for r in db.ereignisse(40)
+    ]
+    bericht["fehler"] = fehler
     bericht["agenten"] = agenten_ergebnisse
     bericht["konferenz"] = protokoll
     bericht["markt"] = markt

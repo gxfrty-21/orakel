@@ -23,6 +23,26 @@ def _als_mt5(df) -> str:
     return "".join(zeilen)
 
 
+def test_agenten_kontext_enthaelt_schema_2_bericht(cfg, monkeypatch, tmp_path):
+    from orakel import pipeline
+
+    gesehen = {}
+
+    def merke(db, ctx, nur_abteilung=None):
+        gesehen.update(ctx)
+        return []
+
+    monkeypatch.setattr(pipeline, "load_config", lambda pfad="config.toml": cfg)
+    monkeypatch.setattr(pipeline, "sicherstellen_daten",
+                        lambda cfg, db, quelle=None: (["EURUSD"], "synthetisch"))
+    monkeypatch.setattr(pipeline.agenten, "lauf", merke)
+
+    pipeline.lauf(bericht_pfad=str(tmp_path / "dashboard.json"),
+                  mit_agenten=True, mit_konferenz=False, mit_spider=False)
+
+    assert gesehen["bericht"]["schema"] == 2
+
+
 def test_h1_datei_wird_importiert_wenn_der_richter_h1_liest(cfg):
     cfg._d["basis"]["datenquelle"] = "csv"
     cfg._d["basis"]["richter_zeitrahmen"] = "H1"
