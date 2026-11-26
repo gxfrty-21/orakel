@@ -3053,12 +3053,13 @@ async function pruefeNegativtest(opt) {
       },
       {
         ansicht: 'konf',
-        id: 'text250.negativtest.konferenz-testplan',
-        name: 'Konferenz-Testplan',
+        id: 'text250.negativtest.konferenz-leerzustand',
+        name: 'Konferenz-Leerzustand',
+        erwarte: 'Leerer Konferenzzustand fehlt',
         mutieren: () => page.evaluate(() => {
-          const el = document.querySelector('#konfBody table.tbl tbody tr td:nth-child(3)');
-          if (!el) throw new Error('Konferenz-Testplan nicht gefunden');
-          el.textContent = 'FALSCH 9999';
+          const body = document.querySelector('#konfBody');
+          if (!body) throw new Error('Konferenzbereich nicht gefunden');
+          body.textContent = 'FALSCH 9999';
         }),
       },
       // Beide Claim-Fälle injizieren zuerst dieselben Testdaten. So wird

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import sqlite3
@@ -228,6 +229,152 @@ def validierungen_deduplizieren(
     return ergebnis
 
 
+def _zeitpunkt(wert: object) -> datetime | None:
+    """Parst einen ISO-Zeitpunkt; naive Werte gelten als UTC."""
+    try:
+        moment = datetime.fromisoformat(str(wert))
+    except (TypeError, ValueError):
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def _tabelle_vorhanden(c: sqlite3.Connection, name: str) -> bool:
+    return c.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,),
+    ).fetchone() is not None
+
+
+def _anzahl(c: sqlite3.Connection, tabelle: str) -> int:
+    if not _tabelle_vorhanden(c, tabelle):
+        return 0
+    return int(c.execute(f'SELECT COUNT(*) FROM "{tabelle}"').fetchone()[0])  # noqa: S608
+
+
+def _aeltere_ids(
+    c: sqlite3.Connection, tabelle: str, spalte: str, grenze: datetime,
+) -> list[int]:
+    """IDs der Zeilen, deren Zeitpunkt vor ``grenze`` liegt."""
+    ids: list[int] = []
+    for zeile in c.execute(f'SELECT id, "{spalte}" FROM "{tabelle}"'):  # noqa: S608
+        moment = _zeitpunkt(zeile[1])
+        if moment is not None and moment < grenze:
+            ids.append(int(zeile[0]))
+    return ids
+
+
+def _entfernen(c: sqlite3.Connection, tabelle: str, ids: list[int]) -> None:
+    for block in _bloecke(ids, 500):
+        platzhalter = ",".join("?" * len(block))
+        c.execute(
+            f'DELETE FROM "{tabelle}" WHERE id IN ({platzhalter})',  # noqa: S608
+            block)
+
+
+def _zustand_wert(c: sqlite3.Connection, schluessel: str) -> object | None:
+    zeile = c.execute(
+        "SELECT wert FROM zustand WHERE schluessel=?", (schluessel,)).fetchone()
+    return json.loads(zeile[0]) if zeile else None
+
+
+def ein_lauf_stand(
+    db_pfad: str | Path, *, probelauf: bool = False, vakuum: bool = False,
+    log: Callable[[str], None] = print,
+) -> dict[str, int]:
+    """Entfernt alles, was älter ist als der letzte Lauf.
+
+    Ereignisse und Konferenzprotokolle früherer Läufe, alte Agentenläufe,
+    Konto- und Paper-Zustand sowie Spider- und Intel-Daten werden gelöscht.
+    Maßgeblich ist ``zustand.letzter_lauf_id``; ältere Zeilen verschwinden,
+    neuere bleiben stehen. Danach zeigt der Seed genau den letzten Lauf, ohne
+    Auswahl- oder Freigabe-Reste aus einem früheren Raster.
+
+    Der Befehl ist idempotent; ``probelauf`` zählt nur, was entfernt würde.
+    """
+    ergebnis = dict.fromkeys(
+        ("ereignisse", "konferenzen", "agenten_laeufe", "konto", "artikel",
+         "intel_inhalte", "intel_quellen", "intel_auftraege", "zustand"), 0)
+    with closing(sqlite3.connect(Path(db_pfad), timeout=30)) as c:
+        grenze = _zeitpunkt(_zustand_wert(c, "letzter_lauf_id"))
+        if grenze is None:
+            raise RuntimeError("letzter_lauf_id fehlt oder ist kein Zeitpunkt")
+        log(f"orakel-seed: Ein-Lauf-Stand ab {grenze.isoformat()}")
+
+        artikel_ids: list[int] = []
+        for tabelle, spalte in (
+            ("ereignisse", "zeit"), ("konferenzen", "zeit"),
+            ("agenten_laeufe", "zeit"), ("konto", "zeit"),
+            ("artikel", "geholt"), ("intel_auftraege", "zeit"),
+        ):
+            if not _tabelle_vorhanden(c, tabelle):
+                continue
+            ids = _aeltere_ids(c, tabelle, spalte, grenze)
+            ergebnis[tabelle] = len(ids)
+            if tabelle == "artikel":
+                artikel_ids = ids
+            if not probelauf and ids:
+                _entfernen(c, tabelle, ids)
+
+        bleibt_artikel = _anzahl(c, "artikel")
+        if probelauf:
+            bleibt_artikel -= len(artikel_ids)
+
+        if _tabelle_vorhanden(c, "intel_inhalte"):
+            raus = [int(rowid) for rowid, analysiert in c.execute(
+                "SELECT rowid, analysiert FROM intel_inhalte")
+                if (_zeitpunkt(analysiert) or grenze) < grenze]
+            if bleibt_artikel <= 0:
+                raus = [int(zeile[0]) for zeile in c.execute(
+                    "SELECT rowid FROM intel_inhalte")]
+            ergebnis["intel_inhalte"] = len(raus)
+            if not probelauf:
+                for rowid in raus:
+                    c.execute("DELETE FROM intel_inhalte WHERE rowid=?", (rowid,))
+
+        if _tabelle_vorhanden(c, "intel_quellen") and bleibt_artikel <= 0:
+            ergebnis["intel_quellen"] = _anzahl(c, "intel_quellen")
+            if not probelauf and ergebnis["intel_quellen"]:
+                c.execute("DELETE FROM intel_quellen")
+
+        weg: list[str] = []
+        tick = _zustand_wert(c, "paper_letzter_tick")
+        if tick is not None and (_zeitpunkt(tick) or grenze) < grenze:
+            weg.append("paper_letzter_tick")
+        konto = _zustand_wert(c, "paper_konto")
+        if isinstance(konto, dict) and konto.get("datum"):
+            datum = _zeitpunkt(f"{konto['datum']}T00:00:00+00:00")
+            if datum is not None and datum.date() < grenze.date():
+                weg.append("paper_konto")
+        zeiger = _zustand_wert(c, "letzte_konferenz")
+        if zeiger is not None:
+            bleibt = [zeile[0] for zeile in c.execute("SELECT zeit FROM konferenzen")]
+            if probelauf:
+                bleibt = [zeit for zeit in bleibt
+                          if (_zeitpunkt(zeit) or grenze) >= grenze]
+            if not any(_zeitpunkt(zeit) == _zeitpunkt(zeiger) for zeit in bleibt):
+                weg.append("letzte_konferenz")
+        if bleibt_artikel <= 0 and _zustand_wert(c, "spider_letzter_lauf") is not None:
+            weg.append("spider_letzter_lauf")
+        ergebnis["zustand"] = len(weg)
+        if not probelauf:
+            for name in weg:
+                c.execute("DELETE FROM zustand WHERE schluessel=?", (name,))
+
+        gefuellt = ", ".join(f"{name}={wert}" for name, wert in ergebnis.items() if wert)
+        log(f"orakel-seed: Ein-Lauf-Stand entfernt {gefuellt or 'nichts'}")
+        if probelauf:
+            log("orakel-seed: Probelauf – nichts geändert")
+            return ergebnis
+        c.commit()
+        fehler = c.execute("PRAGMA integrity_check").fetchone()[0]
+        verwaist = c.execute("PRAGMA foreign_key_check").fetchall()
+        if vakuum:
+            c.execute("VACUUM")
+            c.commit()
+        log(f"orakel-seed: integrity {fehler}, foreign_key_check "
+            f"{'leer' if not verwaist else len(verwaist)}")
+    return ergebnis
+
+
 def _freier_name(pfad: Path) -> Path:
     if not pfad.exists():
         return pfad
@@ -372,6 +519,11 @@ def main(argv: list[str] | None = None) -> int:
         help="inhaltsgleiche Validierungen samt ihren Trades entfernen",
     )
     parser.add_argument(
+        "--ein-lauf", action="store_true",
+        help="Zeilen älterer Läufe entfernen (Ereignisse, Konferenzen, Agenten, "
+             "Konto, Spider und Intel)",
+    )
+    parser.add_argument(
         "--probelauf", action="store_true",
         help="nur zeigen, was --deduplizieren entfernen würde",
     )
@@ -381,17 +533,22 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    if (args.probelauf or args.vakuum) and not args.deduplizieren:
-        parser.error("--probelauf und --vakuum gelten nur zusammen mit --deduplizieren")
+    if (args.probelauf or args.vakuum) and not (args.deduplizieren or args.ein_lauf):
+        parser.error("--probelauf und --vakuum gelten nur zusammen mit "
+                     "--deduplizieren oder --ein-lauf")
 
-    if args.deduplizieren:
+    if args.deduplizieren or args.ein_lauf:
         if not Path(args.db).exists():
             print(f"orakel-seed: Datenbank {args.db} fehlt", file=sys.stderr)
             return 2
         try:
-            validierungen_deduplizieren(args.db, probelauf=args.probelauf,
-                                        vakuum=args.vakuum)
-        except sqlite3.Error as fehler:
+            if args.deduplizieren:
+                validierungen_deduplizieren(
+                    args.db, probelauf=args.probelauf,
+                    vakuum=args.vakuum and not args.ein_lauf)
+            if args.ein_lauf:
+                ein_lauf_stand(args.db, probelauf=args.probelauf, vakuum=args.vakuum)
+        except (sqlite3.Error, RuntimeError) as fehler:
             print(f"orakel-seed: Aufräumen fehlgeschlagen: {fehler}", file=sys.stderr)
             return 1
         return 0

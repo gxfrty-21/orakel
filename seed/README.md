@@ -75,8 +75,29 @@ python -m orakel.seed --db /app/seed/orakel-seed.db --deduplizieren
 
 Der Befehl meldet vorher und nachher die Zahl der Validierungen, die
 entfernten Trades, umgehängte `auswahl`-Zeilen sowie `integrity_check` und
-`foreign_key_check`. `--probelauf` und `--vakuum` gelten nur zusammen mit
-`--deduplizieren`.
+`foreign_key_check`.
+
+## Ein-Lauf-Stand
+
+Der mitgelieferte Seed zeigt nur den letzten Lauf. `--ein-lauf` entfernt alle
+Zeilen älterer Läufe: Ereignisse, Konferenzprotokolle, Agentenläufe, Konto und
+Paper-Zustand sowie Spider- und Intel-Daten. Maßgeblich ist
+`zustand.letzter_lauf_id`; Zeilen des letzten Laufs bleiben stehen, ebenso
+Kerzen, Validierungen und Trades. Der Befehl ist idempotent.
+
+```bash
+# Probelauf: nur zählen, was wegfiele
+python -m orakel.seed --ein-lauf --probelauf
+
+# Aufräumen und die Datei verdichten
+python -m orakel.seed --ein-lauf --vakuum
+
+# Anderer Bestand, etwa der Seed selbst
+python -m orakel.seed --db /app/seed/orakel-seed.db --ein-lauf --vakuum
+```
+
+`--probelauf` und `--vakuum` gelten für `--deduplizieren` und `--ein-lauf`;
+beide Schritte lassen sich in einem Aufruf kombinieren.
 
 ## Warum das nötig ist
 

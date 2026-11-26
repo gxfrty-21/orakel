@@ -115,6 +115,8 @@ def _bericht(cfg: Config) -> dict[str, Any]:
     bericht["konferenz"] = konferenz["protokoll"] if konferenz else basis.get("konferenz")
     spider = dict(db.zustand("spider_letzter_lauf") or {})
     spider.setdefault("artikel", [])
+    # Ohne gespeicherten Spider-Lauf wurden noch keine Quellen gelesen.
+    spider.setdefault("quellen", 0)
     status = db.zustand("spider_quellen_status") or {}
     if not spider.get("quellen_status") and status.get("quellen"):
         spider["quellen_status"] = status.get("quellen")

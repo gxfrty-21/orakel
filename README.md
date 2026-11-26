@@ -239,7 +239,7 @@ Der Richter schreibt jede Bewertung mit ihren Trades in die Fakten-DB. Läuft er
 
 Seit dem Walk-Forward-Umbau prüft der Richter je Strategie und Symbol genau einen Kandidaten: den Parameter wählt er in den Trainingsfenstern selbst, statt mehrere Rasterpunkte nacheinander zu bewerten. Ein vollständiger Lauf erzeugt damit eine Zeile je Paar — mit den vier freigegebenen Strategien und den zwei Symbolen des Seeds sind das acht Zeilen. Der mitgelieferte Seed enthält genau diese acht Zeilen aus einem Lauf mit dem aktuellen Raster; ältere Stände mit 24 Zeilen stammten aus dem Raster, das je Strategie zwei bis vier Punkte einzeln bewertete.
 
-Im Seed besteht keine Strategie: alle acht Kandidaten sind abgelehnt, die Auswahl ist leer. Die Ansichten sind darauf vorbereitet und verlangen keine gewählte Strategie. Die Übersicht nennt «0 ausgewählt» und «Keine Strategie ausgewählt»; die Strategien-Ansicht schreibt «Der Richter hat keine Strategie freigegeben. Deshalb wird nicht gehandelt.»; das Lab listet die acht abgelehnten Kandidaten mit Begründung, Kennzahlen und Kurve, und ein leerer Filter (etwa «Bestanden») erklärt im Detail, warum dort nichts steht; die Labor-Abteilung des Raumschiffs und der Betrieb zeigen weiterhin ihre Agenten und Jobs aus SQLite. Fehlende Grundlagen bleiben leer — es werden keine Kurven, Kennzahlen oder Auswahlen ergänzt. Die Ereignisse und Konferenzprotokolle vom 08.11. bleiben als datierte Historie im Seed: Sie beschreiben frühere Läufe mit 24 Kandidaten und einer Auswahl, sind im Dashboard mit Datum sichtbar und werden beim Neuaufbau nicht umgeschrieben.
+Im Seed besteht keine Strategie: alle acht Kandidaten sind abgelehnt, die Auswahl ist leer. Die Ansichten sind darauf vorbereitet und verlangen keine gewählte Strategie. Die Übersicht nennt «0 ausgewählt» und «Keine Strategie ausgewählt»; die Strategien-Ansicht schreibt «Der Richter hat keine Strategie freigegeben. Deshalb wird nicht gehandelt.»; das Lab listet die acht abgelehnten Kandidaten mit Begründung, Kennzahlen und Kurve, und ein leerer Filter (etwa «Bestanden») erklärt im Detail, warum dort nichts steht; die Labor-Abteilung des Raumschiffs und der Betrieb zeigen weiterhin ihre Agenten und Jobs aus SQLite. Fehlende Grundlagen bleiben leer — es werden keine Kurven, Kennzahlen oder Auswahlen ergänzt. Der Seed ist ein Ein-Lauf-Stand: Er enthält nur die Zeilen des Laufs vom 26.11.; Ereignisse, Konferenzprotokolle, Agentenläufe, Konto, Paper-Tick sowie Spider- und Intel-Daten älterer Läufe entfernt `orakel-seed --ein-lauf` beim Neuaufbau. Die Konferenz-Ansicht zeigt deshalb «Noch keine Konferenz abgehalten», die Ereignisliste nur den Abschluss des letzten Laufs.
 
 ### Navigation und Deep-Links
 
@@ -909,7 +909,8 @@ die sechs Research-Stationen mit ihren Nummern und den aus dem Bericht
 berechneten Zahlen; die elf sichtbaren Schiffsabteilungscluster A–J und S samt
 Vollständigkeit und erwarteter Agentenzahl (A–J je zehn, S drei); die acht
 Tabs der bisherigen Agentenraum-Inhaltsprüfung (nicht die elf Schiffsabteilungen) mit Agentenzahl, Kopfzeile
-und den letzten 40 Aktivitäten; schliesslich die vier Konferenz-Panels mit Beschluss, Modus,
+und den letzten 40 Aktivitäten; schliesslich die Konferenz: im Seed den Leerzustand «Noch keine Konferenz
+abgehalten», bei vorhandenem Protokoll die vier Panels mit Beschluss, Modus,
 Berichten, Diskussion und Massnahmentabelle. Bei den Massnahmen vergleicht er
 jede Zelle mit dem API-Feld, damit auch ein bewusst leerer Verantwortlicher
 korrekt als leer erkannt wird. Die Zusammenfassung meldet
@@ -923,7 +924,7 @@ einen entfernten sichtbaren Schiffsabteilungscluster, einen geleerten
 Schiffscluster, einen fehlenden Agenten in einem Schiffscluster, einen
 zusätzlichen Agenten in einem zweiten Schiffscluster, eine doppelte Agenten-ID
 über Cluster hinweg, eine doppelte Agenten-ID im selben Cluster bei
-unveränderter Agentenzahl, einen falschen Konferenz-Testplan sowie in der
+unveränderter Agentenzahl, einen verfälschten Konferenz-Leerzustand sowie in der
 Claim-Karte einen entfernten Widerspruchsgrund und eine entfernte
 Widerspruchssicherheit. Drei weitere Fälle prüfen die Geometrie am
 Agentenraum: abgeschnittener Inhalt, überlappende statische Steuerelemente und

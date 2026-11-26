@@ -72,11 +72,15 @@ export function reportBefund(bericht) {
   zahlOderNull(cockpit.positionen_ergebnis, 'cockpit.positionen_ergebnis');
 
   const paper = objekt(d.paper, 'paper');
-  objekt(paper.konto, 'paper.konto');
   const papierPositionen = liste(paper.positionen, 'paper.positionen');
   if (paper.letzter_tick !== null && typeof paper.letzter_tick !== 'string') {
     throw new Error('paper.letzter_tick ist weder Text noch null');
   }
+  // Ein Lauf ohne Paper-Tick hat noch kein Konto; dann ist null erlaubt.
+  if (paper.konto === null && paper.letzter_tick !== null) {
+    throw new Error('paper.konto fehlt, obwohl ein Paper-Tick gespeichert ist');
+  }
+  if (paper.konto !== null) objekt(paper.konto, 'paper.konto');
 
   const spider = objekt(d.spider, 'spider');
   const artikel = liste(spider.artikel, 'spider.artikel');
