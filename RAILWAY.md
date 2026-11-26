@@ -357,6 +357,16 @@ einen neuen Railway-Service ist sie nicht die Quelle der Wahrheit.
    | `PORT` | `3000` |
    | `RAILWAY_RUN_UID` | `0` (siehe Sicherheit) |
 
+   Optional für den HTTPS-Datentransport (Phase 1):
+
+   | Variable | Wert |
+   |---|---|
+   | `ORAKEL_TRANSPORT_AKTIV` | `1` erst nach Bootstrap aktivieren |
+   | `ORAKEL_TRANSPORT_TOKEN` | langer Zufallstoken, als Secret/Sealed markieren |
+   | `ORAKEL_TRANSPORT_KEY_ID` | z. B. `windows-1` |
+   | `ORAKEL_TRANSPORT_SYMBOLE` | z. B. `EURUSD,US500` (optional) |
+   | `ORAKEL_TRANSPORT_MAX_MB` | z. B. `5` (optional) |
+
    `ORAKEL_AUTH_USER` und `ORAKEL_AUTH_PASS` müssen **beide** gesetzt sein.
    Der Container bindet `0.0.0.0`; fehlen sie, bricht der Start ab
    (fail-closed). Im Deploy-Log steht dann

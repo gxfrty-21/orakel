@@ -453,10 +453,63 @@ Danach wie oben importieren, inklusive `--server-zeitzone` oder
 Terminal läuft, ist angemeldet und das Symbol steht im Market Watch;
 Zugangsdaten braucht das Skript nicht, und es gibt keinen Weg zu einer Order.
 
+### Automatischer HTTPS-Transport zum Server
+
+Phase 1 des Transportplans ist der Server-Endpunkt `POST /api/daten/import`.
+Der Windows-Scheduler und der automatische Abruf sind noch **nicht**
+umgesetzt; ein Windows-Client kann denselben Endpunkt später nutzen.
+
+Der Endpunkt nimmt rohe MT5-CSV-Daten als `text/csv` oder
+`application/octet-stream` an. Er ist standardmässig deaktiviert und braucht
+folgende Server-Variablen (Railway: Service-Variablen, lokal: `.env`):
+
+| Variable | Bedeutung |
+|---|---|
+| `ORAKEL_TRANSPORT_AKTIV` | `1` aktiviert den Endpunkt; ohne `1` antwortet er `503` |
+| `ORAKEL_TRANSPORT_TOKEN` | langer, zufälliger Bearer-Token (mindestens 32 Zeichen); niemals ins Repository |
+| `ORAKEL_TRANSPORT_KEY_ID` | erwartete `X-Orakel-Key-Id`, z. B. `windows-1` |
+| `ORAKEL_TRANSPORT_SYMBOLE` | optionale Allowlist, kommagetrennt (z. B. `EURUSD,US500`); ohne Angabe gelten die bereits in der DB vorhandenen Symbole |
+| `ORAKEL_TRANSPORT_MAX_MB` | maximale Upload-Grösse in MiB (Standard 5) |
+
+Pflicht-Header:
+
+```text
+Authorization: Bearer <ORAKEL_TRANSPORT_TOKEN>
+X-Orakel-Key-Id: windows-1
+X-Orakel-Content-SHA256: <SHA-256 des Bodys, 64 Hexzeichen>
+X-Orakel-Dateiname: EURUSD_M15_20251126.csv
+Content-Type: text/csv
+```
+
+Der Dateiname muss `SYMBOL_TF_JJJJMMTT.csv` entsprechen; erlaubt sind `M15`
+und der konfigurierte Richter-Zeitrahmen (`[basis] richter_zeitrahmen`). Der
+Server berechnet den SHA-256 selbst und vergleicht ihn mit dem Header. Er
+akzeptiert nur abgeschlossene, bereits serverseitig bekannte Reihen mit
+gültigem Bootstrap-Marker. Die Datei wird zuerst als `.part` unter
+`daten/inbox/` geschrieben und erst nach erfolgreichem Import nach
+`daten/SYMBOL_TF_JJJJMMTT.csv` verschoben; bei einem Fehler bleiben Kerzen und
+Ledger unverändert.
+
+Vor dem ersten automatischen Upload die Historie kontrolliert über die CLI
+importieren und den Bootstrap-Marker setzen:
+
+```bash
+.venv/bin/python -m orakel daten --csv daten/EURUSD_M15_2020.csv daten/EURUSD_M15_2021.csv
+.venv/bin/python -m orakel pruefen --frisch
+.venv/bin/python -m orakel transport-bootstrap --symbol EURUSD --zeitrahmen M15
+```
+
+Ohne Marker antwortet der Endpunkt mit `409 bootstrap_erforderlich`. Der
+Marker wird bei einer materiell verkürzten Kerzenreihe ungültig; ein Duplikat
+prüft zusätzlich den Ledger gegen die tatsächlichen Kerzen und importiert den
+Block bei fehlenden Zeilen erneut. Erfolgreiche Importe und Ablehnungen stehen
+im Ereignisprotokoll; der Token wird nie protokolliert.
+
 Grenzen: Es kommen nur Kerzen, die das Terminal geladen hat — „Max. bars in
 chart" und die Broker-Historie begrenzen die Tiefe, fehlende Bereiche werden
 übersprungen statt erfunden. Broker-Symbole können abweichen (`EURUSD.a`), und
-der Transport zum Server bleibt manuell: Datei kopieren und dort importieren.
+der Server-Endpunkt steht bereit; der Windows-Scheduler für den automatischen
+Upload fehlt noch (siehe unten).
 
 Nach dem Import prüft der Befehl die **zusammengeführte** Reihe je Symbol und
 Zeitrahmen (einzelne Blöcke dürfen kürzer als `min_kerzen` sein): Mindestzahl
@@ -485,9 +538,10 @@ Lückenschwelle maßgeblich. Fehler und Warnungen stehen im Terminal und im Erei
 bei einem Fehler endet der Befehl mit Exit-Code 1, importiert bleibt die Reihe
 trotzdem.
 
-Noch nicht unterstützt: die automatische Erkennung der Broker-Zeitzone (sie
-muss als IANA-Zone oder fester Versatz angegeben werden), der automatische Transport der
-Windows-Abfrage zum Server, Tick-Daten, Dezimalkommas und eine Bewertung anderer Zeitrahmen
+Noch nicht unterstützt: der Windows-Scheduler und der automatische
+Transportlauf (der Server-Endpunkt und der Bootstrap sind vorhanden), die
+automatische Erkennung der Broker-Zeitzone (sie muss als IANA-Zone oder fester
+Versatz angegeben werden), Tick-Daten, Dezimalkommas und eine Bewertung anderer Zeitrahmen
 als M15 im Paper-Takt; der Richter kann über `[basis] richter_zeitrahmen`
 auch H1 lesen, wobei `bars_pro_jahr` umgerechnet wird.
 
@@ -567,7 +621,8 @@ tests/           Risiko, Backtest, Daten, Bericht
 
 1. **Echte Daten**: CSV-Import und direkter Abruf aus dem Terminal auf deinem
 Windows-Rechner stehen (siehe [Kursdaten aus MT5](#kursdaten-aus-mt5)); der
-automatische Transport zum Server fehlt noch.
+HTTPS-Endpunkt mit Bootstrap und Ledger-Reconciliation steht, der
+Windows-Scheduler für den automatischen Transport fehlt noch.
 2. **Spider Intelligence**: Netz-Recherche mit Quellenprüfung, robots.txt und Limits.
 3. **3D-Ausbau**: begehbare Decks und First-Person-Navigation sind zurückgestellt;
    die aktuelle 2D-Welt ist umgesetzt und an echte Daten gekoppelt.

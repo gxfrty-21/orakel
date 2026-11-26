@@ -91,6 +91,17 @@ def vorhandener_import(
         c=c)
     if zeile is None:
         return None
+    # Ein Ledger-Eintrag allein beweist keine Kerzen. Nach einem Teil-Restore
+    # kann die Buchung vorhanden sein, obwohl Zeilen fehlen; dann muss die
+    # Quelle erneut importiert werden. Innerhalb einer Transaktion wird die
+    # alte Buchung entfernt, damit der neue Eintrag denselben Schlüssel nutzen
+    # kann; ausserhalb bleibt die Reparatur dem nächsten Import überlassen.
+    if not db.kerzen_abgedeckt(
+            symbol, zeitrahmen, mindest=int(zeile["kerzen"] or 0),
+            bis=str(zeile["bis"] or ""), von=str(zeile["von"] or ""), c=c):
+        if c is not None:
+            db.datenimport_entfernen(int(zeile["id"]), c=c)
+        return None
     kennzahl = frische_kennzahl(
         zeile["bis"], daten_cfg, zeitrahmen,
         max_alter_stunden=max_alter_stunden)

@@ -49,6 +49,7 @@ from .lauf_queue import OFFEN, anlegen_wenn_frei as lauf_anlegen, stand as lauf_
 from .report import baue_bericht
 from .scheduler import Takt, _kontext
 from .spider import Spider
+from .transport import TRANSPORT_PFAD, registriere_transport
 
 STATIC = Path(__file__).parent / "web" / "static"
 BERICHT = Path("dashboard.json")
@@ -216,7 +217,7 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False,
         @app.middleware("http")
         async def _auth(request: Request, call_next):
             # Health bleibt offen, damit Container- und Uptime-Prüfungen ohne Login funktionieren.
-            if request.url.path == "/api/health":
+            if request.url.path in {"/api/health", TRANSPORT_PFAD}:
                 return await call_next(request)
             if not _basic_ok(request.headers.get("authorization", ""),
                              auth_benutzer, auth_passwort):
@@ -921,5 +922,9 @@ def create_app(cfg_pfad: str = "config.toml", takt: bool = False,
         except Exception as exc:
             return JSONResponse({"ok": False, "fehler": _fehler_text(exc), "code": _fehler_code(exc)}, status_code=500)
         return JSONResponse({"ok": True, "beschluss": protokoll.get("beschluss")})
+
+    # Der Transport nutzt seine eigene Bearer-Authentifizierung und ist deshalb
+    # von der Dashboard-Basic-Auth ausgenommen. Ohne Token bleibt er 503.
+    registriere_transport(app, konfig)
 
     return app

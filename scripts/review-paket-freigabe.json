@@ -275,6 +275,10 @@
       "ziel": "dateien/tests/test_strategiebericht.py"
     },
     {
+      "quelle": "tests/test_transport.py",
+      "ziel": "dateien/tests/test_transport.py"
+    },
+    {
       "quelle": "scripts/baue_review_paket.py",
       "ziel": "dateien/scripts/baue_review_paket.py"
     },
@@ -445,6 +449,10 @@
     {
       "quelle": "orakel/kern/datenimport.py",
       "ziel": "dateien/orakel/kern/datenimport.py"
+    },
+    {
+      "quelle": "orakel/transport.py",
+      "ziel": "dateien/orakel/transport.py"
     },
     {
       "quelle": "orakel/kern/judge.py",
