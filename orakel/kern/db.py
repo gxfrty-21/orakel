@@ -251,6 +251,46 @@ class Facts:
                 "GROUP BY symbol, zeitrahmen ORDER BY symbol, zeitrahmen"
             ))
 
+    # ---------- CSV-Importe ----------
+    def datenimport_finden(
+        self, sha256: str, symbol: str, zeitrahmen: str,
+        zeitzone: str = "", versatz: str = "", *,
+        c: sqlite3.Connection | None = None,
+    ) -> sqlite3.Row | None:
+        """Sucht einen bereits erfolgreich gebuchten Import derselben Quelle."""
+        sql = (
+            "SELECT * FROM datenimporte WHERE sha256=? AND symbol=?"
+            " AND zeitrahmen=? AND zeitzone=? AND versatz=?"
+        )
+        werte = (sha256, symbol, zeitrahmen, zeitzone, versatz)
+        if c is not None:
+            return c.execute(sql, werte).fetchone()
+        with self.conn() as verbindung:
+            return verbindung.execute(sql, werte).fetchone()
+
+    def datenimport_merken(
+        self, *, sha256: str, datei: str, symbol: str, zeitrahmen: str,
+        zeitzone: str = "", versatz: str = "", kerzen: int,
+        von: str, bis: str, c: sqlite3.Connection | None = None,
+    ) -> None:
+        """Bucht eine Datei nach erfolgreichem Import; mit ``c`` transaktional."""
+        sql = (
+            "INSERT INTO datenimporte(sha256,datei,symbol,zeitrahmen,zeitzone,"
+            "versatz,kerzen,von,bis,importiert_am) VALUES (?,?,?,?,?,?,?,?,?,?)"
+        )
+        werte = (sha256, datei, symbol, zeitrahmen, zeitzone, versatz,
+                 int(kerzen), von, bis, jetzt())
+        if c is not None:
+            c.execute(sql, werte)
+            return
+        with self.conn() as verbindung:
+            verbindung.execute(sql, werte)
+
+    def datenimporte(self) -> list[sqlite3.Row]:
+        """Alle gebuchten CSV-Importe, älteste zuerst (für Prüfung und Anzeige)."""
+        with self.conn() as c:
+            return list(c.execute("SELECT * FROM datenimporte ORDER BY id"))
+
     # ---------- Validierungen ----------
     def validierung_speichern(
         self, symbol: str, strategie: str, schluessel: str, parameter: dict[str, Any],

@@ -12,6 +12,9 @@ ausschliesslich beim Start; die Historie steht in der Tabelle
 | `0001_basis.sql` | Grundschema: Kerzen, Artikel, Trades, Ereignisse, Nexus, Intel |
 | `0002_company.sql` | Agenten, Aufgaben, Ereignisse, Sitzungen der Company-Schicht |
 | `0003_spalten_nachziehen.sql` | Spalten, die ältere Datenbanken noch nicht haben |
+| `0004_laeufe.sql` | Warteschlange für lange Engine-Läufe |
+| `0005_laeufe_versuche.sql` | Versuchszähler gegen Absturzschleifen |
+| `0006_datenimporte.sql` | Prüfsummen-Register für den CSV-Import |
 | `NNNN_name.down.sql` | Rückweg einer Migration (Pflicht für jeden Downgrade) |
 
 Eine Migration läuft genau einmal. Die Nummer muss vierstellig und eindeutig

@@ -319,9 +319,27 @@ mehrere Dateien dürfen Teilzeiträume sein:
 # ohne Zeitrahmen im Dateinamen: Symbol und Rahmen vorgeben (nur bei einer Datei)
 .venv/bin/python -m orakel daten --csv daten/export.csv --symbol EURUSD --zeitrahmen M15
 
+# nur frische Dateien: eine zu alte jüngste Kerze wird vor dem Schreiben abgelehnt
+.venv/bin/python -m orakel daten --csv daten/EURUSD_M15.csv --frisch
+
+# eigene Frischegrenze statt der Grenze aus config.toml
+.venv/bin/python -m orakel daten --csv daten/EURUSD_M15.csv --frisch --max-alter-stunden 6
+
 # danach der vollständige Lauf: Research → Richter → Risiko → Plan
 .venv/bin/python -m orakel pruefen
 ```
+
+Jede CSV wird über ihre SHA-256-Prüfsumme und ihr Ziel (Symbol, Zeitrahmen,
+Zeitzone und Broker-Versatz) genau einmal gebucht. Ein erneuter Import
+derselben unveränderten Datei wird übersprungen und endet mit Exit-Code 0;
+eine geänderte Datei hat eine neue Prüfsumme und wird wieder importiert. Die
+Buchungen stehen in der Tabelle `datenimporte`, damit ein abgebrochener oder
+wiederholter Transport nicht zu doppelten Importen führt. Die Frischeprüfung
+prüft die jüngste Kerze **der Datei** gegen `max_kurs_alter_stunden_<tf>` bzw.
+den Rückfall `max_alter_tage`; mit `--frisch` wird eine zu alte Datei vor dem
+Commit abgelehnt und schreibt keine Kerzen. Historische Blöcke werden ohne
+`--frisch` weiterhin importiert; danach prüft der Befehl wie bisher die
+zusammengeführte Reihe.
 
 Unterstützte Spalten (Groß-/Kleinschreibung egal, mit oder ohne spitze Klammern):
 
@@ -386,10 +404,15 @@ bestandener Reihenprüfung gesetzt, und ein Fehler in einer Datei rollt alle
 Dateien dieses Imports zurück. Ist der Ordner leer, bricht der Lauf ohne
 vorhandene Datenbankkerzen mit Meldung ab, statt synthetische Kerzen zu
 erzeugen; vorhandene Datenbankkerzen werden mit einer Warnung weiterverwendet.
-Beim Import wird die jüngste Kerze je Symbol und Zeitrahmen gegen ihre
-Frischegrenze geprüft: `max_kurs_alter_stunden_<tf>` bzw. der Rückfall
-`max_alter_tage`. Eine Überschreitung wird als Warnung protokolliert,
-blockiert den Import aber nicht. Die Frischegrenzen bleiben
+Der Ordner-Import nutzt dasselbe Prüfsummen-Register wie `daten --csv`: Eine
+unveränderte Datei wird beim nächsten Lauf übersprungen, eine geänderte Datei
+erhält eine neue Prüfsumme und wird wieder importiert. Mit
+`orakel pruefen --frisch` (oder `--max-alter-stunden`) gilt auch hier das
+Frische-Gate: Ist die jüngste Kerze einer Datei älter als
+`max_kurs_alter_stunden_<tf>` bzw. `max_alter_tage`, wird der gesamte
+Ordner-Import vor dem Commit abgelehnt und zurückgerollt. Ohne `--frisch` wird
+eine Überschreitung nur als Warnung protokolliert und blockiert den Lauf nicht.
+Die Frischegrenzen bleiben
 je Zeitrahmen getrennt (`max_kurs_alter_stunden_h1` usw.), auch wenn der
 Paper-Takt M15 liest.
 

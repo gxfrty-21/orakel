@@ -11,9 +11,10 @@ import pandas as pd
 
 from . import agents as agenten
 from .config import Config, RisikoGrenzen, load_config
+from .kern.datenimport import ImportErgebnis, ParallelerImport, importiere_datei
 from .kern.data import (
-    ZEITRAHMEN_MINUTEN, df_aus_db, frische_kennzahl, lade_csv_bloecke,
-    mit_taktpruefung, pruefe_daten, synthetische_kerzen, zerlege_dateiname,
+    ZEITRAHMEN_MINUTEN, df_aus_db, frische_kennzahl, pruefe_daten,
+    synthetische_kerzen, zerlege_dateiname,
 )
 from .kern.db import Facts, jetzt
 from .intel import IntelNetz
@@ -31,8 +32,14 @@ class DatenFehler(RuntimeError):
     """Die konfigurierte CSV-Quelle liefert keine verwendbaren Kerzen."""
 
 
-def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tuple[list[str], str]:
+def sicherstellen_daten(
+    cfg: Config, db: Facts, quelle: str | None = None, *,
+    frisch: bool = False, max_alter_stunden: float | None = None,
+) -> tuple[list[str], str]:
     """Lädt CSV-Dateien aus daten/ oder erzeugt synthetische Kerzen."""
+    if max_alter_stunden is not None and (
+            not math.isfinite(max_alter_stunden) or max_alter_stunden <= 0):
+        raise DatenFehler("--max-alter-stunden muss grösser als 0 sein.")
     quelle = quelle or str(cfg["basis"].get("datenquelle", "synthetisch"))
     ordner = cfg.daten_ordner
     ordner.mkdir(parents=True, exist_ok=True)
@@ -85,7 +92,7 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
             db.ereignis("fehler", "Daten", grund)
             raise DatenFehler(grund)
 
-        importiert: list[tuple[str, int]] = []
+        importiert: list[ImportErgebnis] = []
         try:
             # Alle Dateien laufen in einer gemeinsamen Transaktion. Erst die
             # abschließende Reihenprüfung setzt den Quellzustand; jeder Fehler
@@ -93,17 +100,17 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
             with db.conn() as c:
                 for datei, symbol, zeitrahmen in geplant:
                     try:
-                        n = db.kerzen_speichern_bloecke(
-                            symbol, zeitrahmen,
-                            mit_taktpruefung(
-                                lade_csv_bloecke(datei, server_zeitzone=zeitzone,
-                                                 server_versatz_stunden=versatz),
-                                zeitrahmen),
-                            c=c)
-                    except (OSError, ValueError) as exc:
+                        ergebnis = importiere_datei(
+                            db, datei, symbol, zeitrahmen,
+                            daten_cfg=cfg["daten"], zeitzone=zeitzone,
+                            versatz=versatz,
+                            max_alter_stunden=max_alter_stunden,
+                            frisch=frisch, c=c)
+                    except (OSError, ValueError, ParallelerImport) as exc:
                         raise DatenFehler(f"{datei.name}: {exc}") from exc
                     symbole.append(symbol)
-                    importiert.append((datei.name, n))
+                    if not ergebnis.uebersprungen:
+                        importiert.append(ergebnis)
 
                 if symbole:
                     fehlend = [
@@ -124,8 +131,9 @@ def sicherstellen_daten(cfg: Config, db: Facts, quelle: str | None = None) -> tu
             db.ereignis("fehler", "Daten", str(exc))
             raise
 
-        for datei_name, n in importiert:
-            db.ereignis("info", "Daten", f"{datei_name}: {n} Kerzen importiert")
+        for ergebnis in importiert:
+            db.ereignis("info", "Daten",
+                        f"{ergebnis.datei}: {ergebnis.kerzen} Kerzen importiert")
         try:
             letzte = {(zeile["symbol"], zeile["zeitrahmen"]): zeile["juengste"]
                       for zeile in db.kerzen_uebersicht()}
@@ -217,6 +225,8 @@ def lauf(
     mit_agenten: bool = True,
     mit_konferenz: bool = True,
     mit_spider: bool = False,
+    frisch: bool = False,
+    max_alter_stunden: float | None = None,
 ) -> dict[str, Any]:
     start = time.perf_counter()
     lauf_id = jetzt()
@@ -233,7 +243,8 @@ def lauf(
         db.ereignis("info", "Daten",
                     f"Richter bewertet {zeitrahmen}; der Paper-Takt liest weiterhin M15")
 
-    symbole, datenquelle = sicherstellen_daten(cfg, db, quelle)
+    symbole, datenquelle = sicherstellen_daten(
+        cfg, db, quelle, frisch=frisch, max_alter_stunden=max_alter_stunden)
     qualitaet: list[dict[str, Any]] = []
     daten: dict[str, pd.DataFrame] = {}
 

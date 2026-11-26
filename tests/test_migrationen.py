@@ -28,7 +28,8 @@ def test_leere_datenbank_wendet_alle_migrationen_an(tmp_path):
     assert ergebnis["angewendet"] == ALLE
     assert migrationen.angewendet(pfad) == ALLE
     tabellen = _tabellen(pfad)
-    assert {"kerzen", "artikel", "agent_profiles", "schema_migrationen"} <= tabellen
+    assert {"kerzen", "artikel", "agent_profiles", "datenimporte",
+            "schema_migrationen"} <= tabellen
 
 
 def test_teilstand_auf_0003_wendet_nur_die_neuere_migration_an(tmp_path):

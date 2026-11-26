@@ -1079,6 +1079,132 @@ def test_als_m15_benannte_h1_datei_wird_beim_import_abgelehnt(cfg, tmp_path):
     assert _importiere_csv(cfg, db, _args(csv=[str(p)])) == 1
 
 
+def _frische_m15(kerzen: int = 1300, alter_stunden: float = 1.0) -> pd.DataFrame:
+    """M15-Reihe, deren jüngste Kerze ``alter_stunden`` alt ist."""
+    ende = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=alter_stunden)
+    start = ende - pd.Timedelta(minutes=15 * (kerzen - 1))
+    return synthetische_kerzen("X", kerzen=kerzen, seed=11,
+                               start=start.isoformat())
+
+
+def test_wiederholter_csv_import_wird_uebersprungen(cfg, tmp_path, capsys):
+    basis = _frische_m15()
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(_als_mt5(basis), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+    args = _args(csv=[str(p)], frisch=True)
+
+    assert _importiere_csv(cfg, db, args) == 0
+    assert _importiere_csv(cfg, db, args) == 0
+
+    assert len(db.datenimporte()) == 1
+    assert len(db.kerzen("EURUSD", "M15")) == 1300
+    assert "bereits importiert" in capsys.readouterr().out
+
+
+def test_gleicher_dateiinhalt_unter_anderem_namen_bleibt_ein_import(cfg, tmp_path):
+    basis = _frische_m15()
+    p = tmp_path / "EURUSD_M15.csv"
+    kopie = tmp_path / "EURUSD_M15_kopie.csv"
+    p.write_text(_als_mt5(basis), encoding="utf-8")
+    kopie.write_bytes(p.read_bytes())
+    db = Facts(cfg.db_pfad)
+
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)])) == 0
+    assert _importiere_csv(cfg, db, _args(csv=[str(kopie)])) == 0
+
+    assert len(db.datenimporte()) == 1
+    assert db.datenimporte()[0]["datei"] == p.name
+
+
+def test_geaenderte_datei_hat_eine_neue_pruefsumme(cfg, tmp_path):
+    basis = _frische_m15()
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(_als_mt5(basis), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)])) == 0
+    geaendert = basis.copy()
+    geaendert.loc[10, "volume"] += 1
+    p.write_text(_als_mt5(geaendert), encoding="utf-8")
+
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)])) == 0
+    assert len(db.datenimporte()) == 2
+    assert len(db.kerzen("EURUSD", "M15")) == 1300
+
+
+def test_frische_gate_lehnt_alte_datei_vor_dem_schreiben_ab(cfg, tmp_path, capsys):
+    alt = synthetische_kerzen("X", kerzen=1300, seed=11, start="2024-01-01")
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(_als_mt5(alt), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)], frisch=True)) == 1
+
+    assert db.kerzen("EURUSD", "M15") == []
+    assert db.datenimporte() == []
+    fehler = capsys.readouterr().err
+    assert "Daten veraltet" in fehler
+    assert "Import abgelehnt" in fehler
+
+
+def test_max_alter_stunden_ueberschreibt_die_frischegrenze(cfg, tmp_path):
+    basis = _frische_m15(alter_stunden=1.0)
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(_als_mt5(basis), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    assert _importiere_csv(
+        cfg, db, _args(csv=[str(p)], max_alter_stunden=0.5)) == 1
+
+    assert db.kerzen("EURUSD", "M15") == []
+    assert db.datenimporte() == []
+
+
+def test_importschluessel_trennt_zeitzonen(cfg, tmp_path):
+    basis = _frische_m15(alter_stunden=1.0)
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(_als_mt5(basis), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)])) == 0
+    assert _importiere_csv(
+        cfg, db, _args(csv=[str(p)], server_zeitzone="Europe/Athens")) == 0
+
+    assert len(db.datenimporte()) == 2
+
+
+def test_bereits_importierte_alte_datei_scheitert_am_frische_gate(cfg, tmp_path):
+    basis = _frische_m15(alter_stunden=1.0)
+    p = tmp_path / "EURUSD_M15.csv"
+    p.write_text(_als_mt5(basis), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+    assert _importiere_csv(cfg, db, _args(csv=[str(p)])) == 0
+
+    # Ein erneuter Transport derselben Datei ist idempotent; mit einer engeren
+    # Grenze muss er trotzdem als veraltet auffallen und darf nichts löschen.
+    assert _importiere_csv(
+        cfg, db, _args(csv=[str(p)], max_alter_stunden=0.5)) == 1
+
+    assert len(db.datenimporte()) == 1
+    assert len(db.kerzen("EURUSD", "M15")) == 1300
+
+
+def test_cli_frischeoptionen_werden_geparst(monkeypatch):
+    gesehen: list[argparse.Namespace] = []
+
+    def fake_daten(args: argparse.Namespace) -> int:
+        gesehen.append(args)
+        return 0
+
+    monkeypatch.setattr(cli, "cmd_daten", fake_daten)
+
+    assert cli.main(["daten", "--csv", "x.csv", "--frisch",
+                     "--max-alter-stunden", "6"]) == 0
+    assert gesehen[0].frisch is True
+    assert gesehen[0].max_alter_stunden == 6.0
+
+
 def test_csv_mit_komma_trenner(tmp_path):
     inhalt = (
         "date,open,high,low,close,volume\n"
