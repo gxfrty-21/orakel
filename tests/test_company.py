@@ -47,6 +47,39 @@ def test_roster_hat_103_eindeutige_profile():
     assert len({p.rufname for p in PROFILES}) == 103
 
 
+def test_jeder_agent_bekommt_seinen_festen_handler():
+    from orakel.agents import HANDLER, HANDLER_JE_KENNUNG, ROSTER, _handler_fuer
+
+    erwartet = {f"A{i}": "daten" for i in range(1, 11)}
+    erwartet.update({"A5": "paper_sperre", "A7": "schema", "A9": "performance"})
+    erwartet.update({
+        "B1": "artikel_symbol", "B2": "studien", "B3": "buecher", "B4": "videos",
+        "B5": "quellen", "B6": "dubletten", "B7": "mehrdeutig", "B8": "aktualitaet",
+        "B9": "weiterleitungen", "B10": "limits",
+    })
+    erwartet.update({f"C{i}": "validierungen" for i in range(1, 11)})
+    erwartet["C9"] = "vault"
+    erwartet.update({f"D{i}": "positionen" for i in range(1, 11)})
+    erwartet.update({f"E{i}": "validierungen" for i in range(1, 11)})
+    erwartet["E9"] = "vault"
+    erwartet.update({
+        "F1": "positionen", "F2": "grenzen", "F3": "grenzen", "F4": "positionen",
+        "F5": "positionen", "F6": "positionen", "F7": "daten", "F8": "grenzen",
+        "F9": "validierungen", "F10": "grenzen",
+    })
+    erwartet.update({f"G{i}": "vault" for i in range(1, 11)})
+    erwartet.update({
+        "H1": "import", "H2": "konfiguration", "H3": "test", "H4": "schema",
+        "H5": "performance", "H6": "paper_sperre", "H7": "fehler",
+        "H8": "version", "H9": "geheimnisse", "H10": "regression",
+    })
+
+    assert set(erwartet) == {kennung for kennung, _, _, _ in ROSTER}
+    assert set(erwartet) == set(HANDLER_JE_KENNUNG)
+    assert set(HANDLER_JE_KENNUNG.values()) <= set(HANDLER)
+    assert {k: _handler_fuer(k, "umformulierte Aufgabe") for k in erwartet} == erwartet
+
+
 def test_b_agenten_erhalten_ihren_fachhandler():
     from orakel.agents import ROSTER, _handler_fuer
 

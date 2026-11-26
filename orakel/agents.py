@@ -406,67 +406,48 @@ HANDLER: dict[str, Handler] = {
 }
 
 
-def _handler_fuer(kennung: str, aufgabe: str) -> str:
-    text = aufgabe.lower()
-    if kennung.startswith("H"):
-        if "test" in text:
-            return "test"
-        if "schema" in text:
-            return "schema"
-        if "paper" in text or "schnittstelle" in text:
-            return "paper_sperre"
-        if "config" in text or "konfiguration" in text:
-            return "konfiguration"
-        if "laufzeit" in text or "performance" in text:
-            return "performance"
-        if "fehler" in text:
-            return "fehler"
-        if "version" in text:
-            return "version"
-        if "regression" in text or "vorherigen" in text:
-            return "regression"
-        if "sicherheit" in text or "zugangsdaten" in text:
-            return "geheimnisse"
-        return "import"
-    if kennung.startswith("A"):
-        if "paper" in text:
-            return "paper_sperre"
-        if "schema" in text:
-            return "schema"
-        return "daten"
-    if kennung.startswith("F"):
-        if "positionsgr" in text or "engagement" in text or "klumpen" in text:
-            return "positionen"
-        return "grenzen"
-    if kennung.startswith("G"):
-        return "vault"
-    if kennung.startswith("B"):
-        if "nachrichten" in text:
-            return "artikel_symbol"
-        if "studie" in text:
-            return "studien"
-        if "buch" in text:
-            return "buecher"
-        if "video" in text:
-            return "videos"
-        if "quelle" in text:
-            return "quellen"
-        if "doppelte" in text or "dublette" in text:
-            return "dubletten"
-        if "widerspruch" in text or "widersprüch" in text:
-            return "mehrdeutig"
-        if "veraltet" in text or "aktualität" in text:
-            return "aktualitaet"
-        if "weiterleit" in text or "zuordnen" in text:
-            return "weiterleitungen"
-        if "limit" in text:
-            return "limits"
-        return "artikel_symbol"
-    if kennung.startswith("C") or kennung.startswith("E"):
-        return "validierungen"
-    if kennung.startswith("D"):
-        return "positionen"
-    return "daten"
+# Feste Zuordnung je Agentenkennung. Die Aufgabenformulierung darf die
+# Handler-Wahl nicht mehr beeinflussen; neue Agenten brauchen einen Eintrag.
+HANDLER_JE_KENNUNG: dict[str, str] = {
+    # A – Hauptzentrale
+    "A1": "daten", "A2": "daten", "A3": "daten", "A4": "daten",
+    "A5": "paper_sperre", "A6": "daten", "A7": "schema", "A8": "daten",
+    "A9": "performance", "A10": "daten",
+    # B – Spider Intelligence
+    "B1": "artikel_symbol", "B2": "studien", "B3": "buecher", "B4": "videos",
+    "B5": "quellen", "B6": "dubletten", "B7": "mehrdeutig", "B8": "aktualitaet",
+    "B9": "weiterleitungen", "B10": "limits",
+    # C – Labor
+    "C1": "validierungen", "C2": "validierungen", "C3": "validierungen",
+    "C4": "validierungen", "C5": "validierungen", "C6": "validierungen",
+    "C7": "validierungen", "C8": "validierungen", "C9": "vault",
+    "C10": "validierungen",
+    # D – Trading Floor
+    "D1": "positionen", "D2": "positionen", "D3": "positionen", "D4": "positionen",
+    "D5": "positionen", "D6": "positionen", "D7": "positionen", "D8": "positionen",
+    "D9": "positionen", "D10": "positionen",
+    # E – Forschungsabteilung
+    "E1": "validierungen", "E2": "validierungen", "E3": "validierungen",
+    "E4": "validierungen", "E5": "validierungen", "E6": "validierungen",
+    "E7": "validierungen", "E8": "validierungen", "E9": "vault",
+    "E10": "validierungen",
+    # F – Risikomanagement
+    "F1": "positionen", "F2": "grenzen", "F3": "grenzen", "F4": "positionen",
+    "F5": "positionen", "F6": "positionen", "F7": "daten", "F8": "grenzen",
+    "F9": "validierungen", "F10": "grenzen",
+    # G – Wissenszentrum
+    "G1": "vault", "G2": "vault", "G3": "vault", "G4": "vault", "G5": "vault",
+    "G6": "vault", "G7": "vault", "G8": "vault", "G9": "vault", "G10": "vault",
+    # H – Entwicklungsabteilung
+    "H1": "import", "H2": "konfiguration", "H3": "test", "H4": "schema",
+    "H5": "performance", "H6": "paper_sperre", "H7": "fehler", "H8": "version",
+    "H9": "geheimnisse", "H10": "regression",
+}
+
+
+def _handler_fuer(kennung: str, _aufgabe: str) -> str:
+    """Feste Zuordnung je Kennung; die Aufgabe ist nur noch Anzeige."""
+    return HANDLER_JE_KENNUNG.get(kennung, "daten")
 
 
 def lauf(db: Facts, ctx: dict[str, Any], nur_abteilung: str | None = None) -> list[dict[str, Any]]:
