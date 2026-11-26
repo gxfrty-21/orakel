@@ -184,7 +184,9 @@ def _ersetze(text: str, schluessel: str, wert: str | int | float) -> str:
         rf"^{re.escape(schluessel)}[ \t]*=[ \t]*[^\s#]+",
         re.MULTILINE,
     )
-    neu, anzahl = muster.subn(f"{schluessel} = {_toml_wert(wert)}", text)
+    # Als Funktion ersetzen: im Ersetzungsstring würde ``re`` die Backslashes
+    # eines Windows-Pfads als Escape lesen und ``_toml_wert`` entwerten.
+    neu, anzahl = muster.subn(lambda _treffer: f"{schluessel} = {_toml_wert(wert)}", text)
     if anzahl != 1:
         raise ValueError(f"config.toml: erwartet genau eine Zuweisung für {schluessel}, "
                          f"gefunden {anzahl}")
