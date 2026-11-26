@@ -1,0 +1,34 @@
+# Beispielkonfiguration für scripts/transport_client.py.
+# Kopie nach %LOCALAPPDATA%\Orakel\Transport\transport.toml legen und anpassen.
+# Hier stehen bewusst keine Tokens und keine Zugangsdaten.
+
+[endpoint]
+url = "https://orakel.example/api/daten/import"
+key_id = "windows-1"
+token_env = "ORAKEL_TRANSPORT_TOKEN"
+timeout_sekunden = 60
+max_bytes = 5242880
+
+[export]
+symbole = ["EURUSD"]
+zeitrahmen = ["M15"]
+server_zeitzone = "Europe/Athens"
+terminal_pfad = "C:/Program Files/MetaTrader 5/terminal64.exe"
+min_kerzen_pro_tag = { M15 = 90, H1 = 20 }
+max_alter_stunden = { M15 = 4, H1 = 24 }
+lookback_tage = 10
+
+[state]
+pfad = "%LOCALAPPDATA%/Orakel/Transport"
+sent_aufbewahrung_tage = 30
+quarantaene_aufbewahrung_tage = 90
+logs_aufbewahrung_tage = 30
+
+[retry]
+http_versuche = 2
+basis_sekunden = 60
+retry_after_max_sekunden = 120
+jitter_sekunden = 2
+
+[schedule]
+upload_start_server = "00:15"
