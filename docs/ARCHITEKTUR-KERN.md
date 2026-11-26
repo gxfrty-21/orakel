@@ -19,6 +19,7 @@ erzwungen:
 | Bereich | Pfad | Inhalt |
 |---|---|---|
 | Kern | `orakel/kern/data.py` | Kurse laden, DataFrame aus SQLite |
+| Kern | `orakel/kern/datenimport.py` | Gemeinsamer idempotenter CSV-Import für CLI und Ordnerquelle |
 | Kern | `orakel/kern/strategies.py` | Signale, ATR, Strategien |
 | Kern | `orakel/kern/backtest.py` | Backtest ohne Look-Ahead, Slippage |
 | Kern | `orakel/kern/kosten.py` | Kosten je Seite: Kommission pro Stück oder halber Spread |

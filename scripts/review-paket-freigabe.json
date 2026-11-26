@@ -443,6 +443,10 @@
       "ziel": "dateien/orakel/kern/data.py"
     },
     {
+      "quelle": "orakel/kern/datenimport.py",
+      "ziel": "dateien/orakel/kern/datenimport.py"
+    },
+    {
       "quelle": "orakel/kern/judge.py",
       "ziel": "dateien/orakel/kern/judge.py"
     },
@@ -513,6 +517,14 @@
     {
       "quelle": "orakel/migrations/0005_laeufe_versuche.sql",
       "ziel": "dateien/orakel/migrations/0005_laeufe_versuche.sql"
+    },
+    {
+      "quelle": "orakel/migrations/0006_datenimporte.down.sql",
+      "ziel": "dateien/orakel/migrations/0006_datenimporte.down.sql"
+    },
+    {
+      "quelle": "orakel/migrations/0006_datenimporte.sql",
+      "ziel": "dateien/orakel/migrations/0006_datenimporte.sql"
     },
     {
       "quelle": "orakel/pipeline.py",

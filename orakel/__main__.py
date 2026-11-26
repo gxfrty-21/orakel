@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -14,11 +15,15 @@ from .kern.data import (
     ZEITRAHMEN_MINUTEN,
     df_aus_bloecken,
     df_aus_db,
-    lade_csv_bloecke,
-    mit_taktpruefung,
     pruefe_daten,
     synthetische_kerzen,
     zerlege_dateiname,
+)
+from .kern.datenimport import (
+    ParallelerImport,
+    frische_text,
+    importiere_datei,
+    vorhandener_import,
 )
 from .kern.db import Facts, Kerzenkonflikte
 from .kern.robustheit import STANDARD_LAEUFE, STANDARD_SEED
@@ -85,6 +90,11 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
     Kerzen» gelten.
     """
     dateien = [Path(p) for p in args.csv]
+    max_alter = getattr(args, "max_alter_stunden", None)
+    if max_alter is not None and (not math.isfinite(max_alter) or max_alter <= 0):
+        print("FEHLER --max-alter-stunden muss grösser als 0 sein.", file=sys.stderr)
+        return 2
+    frisch = bool(getattr(args, "frisch", False)) or max_alter is not None
     zeitzone = args.server_zeitzone or cfg["daten"].get("server_zeitzone") or None
     if args.server_versatz is not None and args.server_versatz_stunden is not None:
         print("FEHLER --server-versatz und --server-versatz-stunden schliessen sich aus — "
@@ -107,6 +117,7 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
         return 2
 
     fehler = 0
+    uebersprungen = 0
     geprueft: list[tuple[str, str]] = []
     for datei in dateien:
         try:
@@ -119,35 +130,68 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
         zeitrahmen = args.zeitrahmen or zeitrahmen
         konflikte = Kerzenkonflikte()
         try:
-            # Blockweise lesen und schreiben: auch Millionen Zeilen bleiben flach
-            # im Speicher, und ein Fehler in einem Block rollt die Datei zurück.
-            n = db.kerzen_speichern_bloecke(
-                symbol, zeitrahmen,
-                mit_taktpruefung(
-                    lade_csv_bloecke(datei, server_zeitzone=zeitzone,
-                                     server_versatz_stunden=versatz),
-                    zeitrahmen),
+            ergebnis = importiere_datei(
+                db, datei, symbol, zeitrahmen,
+                daten_cfg=cfg["daten"], zeitzone=zeitzone, versatz=versatz,
+                max_alter_stunden=max_alter, frisch=frisch,
                 konflikte=konflikte)
-            if not n:
-                raise ValueError(f"CSV: {datei.name} enthält keine vollständigen Kerzen.")
+        except ParallelerImport as exc:
+            # Zwei Prozesse dürfen dieselbe Datei gleichzeitig anliefern. Der
+            # zweite verliert das Rennen um den eindeutigen Prüfsummen-Schlüssel;
+            # seine Kerzen wurden mit der Transaktion zurückgerollt.
+            try:
+                ergebnis = vorhandener_import(
+                    db, exc.sha256, symbol, zeitrahmen,
+                    daten_cfg=cfg["daten"], zeitzone=zeitzone, versatz=versatz,
+                    max_alter_stunden=max_alter, frisch=frisch)
+            except (OSError, ValueError) as exc2:
+                print(f"FEHLER {datei.name}: {exc2}", file=sys.stderr)
+                db.ereignis("fehler", "Daten", f"{datei.name}: {exc2}")
+                fehler += 1
+                continue
+            if ergebnis is None:
+                print(f"FEHLER {datei.name}: doppelter Importeintrag konnte "
+                      "nicht zugeordnet werden.", file=sys.stderr)
+                db.ereignis("fehler", "Daten",
+                            f"{datei.name}: doppelter Importeintrag")
+                fehler += 1
+                continue
         except (OSError, ValueError) as exc:
             print(f"FEHLER {datei.name}: {exc}", file=sys.stderr)
             db.ereignis("fehler", "Daten", f"{datei.name}: {exc}")
             fehler += 1
             continue
-        db.ereignis("info", "Daten", f"{datei.name}: {n} Kerzen für {symbol} {zeitrahmen} importiert")
-        print(f"{datei.name}: {n} Kerzen gelesen")
-        if konflikte.anzahl:
-            probe = konflikte.beispiele[0]
-            print(f"  Warnung: abweichende Kerzen: {konflikte.anzahl} (z. B. {probe}); "
-                  "gespeicherte Werte werden ersetzt.")
+        if ergebnis.uebersprungen:
+            print(f"{datei.name}: bereits importiert "
+                  f"(SHA-256 {ergebnis.sha256[:12]}…), übersprungen.")
+            if ergebnis.kennzahl:
+                print(f"  Frische: {frische_text(ergebnis.kennzahl)}")
+            uebersprungen += 1
+            if (symbol, zeitrahmen) not in geprueft:
+                geprueft.append((symbol, zeitrahmen))
+            continue
+        db.ereignis("info", "Daten",
+                    f"{datei.name}: {ergebnis.kerzen} Kerzen für {symbol} "
+                    f"{zeitrahmen} importiert")
+        print(f"{datei.name}: {ergebnis.kerzen} Kerzen gelesen")
+        if ergebnis.kennzahl:
+            print(f"  Frische: {frische_text(ergebnis.kennzahl)} — "
+                  f"{'frisch' if ergebnis.kennzahl['frisch'] else 'veraltet'}")
+        if ergebnis.konflikte.anzahl:
+            probe = ergebnis.konflikte.beispiele[0]
+            print(f"  Warnung: abweichende Kerzen: {ergebnis.konflikte.anzahl} "
+                  f"(z. B. {probe}); gespeicherte Werte werden ersetzt.")
             db.ereignis("warnung", "Daten",
-                        f"{datei.name}: {konflikte.anzahl} abweichende Kerzen ersetzt, "
+                        f"{datei.name}: {ergebnis.konflikte.anzahl} abweichende "
+                        "Kerzen ersetzt, "
                         f"z. B. {probe}")
         if (symbol, zeitrahmen) not in geprueft:
             geprueft.append((symbol, zeitrahmen))
 
     if not geprueft:
+        if uebersprungen:
+            print("Alle Dateien waren bereits importiert.")
+            return 0
         print("Nichts importiert.", file=sys.stderr)
         return 1
     if versatz is not None:
@@ -204,7 +248,9 @@ def cmd_pruefen(args: argparse.Namespace) -> int:
     bericht = _pipeline_lauf(cfg_pfad=args.config, modus=args.modus, quelle=args.quelle,
                              bericht_pfad=args.bericht,
                              mit_konferenz=not args.ohne_konferenz,
-                             mit_spider=args.mit_spider)
+                             mit_spider=args.mit_spider,
+                             frisch=bool(getattr(args, "frisch", False)),
+                             max_alter_stunden=getattr(args, "max_alter_stunden", None))
     if bericht is None:
         return 1
     bestanden = sum(1 for v in bericht["validierungen"] if v["urteil"] == "bestanden")
@@ -363,7 +409,10 @@ def cmd_serve(args: argparse.Namespace) -> int:
 def cmd_konferenz(args: argparse.Namespace) -> int:
     if (code := _schema_pruefen(_cfg(args.config))) is not None:
         return code
-    bericht = _pipeline_lauf(cfg_pfad=args.config, modus="backtest", mit_konferenz=True)
+    bericht = _pipeline_lauf(
+        cfg_pfad=args.config, modus="backtest", mit_konferenz=True,
+        frisch=bool(getattr(args, "frisch", False)),
+        max_alter_stunden=getattr(args, "max_alter_stunden", None))
     if bericht is None:
         return 1
     protokoll = bericht.get("konferenz") or {}
@@ -642,6 +691,11 @@ def main(argv: list[str] | None = None) -> int:
                          help="fester Broker-Versatz der MT5-Serverzeit in Stunden, z. B. 3 oder -5; "
                               "nicht mit --server-zeitzone oder --server-versatz kombinierbar")
     d.add_argument("--kerzen", type=int, default=6000)
+    d.add_argument("--frisch", action="store_true",
+                   help="Import ablehnen, wenn die jüngste Kerze älter als die "
+                        "Frischegrenze ist; historische Blöcke ohne diese Option importieren")
+    d.add_argument("--max-alter-stunden", type=float, default=None, metavar="STUNDEN",
+                   help="Frischegrenze überschreiben (impliziert --frisch)")
     d.set_defaults(func=cmd_daten)
 
     pr = sub.add_parser("pruefen", help="Vollständigen Lauf ausführen (Research, Richter, Plan)")
@@ -650,6 +704,11 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--bericht", default="dashboard.json")
     pr.add_argument("--ohne-konferenz", action="store_true")
     pr.add_argument("--mit-spider", action="store_true", help="Recherche mitlaufen lassen")
+    pr.add_argument("--frisch", action="store_true",
+                    help="CSV-Ordner nur importieren, wenn die jüngste Kerze je Datei "
+                         "frisch ist; historische Ordner ohne diese Option importieren")
+    pr.add_argument("--max-alter-stunden", type=float, default=None, metavar="STUNDEN",
+                    help="Frischegrenze für den CSV-Ordner überschreiben (impliziert --frisch)")
     pr.set_defaults(func=cmd_pruefen)
 
     sb = sub.add_parser("strategie-bericht",
@@ -697,6 +756,10 @@ def main(argv: list[str] | None = None) -> int:
     be.set_defaults(func=cmd_betrieb)
 
     k = sub.add_parser("konferenz", help="Mitternachtskonferenz jetzt abhalten")
+    k.add_argument("--frisch", action="store_true",
+                   help="CSV-Ordner nur importieren, wenn die jüngste Kerze je Datei frisch ist")
+    k.add_argument("--max-alter-stunden", type=float, default=None, metavar="STUNDEN",
+                   help="Frischegrenze für den CSV-Ordner überschreiben (impliziert --frisch)")
     k.set_defaults(func=cmd_konferenz)
 
     st = sub.add_parser("status", help="Zustand aus der Fakten-Datenbank")

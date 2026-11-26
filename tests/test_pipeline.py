@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from orakel.config import RisikoGrenzen
@@ -23,6 +24,15 @@ def _als_mt5(df) -> str:
     return "".join(zeilen)
 
 
+def _frische_m15(symbol: str = "EURUSD", kerzen: int = 1300,
+                 alter_stunden: float = 1.0):
+    """M15-Reihe, deren jüngste Kerze ``alter_stunden`` alt ist."""
+    ende = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=alter_stunden)
+    start = ende - pd.Timedelta(minutes=15 * (kerzen - 1))
+    return synthetische_kerzen(symbol, kerzen=kerzen, seed=17,
+                               start=start.isoformat())
+
+
 def test_agenten_kontext_enthaelt_schema_2_bericht(cfg, monkeypatch, tmp_path):
     from orakel import pipeline
 
@@ -34,7 +44,8 @@ def test_agenten_kontext_enthaelt_schema_2_bericht(cfg, monkeypatch, tmp_path):
 
     monkeypatch.setattr(pipeline, "load_config", lambda pfad="config.toml": cfg)
     monkeypatch.setattr(pipeline, "sicherstellen_daten",
-                        lambda cfg, db, quelle=None: (["EURUSD"], "synthetisch"))
+                        lambda cfg, db, quelle=None, **_kwargs:
+                        (["EURUSD"], "synthetisch"))
     monkeypatch.setattr(pipeline.agenten, "lauf", merke)
 
     pipeline.lauf(bericht_pfad=str(tmp_path / "dashboard.json"),
@@ -278,6 +289,183 @@ def test_nur_nicht_m15_dateien_brechen_ab_statt_synthetisch(cfg):
     assert db.symbole() == []
     assert db.kerzen("EURUSD", "M15") == []
     assert any("EURUSD_M1.csv" in zeile["text"] for zeile in db.ereignisse())
+
+
+def test_ordner_import_ist_idempotent_mit_pruefsumme(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    (ordner / "EURUSD_M15.csv").write_text(
+        _als_mt5(_frische_m15()), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    assert sicherstellen_daten(cfg, db) == (["EURUSD"], "csv")
+    assert len(db.datenimporte()) == 1
+    assert len(db.kerzen("EURUSD", "M15")) == 1300
+
+    assert sicherstellen_daten(cfg, db) == (["EURUSD"], "csv")
+    assert len(db.datenimporte()) == 1
+    assert len(db.kerzen("EURUSD", "M15")) == 1300
+    assert sum("EURUSD_M15.csv: 1300 Kerzen importiert" in zeile["text"]
+               for zeile in db.ereignisse()) == 1
+
+
+def test_ordner_import_erkennt_geaenderte_pruefsumme(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    df = _frische_m15()
+    datei = ordner / "EURUSD_M15.csv"
+    datei.write_text(_als_mt5(df), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    assert sicherstellen_daten(cfg, db) == (["EURUSD"], "csv")
+    df.loc[10, "volume"] += 1
+    datei.write_text(_als_mt5(df), encoding="utf-8")
+
+    assert sicherstellen_daten(cfg, db) == (["EURUSD"], "csv")
+    assert len(db.datenimporte()) == 2
+    assert len(db.kerzen("EURUSD", "M15")) == 1300
+
+
+def test_direkter_und_ordner_import_teilen_die_pruefsumme(cfg, capsys):
+    import argparse
+
+    from orakel.__main__ import _importiere_csv
+
+    cfg._d["basis"]["datenquelle"] = "csv"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    datei = ordner / "EURUSD_M15.csv"
+    datei.write_text(_als_mt5(_frische_m15()), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    assert sicherstellen_daten(cfg, db) == (["EURUSD"], "csv")
+    assert len(db.datenimporte()) == 1
+
+    args = argparse.Namespace(
+        csv=[str(datei)], symbol=None, zeitrahmen=None,
+        server_zeitzone=None, server_versatz=None,
+        server_versatz_stunden=None, frisch=False, max_alter_stunden=None)
+    assert _importiere_csv(cfg, db, args) == 0
+
+    assert len(db.datenimporte()) == 1
+    assert "bereits importiert" in capsys.readouterr().out
+
+
+def test_ordner_import_frische_gate_lehnt_alte_datei_ab(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    alt = synthetische_kerzen("EURUSD", kerzen=1300, seed=17, start="2024-01-01")
+    (ordner / "EURUSD_M15.csv").write_text(_als_mt5(alt), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    with pytest.raises(DatenFehler, match="Daten veraltet"):
+        sicherstellen_daten(cfg, db, frisch=True)
+
+    assert db.kerzen("EURUSD", "M15") == []
+    assert db.datenimporte() == []
+    assert db.zustand("datenquelle") is None
+
+
+def test_ordner_gate_nutzt_zusammengefuehrte_reihe_trotz_altem_duplikat(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    alt = synthetische_kerzen("EURUSD", kerzen=1300, seed=19, start="2024-01-01")
+    alt_datei = ordner / "EURUSD_M15_2024.csv"
+    alt_datei.write_text(_als_mt5(alt), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    # Der alte Block ist bereits importiert und steht als Duplikat im Ordner.
+    assert sicherstellen_daten(cfg, db) == (["EURUSD"], "csv")
+    assert len(db.datenimporte()) == 1
+    assert len(db.kerzen("EURUSD", "M15")) == 1300
+
+    frisch = _frische_m15("EURUSD")
+    (ordner / "EURUSD_M15_2025.csv").write_text(_als_mt5(frisch), encoding="utf-8")
+
+    # Die frische Datei muss trotz des alten Duplikats importiert werden; das
+    # Gate entscheidet über die zusammengeführte Reihe, nicht über den Altblock.
+    assert sicherstellen_daten(cfg, db, frisch=True) == (["EURUSD"], "csv")
+    assert len(db.datenimporte()) == 2
+    assert len(db.kerzen("EURUSD", "M15")) == 2600
+    assert (db.juengste_kerze("EURUSD", "M15")[:19]
+            == str(frisch["ts"].iloc[-1])[:19])
+
+
+def test_ordner_import_gate_rollt_alle_dateien_gemeinsam_zurueck(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    (ordner / "EURUSD_M15.csv").write_text(
+        _als_mt5(_frische_m15("EURUSD")), encoding="utf-8")
+    alt = synthetische_kerzen("US500", kerzen=1300, seed=18, start="2024-01-01")
+    (ordner / "US500_M15.csv").write_text(_als_mt5(alt), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    with pytest.raises(DatenFehler, match="Daten veraltet"):
+        sicherstellen_daten(cfg, db, frisch=True)
+
+    assert db.symbole() == []
+    assert db.kerzen("EURUSD", "M15") == []
+    assert db.kerzen("US500", "M15") == []
+    assert db.datenimporte() == []
+    assert db.zustand("datenquelle") is None
+
+
+def test_ordner_import_max_alter_stunden_ueberschreibt_grenze(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    (ordner / "EURUSD_M15.csv").write_text(
+        _als_mt5(_frische_m15(alter_stunden=1.0)), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    with pytest.raises(DatenFehler, match="Daten veraltet"):
+        sicherstellen_daten(cfg, db, max_alter_stunden=0.5)
+
+    assert db.kerzen("EURUSD", "M15") == []
+    assert db.datenimporte() == []
+
+
+def test_ordner_warnung_nutzt_die_frischegrenze_aus_der_option(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    ende = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=100)
+    start = ende - pd.Timedelta(minutes=15 * 1299)
+    alt = synthetische_kerzen("EURUSD", kerzen=1300, seed=21,
+                              start=start.isoformat())
+    (ordner / "EURUSD_M15.csv").write_text(_als_mt5(alt), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    # Die Konfiguration erlaubt nur vier Stunden; die Option hebt die Grenze
+    # bewusst an. Dann darf auch die Warnung nach dem Import nicht anschlagen.
+    assert sicherstellen_daten(cfg, db, max_alter_stunden=1000) == (
+        ["EURUSD"], "csv")
+    assert not any("jüngste Kerze" in zeile["text"] for zeile in db.ereignisse())
+
+
+def test_pruefen_gibt_frischeoptionen_an_die_pipeline(monkeypatch):
+    from orakel import __main__ as cli
+
+    gesehen: dict[str, object] = {}
+
+    def fake_pipeline(**kwargs):
+        gesehen.update(kwargs)
+        return {"modus": "backtest", "datenquelle": "csv",
+                "validierungen": [], "auswahl": [], "plan": [],
+                "dauer_sekunden": 0}
+
+    monkeypatch.setattr(cli, "_cfg", lambda _pfad: object())
+    monkeypatch.setattr(cli, "_schema_pruefen", lambda _cfg: None)
+    monkeypatch.setattr(cli, "_pipeline_lauf", fake_pipeline)
+
+    assert cli.main(["pruefen", "--frisch", "--max-alter-stunden", "6"]) == 0
+    assert gesehen["frisch"] is True
+    assert gesehen["max_alter_stunden"] == 6.0
 
 
 @pytest.mark.parametrize("befehl", ["cmd_pruefen", "cmd_konferenz"])

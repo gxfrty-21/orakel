@@ -561,8 +561,13 @@ def frische_grenze_stunden(daten_cfg: dict[str, Any] | None, timeframe: str) -> 
 
 
 def frische_kennzahl(juengste: Any, daten_cfg: dict[str, Any] | None,
-                     timeframe: str, jetzt: datetime | None = None) -> dict[str, Any] | None:
-    """Alter der jüngsten Kerze und die passende Grenze als Kennzahl."""
+                     timeframe: str, jetzt: datetime | None = None,
+                     max_alter_stunden: float | None = None) -> dict[str, Any] | None:
+    """Alter der jüngsten Kerze und die passende Grenze als Kennzahl.
+
+    ``max_alter_stunden`` überschreibt die Grenze aus der Konfiguration; der
+    Import nutzt das für ``--max-alter-stunden``.
+    """
     try:
         ts = pd.Timestamp(juengste)
         if pd.isna(ts):
@@ -574,7 +579,8 @@ def frische_kennzahl(juengste: Any, daten_cfg: dict[str, Any] | None,
         alter = max(0.0, (jetzt_ts - ts).total_seconds() / 3600.0)
     except (TypeError, ValueError, OverflowError):
         return None
-    grenze = frische_grenze_stunden(daten_cfg, timeframe)
+    grenze = (float(max_alter_stunden) if max_alter_stunden is not None
+              else frische_grenze_stunden(daten_cfg, timeframe))
     return {
         "juengste": str(juengste),
         "alter_stunden": round(alter, 2),
