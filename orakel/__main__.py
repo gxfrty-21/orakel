@@ -242,6 +242,30 @@ def cmd_daten(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_transport_bootstrap(args: argparse.Namespace) -> int:
+    """Setzt den Bootstrap-Marker nach dem kontrollierten CLI-Import."""
+    from . import transport
+
+    cfg = _cfg(args.config)
+    if (code := _schema_pruefen(cfg)) is not None:
+        return code
+    db = Facts(cfg.db_pfad)
+    fehler = 0
+    for symbol in args.symbol:
+        try:
+            marker = transport.bootstrap_freigeben(
+                db, cfg, symbol, args.zeitrahmen, quelle="cli")
+        except ValueError as exc:
+            print(f"FEHLER {symbol} {args.zeitrahmen}: {exc}", file=sys.stderr)
+            fehler += 1
+            continue
+        print(
+            f"Bootstrap-Marker gesetzt: {marker['symbol']} {marker['zeitrahmen']}, "
+            f"{marker['kerzen']} Kerzen von {marker['von']} bis {marker['bis']}",
+        )
+    return 1 if fehler else 0
+
+
 def cmd_pruefen(args: argparse.Namespace) -> int:
     if (code := _schema_pruefen(_cfg(args.config))) is not None:
         return code
@@ -697,6 +721,16 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--max-alter-stunden", type=float, default=None, metavar="STUNDEN",
                    help="Frischegrenze überschreiben (impliziert --frisch)")
     d.set_defaults(func=cmd_daten)
+
+    tb = sub.add_parser(
+        "transport-bootstrap",
+        help="Bootstrap-Marker für den HTTPS-Transport nach dem CLI-Import setzen",
+    )
+    tb.add_argument("--symbol", nargs="+", required=True,
+                    help="ein oder mehrere bereits importierte Symbole")
+    tb.add_argument("--zeitrahmen", choices=ZEITRAHMEN, default="M15",
+                    help="Zeitrahmen der bereits importierten Reihe (Standard: M15)")
+    tb.set_defaults(func=cmd_transport_bootstrap)
 
     pr = sub.add_parser("pruefen", help="Vollständigen Lauf ausführen (Research, Richter, Plan)")
     pr.add_argument("--modus", default="backtest", choices=["backtest", "paper", "simulation"])

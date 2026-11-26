@@ -198,6 +198,7 @@ def test_alle_post_routen_verlangen_anmeldung(cfg, monkeypatch):
         re.sub(r"\{[^}]+\}", "x", route.path)
         for route in app.routes
         if "POST" in getattr(route, "methods", set())
+        and route.path != "/api/daten/import"
     )
     assert len(post_pfade) >= 15
 

@@ -225,19 +225,31 @@ class Facts:
             ).fetchone() is not None
 
     def kerzen_bloecke(self, symbol: str, zeitrahmen: str,
-                       groesse: int = 200_000) -> Iterator[list[sqlite3.Row]]:
+                       groesse: int = 200_000, *,
+                       c: sqlite3.Connection | None = None) -> Iterator[list[sqlite3.Row]]:
         """Liefert die Kerzen blockweise; für Millionen Zeilen schonender als ``kerzen``."""
-        with self.conn() as c:
-            cursor = c.execute(
-                "SELECT ts,open,high,low,close,volume FROM kerzen"
-                " WHERE symbol=? AND zeitrahmen=? ORDER BY ts",
-                (symbol, zeitrahmen),
-            )
-            while True:
-                block = cursor.fetchmany(groesse)
-                if not block:
-                    return
-                yield block
+        if c is not None:
+            yield from self._kerzen_lese_bloecke_auf_verbindung(
+                c, symbol, zeitrahmen, groesse)
+            return
+        with self.conn() as verbindung:
+            yield from self._kerzen_lese_bloecke_auf_verbindung(
+                verbindung, symbol, zeitrahmen, groesse)
+
+    @staticmethod
+    def _kerzen_lese_bloecke_auf_verbindung(
+        c: sqlite3.Connection, symbol: str, zeitrahmen: str, groesse: int,
+    ) -> Iterator[list[sqlite3.Row]]:
+        cursor = c.execute(
+            "SELECT ts,open,high,low,close,volume FROM kerzen"
+            " WHERE symbol=? AND zeitrahmen=? ORDER BY ts",
+            (symbol, zeitrahmen),
+        )
+        while True:
+            block = cursor.fetchmany(groesse)
+            if not block:
+                return
+            yield block
 
     def symbole(self) -> list[str]:
         with self.conn() as c:
@@ -301,6 +313,62 @@ class Facts:
         """Alle gebuchten CSV-Importe, älteste zuerst (für Prüfung und Anzeige)."""
         with self.conn() as c:
             return list(c.execute("SELECT * FROM datenimporte ORDER BY id"))
+
+    def datenimport_vorhanden(self, symbol: str, zeitrahmen: str, *,
+                              c: sqlite3.Connection | None = None) -> bool:
+        """Kennt der Ledger diese Reihe bereits, auch ohne aktuelle Kerzen?"""
+        sql = "SELECT 1 FROM datenimporte WHERE symbol=? AND zeitrahmen=? LIMIT 1"
+        werte = (symbol, zeitrahmen)
+        if c is not None:
+            return c.execute(sql, werte).fetchone() is not None
+        with self.conn() as verbindung:
+            return verbindung.execute(sql, werte).fetchone() is not None
+
+    def datenimport_entfernen(self, import_id: int, *,
+                              c: sqlite3.Connection | None = None) -> None:
+        """Entfernt eine nicht mehr durch Kerzen gedeckte Ledger-Buchung.
+
+        Nur die Reconciliation verwendet das: Der anschliessende Import legt
+        dieselbe Quelle neu an. Innerhalb der Importtransaktion ist der Effekt
+        bei einem Fehler automatisch zurückgerollt.
+        """
+        if c is not None:
+            c.execute("DELETE FROM datenimporte WHERE id=?", (int(import_id),))
+            return
+        with self.conn() as verbindung:
+            verbindung.execute("DELETE FROM datenimporte WHERE id=?", (int(import_id),))
+
+    def kerzen_abgedeckt(self, symbol: str, zeitrahmen: str, *,
+                         mindest: int, bis: str, von: str = "",
+                         c: sqlite3.Connection | None = None) -> bool:
+        """Prüft, ob eine Ledger-Buchung noch durch die Zielreihe gedeckt ist.
+
+        Der Ledger kann nach einem Teil-Restore vorhanden sein, während Kerzen
+        fehlen. Mit ``von``/``bis`` wird der Buchungsbereich gezählt, ohne
+        ``von`` die gesamte Reihe (Bootstrap-Marker). Der gespeicherte
+        Endzeitpunkt muss vorhanden sein und die Zahl der Kerzen mindestens der
+        Buchung entsprechen. Das ist bewusst eine Plausibilitätsprüfung, kein
+        Beweis für jede einzelne Kerze: Überlappende Importe dürfen die Zahl
+        erhöhen.
+        """
+        if int(mindest) <= 0 or not str(bis or ""):
+            return False
+        sql = ("SELECT COUNT(*), MAX(ts) FROM kerzen"
+               " WHERE symbol=? AND zeitrahmen=?")
+        werte: list[Any] = [symbol, zeitrahmen]
+        if str(von or ""):
+            sql += " AND ts BETWEEN ? AND ?"
+            werte.extend([str(von), str(bis)])
+        if c is not None:
+            zeile = c.execute(sql, tuple(werte)).fetchone()
+        else:
+            with self.conn() as verbindung:
+                zeile = verbindung.execute(sql, tuple(werte)).fetchone()
+        if zeile is None:
+            return False
+        anzahl = int(zeile[0] or 0)
+        juengste = zeile[1]
+        return anzahl >= int(mindest) and juengste is not None and str(juengste) >= str(bis)
 
     # ---------- Validierungen ----------
     def validierung_speichern(
