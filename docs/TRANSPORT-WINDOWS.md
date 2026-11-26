@@ -248,7 +248,8 @@ Get-Content "$env:LOCALAPPDATA\Orakel\Transport\logs\transport.jsonl" -Tail 50
 - Die automatisierte Prüfung deckt den Client mit Fake-MT5 und injiziertem
   HTTP-Transport ab. Ein echter Lauf mit dem Broker-Terminal, Task Scheduler
   nach Reboot, Netzwerkausfall und ein vollständiger Bootstrap-Zyklus bleiben
-  eine manuelle Windows-Abnahme.
+  eine manuelle Windows-Abnahme. Verfahren und Abbruchkriterien stehen in der
+  [Abnahme-Checkliste für PR #302](ABNAHME-PR-302.md).
 - Ein verpasster Tag kann nach Ablauf der Frischegrenze nicht als neuer
   Delta-Upload nachgeholt werden. Exakt gebuchte Altblöcke nur im Rahmen der
   serverseitigen Ledger-Reparatur wieder einspielen.
