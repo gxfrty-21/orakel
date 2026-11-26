@@ -56,6 +56,52 @@ def test_b_agenten_erhalten_ihren_fachhandler():
     assert gefunden == erwartet
 
 
+def test_h_agenten_erhalten_ihren_eigenen_handler():
+    from orakel.agents import ROSTER, _handler_fuer
+
+    erwartet = {
+        "H2": "konfiguration", "H5": "performance", "H7": "fehler",
+        "H8": "version", "H10": "regression",
+    }
+    gefunden = {kennung: _handler_fuer(kennung, aufgabe)
+                for kennung, _, _, aufgabe in ROSTER if kennung in erwartet}
+    assert gefunden == erwartet
+
+
+def test_h_handler_pruefen_ihre_eigene_aufgabe(cfg):
+    from orakel import SCHEMA, __version__
+    from orakel.agents import _hdl_fehler, _hdl_performance, _hdl_regression, _hdl_version
+
+    db = _db(cfg)
+    ctx = {"cfg": cfg, "db": db}
+
+    assert _hdl_performance(ctx) == (False, "keine Laufzeit gemessen")
+    db.zustand_setzen("letzter_lauf", {"dauer": 12.5})
+    assert _hdl_performance(ctx) == (True, "letzter Lauf 12.50 s")
+
+    assert _hdl_fehler(ctx) == (False, "keine Ereignisse protokolliert")
+    db.ereignis("info", "Test", "gestartet")
+    db.ereignis("fehler", "Test", "kaputt")
+    assert _hdl_fehler(ctx) == (True, "Fehler: 1, Ereignisse: 2")
+
+    assert _hdl_version(ctx) == (True, f"Version {__version__}, Schema {SCHEMA}")
+
+    assert _hdl_regression(ctx) == (False, "keine zwei Läufe zum Vergleich")
+    db.agenten_lauf("H10:Test", "H", "Test", "gleich", True)
+    db.agenten_lauf("H10:Test", "H", "Test", "gleich", True)
+    assert _hdl_regression(ctx) == (True, "1 von 1 Agenten unverändert")
+    db.agenten_lauf("H10:Test", "H", "Test", "anders", True)
+    assert _hdl_regression(ctx) == (True, "0 von 1 Agenten unverändert")
+
+
+def test_import_handler_laedt_aktuelle_kernmodule():
+    from orakel.agents import _hdl_import
+
+    ok, ergebnis = _hdl_import({})
+    assert ok, ergebnis
+    assert ergebnis == "5 Kernmodule ladbar"
+
+
 def test_schiff_zahlen_nennen_elf_cluster_und_103_agenten(cfg):
     _, store = _store(cfg)
 
