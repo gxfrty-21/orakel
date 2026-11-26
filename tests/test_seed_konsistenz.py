@@ -2,7 +2,8 @@
 
 Geprüft wird, dass die gespeicherten Verweise in sich stimmen: Zeiger auf
 Konferenzen, Auswahl und Trades auf Validierungen und der jüngste
-Laufabschluss auf die Zeilen des letzten Laufs.
+Laufabschluss auf die Zeilen des letzten Laufs. Ausserdem darf der Seed als
+Ein-Lauf-Stand keine Zeilen älterer Läufe mehr enthalten.
 
 Ohne ``ORAKEL_SEED`` prüft der Test ``seed/orakel-seed.db``; ein Pfad in der
 Umgebungsvariablen richtet ihn auf eine Kopie oder einen neu gebauten Seed.
@@ -111,3 +112,37 @@ def test_neuester_laufabschluss_passt_zu_den_zeilen(db: sqlite3.Connection) -> N
         "Laufabschluss nennt andere Prüfungen als der letzte Lauf gespeichert hat"
     assert int(abschluss.group(2)) == auswahl, \
         "Laufabschluss nennt eine andere Auswahl als gespeichert ist"
+
+
+def test_seed_enthaelt_keine_zeilen_aelterer_laeufe(db: sqlite3.Connection) -> None:
+    """Der Seed ist ein Ein-Lauf-Stand; ältere Zeilen dürfen nicht übrig sein."""
+    lauf = _zustand(db, "letzter_lauf_id")
+    assert lauf, "letzter_lauf_id fehlt"
+    grenze = _moment(lauf)
+
+    alt: dict[str, list[tuple[int, str]]] = {}
+    for tabelle, spalte in (
+        ("ereignisse", "zeit"), ("konferenzen", "zeit"),
+        ("agenten_laeufe", "zeit"), ("konto", "zeit"),
+        ("artikel", "geholt"), ("intel_auftraege", "zeit"),
+        ("intel_inhalte", "analysiert"), ("intel_quellen", "analysiert"),
+    ):
+        zeilen = [tuple(zeile) for zeile in db.execute(
+            f'SELECT rowid, "{spalte}" FROM "{tabelle}"')  # noqa: S608
+            if zeile[1] is not None and _moment(zeile[1]) < grenze]
+        if zeilen:
+            alt[tabelle] = zeilen
+    assert not alt, f"Zeilen älterer Läufe: {alt}"
+
+    fremde_laeufe = db.execute(
+        "SELECT COUNT(*) FROM validierungen WHERE lauf != ?", (lauf,)).fetchone()[0]
+    assert fremde_laeufe == 0, \
+        f"{fremde_laeufe} Validierungen stammen aus einem älteren Lauf"
+    fremde_trades = db.execute(
+        "SELECT COUNT(*) FROM trades t JOIN validierungen v ON v.id = t.validierung_id"
+        " WHERE v.lauf != ?", (lauf,)).fetchone()[0]
+    assert fremde_trades == 0, f"{fremde_trades} Trades stammen aus einem älteren Lauf"
+
+    tick = _zustand(db, "paper_letzter_tick")
+    if tick is not None:
+        assert _moment(tick) >= grenze, "Paper-Tick stammt aus einem älteren Lauf"

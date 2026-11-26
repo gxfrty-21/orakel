@@ -14,6 +14,7 @@ from orakel.seed import (
     STATUS_SEED_KAPUTT,
     STATUS_VORHANDEN,
     STATUS_ZIEL_KAPUTT,
+    ein_lauf_stand,
     kern_zahlen,
     main,
     seed_importieren,
@@ -281,6 +282,138 @@ def test_deduplizieren_laesst_ereignisse_und_konferenzen_stehen(tmp_path: Path) 
             "SELECT id,zeit,protokoll FROM konferenzen ORDER BY id").fetchall() \
             == vorher_konferenzen
         assert c.execute("SELECT COUNT(*) FROM validierungen").fetchone()[0] == 1
+
+
+def _historie(pfad: Path) -> None:
+    """Zwei Läufe: alter Bestand und die Zeilen des letzten Laufs."""
+    alt = "2026-11-08T15:18:00+00:00"
+    neu = "2026-11-26T07:40:00+01:00"
+    with sqlite3.connect(pfad) as c:
+        c.executescript(
+            """
+            CREATE TABLE zustand (schluessel TEXT PRIMARY KEY, wert TEXT NOT NULL);
+            CREATE TABLE ereignisse (id INTEGER PRIMARY KEY, zeit TEXT NOT NULL);
+            CREATE TABLE konferenzen (id INTEGER PRIMARY KEY, zeit TEXT NOT NULL);
+            CREATE TABLE agenten_laeufe (id INTEGER PRIMARY KEY, zeit TEXT NOT NULL);
+            CREATE TABLE konto (id INTEGER PRIMARY KEY, zeit TEXT NOT NULL);
+            CREATE TABLE artikel (id INTEGER PRIMARY KEY, geholt TEXT NOT NULL);
+            CREATE TABLE intel_inhalte (artikel_id INTEGER, analysiert TEXT NOT NULL);
+            CREATE TABLE intel_quellen (quelle TEXT, artikel INTEGER NOT NULL);
+            CREATE TABLE intel_auftraege (id INTEGER PRIMARY KEY, zeit TEXT NOT NULL);
+            """
+        )
+        c.executemany("INSERT INTO ereignisse(zeit) VALUES (?)", [(alt,), (alt,), (neu,)])
+        c.execute("INSERT INTO konferenzen(zeit) VALUES (?)", (alt,))
+        c.executemany("INSERT INTO agenten_laeufe(zeit) VALUES (?)",
+                      [(alt,), (alt,), (alt,), (neu,), (neu,)])
+        c.execute("INSERT INTO konto(zeit) VALUES (?)", (alt,))
+        c.executemany("INSERT INTO artikel(geholt) VALUES (?)", [(alt,), (alt,)])
+        c.executemany("INSERT INTO intel_inhalte(artikel_id, analysiert) VALUES (?,?)",
+                      [(1, alt), (2, alt)])
+        c.execute("INSERT INTO intel_quellen(quelle, artikel) VALUES (?,?)", ("SEC", 1))
+        c.executemany("INSERT INTO intel_auftraege(zeit) VALUES (?)", [(alt,), (neu,)])
+        c.executemany("INSERT INTO zustand(schluessel, wert) VALUES (?,?)", [
+            ("letzter_lauf_id", '"2026-11-26T07:28:54+01:00"'),
+            ("datenquelle", '"synthetisch"'),
+            ("paper_letzter_tick", f'"{alt}"'),
+            ("paper_konto", '{"datum": "2026-11-08"}'),
+            ("letzte_konferenz", f'"{alt}"'),
+            ("spider_letzter_lauf", "{}"),
+        ])
+
+
+def test_ein_lauf_stand_entfernt_zeilen_aelterer_laeufe(tmp_path: Path) -> None:
+    pfad = tmp_path / "orakel.db"
+    _historie(pfad)
+
+    ergebnis = ein_lauf_stand(pfad, log=_ruhig)
+
+    assert ergebnis == {"ereignisse": 2, "konferenzen": 1, "agenten_laeufe": 3,
+                        "konto": 1, "artikel": 2, "intel_inhalte": 2,
+                        "intel_quellen": 1, "intel_auftraege": 1, "zustand": 4}
+    with sqlite3.connect(pfad) as c:
+        assert c.execute("SELECT COUNT(*) FROM ereignisse").fetchone()[0] == 1
+        assert c.execute("SELECT COUNT(*) FROM konferenzen").fetchone()[0] == 0
+        assert c.execute("SELECT COUNT(*) FROM agenten_laeufe").fetchone()[0] == 2
+        assert c.execute("SELECT COUNT(*) FROM konto").fetchone()[0] == 0
+        assert c.execute("SELECT COUNT(*) FROM artikel").fetchone()[0] == 0
+        assert c.execute("SELECT COUNT(*) FROM intel_inhalte").fetchone()[0] == 0
+        assert c.execute("SELECT COUNT(*) FROM intel_quellen").fetchone()[0] == 0
+        assert c.execute("SELECT COUNT(*) FROM intel_auftraege").fetchone()[0] == 1
+        assert {r[0] for r in c.execute("SELECT schluessel FROM zustand")} == {
+            "letzter_lauf_id", "datenquelle"}
+
+
+def test_ein_lauf_stand_behaelt_zeilen_des_letzten_laufs(tmp_path: Path) -> None:
+    """Die Gegenprobe: Was zum letzten Lauf gehört, bleibt samt Zeigern stehen."""
+    pfad = tmp_path / "orakel.db"
+    _historie(pfad)
+    neu = "2026-11-26T07:40:00+01:00"
+    with sqlite3.connect(pfad) as c:
+        c.execute("INSERT INTO ereignisse(zeit) VALUES (?)", ("2026-11-26T07:28:54+01:00",))
+        c.execute("INSERT INTO konferenzen(zeit) VALUES (?)", (neu,))
+        c.execute("INSERT INTO konto(zeit) VALUES (?)", (neu,))
+        c.execute("INSERT INTO artikel(geholt) VALUES (?)", (neu,))
+        c.execute("INSERT INTO intel_inhalte(artikel_id, analysiert) VALUES (?,?)", (3, neu))
+        c.execute("INSERT INTO intel_quellen(quelle, artikel) VALUES (?,?)", ("NEU", 3))
+        c.execute("UPDATE zustand SET wert=? WHERE schluessel='letzte_konferenz'",
+                  (f'"{neu}"',))
+        c.execute("UPDATE zustand SET wert=? WHERE schluessel='paper_letzter_tick'",
+                  (f'"{neu}"',))
+        c.execute("UPDATE zustand SET wert=? WHERE schluessel='paper_konto'",
+                  ('{"datum": "2026-11-26"}',))
+
+    ergebnis = ein_lauf_stand(pfad, log=_ruhig)
+
+    assert ergebnis == {"ereignisse": 2, "konferenzen": 1, "agenten_laeufe": 3,
+                        "konto": 1, "artikel": 2, "intel_inhalte": 2,
+                        "intel_quellen": 0, "intel_auftraege": 1, "zustand": 0}
+    with sqlite3.connect(pfad) as c:
+        # Die Grenze selbst gehört noch zum letzten Lauf, nur Älteres fällt weg.
+        assert {r[0] for r in c.execute("SELECT zeit FROM ereignisse")} == {
+            "2026-11-26T07:28:54+01:00", neu}
+        assert c.execute("SELECT zeit FROM konferenzen").fetchall() == [(neu,)]
+        assert c.execute("SELECT zeit FROM konto").fetchall() == [(neu,)]
+        assert c.execute("SELECT geholt FROM artikel").fetchall() == [(neu,)]
+        assert c.execute("SELECT artikel_id FROM intel_inhalte").fetchall() == [(3,)]
+        assert "NEU" in {r[0] for r in c.execute("SELECT quelle FROM intel_quellen")}
+        zustand = dict(c.execute("SELECT schluessel, wert FROM zustand"))
+        assert zustand["letzte_konferenz"] == f'"{neu}"'
+        assert zustand["paper_letzter_tick"] == f'"{neu}"'
+        assert zustand["paper_konto"] == '{"datum": "2026-11-26"}'
+        assert "spider_letzter_lauf" in zustand
+
+
+def test_ein_lauf_stand_ist_wiederholbar(tmp_path: Path) -> None:
+    pfad = tmp_path / "orakel.db"
+    _historie(pfad)
+    ein_lauf_stand(pfad, log=_ruhig)
+
+    ergebnis = ein_lauf_stand(pfad, log=_ruhig)
+
+    assert not any(ergebnis.values())
+
+
+def test_ein_lauf_stand_probelauf_aendert_nichts(tmp_path: Path) -> None:
+    pfad = tmp_path / "orakel.db"
+    _historie(pfad)
+    vorher = _hash(pfad)
+
+    ergebnis = ein_lauf_stand(pfad, probelauf=True, log=_ruhig)
+
+    assert ergebnis["ereignisse"] == 2
+    assert ergebnis["zustand"] == 4
+    assert _hash(pfad) == vorher
+
+
+def test_ein_lauf_stand_als_befehl(tmp_path: Path) -> None:
+    pfad = tmp_path / "orakel.db"
+    _historie(pfad)
+
+    assert main(["--db", str(pfad), "--ein-lauf", "--probelauf"]) == 0
+    assert main(["--db", str(pfad), "--ein-lauf"]) == 0
+    with sqlite3.connect(pfad) as c:
+        assert c.execute("SELECT COUNT(*) FROM ereignisse").fetchone()[0] == 1
 
 
 def test_deduplizieren_als_befehl(tmp_path: Path) -> None:
