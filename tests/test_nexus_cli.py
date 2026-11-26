@@ -35,7 +35,9 @@ def test_orakel_config_nennt_die_konfiguration_im_container(monkeypatch):
     monkeypatch.setenv("ORAKEL_CONFIG", "/app/config.toml")
     monkeypatch.setattr(cli, "load_config", laden)
 
-    assert cli._db_pfad(None) == "/data/orakel.db"
+    # In der Konfiguration steht ein POSIX-Pfad (Container); ``str(Path(...))``
+    # liefert unter Windows die dort gültige Schreibweise.
+    assert cli._db_pfad(None) == str(Path("/data/orakel.db"))
     assert gelesen == ["/app/config.toml"]
 
 

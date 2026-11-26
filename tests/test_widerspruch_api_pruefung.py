@@ -58,7 +58,10 @@ def _pruefe(status: dict[str, Any], tmp_path: Path) -> subprocess.CompletedProce
     return subprocess.run(  # noqa: S603 - Programmaufruf mit fester Argumentliste, ohne Shell
         [_node(), str(MODUL), "--status", str(datei)],
         capture_output=True,
+        # Node schreibt UTF-8; ohne feste Kodierung dekodiert Windows mit cp1252
+        # und macht aus «×» ein Ersatzzeichen.
         text=True,
+        encoding="utf-8",
         cwd=WURZEL,
         check=False,
     )

@@ -62,7 +62,7 @@ def _api(tmp_path: Path, *, seed: bool) -> Iterator[str]:
     if seed:
         lauf = subprocess.run(  # noqa: S603 - fester Aufruf ohne Shell
             [sys.executable, str(SEED_SKRIPT), str(db)],
-            capture_output=True, text=True, cwd=WURZEL, check=False,
+            capture_output=True, text=True, encoding="utf-8", cwd=WURZEL, check=False,
         )
         assert lauf.returncode == 0, lauf.stderr
 
@@ -102,9 +102,11 @@ def _api(tmp_path: Path, *, seed: bool) -> Iterator[str]:
 
 
 def _pruefe(url: str, modul: Path = MODUL) -> subprocess.CompletedProcess[str]:
+    # Node schreibt UTF-8; ohne feste Kodierung dekodiert Windows mit cp1252
+    # und macht aus Umlauten und «×» Ersatzzeichen.
     return subprocess.run(  # noqa: S603 - fester Programmaufruf ohne Shell
         [_node(), str(modul), "--url", url],
-        capture_output=True, text=True, cwd=WURZEL, check=False,
+        capture_output=True, text=True, encoding="utf-8", cwd=WURZEL, check=False,
     )
 
 

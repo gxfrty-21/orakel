@@ -124,6 +124,45 @@ def test_parameterwahl_trennt_rundungsnull_von_verlust(
     assert verboten not in wahl.grund
 
 
+def test_parameterwahl_nennt_zu_wenige_trades(cfg, kerzen, monkeypatch):
+    """Ohne Parameter mit genug Trades nennt der Grund die Mindestzahl, nicht das Netto."""
+    def fake_backtest(df, signale, cfg_, grenzen, start=0, ende=None, **kwargs):
+        ende = len(df) if ende is None else int(ende)
+        erg = _ergebnis(df, int(start), ende, gut=False)
+        erg.kennzahlen["trades"] = 0
+        return erg
+
+    monkeypatch.setattr(judge, "backtest", fake_backtest)
+    strategie = strategien(cfg)["momentum"]
+    grenzen = RisikoGrenzen.aus_config(cfg)
+    mindest = int(cfg["validierung"].get("min_train_trades", 5))
+
+    wahl = judge._train_parameter(kerzen, strategie, cfg, grenzen, 0, len(kerzen))
+
+    assert wahl.parameter is None
+    assert wahl.kennzahlen is None
+    assert "Mindestzahl" in wahl.grund
+    assert str(mindest) in wahl.grund
+    assert "netto" not in wahl.grund
+
+
+def test_parameterwahl_meldet_leeres_trainingsfenster(cfg, kerzen):
+    """Ein leeres Trainingsfenster wird benannt, statt einen Parameter zu wählen.
+
+    ``train_start >= train_end`` tritt auf, wenn die Aufteilung kein
+    Trainingsfenster hergibt; der Richter darf dann weder backtesten noch
+    einen leeren Grund liefern.
+    """
+    strategie = strategien(cfg)["momentum"]
+    grenzen = RisikoGrenzen.aus_config(cfg)
+
+    wahl = judge._train_parameter(kerzen, strategie, cfg, grenzen, 0, 0)
+
+    assert wahl.parameter is None
+    assert wahl.kennzahlen is None
+    assert wahl.grund == "Im Trainingsfenster stand kein auswertbarer Zeitraum zur Verfügung"
+
+
 def test_ohne_parameter_bleibt_der_schluessel_strategieeindeutig(cfg, kerzen, monkeypatch):
     """Auch ohne gewählten Parameter ist jede Strategie über den Schlüssel trennbar."""
     cfg["validierung"]["zufallslaeufe"] = 0

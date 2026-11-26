@@ -135,8 +135,10 @@ def test_restore_probe_oeffnet_backup_immutable_und_laesst_es_unveraendert(
     probe = modul.pruefe_restore(db, sicherung)
 
     assert probe["ok"] is True
+    # ``as_uri()`` liefert auf jeder Plattform dieselbe Form wie ``_verbinde``
+    # (unter Windows ``file:///C:/...``), ``str(pfad)`` dagegen Backslashes.
     backup_aufrufe = [(datenbank, uri) for datenbank, uri in aufrufe
-                      if str(sicherung) in datenbank]
+                      if sicherung.as_uri() in datenbank]
     assert backup_aufrufe
     assert all(uri and "mode=ro" in datenbank and "immutable=1" in datenbank
                for datenbank, uri in backup_aufrufe)

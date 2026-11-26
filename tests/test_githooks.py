@@ -9,12 +9,25 @@ projektlokale Python verwendet.
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
 PROJEKT = Path(__file__).resolve().parents[1]
 HOOK = PROJEKT / ".githooks" / "pre-commit"
+# ``sh`` ist die Shell aus dem Shebang des Hooks — git startet ihn genauso.
+# ``bash`` dient nur als Rückfall, wenn kein ``sh`` im Pfad liegt (Windows).
+SHELL = shutil.which("sh") or shutil.which("bash")
+
+
+def _shell() -> str:
+    """Startet den POSIX-Hook über seine Shebang-Shell statt direkt."""
+    if SHELL is None:
+        pytest.skip("sh/bash ist nicht verfügbar — der Hook ist ein POSIX-Shellskript")
+    return SHELL
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -50,6 +63,12 @@ def _neues_repo(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     fake_python.chmod(0o755)
+    if os.name == "nt":
+        # NTFS kennt kein Ausführungsbit; Cygwin-Bash prüft die ACL und sieht
+        # die Datei erst nach einem ``chmod`` aus der Shell als ausführbar an.
+        # Feste Argumentliste, der Pfad ist gequotet — keine Shell-Injektion.
+        subprocess.run([_shell(), "-c", f"chmod 755 {shlex.quote(str(fake_python))}"],  # noqa: S603
+                       check=True, capture_output=True)
     return repo
 
 
@@ -58,18 +77,20 @@ def _hook_ausfuehren(repo: Path, cwd: Path, log: Path) -> subprocess.CompletedPr
     env["HOOK_LOG"] = str(log)
     env["HOOK_EXIT"] = "0"
     return subprocess.run(  # noqa: S603 - Programmaufruf mit fester Argumentliste, ohne Shell
-        [str(repo / ".githooks" / "pre-commit")],
+        [_shell(), str(repo / ".githooks" / "pre-commit")],
         cwd=cwd,
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
 
 
 def _aufrufe(log: Path) -> list[str]:
+    """Protokollierte Aufrufe in einer plattformneutralen Schreibweise."""
     if not log.exists():
         return []
-    return log.read_text(encoding="utf-8").splitlines()
+    return [zeile.replace(os.sep, "/") for zeile in log.read_text(encoding="utf-8").splitlines()]
 
 
 def test_hook_findet_die_repo_wurzel_aus_einem_unterordner(tmp_path: Path) -> None:
@@ -83,7 +104,7 @@ def test_hook_findet_die_repo_wurzel_aus_einem_unterordner(tmp_path: Path) -> No
     ergebnis = _hook_ausfuehren(repo, unterordner, log)
 
     assert ergebnis.returncode == 0, ergebnis.stderr
-    assert _aufrufe(log) == [str(repo / "scripts" / "pruefe_doku.py")]
+    assert _aufrufe(log) == [(repo / "scripts" / "pruefe_doku.py").as_posix()]
 
 
 def test_hook_fuehrt_bei_geaendertem_pruefskript_den_negativtest_aus(tmp_path: Path) -> None:
@@ -98,7 +119,7 @@ def test_hook_fuehrt_bei_geaendertem_pruefskript_den_negativtest_aus(tmp_path: P
 
     assert ergebnis.returncode == 0, ergebnis.stderr
     aufrufe = _aufrufe(log)
-    assert aufrufe.count(str(repo / "scripts" / "pruefe_doku.py")) == 2
+    assert aufrufe.count((repo / "scripts" / "pruefe_doku.py").as_posix()) == 2
     assert "--negativtest" in aufrufe
 
 
