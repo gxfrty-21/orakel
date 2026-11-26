@@ -135,10 +135,55 @@ def _hdl_konfiguration(ctx: dict[str, Any]) -> tuple[bool, str]:
 def _hdl_import(ctx: dict[str, Any]) -> tuple[bool, str]:
     import importlib
 
-    module = ["orakel.config", "orakel.db", "orakel.data", "orakel.backtest", "orakel.judge"]
+    module = ["orakel.config", "orakel.kern.db", "orakel.kern.data", "orakel.kern.backtest", "orakel.kern.judge"]
     for m in module:
         importlib.import_module(m)
     return True, f"{len(module)} Kernmodule ladbar"
+
+
+def _hdl_performance(ctx: dict[str, Any]) -> tuple[bool, str]:
+    db = ctx.get("db")
+    if db is None:
+        return False, "keine Datenbank im Kontext"
+    letzter = db.zustand("letzter_lauf") or {}
+    dauer = letzter.get("dauer")
+    if dauer is None:
+        return False, "keine Laufzeit gemessen"
+    return True, f"letzter Lauf {float(dauer):.2f} s"
+
+
+def _hdl_fehler(ctx: dict[str, Any]) -> tuple[bool, str]:
+    db = ctx.get("db")
+    if db is None:
+        return False, "keine Datenbank im Kontext"
+    zeilen = db.ereignisse(200)
+    if not zeilen:
+        return False, "keine Ereignisse protokolliert"
+    fehler = sum(1 for r in zeilen if r["stufe"] == "fehler")
+    return True, f"Fehler: {fehler}, Ereignisse: {len(zeilen)}"
+
+
+def _hdl_version(ctx: dict[str, Any]) -> tuple[bool, str]:
+    from . import SCHEMA, __version__
+
+    return True, f"Version {__version__}, Schema {SCHEMA}"
+
+
+def _hdl_regression(ctx: dict[str, Any]) -> tuple[bool, str]:
+    db = ctx.get("db")
+    if db is None:
+        return False, "keine Datenbank im Kontext"
+    pro_agent: dict[str, list[Any]] = {}
+    for zeile in db.agenten_laeufe(400):
+        pro_agent.setdefault(zeile["agent"], []).append(zeile)
+    paare = [zeilen[:2] for zeilen in pro_agent.values() if len(zeilen) >= 2]
+    if not paare:
+        return False, "keine zwei Läufe zum Vergleich"
+    unveraendert = sum(
+        1 for neu, alt in paare
+        if neu["ergebnis"] == alt["ergebnis"] and bool(neu["ok"]) == bool(alt["ok"])
+    )
+    return True, f"{unveraendert} von {len(paare)} Agenten unverändert"
 
 
 def _hdl_test(ctx: dict[str, Any]) -> tuple[bool, str]:
@@ -323,6 +368,10 @@ def _hdl_limits(ctx: dict[str, Any]) -> tuple[bool, str]:
 HANDLER: dict[str, Handler] = {
     "konfiguration": _hdl_konfiguration,
     "import": _hdl_import,
+    "performance": _hdl_performance,
+    "fehler": _hdl_fehler,
+    "version": _hdl_version,
+    "regression": _hdl_regression,
     "test": _hdl_test,
     "schema": _hdl_schema,
     "paper_sperre": _hdl_paper_sperre,
@@ -353,8 +402,16 @@ def _handler_fuer(kennung: str, aufgabe: str) -> str:
             return "test"
         if "schema" in text:
             return "schema"
-        if "konfiguration" in text:
+        if "config" in text or "konfiguration" in text:
             return "konfiguration"
+        if "laufzeit" in text or "performance" in text:
+            return "performance"
+        if "fehler" in text:
+            return "fehler"
+        if "version" in text:
+            return "version"
+        if "regression" in text or "vorherigen" in text:
+            return "regression"
         if "paper" in text or "schnittstelle" in text:
             return "paper_sperre"
         if "sicherheit" in text or "zugangsdaten" in text:
