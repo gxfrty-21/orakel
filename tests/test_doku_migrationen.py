@@ -9,6 +9,7 @@ nicht mehr.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -43,7 +44,11 @@ def _probe(tmp_path: Path) -> Path:
     db = tmp_path / "orakel.db"
     shutil.copyfile(SEED, db)
     config = (WURZEL / "config.toml").read_text(encoding="utf-8")
-    config, ersetzt = re.subn(r'(?m)^db_pfad = "orakel\.db"$', f'db_pfad = "{db}"', config)
+    # Ersetzung als Funktion: in einem Ersetzungsstring liest ``re`` die
+    # Backslashes eines Windows-Pfads als Escape und bricht mit
+    # «bad escape \\U» ab. ``json.dumps`` liefert den TOML-Basic-String.
+    config, ersetzt = re.subn(r'(?m)^db_pfad = "orakel\.db"$',
+                              lambda _treffer: f"db_pfad = {json.dumps(str(db))}", config)
     assert ersetzt == 1, "config.toml: db_pfad nicht eindeutig ersetzt"
     (tmp_path / "config.toml").write_text(config, encoding="utf-8")
     migrationen.anwenden(db)
