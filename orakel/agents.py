@@ -190,9 +190,20 @@ def _hdl_test(ctx: dict[str, Any]) -> tuple[bool, str]:
     import subprocess
     import sys
 
-    r = subprocess.run([sys.executable, "-m", "pytest", "-q", "--no-header", "-x"],
-                       capture_output=True, text=True, timeout=180)
-    letzte = (r.stdout.strip().splitlines() or ["keine Ausgabe"])[-1]
+    from .company.policy import CompanyPolicy
+
+    cfg = ctx.get("cfg")
+    if cfg is None:
+        return False, "keine Konfiguration im Kontext"
+    if not CompanyPolicy(cfg).allow_test_suite():
+        return False, "Test-Suite als Agenten-Subprozess ist in Phase 1 deaktiviert"
+    try:
+        r = subprocess.run([sys.executable, "-m", "pytest", "-q", "--no-header", "-x"],
+                           capture_output=True, text=True, timeout=300)
+    except subprocess.TimeoutExpired:
+        return False, "Test-Suite nach 300 s abgebrochen"
+    zeilen = r.stdout.strip().splitlines() or r.stderr.strip().splitlines()
+    letzte = zeilen[-1] if zeilen else "keine Ausgabe"
     return r.returncode == 0, letzte[:160]
 
 
@@ -402,6 +413,8 @@ def _handler_fuer(kennung: str, aufgabe: str) -> str:
             return "test"
         if "schema" in text:
             return "schema"
+        if "paper" in text or "schnittstelle" in text:
+            return "paper_sperre"
         if "config" in text or "konfiguration" in text:
             return "konfiguration"
         if "laufzeit" in text or "performance" in text:
@@ -412,8 +425,6 @@ def _handler_fuer(kennung: str, aufgabe: str) -> str:
             return "version"
         if "regression" in text or "vorherigen" in text:
             return "regression"
-        if "paper" in text or "schnittstelle" in text:
-            return "paper_sperre"
         if "sicherheit" in text or "zugangsdaten" in text:
             return "geheimnisse"
         return "import"
