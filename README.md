@@ -408,7 +408,8 @@ Der Ordner-Import nutzt dasselbe Prüfsummen-Register wie `daten --csv`: Eine
 unveränderte Datei wird beim nächsten Lauf übersprungen, eine geänderte Datei
 erhält eine neue Prüfsumme und wird wieder importiert. Mit
 `orakel pruefen --frisch` (oder `--max-alter-stunden`) gilt auch hier das
-Frische-Gate: Ist die jüngste Kerze einer Datei älter als
+Frische-Gate: Ist die jüngste Kerze der zusammengeführten Reihe je Symbol und
+Zeitrahmen älter als
 `max_kurs_alter_stunden_<tf>` bzw. `max_alter_tage`, wird der gesamte
 Ordner-Import vor dem Commit abgelehnt und zurückgerollt. Ohne `--frisch` wird
 eine Überschreitung nur als Warnung protokolliert und blockiert den Lauf nicht.

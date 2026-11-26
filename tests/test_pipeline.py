@@ -369,6 +369,32 @@ def test_ordner_import_frische_gate_lehnt_alte_datei_ab(cfg):
     assert db.zustand("datenquelle") is None
 
 
+def test_ordner_gate_nutzt_zusammengefuehrte_reihe_trotz_altem_duplikat(cfg):
+    cfg._d["basis"]["datenquelle"] = "csv"
+    ordner = cfg.daten_ordner
+    ordner.mkdir(parents=True, exist_ok=True)
+    alt = synthetische_kerzen("EURUSD", kerzen=1300, seed=19, start="2024-01-01")
+    alt_datei = ordner / "EURUSD_M15_2024.csv"
+    alt_datei.write_text(_als_mt5(alt), encoding="utf-8")
+    db = Facts(cfg.db_pfad)
+
+    # Der alte Block ist bereits importiert und steht als Duplikat im Ordner.
+    assert sicherstellen_daten(cfg, db) == (["EURUSD"], "csv")
+    assert len(db.datenimporte()) == 1
+    assert len(db.kerzen("EURUSD", "M15")) == 1300
+
+    frisch = _frische_m15("EURUSD")
+    (ordner / "EURUSD_M15_2025.csv").write_text(_als_mt5(frisch), encoding="utf-8")
+
+    # Die frische Datei muss trotz des alten Duplikats importiert werden; das
+    # Gate entscheidet über die zusammengeführte Reihe, nicht über den Altblock.
+    assert sicherstellen_daten(cfg, db, frisch=True) == (["EURUSD"], "csv")
+    assert len(db.datenimporte()) == 2
+    assert len(db.kerzen("EURUSD", "M15")) == 2600
+    assert (db.juengste_kerze("EURUSD", "M15")[:19]
+            == str(frisch["ts"].iloc[-1])[:19])
+
+
 def test_ordner_import_gate_rollt_alle_dateien_gemeinsam_zurueck(cfg):
     cfg._d["basis"]["datenquelle"] = "csv"
     ordner = cfg.daten_ordner

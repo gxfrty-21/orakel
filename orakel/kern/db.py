@@ -251,6 +251,17 @@ class Facts:
                 "GROUP BY symbol, zeitrahmen ORDER BY symbol, zeitrahmen"
             ))
 
+    def juengste_kerze(self, symbol: str, zeitrahmen: str, *,
+                       c: sqlite3.Connection | None = None) -> str | None:
+        """Jüngster Zeitstempel einer Reihe, auch innerhalb einer Transaktion."""
+        sql = "SELECT MAX(ts) FROM kerzen WHERE symbol=? AND zeitrahmen=?"
+        if c is not None:
+            zeile = c.execute(sql, (symbol, zeitrahmen)).fetchone()
+        else:
+            with self.conn() as verbindung:
+                zeile = verbindung.execute(sql, (symbol, zeitrahmen)).fetchone()
+        return None if zeile is None else zeile[0]
+
     # ---------- CSV-Importe ----------
     def datenimport_finden(
         self, sha256: str, symbol: str, zeitrahmen: str,

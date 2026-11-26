@@ -11,7 +11,9 @@ import pandas as pd
 
 from . import agents as agenten
 from .config import Config, RisikoGrenzen, load_config
-from .kern.datenimport import ImportErgebnis, ParallelerImport, importiere_datei
+from .kern.datenimport import (
+    ImportErgebnis, ParallelerImport, frische_text, importiere_datei,
+)
 from .kern.data import (
     ZEITRAHMEN_MINUTEN, df_aus_db, frische_kennzahl, pruefe_daten,
     synthetische_kerzen, zerlege_dateiname,
@@ -104,8 +106,7 @@ def sicherstellen_daten(
                             db, datei, symbol, zeitrahmen,
                             daten_cfg=cfg["daten"], zeitzone=zeitzone,
                             versatz=versatz,
-                            max_alter_stunden=max_alter_stunden,
-                            frisch=frisch, c=c)
+                            c=c)
                     except (OSError, ValueError, ParallelerImport) as exc:
                         raise DatenFehler(f"{datei.name}: {exc}") from exc
                     symbole.append(symbol)
@@ -126,6 +127,22 @@ def sicherstellen_daten(
                             f"{zeitraeume}. Es werden keine "
                             "synthetischen Kerzen erzeugt."
                         )
+                    if frisch or max_alter_stunden is not None:
+                        # Das Gate gilt für die zusammengeführte Reihe, nicht für
+                        # jede Datei: Ein alter, bereits importierter Block darf
+                        # eine frische Datei nicht blockieren.
+                        for symbol in sorted(set(symbole)):
+                            for tf in sorted(gebraucht):
+                                juengste = db.juengste_kerze(symbol, tf, c=c)
+                                if juengste is None:
+                                    continue
+                                kennzahl = frische_kennzahl(
+                                    juengste, cfg["daten"], tf,
+                                    max_alter_stunden=max_alter_stunden)
+                                if kennzahl and not kennzahl["frisch"]:
+                                    raise DatenFehler(
+                                        f"{symbol} {tf}: {frische_text(kennzahl)} — "
+                                        "Daten veraltet; Import abgelehnt.")
                     db.zustand_setzen("datenquelle", "csv", c=c)
         except DatenFehler as exc:
             db.ereignis("fehler", "Daten", str(exc))
