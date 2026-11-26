@@ -51,6 +51,33 @@ PY
 `Connection.backup` übernimmt auch noch nicht checkpointete WAL-Inhalte, die
 Datei ist danach in sich konsistent.
 
+## Doppelte Validierungen entfernen
+
+Ältere Stände enthalten dieselbe Bewertung mehrfach — ein Eintrag je
+Engine-Lauf, obwohl sich an den Kerzen nichts geändert hat. Der Befehl
+`--deduplizieren` räumt das auf: je Kombination aus Symbol, Strategie,
+Schlüssel, Urteil und Trade-Liste bleibt die jüngste Zeile, die Kopien
+verschwinden mit ihren Trades, `auswahl` wird auf die verbliebene Zeile
+umgehängt. Das Urteil gehört zur Gleichheit; eine abweichende Bewertung wird
+nie gelöscht. Der Befehl ist idempotent — ein zweiter Aufruf entfernt nichts
+mehr und meldet `0`.
+
+```bash
+# Probelauf auf der DB aus config.toml/ORAKEL_DB_PFAD: nur zeigen, was wegfiele
+python -m orakel.seed --deduplizieren --probelauf
+
+# Aufräumen und die Datei verdichten
+python -m orakel.seed --deduplizieren --vakuum
+
+# Anderer Bestand, etwa der Seed selbst
+python -m orakel.seed --db /app/seed/orakel-seed.db --deduplizieren
+```
+
+Der Befehl meldet vorher und nachher die Zahl der Validierungen, die
+entfernten Trades, umgehängte `auswahl`-Zeilen sowie `integrity_check` und
+`foreign_key_check`. `--probelauf` und `--vakuum` gelten nur zusammen mit
+`--deduplizieren`.
+
 ## Warum das nötig ist
 
 `orakel.db` ist per `.gitignore` und `.dockerignore` vom Build ausgeschlossen.

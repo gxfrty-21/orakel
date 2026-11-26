@@ -14,6 +14,7 @@ Eine ersetzte leere DB wird vorher als ``<db>.leer-<zeitstempel>`` gesichert.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import shutil
 import sqlite3
@@ -21,7 +22,7 @@ import sys
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterator
 
 # Tabellen, die nur durch echte Läufe gefüllt werden. Buchhaltungstabellen
 # (konto, zustand) und das Company-Grundgerüst (agent_profiles, company_*)
@@ -104,6 +105,127 @@ def ist_leer(zahlen: dict[str, int]) -> bool:
 def _beschreibung(zahlen: dict[str, int]) -> str:
     gefuellt = [f"{name}={wert}" for name, wert in zahlen.items() if wert]
     return ", ".join(gefuellt) if gefuellt else "keine Kerndaten"
+
+
+def _trades_signatur(c: sqlite3.Connection, vid: int) -> str:
+    """Hash der Trade-Liste einer Validierung; die Reihenfolge zählt mit."""
+    h = hashlib.sha256()
+    for zeile in c.execute(
+        "SELECT einstieg,ausstieg,stueck,netto,rendite_pct,grund FROM trades"
+        " WHERE validierung_id=? ORDER BY id", (vid,),
+    ):
+        h.update(repr(tuple(zeile)).encode("utf-8"))
+        h.update(b"\x1f")
+    return h.hexdigest()
+
+
+def _bloecke(werte: list[int], groesse: int) -> Iterator[list[int]]:
+    for start in range(0, len(werte), groesse):
+        yield werte[start:start + groesse]
+
+
+def _auswahl_umhaengen(
+    c: sqlite3.Connection, alt: dict[int, tuple[str, str, str]], raus: list[int],
+) -> int:
+    """Hängt ``auswahl`` auf die verbliebene Zeile derselben Konfiguration um.
+
+    Bevorzugt wird dieselbe Konfiguration mit demselben Urteil: eine Auswahl
+    darf nicht auf eine abweichend bewertete Zeile zeigen. ``alt`` hält
+    Symbol, Schlüssel und Urteil der gelöschten Zeilen, weil sie zu diesem
+    Zeitpunkt nicht mehr in der Tabelle stehen.
+    """
+    entfernt = set(raus)
+    angepasst = 0
+    zeilen = c.execute(
+        "SELECT symbol, schluessel, validierung_id FROM auswahl"
+    ).fetchall()
+    for zeile in zeilen:
+        vid = int(zeile["validierung_id"])
+        if vid not in entfernt:
+            continue
+        symbol, schluessel, urteil = alt[vid]
+        ziel = c.execute(
+            "SELECT id FROM validierungen WHERE symbol=? AND schluessel=? AND urteil=?"
+            " ORDER BY id DESC LIMIT 1",
+            (symbol, schluessel, urteil),
+        ).fetchone()
+        if ziel is None:
+            ziel = c.execute(
+                "SELECT id FROM validierungen WHERE symbol=? AND schluessel=?"
+                " ORDER BY id DESC LIMIT 1",
+                (symbol, schluessel),
+            ).fetchone()
+        if ziel is None:
+            c.execute("DELETE FROM auswahl WHERE symbol=?", (zeile["symbol"],))
+        else:
+            c.execute("UPDATE auswahl SET validierung_id=? WHERE symbol=?",
+                      (int(ziel["id"]), zeile["symbol"]))
+        angepasst += 1
+    return angepasst
+
+
+def validierungen_deduplizieren(
+    db_pfad: str | Path, *, probelauf: bool = False, vakuum: bool = False,
+    log: Callable[[str], None] = print,
+) -> dict[str, int]:
+    """Entfernt inhaltsgleiche Validierungen samt ihren Trades.
+
+    Gleich sind Zeilen mit derselben Kombination aus Symbol, Strategie,
+    Schlüssel, Urteil und Trade-Liste. Je Gruppe bleibt die jüngste Zeile
+    (höchste ``id``), also die des letzten Laufs; ältere Kopien verschwinden.
+    Weil das Urteil zur Gleichheit gehört, löscht der Befehl keine abweichende
+    Bewertung. ``auswahl`` wird auf die verbliebene Zeile umgehängt.
+
+    Der Befehl ist idempotent: ein zweiter Aufruf entfernt nichts mehr.
+    Rückgabe sind die Zähler für Bericht und Tests.
+    """
+    ergebnis = {"gruppen": 0, "validierungen": 0, "trades": 0, "auswahl": 0}
+    with closing(sqlite3.connect(Path(db_pfad), timeout=30)) as c:
+        c.row_factory = sqlite3.Row
+        zeilen = list(c.execute(
+            "SELECT id, symbol, strategie, schluessel, urteil FROM validierungen"
+            " ORDER BY id"))
+        behalten: dict[tuple[str, str, str, str, str], int] = {}
+        for zeile in zeilen:
+            gruppe = (zeile["symbol"], zeile["strategie"], zeile["schluessel"],
+                      zeile["urteil"], _trades_signatur(c, int(zeile["id"])))
+            behalten[gruppe] = int(zeile["id"])
+        bleibt = set(behalten.values())
+        raus = [int(zeile["id"]) for zeile in zeilen if int(zeile["id"]) not in bleibt]
+        alt = {int(zeile["id"]): (zeile["symbol"], zeile["schluessel"], zeile["urteil"])
+               for zeile in zeilen}
+        ergebnis["gruppen"] = len(behalten)
+        ergebnis["validierungen"] = len(raus)
+        ergebnis["trades"] = sum(
+            int(c.execute("SELECT COUNT(*) FROM trades WHERE validierung_id=?", (vid,))
+                .fetchone()[0])
+            for vid in raus
+        )
+        log(f"orakel-seed: {len(zeilen)} Validierungen in {len(behalten)} Gruppen, "
+            f"{len(raus)} Kopien mit {ergebnis['trades']} Trades zu entfernen")
+        if probelauf:
+            log("orakel-seed: Probelauf – nichts geändert")
+            return ergebnis
+        for block in _bloecke(raus, 500):
+            platzhalter = ",".join("?" * len(block))
+            c.execute(
+                f"DELETE FROM trades WHERE validierung_id IN ({platzhalter})",  # noqa: S608
+                block)
+            c.execute(
+                f"DELETE FROM validierungen WHERE id IN ({platzhalter})",  # noqa: S608
+                block)
+        ergebnis["auswahl"] = _auswahl_umhaengen(c, alt, raus)
+        c.commit()
+        fehler = c.execute("PRAGMA integrity_check").fetchone()[0]
+        verwaist = c.execute("PRAGMA foreign_key_check").fetchall()
+        if vakuum:
+            c.execute("VACUUM")
+            c.commit()
+        log(f"orakel-seed: {ergebnis['validierungen']} Validierungen und "
+            f"{ergebnis['trades']} Trades entfernt, {ergebnis['auswahl']} "
+            f"Auswahl-Zeilen umgehängt; integrity {fehler}, "
+            f"foreign_key_check {'leer' if not verwaist else len(verwaist)}")
+    return ergebnis
 
 
 def _freier_name(pfad: Path) -> Path:
@@ -245,7 +367,34 @@ def main(argv: list[str] | None = None) -> int:
         default=os.environ.get("ORAKEL_SEED_DB", STANDARD_SEED),
         help=f"Pfad der Seed-Datenbank (Standard: $ORAKEL_SEED_DB, sonst {STANDARD_SEED})",
     )
+    parser.add_argument(
+        "--deduplizieren", action="store_true",
+        help="inhaltsgleiche Validierungen samt ihren Trades entfernen",
+    )
+    parser.add_argument(
+        "--probelauf", action="store_true",
+        help="nur zeigen, was --deduplizieren entfernen würde",
+    )
+    parser.add_argument(
+        "--vakuum", action="store_true",
+        help="Datei nach dem Aufräumen verdichten (VACUUM)",
+    )
     args = parser.parse_args(argv)
+
+    if (args.probelauf or args.vakuum) and not args.deduplizieren:
+        parser.error("--probelauf und --vakuum gelten nur zusammen mit --deduplizieren")
+
+    if args.deduplizieren:
+        if not Path(args.db).exists():
+            print(f"orakel-seed: Datenbank {args.db} fehlt", file=sys.stderr)
+            return 2
+        try:
+            validierungen_deduplizieren(args.db, probelauf=args.probelauf,
+                                        vakuum=args.vakuum)
+        except sqlite3.Error as fehler:
+            print(f"orakel-seed: Aufräumen fehlgeschlagen: {fehler}", file=sys.stderr)
+            return 1
+        return 0
 
     try:
         status = seed_importieren(args.db, args.seed)

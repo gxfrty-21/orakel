@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from orakel.kern.db import Facts
 from orakel.seed import (
     STATUS_ERSETZT,
     STATUS_IMPORTIERT,
@@ -16,6 +17,7 @@ from orakel.seed import (
     kern_zahlen,
     main,
     seed_importieren,
+    validierungen_deduplizieren,
 )
 
 
@@ -165,3 +167,93 @@ def test_cli_exitcodes(tmp_path: Path, seed: Path) -> None:
     kaputt.write_bytes(b"kein sqlite")
     assert main(["--db", str(tmp_path / "neu.db"), "--seed", str(kaputt)]) == 2
     assert not (tmp_path / "neu.db").exists()
+
+
+def _altbestand(pfad: Path) -> list[int]:
+    """Altzustand nachstellen: drei inhaltsgleiche Kopien einer Validierung."""
+    db = Facts(pfad)
+    ids: list[int] = []
+    with db.conn() as c:
+        for lauf in ("L1", "L2", "L3"):
+            cur = c.execute(
+                "INSERT INTO validierungen(erstellt,lauf,symbol,strategie,schluessel,"
+                "parameter,urteil,beschreibung,bericht) VALUES (?,?,?,?,?,?,?,?,?)",
+                (lauf, lauf, "US500", "ema_cross", "ema_cross|fast=10,slow=100",
+                 "{}", "bestanden", "Test", "{}"))
+            vid = int(cur.lastrowid or 0)
+            c.execute(
+                "INSERT INTO trades(validierung_id,symbol,einstieg,ausstieg,stueck,netto,"
+                "rendite_pct,grund) VALUES (?,?,?,?,?,?,?,?)",
+                (vid, "US500", "2024-01-02 10:00:00", "2024-01-02 12:00:00",
+                 10.0, 12.5, 0.4, "Signal"))
+            ids.append(vid)
+        c.execute(
+            "INSERT INTO auswahl(symbol,schluessel,validierung_id,zeit) VALUES (?,?,?,?)",
+            ("US500", "ema_cross|fast=10,slow=100", ids[0], "2026-01-01T00:00:00+00:00"))
+    return ids
+
+
+def test_deduplizieren_entfernt_kopien_und_haengt_auswahl_um(tmp_path: Path) -> None:
+    pfad = tmp_path / "orakel.db"
+    ids = _altbestand(pfad)
+
+    ergebnis = validierungen_deduplizieren(pfad, log=_ruhig)
+
+    assert ergebnis == {"gruppen": 1, "validierungen": 2, "trades": 2, "auswahl": 1}
+    with sqlite3.connect(pfad) as c:
+        assert c.execute("SELECT COUNT(*) FROM validierungen").fetchone()[0] == 1
+        assert c.execute("SELECT COUNT(*) FROM trades").fetchone()[0] == 1
+        assert c.execute("SELECT id FROM validierungen").fetchone()[0] == ids[-1]
+        assert c.execute("SELECT validierung_id FROM auswahl").fetchone()[0] == ids[-1]
+
+
+def test_deduplizieren_ist_wiederholbar(tmp_path: Path) -> None:
+    pfad = tmp_path / "orakel.db"
+    _altbestand(pfad)
+    validierungen_deduplizieren(pfad, log=_ruhig)
+
+    ergebnis = validierungen_deduplizieren(pfad, log=_ruhig)
+
+    assert ergebnis["validierungen"] == 0
+    assert ergebnis["trades"] == 0
+    assert ergebnis["auswahl"] == 0
+
+
+def test_deduplizieren_probelauf_aendert_nichts(tmp_path: Path) -> None:
+    pfad = tmp_path / "orakel.db"
+    _altbestand(pfad)
+    vorher = _hash(pfad)
+
+    ergebnis = validierungen_deduplizieren(pfad, probelauf=True, log=_ruhig)
+
+    assert ergebnis["validierungen"] == 2
+    assert _hash(pfad) == vorher
+
+
+def test_deduplizieren_laesst_abweichendes_urteil_stehen(tmp_path: Path) -> None:
+    pfad = tmp_path / "orakel.db"
+    _altbestand(pfad)
+    db = Facts(pfad)
+    with db.conn() as c:
+        c.execute("UPDATE validierungen SET urteil='abgelehnt'"
+                  " WHERE id=(SELECT MAX(id) FROM validierungen)")
+
+    ergebnis = validierungen_deduplizieren(pfad, log=_ruhig)
+
+    assert ergebnis["gruppen"] == 2
+    assert ergebnis["validierungen"] == 1
+    with sqlite3.connect(pfad) as c:
+        urteile = [r[0] for r in c.execute("SELECT urteil FROM validierungen ORDER BY id")]
+    assert urteile == ["bestanden", "abgelehnt"]
+
+
+def test_deduplizieren_als_befehl(tmp_path: Path) -> None:
+    pfad = tmp_path / "orakel.db"
+    _altbestand(pfad)
+
+    assert main(["--db", str(pfad), "--deduplizieren", "--probelauf"]) == 0
+    assert main(["--db", str(pfad), "--deduplizieren"]) == 0
+    with sqlite3.connect(pfad) as c:
+        assert c.execute("SELECT COUNT(*) FROM validierungen").fetchone()[0] == 1
+    with pytest.raises(SystemExit):
+        main(["--db", str(pfad), "--probelauf"])

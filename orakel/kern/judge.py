@@ -175,18 +175,30 @@ def aufteilung(n: int, cfg: Config) -> tuple[int, int, int, list[int]] | None:
     return _aufteilung(n, cfg["validierung"])
 
 
+@dataclass(frozen=True, slots=True)
+class Parameterwahl:
+    """Gewählter Rasterpunkt mit Kennzahlen; ``grund`` nennt sonst den Ablehnungsgrund."""
+
+
+    parameter: dict[str, Any] | None
+    kennzahlen: dict[str, Any] | None = None
+    grund: str = ""
+
+
 def _train_parameter(
     df: pd.DataFrame, strategie: Strategie, cfg: Config, grenzen: RisikoGrenzen,
     train_start: int, train_end: int, symbol: str = "",
-) -> tuple[dict[str, Any], dict[str, Any]] | None:
+) -> Parameterwahl:
     """Wählt den Parameter ausschliesslich anhand des Trainingsfensters."""
     v = cfg["validierung"]
     min_trades = int(v.get("min_train_trades", 5))
     prefix = df.iloc[:train_end].reset_index(drop=True)
     if prefix.empty or train_start >= train_end:
-        return None
+        return Parameterwahl(None, None, "Im Trainingsfenster stand kein auswertbarer Zeitraum zur Verfügung")
 
     best: tuple[tuple[float, float], dict[str, Any], dict[str, Any]] | None = None
+    mit_trades = 0
+    bestes_netto: float | None = None
     for parameter in strategie.grid:
         erg = backtest(
             prefix, strategie.signale(prefix, parameter), cfg, grenzen,
@@ -195,16 +207,37 @@ def _train_parameter(
         k = erg.kennzahlen
         if int(k.get("trades", 0)) < min_trades:
             continue
-        pf = k.get("profit_factor")
+        mit_trades += 1
         netto = float(k.get("netto", 0.0))
+        if bestes_netto is None or netto > bestes_netto:
+            bestes_netto = netto
+        pf = k.get("profit_factor")
         if pf is None or netto <= 0:
             continue
         score = (float(pf), netto)
         if best is None or score > best[0]:
             best = (score, dict(parameter), k)
     if best is None:
-        return None
-    return best[1], best[2]
+        # Bei mit_trades > 0 ist bestes_netto gesetzt; sonst bleibt 0.0.
+        bestwert = 0.0 if bestes_netto is None else bestes_netto
+        if mit_trades == 0:
+            grund = ("Im Trainingsfenster erreichte kein Parameter die "
+                     f"Mindestzahl von {min_trades} Trades")
+        elif bestwert > 0:
+            grund = ("Im Trainingsfenster hatte kein Parameter mit mindestens "
+                     f"{min_trades} Trades einen belastbaren Profit-Faktor (Netto positiv, "
+                     "Profit-Faktor nicht bestimmbar)")
+        elif round(bestwert, 2) < 0:
+            grund = ("Im Trainingsfenster blieb jeder Parameter mit mindestens "
+                     f"{min_trades} Trades netto negativ (bester: {bestwert:.2f} USD)")
+        else:
+            # Wie im Zahlformat auf Cent gerundet, damit Aussage und Betrag
+            # zusammenpassen: ein Rundungsrest wie -1e-9 ist kein Verlust.
+            grund = ("Im Trainingsfenster erreichte kein Parameter mit mindestens "
+                     f"{min_trades} Trades ein positives Netto; das beste Netto lag bei "
+                     "0.00 USD")
+        return Parameterwahl(None, None, grund)
+    return Parameterwahl(best[1], best[2])
 
 
 def _wfo_fenster(
@@ -219,7 +252,7 @@ def _wfo_fenster(
         train_start = max(0, train_end - train_bars)
         gewaehlt = _train_parameter(df, strategie, cfg, grenzen, train_start, train_end,
                                     symbol=symbol)
-        if gewaehlt is None:
+        if gewaehlt.parameter is None:
             details.append({
                 "nr": nr,
                 "parameter": {},
@@ -230,12 +263,12 @@ def _wfo_fenster(
                 "train": {},
                 "test": {},
                 "profitable": False,
-                "grund": "Kein Parameter erfüllte die Mindestzahl an Trainings-Trades.",
+                "grund": gewaehlt.grund,
             })
             ergebnisse.append(None)
             continue
 
-        parameter, train_k = gewaehlt
+        parameter, train_k = gewaehlt.parameter, gewaehlt.kennzahlen
         prefix = df.iloc[:test_end].reset_index(drop=True)
         erg = backtest(
             prefix, strategie.signale(prefix, parameter), cfg, grenzen,
@@ -377,6 +410,10 @@ def beurteile_walk_forward(
         parameter={},
         beschreibung=strategie.beschreibung,
         urteil="abgelehnt",
+        # Ohne gewählten Parameter bleibt die Zeile über die Strategie
+        # identifizierbar. Ein leerer Schlüssel würde zwei Strategien im selben
+        # Symbol auf denselben Gruppenschlüssel legen.
+        schluessel=f"{strategie.name}|kein_parameter",
     )
 
     n = len(df)
@@ -395,10 +432,11 @@ def beurteile_walk_forward(
 
     final_start = max(0, dev_n - train_bars)
     final = _train_parameter(df, strategie, cfg, grenzen, final_start, dev_n, symbol=symbol)
-    if final is None:
-        u.gruende.append("Im finalen Trainingsfenster erfüllte kein Parameter die Mindestzahl an Trades")
+    if final.parameter is None or final.kennzahlen is None:
+        # Ohne Parameter nennt _train_parameter immer einen Grund.
+        u.gruende.append(final.grund)
         return u
-    u.parameter, u.in_sample = final
+    u.parameter, u.in_sample = final.parameter, final.kennzahlen
     u.schluessel = strategie.schluessel(u.parameter)
 
     details, ergebnisse = _wfo_fenster(df, strategie, cfg, grenzen, grenzen_idx, train_bars,
