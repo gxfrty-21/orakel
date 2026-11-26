@@ -62,7 +62,8 @@ def positionsgroesse(equity: float, cash: float, preis: float, stop: float, gren
     Backtest und Paper-Trading nutzen exakt dieselbe Funktion (Regel 8).
     Kein Hebel: Die Position wird voll aus dem Bargeld bezahlt. Das Risiko
     pro Trade ist eine Obergrenze; der Positionsdeckel kann kleiner sein und
-    senkt dann das tatsächlich riskierte Kapital.
+    senkt dann das tatsächlich riskierte Kapital. Bei 20 % Deckel und Stops
+    von 0.5–2 % bleiben 0.1–0.4 % Risiko; die 1 % sind keine Zielgrösse.
     """
     if preis <= 0 or equity <= 0:
         return 0.0

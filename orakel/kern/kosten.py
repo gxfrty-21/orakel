@@ -131,6 +131,19 @@ def _in_kontowaehrung(betrag: float, cfg: Config, symbol: str | None,
     return betrag / float(kurs)
 
 
+def notional_in_kontowaehrung(menge: float, preis: float, cfg: Config,
+                              symbol: str | None = None) -> float:
+    """Positionsnotional in Kontowährung.
+
+    ``menge * preis`` fällt in der Kurswährung des Symbols an. Für Devisen
+    wird mit demselben Kurs in die Kontowährung umgerechnet wie die
+    Spread-Kosten; für Symbole ohne Währungsprofil gilt der Preis bereits in
+    Kontowährung. Ohne Kurs zur Kontowährung bricht die Funktion ab, statt
+    einen falschen Betrag zu liefern.
+    """
+    return _in_kontowaehrung(abs(float(menge)) * float(preis), cfg, symbol, preis)
+
+
 def kosten_je_seite(menge: float, cfg: Config, symbol: str | None = None, *,
                    kurs: float | None = None) -> float:
     """Kosten einer Seite (Kauf oder Verkauf) in Kontowährung.

@@ -7,6 +7,7 @@ import sys
 import pandas as pd
 import pytest
 
+from orakel.kern import paper as paper_mod
 from orakel.kern.db import Facts
 from orakel.kern.paper import tick
 
@@ -117,6 +118,43 @@ def test_takt_eroeffnet_paper_position(cfg):
     # Stop liegt unter dem Einstieg (Long) und Risiko ist begrenzt
     assert positionen[0]["stop"] < positionen[0]["einstieg"]
     assert db.letztes_konto() is not None
+
+
+def test_paper_wertet_h1_strategie_nicht_auf_m15_aus(cfg, monkeypatch):
+    """Auch bei H1-Richter bleibt der Paper-Takt beim M15-Raster."""
+    cfg._d.setdefault("basis", {})["richter_zeitrahmen"] = "H1"
+    cfg._d["research"].update({
+        "h1_retest_lookback": [5],
+        "h1_retest_fenster": [5],
+        "h1_retest_stop_puffer_pct": [0.01],
+    })
+    db, _ = aufbau(cfg)
+    vid = db.validierung_speichern(
+        "TEST", "h1_retest",
+        "h1_retest|lookback=5,retest_fenster=5,stop_puffer_pct=0.01",
+        {"lookback": 5, "retest_fenster": 5, "stop_puffer_pct": 0.01},
+        "bestanden", "Test",
+        {"out_of_sample": {"profit_factor": 1.4}, "gruende": []},
+        lauf="L1",
+    )
+    db.auswahl_setzen(
+        "TEST", "h1_retest|lookback=5,retest_fenster=5,stop_puffer_pct=0.01", vid,
+    )
+    assert "h1_retest" in paper_mod.strategien(cfg)
+
+    gesehen: list[str | None] = []
+    original = paper_mod.strategien
+
+    def merken(instanz, **kwargs):
+        gesehen.append(kwargs.get("zeitrahmen"))
+        return original(instanz, **kwargs)
+
+    monkeypatch.setattr(paper_mod, "strategien", merken)
+    ergebnis = tick(cfg, db)
+
+    assert gesehen and all(zeitrahmen == "M15" for zeitrahmen in gesehen)
+    assert db.positionen() == []
+    assert ergebnis["konto"]["positionen"] == 0
 
 
 def test_stop_schliesst_position(cfg):

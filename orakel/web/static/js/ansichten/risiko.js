@@ -18,7 +18,7 @@ function renderRisk(){
     ${zeile('Tagesverlust',L.max_daily_loss_pct,a.tagesverlust_pct,' %')}
     ${zeile('Gesamtengagement (100 % = kein Hebel)',L.max_gross_exposure_pct,a.engagement_pct,' %')}
     ${zeile('Offene Positionen',L.max_open_positions,a.positionen,'')}
-    <tr><td>Risiko pro Trade bis Stop (Obergrenze)</td><td class="m">${L.risk_per_trade_pct} %</td><td class="m">–</td><td class="na">pro Auftrag geprüft</td></tr>
+    <tr><td>Risiko pro Trade bis Stop</td><td class="m">${L.risk_per_trade_pct} %</td><td class="m">–</td><td class="na">Obergrenze; bei 0.5–2 % Stop 0.1–0.4 %</td></tr>
     <tr><td>Max. Grösse einer Position</td><td class="m">${L.max_position_pct} %</td><td class="m">–</td><td class="na">bestimmt die tatsächliche Grösse</td></tr>
     <tr><td>Stop-Abstand</td><td class="m">${L.atr_stop_multiple} × ATR</td><td class="m">–</td><td class="na">durchschnittliche Schwankung</td></tr>
   </tbody></table>`;
@@ -34,6 +34,7 @@ function renderRisk(){
     <tr><td>Kommission pro Stück</td><td class="m">USD ${c.commission_per_share}</td></tr>
     <tr><td>Mindestkommission</td><td class="m">USD ${c.min_commission}</td></tr>
     <tr><td>Slippage pro Ausführung</td><td class="m">${c.slippage_bps} bps</td></tr>
+    <tr><td>Finanzierung pro Kalendertag</td><td class="m">${c.finanzierung_bps_pro_tag==null?'–':num(c.finanzierung_bps_pro_tag,2)+' bps'+(Number(c.finanzierung_bps_pro_tag)===0?' (aus)':'')}</td></tr>
     <tr><td>Ausführung</td><td class="m">Eröffnung der Folgekerze</td></tr></tbody></table>`;
   $('#live').innerHTML = `<span><span class="pill r">GESPERRT</span></span><div class="reasons">
     ${(R.live?.gruende||[]).map(g=>`<span class="x">${esc(g)}</span>`).join('')}</div>`;

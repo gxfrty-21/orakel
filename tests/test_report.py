@@ -26,6 +26,25 @@ def test_bericht_hat_schema_2(cfg, tmp_path):
     assert isinstance(bericht["live"]["gruende"], list) and bericht["live"]["gruende"]
 
 
+def test_bericht_zeigt_finanzierung_ohne_schemawechsel(cfg):
+    cfg._d["kosten"]["finanzierung_bps_pro_tag"] = 12.5
+    db = Facts(cfg.db_pfad)
+    db.validierung_speichern(
+        "X", "ema_cross", "ema_cross|fast=10,slow=50", {"fast": 10, "slow": 50},
+        "bestanden", "Test",
+        {"gesamt": {"finanzierung": 3.5}, "out_of_sample": {}, "gruende": []},
+        lauf="L1",
+    )
+    db.zustand_setzen("letzter_lauf_id", "L1")
+    bericht = baue_bericht(cfg, db)
+
+    assert bericht["schema"] == 2
+    for schluessel in ("commission_per_share", "min_commission", "slippage_bps"):
+        assert isinstance(bericht["kosten"][schluessel], float)
+    assert bericht["kosten"]["finanzierung_bps_pro_tag"] == 12.5
+    assert bericht["validierungen"][0]["gesamt"]["finanzierung"] == 3.5
+
+
 def test_bericht_liefert_die_korrelationsschwelle(cfg):
     """Die Oberfläche markiert Paare über genau dieser Schwelle."""
     db = Facts(cfg.db_pfad)

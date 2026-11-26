@@ -4,7 +4,10 @@
 Der Online-Backup der SQLite-Bibliothek ist auch bei laufender App konsistent
 (anders als das Kopieren der Datei, das mit WAL unvollständig sein kann). Nach
 jeder Sicherung wird geprüft: ``PRAGMA integrity_check`` ist ``ok`` und die
-Zeilenzahlen aller Tabellen stimmen mit der Quelle überein.
+Zeilenzahlen aller Tabellen stimmen mit der Quelle überein. Die
+Wiederherstellungsprüfung öffnet die Sicherung ausschliesslich lesend mit
+``mode=ro&immutable=1``; dadurch entstehen neben dem Backup keine
+``-wal``/``-shm``-Dateien.
 
 Aufrufe:
     python scripts/pruefe_backup.py --db orakel.db --ordner backups
@@ -26,8 +29,19 @@ TAGES_PRAEFIX = "orakel-"
 WOCHEN_PRAEFIX = "orakel-kw-"
 
 
-def _verbinde(pfad: Path) -> sqlite3.Connection:
-    c = sqlite3.connect(pfad)
+def _verbinde(pfad: Path, *, unveraenderlich: bool = False) -> sqlite3.Connection:
+    """Öffnet eine Datenbank; Sicherungen nur lesend und unveränderlich.
+
+    Eine normale Verbindung kann bei einer WAL-Datenbank ``-wal``/``-shm``
+    anlegen. ``immutable=1`` sagt SQLite, dass die Datei unverändert bleibt;
+    das ist für die statische Sicherung richtig und lässt den Backup-Ordner
+    unberührt.
+    """
+    if unveraenderlich:
+        uri = f"{Path(pfad).resolve().as_uri()}?mode=ro&immutable=1"
+        c = sqlite3.connect(uri, uri=True)
+    else:
+        c = sqlite3.connect(pfad)
     c.execute("PRAGMA busy_timeout = 5000")
     return c
 
@@ -50,17 +64,17 @@ def _zaehle(c: sqlite3.Connection, name: str) -> int:
     return int(c.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0])  # noqa: S608 - Kennung oben geprüft, kein Nutzertext
 
 
-def zeilenzahlen(pfad: Path) -> dict[str, int]:
+def zeilenzahlen(pfad: Path, *, unveraenderlich: bool = False) -> dict[str, int]:
     """Zeilenzahl je Tabelle; fehlende Tabellen fehlen auch im Ergebnis."""
-    c = _verbinde(pfad)
+    c = _verbinde(pfad, unveraenderlich=unveraenderlich)
     try:
         return {name: _zaehle(c, name) for name in _tabellen(c)}
     finally:
         c.close()
 
 
-def integritaet(pfad: Path) -> str:
-    c = _verbinde(pfad)
+def integritaet(pfad: Path, *, unveraenderlich: bool = False) -> str:
+    c = _verbinde(pfad, unveraenderlich=unveraenderlich)
     try:
         return str(c.execute("PRAGMA integrity_check").fetchone()[0])
     finally:
@@ -82,7 +96,7 @@ def sichere(db_pfad: Path, ordner: Path, *, jetzt: datetime | None = None,
         kopie.close()
         quelle.close()
 
-    pruefung = integritaet(ziel)
+    pruefung = integritaet(ziel, unveraenderlich=True)
     if pruefung != "ok":
         raise RuntimeError(f"Backup {ziel.name} ist nicht integer: {pruefung}")
 
@@ -109,12 +123,16 @@ def sichere(db_pfad: Path, ordner: Path, *, jetzt: datetime | None = None,
 
 
 def pruefe_restore(db_pfad: Path, backup_pfad: Path) -> dict[str, Any]:
-    """Vergleicht Integrität und Zeilenzahlen von Quelle und Sicherung."""
+    """Vergleicht Integrität und Zeilenzahlen von Quelle und Sicherung.
+
+    Die Sicherung wird nur mit ``mode=ro&immutable=1`` geöffnet. Die Quelle
+    bleibt der normale, live gelesene Pfad; sie ist nicht Teil des Backups.
+    """
     if not backup_pfad.exists():
         raise FileNotFoundError(f"Backup fehlt: {backup_pfad}")
-    integritaet_wert = integritaet(backup_pfad)
+    integritaet_wert = integritaet(backup_pfad, unveraenderlich=True)
     quelle = zeilenzahlen(db_pfad)
-    sicherung = zeilenzahlen(backup_pfad)
+    sicherung = zeilenzahlen(backup_pfad, unveraenderlich=True)
     abweichungen = [
         {"tabelle": name, "quelle": quelle.get(name), "sicherung": sicherung.get(name)}
         for name in sorted(set(quelle) | set(sicherung))

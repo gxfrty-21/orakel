@@ -32,6 +32,7 @@ function renderStrat(){
     <tr><td>Rendite gesamt</td><td class="m ${cls(G.rendite_pct)}">${pct(G.rendite_pct,1)}</td></tr>
     <tr><td>Kaufen und Halten (ungesehen)</td><td class="m">${pct(d.kaufen_halten_oos_pct,1)}</td></tr>
     <tr><td>Gebühren gesamt</td><td class="m">${money(G.gebuehren)}</td></tr>
+    <tr><td>Finanzierung gesamt</td><td class="m">${money(G.finanzierung)}</td></tr>
     <tr><td>Zeit im Markt</td><td class="m">${pct(G.zeit_im_markt_pct,0)}</td></tr></tbody></table></div>
     ${wfoFoldsBlock(d)}`;
 }

@@ -154,13 +154,28 @@ wiederfinden. Clients prüfen deshalb `code`, nicht den Text.
 ## Dauerbetrieb mit Login und HTTPS
 
 Fertige Docker-Konfiguration mit Caddy (automatisches TLS), HTTP-Basic-Login und
-persistentem SQLite-Speicher im `/data`-Volume: siehe [DEPLOY.md](DEPLOY.md).
+persistentem SQLite-Speicher im `/data`-Volume (Standardpfad
+`/data/orakel.db`, per `ORAKEL_DB_PFAD` überschreibbar): siehe
+[DEPLOY.md](DEPLOY.md).
 
 Der Container bindet `0.0.0.0`; `ORAKEL_AUTH_USER` und `ORAKEL_AUTH_PASS`
-sind deshalb **Pflicht**. Fehlen sie, bricht der Start mit
-`Start abgebrochen: Binde 0.0.0.0 ohne Login …` ab. Ohne Login läuft der
-Server nur lokal: `python -m orakel serve` (Standard `127.0.0.1`) oder
-bewusst mit `ORAKEL_ALLOW_NO_AUTH=1`.
+sind deshalb **Pflicht**. Fehlen sie, bricht der Containerstart mit
+`orakel-entrypoint: FEHLER: ORAKEL_AUTH_USER und ORAKEL_AUTH_PASS muessen gesetzt sein.`
+ab. Ohne Login läuft der Server ausschliesslich auf Loopback; ein externer
+Bind wird auch bei einem Neustart mit der Altlast `ORAKEL_ALLOW_NO_AUTH=1`
+abgelehnt. Der sichere lokale Startbefehl ist:
+
+```bash
+.venv/bin/python -m orakel serve --host 127.0.0.1 --port 8000
+```
+
+Für einen externen Start müssen `ORAKEL_AUTH_USER` und `ORAKEL_AUTH_PASS`
+gesetzt sein, etwa über die ignorierte `.env`:
+
+```bash
+set -a; . ./.env; set +a
+.venv/bin/python -m orakel serve --host 0.0.0.0 --port 8000
+```
 
 Für Railway ohne eigenen Server, Caddy oder eigene Domain: siehe
 [RAILWAY.md](RAILWAY.md).
@@ -224,7 +239,26 @@ Der Richter schreibt jede Bewertung mit ihren Trades in die Fakten-DB. Läuft er
 
 Seit dem Walk-Forward-Umbau prüft der Richter je Strategie und Symbol genau einen Kandidaten: den Parameter wählt er in den Trainingsfenstern selbst, statt mehrere Rasterpunkte nacheinander zu bewerten. Ein vollständiger Lauf erzeugt damit eine Zeile je Paar — mit den vier freigegebenen Strategien und den zwei Symbolen des Seeds sind das acht Zeilen. Die 24 Validierungen im Seed stammen noch aus dem alten Raster, das je Strategie zwei bis vier Rasterpunkte einzeln bewertete (je Punkt und Symbol eine Zeile); sie sind keine Regression.
 
+### Navigation und Deep-Links
+
+Die zehn Sidebar-Bereiche sind echte Links mit stabilen Hash-Routen, etwa
+`#/lab` oder `#/spider`. Ein direkter Aufruf oder ein Reload öffnet den
+gewählten Bereich; Zurück und Vorwärts folgen dem Browser-Verlauf. Der aktive
+Eintrag trägt `aria-current="page"`, der Dokumenttitel nennt den Bereich, und
+nach einem Wechsel liegt der Fokus auf dessen Überschrift. Der Skip-Link
+«Zum Inhalt» ist die erste Tastaturstation und springt zu `main#inhalt`.
+Unbekannte oder nicht sichtbare Bereiche fallen auf «Übersicht» zurück.
+
+Der Browser-Test dafür ist
+`node scripts/pruefe-sidebar-navigation.mjs --url http://127.0.0.1:3000`.
+Er prüft die zehn unveränderten Einträge, Deep-Links, Reload, den
+Browser-Verlauf, `aria-current`, Skip-Link und die Fokusführung.
+
 Der Holdout ist der letzte Datenblock und wird erst nach der Walk-Forward-Auswahl einmal geöffnet; scheitert er, gibt es keinen Ersatzkandidaten. Im Lab zeigt ein Chart die aggregierte Kapitalkurve der Testfenster; beim Überfahren nennt ein Tooltip Kapitalstand, Veränderung seit dem Start in Prozent, Datum sowie den bisherigen Höchststand mit Abstand in Prozent; per Tastatur (Tab, Pfeiltasten, Home/Ende) ist dieselbe Anzeige erreichbar. Solange der Tastaturfokus im sichtbaren Lab-Detail liegt, pausiert der Auto-Refresh nur den Ansichts-Render, damit die Anzeige beim Ablesen nicht neu aufgebaut wird; Daten und Kopfzeile werden weiter aktualisiert; ein Status in der Listenkopfzeile (`#labNeu`, höfliche Live-Region) zeigt «Neue Daten verfügbar», und beim Verlassen des Details wird sofort neu gezeichnet statt auf den nächsten Takt zu warten. Ein Fokus auf der Lab-Liste oder einem anderen Lab-Element blockiert den Render nicht; ein ausgeblendetes Lab ebenfalls nicht. Der Refresh baut die Liste nicht neu auf: Vorhandene Einträge werden über eine stabile Kandidatenkennung in die neue Reihenfolge gebracht, Auswahl, Fokus und Scrollposition bleiben erhalten. Der Acht-Sekunden-Takt startet keinen zweiten Aufruf, solange eine Antwort läuft, pausiert im Hintergrundtab und lädt beim Zurückkehren sofort nach. Dort und in der Strategien-Ansicht lässt sich zudem bei jedem Kandidaten die Liste der Walk-Forward-Fenster aufklappen: Trainings- und Testblock, gewählter Parameter, Trades, Profit Factor und Netto je Fenster.
+
+Der isolierte [Monte-Carlo-Perturbationstest](docs/ROBUSTHEIT.md) prüft einen bereits festgelegten Kandidaten zusätzlich gegen kleine Preis- und Parameteränderungen. Er ist nicht Teil des Richters und ändert weder Risiko noch Paper-Sperre.
+
+Der H1-Retest mit bestätigtem Retest und Re-Entry-Sperre ist als [Signalplan und H1-Strategie](docs/H1-RETEST.md) im Backtest umgesetzt. Die [bestätigte Kurzfassung mit den offenen Backtest- und Paper-Punkten](docs/H1-RETEST-SPEZIFIKATION.md) hält den Entscheidungsstand fest. Die H1-Parameter stehen im `[research]`-Raster; die Strategie wird nur bei `richter_zeitrahmen = "H1"` aktiv und bei M15 nicht mitbewertet. Richter, Risikogrenzen und Paper-Sperre bleiben unverändert.
 
 Das Cockpit oben in der Übersicht zeigt vier Zahlen aus derselben Datenbank: Bot-Zustand (letzter Paper-Takt, Risikostopp), Kontostand, Gewinn/Verlust und offene Positionen. Der Zeitraum lässt sich zwischen heute, 7 Tagen und 1 Monat umschalten; «heute» beginnt um 00:00 Uhr Europe/Zurich, und der Verlauf ist auf 120 Punkte ausgedünnt. Fehlt eine Grundlage, steht «–», und ein leerer Verlauf wird als solcher benannt. Als «steht» gilt der Bot, wenn seit drei Takten (mindestens drei Minuten) kein Paper-Takt mehr lief; ein gesetzter Risikostopp hat Vorrang und zeigt seinen Grund. Die offenen Positionen erscheinen darunter mit Einstieg, letztem M15-Kurs, Stop und unrealisiertem Ergebnis.
 
@@ -276,14 +310,17 @@ Rückstellung im Herbst wiederholen sich Uhrzeiten: Die frühere Fassung gilt al
 Sommerzeit, die spätere als Standardzeit, sodass beide Stunden erhalten bleiben.
 Eine absteigend sortierte Datei dreht diese Reihenfolge; der Import erkennt die
 Richtung am ersten und letzten Zeitstempel und ordnet die Fassungen entsprechend
-zu. Das gilt innerhalb einer Datei; wird die wiederholte Stunde über zwei
-Dateien verteilt, greift die Dublettenregel. Führt der Broker dauerhaft einen festen
-Versatz ohne Sommerzeit, verschiebt `--server-versatz-stunden 3` (oder
+zu. Besteht eine Datei nur aus dem Herbstpaar, sind erster und letzter
+Zeitstempel gleich; dann ist keine Richtung erkennbar und der Import nimmt
+aufsteigend an (Sommerzeit zuerst). Das gilt innerhalb einer Datei; wird die
+wiederholte Stunde über zwei Dateien verteilt, greift die Dublettenregel. Führt
+der Broker dauerhaft einen festen Versatz ohne Sommerzeit, verschiebt
+`--server-versatz-stunden 3` (oder
 `[daten] server_versatz_stunden` in `config.toml`) die Serverzeit um drei
 Stunden nach UTC; negative Werte sind erlaubt. Als Kurzform akzeptiert der
-Import auch `--server-versatz +03:00` (negative Werte als
-`--server-versatz=-05:00`); die Angabe schliesst `--server-zeitzone` und
-`--server-versatz-stunden` aus. Zone und fester Versatz zusammen werden mit
+Import auch `--server-versatz +03:00` oder `--server-versatz -05:00`
+(negativ auch mit Gleichheitszeichen: `--server-versatz=-05:00`); die Angabe
+schliesst `--server-zeitzone` und `--server-versatz-stunden` aus. Zone und fester Versatz zusammen werden mit
 einer Meldung abgelehnt, weil sonst unklar wäre, welche gilt. Preise brauchen einen Dezimalpunkt; `1,035` wird
 abgelehnt statt still zu fehlen. Doppelte Zeitstempel gewinnen mit der letzten
 Zeile, die Reihe wird aufsteigend sortiert. Kodierung: UTF-8 (auch mit BOM)
@@ -291,20 +328,33 @@ oder cp1252. Grosse Dateien (mehrere Jahre M1) werden tageweise blockweise
 gelesen und in einer Transaktion geschrieben: Der Speicherbedarf beim Lesen und
 Schreiben bleibt flach, bei einem Fehler bleibt die Datei unverändert, und
 geprüft wird weiterhin die zusammengeführte Reihe. Die Datei muss nach Datum
-sortiert sein (auf- oder absteigend); verschränkte Tage brechen mit einer
-Meldung ab, statt die Herbststunden zu trennen.
+und innerhalb eines Tages chronologisch sortiert sein (auf- oder absteigend).
+Bei der Herbst-Rückstellung ist genau ein Rücksprung um die wiederholte Stunde
+erlaubt. Alle Tagesläufe müssen dieselbe Richtung haben. Verschränkte Tage,
+gemischte Tagesrichtungen oder anders gemischte Zeilen innerhalb eines Tages
+brechen mit einer Meldung ab, statt die Herbststunden falsch zuzuordnen.
 
-Zeitrahmen: importiert werden `M1`, `M5`, `M15`, `H1` (Suffix im Dateinamen
-oder `--zeitrahmen`). **Paper liest M15**; der Richter bewertet
-`[basis] richter_zeitrahmen` (Standard `M15`, z. B. `H1`). `bars_pro_jahr` gilt
-für M15 und wird für andere Zeitrahmen umgerechnet (H1: 6240 statt 24 960);
-`min_kerzen` folgt derselben Basis (H1: 300 statt 1200). Der
-Ordner-Import über `[basis] datenquelle = "csv"` liest `daten/*.csv`,
-importiert M15 und den Richter-Zeitrahmen und überspringt alles andere mit
-Ereignis im Protokoll, statt es als M15 abzulegen. Ist der Ordner leer, bricht
-der Lauf ohne vorhandene Datenbankkerzen mit Meldung ab, statt synthetische
-Kerzen zu erzeugen; vorhandene Datenbankkerzen werden mit einer Warnung
-weiterverwendet. Die Frischegrenzen bleiben
+Zeitrahmen: importiert werden `M1`, `M5`, `M15`, `H1`. Der Zeitrahmen wird
+an beliebiger Stelle im Dateinamen erkannt (`EURUSD_H1_2020.csv`,
+`EURUSD_2020_H1.csv`) oder über `--zeitrahmen` gesetzt; ein Jahres-Suffix wie
+`2020` wird ignoriert. Unbekannte Zeitrahmen-Tokens wie `H4` werden mit Meldung
+abgelehnt, statt still als M15 gelesen zu werden. **Paper liest M15**; der
+Richter bewertet `[basis] richter_zeitrahmen` (Standard `M15`, z. B. `H1`).
+`bars_pro_jahr` gilt für M15 und wird für andere Zeitrahmen umgerechnet (H1:
+6240 statt 24 960); `min_kerzen` folgt derselben Basis (H1: 300 statt 1200).
+Der Ordner-Import über `[basis] datenquelle = "csv"` liest `daten/*.csv`,
+importiert M15 und den Richter-Zeitrahmen; bekannte, nicht benötigte
+Zeitrahmen werden mit Ereignis im Protokoll übersprungen. Ein unbekannter
+Zeitrahmen bricht den Ordner-Import vor dem ersten Schreiben ab. Der Import
+läuft in einer gemeinsamen Transaktion: `datenquelle = "csv"` wird erst nach
+bestandener Reihenprüfung gesetzt, und ein Fehler in einer Datei rollt alle
+Dateien dieses Imports zurück. Ist der Ordner leer, bricht der Lauf ohne
+vorhandene Datenbankkerzen mit Meldung ab, statt synthetische Kerzen zu
+erzeugen; vorhandene Datenbankkerzen werden mit einer Warnung weiterverwendet.
+Beim Import wird die jüngste Kerze je Symbol und Zeitrahmen gegen ihre
+Frischegrenze geprüft: `max_kurs_alter_stunden_<tf>` bzw. der Rückfall
+`max_alter_tage`. Eine Überschreitung wird als Warnung protokolliert,
+blockiert den Import aber nicht. Die Frischegrenzen bleiben
 je Zeitrahmen getrennt (`max_kurs_alter_stunden_h1` usw.), auch wenn der
 Paper-Takt M15 liest.
 
@@ -326,6 +376,19 @@ Geschrieben wird `daten/EURUSD_M15.csv` im selben Format wie `Save as`
 und aufsteigend sortiert.
 Zusammengeführt wird nur, was in Zeit und Werten gleich ist — die doppelte
 Stunde der Herbst-Rückstellung bleibt deshalb vollständig erhalten.
+Tick-Daten holt derselbe Abruf mit `--format ticks`:
+
+```powershell
+.\\.venv\\Scripts\\python.exe scripts\\mt5_abruf.py --symbol EURUSD --format ticks --von 2025-01-01
+```
+
+Geschrieben wird `daten/EURUSD_ticks.csv` mit
+`<DATE> <TIME> <MSEC> <BID> <ASK> <LAST> <VOLUME> <VOLUME_REAL> <FLAGS>`,
+ebenfalls monatsweise abgefragt, aufsteigend nach Serverzeit und Millisekunde
+sortiert und von exakten Dubletten befreit. `--zeitrahmen` gilt nur für Kerzen;
+ohne `--format` entsteht unverändert das Kerzen-CSV. Die Tick-Datei ist ein
+eigenes Archivformat und wird von `orakel daten --csv` nicht gelesen.
+
 Danach wie oben importieren, inklusive `--server-zeitzone` oder
 `--server-versatz`. Voraussetzung: Das
 Terminal läuft, ist angemeldet und das Symbol steht im Market Watch;
@@ -346,16 +409,20 @@ Kalenderjahr nach UTC-Zeitstempel (`Abdeckung: 2023: 24960, 2024: 24960, …`)
 und warnt, wenn
 zwischen erstem und letztem Jahr ein ganzes Jahr ohne Kerzen bleibt — etwa wenn
 die Broker-Historie abgeschnitten ist. Diese Warnung blockiert den Lauf nicht,
-weil die vorhandene Reihe weiter verwendbar ist; die Warnung erscheint auch im
-Datenqualitätsblock des Berichts. Trifft ein erneuter Import auf denselben
+weil die vorhandene Reihe weiter verwendbar ist; die Jahresabdeckung und die
+Warnung stehen auch im Datenqualitätsblock des Berichts. Trifft ein erneuter Import auf denselben
 Zeitstempel mit anderen OHLC-Werten, nennt er die Zahl der abweichenden Kerzen
 und ein Beispiel; ersetzt wird weiterhin, aber nicht mehr still. Der häufigste
 Abstand muss ausserdem zum
 angegebenen Zeitrahmen passen (M1/M5/M15/H1), damit auch Zwischenraster wie M20
 oder M45 auffallen: Eine als M15 benannte H1-Datei wird mit Meldung abgelehnt,
 statt still als M15 zu gelten. Geprüft wird vor dem Schreiben — die
-falsch getakteten Zeilen landen gar nicht erst in der Tabelle. Wochenenden, Feiertage und
-Handelspausen verschieben den Median nicht, gelten also nicht als Fehler. Fehler und Warnungen stehen im Terminal und im Ereignisprotokoll;
+falsch getakteten Zeilen landen gar nicht erst in der Tabelle. Die Vorprüfung
+puffert zeilenbasiert höchstens 10 000 Zeilen; dünne Dateien werden vollständig
+gepuffert und noch vor dem Schreiben geprüft. Wochenenden, Feiertage und
+Handelspausen sind einzelne lange Abstände und verschieben den häufigsten
+Abstand nicht; sie gelten nicht als Rasterfehler. Der Median bleibt nur für die
+Lückenschwelle maßgeblich. Fehler und Warnungen stehen im Terminal und im Ereignisprotokoll;
 bei einem Fehler endet der Befehl mit Exit-Code 1, importiert bleibt die Reihe
 trotzdem.
 
@@ -377,9 +444,10 @@ Zusätzlich konservativ: 10 % Tagesverlust, 100 % Gesamtengagement (kein Hebel),
 20 % max. Positionsgrösse und 10 % Mindest-Bargeld. Die 1 % sind eine
 **Obergrenze**, keine Zielgrösse: Bei einem engen Stop erlaubte das Risikobudget
 deutlich mehr Stück, der 20-%-Deckel lässt aber höchstens ein Fünftel des
-Kontos als Nominal zu. Die tatsächliche Risikohöhe liegt dann darunter — bei
-2 % Stop-Abstand sind es 20 % × 2 % = 0.4 % des Kontos. Erst bei weiten Stops
-schöpft die Position die 1 % aus.
+Kontos als Nominal zu. Ohne Hebel hängt die tatsächliche Risikohöhe deshalb am
+Stop: 0.5 % Stop-Abstand ergeben 0.1 %, 1 % ergibt 0.2 %, 2 % ergeben 0.4 % des
+Kontos. Die vollen 1 % erreicht eine Position erst ab etwa 5 % Stop-Abstand;
+mehr als 1 % sind nie möglich.
 
 ## Kostenmodell
 
@@ -408,6 +476,13 @@ Meldung ab, statt eine falsche Währung zu buchen. `[kosten]` (inklusive
 `modell`) gilt als Rückfall für unbekannte Symbole wie Aktien und Indizes; nur
 Devisenpaare bringen ihr Profil mit, für sie muss in `config.toml` nichts je
 Symbol eingestellt werden.
+
+Optional bucht `finanzierung_bps_pro_tag` Finanzierungskosten pro UTC-Kalendertag
+auf das Einstiegsnotional; der Default ist `0` (deaktiviert). Die Kennzahl
+`finanzierung` steht im Backtest-Ergebnis getrennt von `gebuehren`. Der Bericht
+führt den Tagessatz additiv unter `kosten.finanzierung_bps_pro_tag`; Lab und
+Strategien zeigen die gebuchten Finanzierungskosten getrennt von den Gebühren.
+Das Berichtsschema bleibt bei 2, neue Felder sind für bestehende Leser additiv.
 
 ## Aufbau
 
@@ -459,6 +534,13 @@ Fehlerschlucker `S110`, Sicherheitsregeln `S`), `mypy` für den Handelskern
 Untergrenze von 85 % für dieselben vier Module. Regeln, Ausnahmen für den
 Altbestand und die lokalen Befehle stehen in
 [docs/QUALITAET.md](docs/QUALITAET.md).
+
+## Reproduzierbare Synthetik-Messung
+
+`scripts/messe_synthetisch.py` erzeugt eine deterministische Fünfjahresreihe
+und misst Import und Richterlauf getrennt (Wanduhrzeit und Spitzen-RSS) in einer
+eigenen, isolierten SQLite-Datenbank. Aufruf, Isolationsgarantie und Grenzen:
+[docs/BENCHMARK.md](docs/BENCHMARK.md).
 
 ## Review-Paket
 

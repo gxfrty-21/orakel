@@ -8,6 +8,7 @@ const SHIP_GROSS_MQ = window.matchMedia('(min-width: 1100px)');
 let shipGrossGerendert = null;
 function shipGrossAktiv(){ return SHIP_GROSS_MQ.matches; }
 let shipAuswahl = { typ: 'overview' }, shipDeptFilter = null, shipZoom = 1, shipX = 0, shipY = 0, shipZoomInit = false;
+const SHIP_MINDEST_SICHTBAR = 72;
 let shipDetail = null, shipDetailFehler = null, shipDetailLaden = false;
 let shipDetailFuer = null, shipDetailAnfrage = 0, shipNachrichtStatus = null, shipDraft = null;
 
@@ -1324,23 +1325,26 @@ function renderShipDetail(force = false){
 }
 
 function applyShipTransform(){
-  const w = $('#shipWorld');
+  const vp = $('#shipViewport'), w = $('#shipWorld');
   if(!w) return;
-  begrenzeShipPosition();
+  /* Mindestens 72 px des Schiffskörpers bleiben an jedem Rand im Viewport;
+     der Innenabstand der Welt zählt nicht als Schiff. Gilt für
+     Ziehen, Pinch, Mausrad, +/− und Fit, weil alle über diese Funktion laufen. */
+  const schiff = w.querySelector('.px-ship');
+  if(vp && vp.clientWidth && schiff && schiff.offsetWidth && schiff.offsetHeight){
+    const breite = schiff.offsetWidth * shipZoom;
+    const hoehe = schiff.offsetHeight * shipZoom;
+    const links = schiff.offsetLeft * shipZoom;
+    const oben = schiff.offsetTop * shipZoom;
+    const sichtbarX = Math.min(SHIP_MINDEST_SICHTBAR, breite);
+    const sichtbarY = Math.min(SHIP_MINDEST_SICHTBAR, hoehe);
+    shipX = Math.max(sichtbarX - links - breite,
+                     Math.min(vp.clientWidth - sichtbarX - links, shipX));
+    shipY = Math.max(sichtbarY - oben - hoehe,
+                     Math.min(vp.clientHeight - sichtbarY - oben, shipY));
+  }
   w.style.transform = `translate(${shipX}px, ${shipY}px) scale(${shipZoom})`;
   const z = $('#shipZoomWert'); if(z) z.textContent = `${Math.round(shipZoom * 100)} %`;
-}
-
-/* Hält mindestens einen Rand des Schiffs im Viewport. Gilt für Ziehen,
-   Pinch, Mausrad, +/− und Fit, weil jeder Pfad über applyShipTransform läuft. */
-function begrenzeShipPosition(){
-  const vp = $('#shipViewport'), w = $('#shipWorld');
-  if(!vp || !w || !w.offsetWidth) return;
-  const breite = w.offsetWidth * shipZoom, hoehe = w.offsetHeight * shipZoom;
-  const randX = Math.min(72, vp.clientWidth / 2, breite / 2);
-  const randY = Math.min(72, vp.clientHeight / 2, hoehe / 2);
-  shipX = Math.max(randX - breite, Math.min(vp.clientWidth - randX, shipX));
-  shipY = Math.max(randY - hoehe, Math.min(vp.clientHeight - randY, shipY));
 }
 
 function fitShip(){

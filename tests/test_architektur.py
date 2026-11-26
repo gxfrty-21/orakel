@@ -25,7 +25,7 @@ MODULNAME = re.compile(r"\borakel(?:\.[a-z_][a-z0-9_]*)+")
 
 ERWARTETE_MODULE = {
     "backtest", "data", "db", "judge", "kosten", "markt", "metrics", "migrationen",
-    "paper", "risk", "strategies",
+    "paper", "risk", "robustheit", "strategies",
 }
 
 # Module, die der Kern niemals importieren darf.

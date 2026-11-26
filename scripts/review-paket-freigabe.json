@@ -211,6 +211,10 @@
       "ziel": "dateien/scripts/pruefe-text250.mjs"
     },
     {
+      "quelle": "scripts/pruefe-sidebar-navigation.mjs",
+      "ziel": "dateien/scripts/pruefe-sidebar-navigation.mjs"
+    },
+    {
       "quelle": "scripts/pruefe-widerspruch-e2e.mjs",
       "ziel": "dateien/scripts/pruefe-widerspruch-e2e.mjs"
     },
@@ -1005,6 +1009,46 @@
     {
       "quelle": "tests/test_api_vertrag_live.py",
       "ziel": "dateien/tests/test_api_vertrag_live.py"
+    },
+    {
+      "quelle": "docs/BENCHMARK.md",
+      "ziel": "dateien/docs/BENCHMARK.md"
+    },
+    {
+      "quelle": "scripts/messe_synthetisch.py",
+      "ziel": "dateien/scripts/messe_synthetisch.py"
+    },
+    {
+      "quelle": "tests/test_messe_synthetisch.py",
+      "ziel": "dateien/tests/test_messe_synthetisch.py"
+    },
+    {
+      "quelle": "docs/H1-RETEST-SPEZIFIKATION.md",
+      "ziel": "dateien/docs/H1-RETEST-SPEZIFIKATION.md"
+    },
+    {
+      "quelle": "docs/H1-RETEST.md",
+      "ziel": "dateien/docs/H1-RETEST.md"
+    },
+    {
+      "quelle": "docs/ROBUSTHEIT.md",
+      "ziel": "dateien/docs/ROBUSTHEIT.md"
+    },
+    {
+      "quelle": "orakel/kern/robustheit.py",
+      "ziel": "dateien/orakel/kern/robustheit.py"
+    },
+    {
+      "quelle": "tests/test_h1_retest.py",
+      "ziel": "dateien/tests/test_h1_retest.py"
+    },
+    {
+      "quelle": "tests/test_robustheit.py",
+      "ziel": "dateien/tests/test_robustheit.py"
+    },
+    {
+      "quelle": "tests/test_robustheit_cli.py",
+      "ziel": "dateien/tests/test_robustheit_cli.py"
     }
   ],
   "dokumente": [

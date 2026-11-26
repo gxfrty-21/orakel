@@ -103,6 +103,16 @@ def _pruefe_paper_konfiguration(cfg: Config) -> None:
         )
 
 
+def _strategien_fuer_paper(cfg: Config) -> dict[str, Any]:
+    """Paper bewertet ausschliesslich das M15-Raster.
+
+    Auch wenn der Richter auf H1 konfiguriert ist, darf ``h1_retest`` nicht
+    mit M15-Kerzen aufgerufen werden. Die Auswahl bleibt unverändert; eine
+    H1-Validierung wird im Paper-Takt schlicht nicht registriert.
+    """
+    return strategien(cfg, zeitrahmen=PAPER_ZEITRAHMEN)
+
+
 def _fill(preis: float, richtung: float, cfg: Config) -> float:
     """Ausführungspreis inklusive adverser Slippage.
 
@@ -333,7 +343,7 @@ def tick(cfg: Config, db: Facts, zeitpunkt: datetime | None = None) -> dict[str,
             zeile = db.validierung(vid)
             if zeile is not None:
                 parameter = json.loads(zeile["parameter"])
-                strat = strategien(cfg).get(zeile["strategie"])
+                strat = _strategien_fuer_paper(cfg).get(zeile["strategie"])
                 if strat is not None:
                     signal = float(strat.signale(df.iloc[:-1], parameter)[-1])
         if signal <= 0:
@@ -406,7 +416,7 @@ def tick(cfg: Config, db: Facts, zeitpunkt: datetime | None = None) -> dict[str,
                         f"{symbol}: kein Einstieg — {problem}")
             continue
         parameter = json.loads(zeile["parameter"])
-        strat = strategien(cfg).get(zeile["strategie"])
+        strat = _strategien_fuer_paper(cfg).get(zeile["strategie"])
         if strat is None:
             continue
         # Signal nur auf abgeschlossenen Kerzen; die letzte Zeile ist die

@@ -81,8 +81,7 @@ class Config:
         """
         daten = copy.deepcopy(self._d)
         daten.setdefault("basis", {})["bars_pro_jahr"] = self.bars_pro_jahr_fuer(zeitrahmen)
-        if "daten" in daten:
-            daten["daten"]["min_kerzen"] = self.min_kerzen_fuer(zeitrahmen)
+        daten.setdefault("daten", {})["min_kerzen"] = self.min_kerzen_fuer(zeitrahmen)
         return Config(daten, self.pfad)
 
     @property
@@ -180,6 +179,7 @@ def validiere_config(daten: dict[str, Any]) -> None:
     _zahl(daten, 'kosten', 'commission_per_share', minimum=0.0)
     _zahl(daten, 'kosten', 'min_commission', minimum=0.0)
     _zahl(daten, 'kosten', 'slippage_bps', minimum=0.0, maximum=9999.999999)
+    _zahl(daten, 'kosten', 'finanzierung_bps_pro_tag', minimum=0.0, standard=0.0)
     # Nur für modell = "spread": quotierter Spread in Pips und Pip-Grösse.
     _zahl(daten, 'kosten', 'spread_pips', minimum=0.0, standard=0.0)
     _zahl(daten, 'kosten', 'pip_groesse', minimum=0.000000001, standard=0.0001)
