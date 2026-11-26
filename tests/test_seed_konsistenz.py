@@ -146,3 +146,22 @@ def test_seed_enthaelt_keine_zeilen_aelterer_laeufe(db: sqlite3.Connection) -> N
     tick = _zustand(db, "paper_letzter_tick")
     if tick is not None:
         assert _moment(tick) >= grenze, "Paper-Tick stammt aus einem älteren Lauf"
+
+
+def test_bericht_basis_nennt_keine_verschwundenen_artikel(db: sqlite3.Connection) -> None:
+    """Der Bericht des letzten Laufs darf keine gelöschten Artikel behaupten."""
+    zeile = db.execute(
+        "SELECT wert FROM zustand WHERE schluessel='bericht_basis'").fetchone()
+    if zeile is None:
+        return
+    if db.execute("SELECT COUNT(*) FROM artikel").fetchone()[0]:
+        return
+    befunde = []
+    for eintrag in json.loads(zeile[0]).get("agenten", []):
+        text = eintrag.get("ergebnis", "")
+        zahlen = [int(n) for n in re.findall(r"\b(?<!max )(\d+)\s+Artikel", text)]
+        zahlen += [int(n) for n in re.findall(r"(\d+)/\d+ mit Quelle", text)]
+        zahlen += [int(n) for n in re.findall(r"(\d+) von \d+ älter", text)]
+        if any(zahlen):
+            befunde.append(f"{eintrag.get('agent')}: {text}")
+    assert not befunde, f"Bericht nennt Artikel, die nicht mehr gespeichert sind: {befunde}"
