@@ -484,8 +484,10 @@ Content-Type: text/csv
 Der Dateiname muss `SYMBOL_TF_JJJJMMTT.csv` entsprechen; erlaubt sind `M15`
 und der konfigurierte Richter-Zeitrahmen (`[basis] richter_zeitrahmen`). Der
 Server berechnet den SHA-256 selbst und vergleicht ihn mit dem Header. Er
-akzeptiert nur abgeschlossene, bereits serverseitig bekannte Reihen mit
-gültigem Bootstrap-Marker. Die Datei wird zuerst als `.part` unter
+akzeptiert regulär nur abgeschlossene, bereits serverseitig bekannte Reihen
+mit gültigem Bootstrap-Marker; eine exakt gebuchte Datei darf nach
+Totalverlust ausnahmsweise ihren eigenen Block reparieren (siehe unten). Die
+Datei wird zuerst als `.part` unter
 `daten/inbox/` geschrieben und erst nach erfolgreichem Import nach
 `daten/SYMBOL_TF_JJJJMMTT.csv` verschoben; bei einem Fehler bleiben Kerzen und
 Ledger unverändert.
@@ -502,8 +504,14 @@ importieren und den Bootstrap-Marker setzen:
 Ohne Marker antwortet der Endpunkt mit `409 bootstrap_erforderlich`. Der
 Marker wird bei einer materiell verkürzten Kerzenreihe ungültig; ein Duplikat
 prüft zusätzlich den Ledger gegen die tatsächlichen Kerzen und importiert den
-Block bei fehlenden Zeilen erneut. Erfolgreiche Importe und Ablehnungen stehen
-im Ereignisprotokoll; der Token wird nie protokolliert.
+Block bei fehlenden Zeilen erneut. Nach einem Totalverlust darf eine exakt
+gebuchte Datei ihren eigenen Block auch dann wiederherstellen, wenn die
+Gesamtreihe dadurch noch unter `min_kerzen` bleibt (etwa ein Tagesblock mit 96
+M15-Kerzen). Die Antwort nennt die Teilwiederherstellung als Warnung; der
+Marker bleibt ungültig und neue Deltas werden weiter mit `409` abgewiesen, bis
+die Reihe die Mindesthistorie und den gespeicherten Endpunkt wieder deckt.
+Erfolgreiche Importe und Ablehnungen stehen im Ereignisprotokoll; der Token
+wird nie protokolliert.
 
 Grenzen: Es kommen nur Kerzen, die das Terminal geladen hat — „Max. bars in
 chart" und die Broker-Historie begrenzen die Tiefe, fehlende Bereiche werden

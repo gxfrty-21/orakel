@@ -590,8 +590,14 @@ def frische_kennzahl(juengste: Any, daten_cfg: dict[str, Any] | None,
 
 
 def pruefe_daten(df: pd.DataFrame, symbol: str, cfg: Any, timeframe: str = "M15",
-                 jetzt: datetime | None = None) -> Datenqualitaet:
-    """Prüft Kerzen auf die Fehler, die Backtests systematisch verfälschen."""
+                 jetzt: datetime | None = None,
+                 mindest_kerzen: int | None = None) -> Datenqualitaet:
+    """Prüft Kerzen auf die Fehler, die Backtests systematisch verfälschen.
+
+    ``mindest_kerzen`` überschreibt die Konfigurationsgrenze. ``0`` überspringt
+    nur diese eine Prüfung; der Transport nutzt das ausschliesslich für die
+    bewusste Teilwiederherstellung einer exakt gebuchten Datei.
+    """
     grenzen = cfg["daten"]
     q = Datenqualitaet(symbol=symbol, ok=True, kerzen=len(df), timeframe=timeframe)
     if df.empty:
@@ -625,8 +631,11 @@ def pruefe_daten(df: pd.DataFrame, symbol: str, cfg: Any, timeframe: str = "M15"
             + " — mehrjährige Reihe unvollständig (Broker-Historie oder Exportgrenze?)"
         )
 
-    mindestens = kerzen_minimum(int(grenzen["min_kerzen"]), timeframe)
-    if len(df) < mindestens:
+    mindestens = (
+        kerzen_minimum(int(grenzen["min_kerzen"]), timeframe)
+        if mindest_kerzen is None else max(0, int(mindest_kerzen))
+    )
+    if mindestens > 0 and len(df) < mindestens:
         q.fehler.append(
             f"Nur {len(df)} Kerzen, mindestens {mindestens} nötig ({timeframe.upper()})"
         )

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+from datetime import datetime, timezone
 
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
 from orakel import transport, web
+from orakel.kern import data as data_mod
 from orakel.kern.data import synthetische_kerzen
 from orakel.kern.db import Facts
 
@@ -19,6 +21,11 @@ TF = "M15"
 
 def _frische_m15(kerzen: int = 1250, alter_stunden: float = 1.0) -> pd.DataFrame:
     ende = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=alter_stunden)
+    return _m15_bis(ende, kerzen)
+
+
+def _m15_bis(ende: pd.Timestamp, kerzen: int) -> pd.DataFrame:
+    """Erzeugt ``kerzen`` M15-Kerzen, die genau bei ``ende`` enden."""
     start = ende - pd.Timedelta(minutes=15 * (kerzen - 1))
     reihe = synthetische_kerzen(
         "X", kerzen=kerzen, seed=11, start=start.isoformat())
@@ -26,6 +33,15 @@ def _frische_m15(kerzen: int = 1250, alter_stunden: float = 1.0) -> pd.DataFrame
     # Minuten in DB und Upload wegen der Mikrosekunden verschiedene Zeitstempel.
     reihe["ts"] = reihe["ts"].dt.floor("min")
     return reihe
+
+
+class _FesteDatenzeit(datetime):
+    """Friert nur die Datenuhr für den Tagesblock-Test ein."""
+
+    @classmethod
+    def now(cls, tz=None):
+        fest = datetime(2026, 11, 25, 23, 50, tzinfo=timezone.utc)
+        return fest if tz is None else fest.astimezone(tz)
 
 
 def _als_mt5(df: pd.DataFrame) -> bytes:
@@ -250,6 +266,74 @@ def test_gebuchte_datei_repariert_fehlende_reihe_neue_deltas_bleiben_am_gate(
     assert len(db.kerzen(SYMBOL, TF)) == 1250
     assert len(db.datenimporte()) == 1
     assert db.zustand("datenquelle") == "csv"
+
+
+def test_gebuchter_tagesblock_repariert_nach_totalverlust_bei_min_kerzen_1200(
+        cfg, monkeypatch):
+    _transport_aktiv(monkeypatch)
+    cfg._d["daten"]["min_kerzen"] = 1200
+    cfg._d["daten"]["max_kurs_alter_stunden_m15"] = 4
+    assert cfg.min_kerzen_fuer(TF) == 1200
+    # Ein echter MT5-Tagexport enthält genau einen Kalendertag. Die feste
+    # Datenuhr hält den Block mit der Produktionsfrische von vier Stunden
+    # prüfbar, ohne vom Zeitpunkt des Testlaufs abzuhängen.
+    monkeypatch.setattr(data_mod, "datetime", _FesteDatenzeit)
+    tagesende = pd.Timestamp("2026-11-25 23:45", tz="UTC")
+    db = Facts(cfg.db_pfad)
+    reihe = _m15_bis(tagesende, 1300)
+    db.kerzen_speichern_df(SYMBOL, TF, reihe)
+    _bootstrap(db, cfg)
+    tagesblock = reihe.iloc[-96:].copy()
+    assert len(tagesblock) == 96
+    assert tagesblock["ts"].dt.date.nunique() == 1
+    assert tagesblock["ts"].iloc[0] == pd.Timestamp("2026-11-25 00:00", tz="UTC")
+    assert tagesblock["ts"].iloc[-1] == tagesende
+    client = _client(cfg, monkeypatch)
+
+    with client:
+        # Der Tagesblock ist ein vollständiger Kalendertag, aber mit 96 Kerzen
+        # weit unter der Produktionsgrenze von 1200 Kerzen für die Gesamtreihe.
+        assert _post(client, tagesblock).status_code == 200
+        assert len(db.kerzen(SYMBOL, TF)) == 1300
+        assert len(db.datenimporte()) == 1
+
+        with db.conn() as c:
+            c.execute("DELETE FROM kerzen WHERE symbol=? AND zeitrahmen=?",
+                      (SYMBOL, TF))
+        assert db.kerzen(SYMBOL, TF) == []
+        assert transport.bootstrap_gesetzt(db, SYMBOL, TF) is False
+
+        # Ein neuer Hash bleibt trotz bekannter Reihe am Bootstrap-Gate.
+        neues_delta = tagesblock.iloc[-8:].copy()
+        neues_delta["volume"] = neues_delta["volume"] + 1
+        blockiert = _post(client, neues_delta)
+        assert blockiert.status_code == 409
+        assert blockiert.json()["code"] == "bootstrap_erforderlich"
+        assert db.kerzen(SYMBOL, TF) == []
+        assert len(db.datenimporte()) == 1
+
+        # Die exakt gebuchte Datei darf den 24-h-Block wiederherstellen, obwohl
+        # die Gesamtreihe danach die 1200-Kerzen-Grenze nicht erreicht.
+        repariert = _post(client, tagesblock)
+
+    assert repariert.status_code == 200, repariert.text
+    assert repariert.json()["code"] == "importiert"
+    assert repariert.json()["kerzen"] == 96
+    assert any("Teilwiederherstellung" in w
+               for w in repariert.json()["warnungen"])
+    assert len(db.kerzen(SYMBOL, TF)) == 96
+    assert len(db.datenimporte()) == 1
+    assert db.zustand("datenquelle") == "csv"
+    # Die Teilwiederherstellung öffnet das Gate nicht: Der Marker bleibt
+    # ungültig, bis wieder mindestens 1200 Kerzen vorhanden sind.
+    assert transport.bootstrap_gesetzt(db, SYMBOL, TF) is False
+
+    with client:
+        nachher = _post(client, neues_delta)
+    assert nachher.status_code == 409
+    assert nachher.json()["code"] == "bootstrap_erforderlich"
+    assert len(db.kerzen(SYMBOL, TF)) == 96
+    assert len(db.datenimporte()) == 1
 
 
 def test_token_key_id_und_feature_flag(cfg, monkeypatch):

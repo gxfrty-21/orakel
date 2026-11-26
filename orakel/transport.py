@@ -317,6 +317,7 @@ async def _speichere_temp(request: Request, ziel: Path, max_bytes: int,
 
 def _importiere_serie(
     db: Facts, cfg: Config, pfad: Path, symbol: str, zeitrahmen: str,
+    *, teilwiederherstellung: bool = False,
 ) -> tuple[Any, Any, dict[str, Any] | None]:
     """Importiert und prüft die zusammengeführte Reihe in einer Transaktion."""
     with db.conn() as c:
@@ -333,7 +334,22 @@ def _importiere_serie(
                 retry_after=1,
             ) from exc
         df = df_aus_bloecken(db.kerzen_bloecke(symbol, zeitrahmen, c=c))
-        q = pruefe_daten(df, symbol, cfg, timeframe=zeitrahmen)
+        q = pruefe_daten(
+            df, symbol, cfg, timeframe=zeitrahmen,
+            # Eine exakt gebuchte Datei darf nach Totalverlust zunächst nur
+            # ihren eigenen Block wiederherstellen. Die Mindesthistorie bleibt
+            # sonst unangetastet; der Bootstrap-Marker wird dadurch nicht
+            # gültig und neue Deltas bleiben gesperrt.
+            mindest_kerzen=0 if teilwiederherstellung else None,
+        )
+        if teilwiederherstellung:
+            mindestens = cfg.min_kerzen_fuer(zeitrahmen)
+            if len(df) < mindestens:
+                q.warnungen.append(
+                    f"Teilwiederherstellung: {len(df)} von mindestens "
+                    f"{mindestens} Kerzen ({zeitrahmen.upper()}); "
+                    "Bootstrap bleibt bis zur vollständigen Reihe gesperrt."
+                )
         if not q.ok:
             fehler = "; ".join(q.fehler) if q.fehler else "unbekannter Datenfehler"
             raise TransportFehler(
@@ -443,7 +459,9 @@ async def verarbeite_anfrage(request: Request, cfg: Config) -> JSONResponse:
 
         try:
             ergebnis, q, kennzahl = _importiere_serie(
-                db, cfg, temp, symbol, zeitrahmen)
+                db, cfg, temp, symbol, zeitrahmen,
+                teilwiederherstellung=bool(bestehende_buchung),
+            )
         except FrischeFehler as exc:
             raise TransportFehler(409, "daten_veraltet", str(exc)) from exc
 
