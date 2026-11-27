@@ -283,8 +283,16 @@
       "ziel": "dateien/scripts/baue_review_paket.py"
     },
     {
+      "quelle": "scripts/erzeuge_review_dokumente.py",
+      "ziel": "dateien/scripts/erzeuge_review_dokumente.py"
+    },
+    {
       "quelle": "tests/test_review_paket.py",
       "ziel": "dateien/tests/test_review_paket.py"
+    },
+    {
+      "quelle": "tests/test_review_paket_dokumente.py",
+      "ziel": "dateien/tests/test_review_paket_dokumente.py"
     },
     {
       "quelle": ".githooks/pre-commit",
