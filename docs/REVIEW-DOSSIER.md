@@ -1,6 +1,6 @@
 # Review-Dossier Orakel
 
-**Stand:** 27. November 2026, Commit `7a3737eca901870bb56cc5b6f98df70dcf226e21`
+**Stand:** 27. November 2026, Messstand Commit `e69a00fda573c2ae9f281338b7db0d13e007ef13`
 (`main`; die Messung lief bei sauberem Arbeitsbaum).
 **Zweck:** Eine externe KI soll das Repository realistisch einschätzen und die
 schwächsten Bereiche identifizieren. Dieses Dossier liefert dafür Architektur,
@@ -8,14 +8,15 @@ Randbedingungen, gemessene Zahlen, Dateipfade und konkrete Prüfaufträge.
 **Keine Note, keine Selbstbewertung:** Die Rangfolge in Abschnitt 6 ist eine
 belegte Kandidatenliste, keine feststehende Wahrheit. Prüfe sie gegen den Code.
 
-> **Aktualisierung 27.11.2026:** Dieses Dossier beschreibt jetzt den Stand
-> `7a3737e` (Squash-Merge aus PR #310). Gegenüber `b1857c6` kam der
-> deterministische Bau des Review-Pakets hinzu: Die Begleitdokumente entstehen
-> vor Manifest und ZIP, der Generator schreibt sie aus dem Manifest byte-gleich
-> neu. Die fachlichen Änderungen aus `b1857c6` (atomare Paper-Buchungen,
-> Stop-Pflicht im Risiko, gesperrter MT5-Orderpfad, Symbolzuordnung,
-> `trend_regime`) bleiben gültig. Der Strategie-Befund mit zehn Kandidaten und
-> null Bestandenen steht in [STRATEGIE-BEFUND.md](STRATEGIE-BEFUND.md).
+> **Aktualisierung 27.11.2026:** Dieses Dossier beschreibt den Messstand
+> `e69a00f` (Branch `pruefung/deutsche-testzahlen`, PR #312). Gegenüber
+> `7a3737e` prüft das Review-Paket zusätzlich deutsche Testzahlen wie
+> «N bestanden» in allen Markdown-Dateien gegen `EVIDENZ.json`. Die
+> Begleitdokumente entstehen weiterhin vor Manifest und ZIP; die fachlichen
+> Änderungen aus `b1857c6` (atomare Paper-Buchungen, Stop-Pflicht im Risiko,
+> gesperrter MT5-Orderpfad, Symbolzuordnung, `trend_regime`) bleiben gültig.
+> Der Strategie-Befund mit zehn Kandidaten und null Bestandenen steht in
+> [STRATEGIE-BEFUND.md](STRATEGIE-BEFUND.md).
 
 ## 0. Auftrag an die reviewende KI
 
@@ -89,8 +90,8 @@ Details: [ARCHITEKTUR-KERN.md](ARCHITEKTUR-KERN.md).
 | Betriebssystem | Windows 11 (Build 10.0.26300), AMD64 |
 | Python | 3.12.10 im lokalen `.venv` |
 | CPUs | 14 |
-| Messzeitpunkt | 27.11.2026, Commit `7a3737e` |
-| Suite | 816 Tests, 118,42 s Wanduhrzeit |
+| Messzeitpunkt | 27.11.2026, Commit `e69a00f` |
+| Suite | 818 Tests, 114,33 s Wanduhrzeit |
 | Datenbank | SQLite, WAL, ein schreibender Prozess |
 
 Die Laufzeit ist maschinen- und cacheabhängig. Sie ist keine Zusage für CI
@@ -105,10 +106,10 @@ erhoben. Coverage zählt Statements, nicht Verhalten.
 
 | Kennzahl | Wert |
 |---|---|
-| Tests | **816 bestanden**, 0 fehlgeschlagen, 0 übersprungen |
+| Tests | **818 bestanden**, 0 fehlgeschlagen, 0 übersprungen |
 | Testdateien | 75 |
-| Statements gesamt (`orakel/` + `scripts/`) | 14.763 |
-| Coverage gesamt | **77,06 %** |
+| Statements gesamt (`orakel/` + `scripts/`) | 14.775 |
+| Coverage gesamt | **77,08 %** |
 | Coverage der vier Kernmodule zusammen | **93,71 %** |
 | CI-Untergrenze Kern | 85 % |
 | Skip-/Xfail-Marker in Tests | 0 |
@@ -170,7 +171,7 @@ Die grünen Prüfungen sind kein Beweis für Typ- oder Fehlerfreiheit:
 |---|---|
 | Versionierte Dateien (Mess-Commit) | 291 |
 | Python-Dateien | 153 |
-| Python-Zeilen | 44.343 |
+| Python-Zeilen | 44.384 |
 | Testdateien | 75 |
 | JavaScript / ES-Module | 21 / 9 |
 | CSS / HTML | 10 / 1 |
@@ -184,15 +185,15 @@ Größte Python-Dateien:
 | `orakel/kern/db.py` | 1.563 |
 | `scripts/transport_client.py` | 1.350 |
 | `tests/test_data.py` | 1.218 |
-| `scripts/baue_review_paket.py` | 1.104 |
+| `scripts/baue_review_paket.py` | 1.121 |
 | `orakel/web.py` | 930 |
 | `orakel/__main__.py` | 827 |
 | `tests/test_company.py` | 811 |
 | `orakel/sekretariat.py` | 783 |
 | `orakel/company/api.py` | 764 |
 
-Die beiden Paketskripte haben 1.104 (`scripts/baue_review_paket.py`) und
-281 (`scripts/erzeuge_review_dokumente.py`) Zeilen, zusammen 1.385.
+Die beiden Paketskripte haben 1.121 (`scripts/baue_review_paket.py`) und
+281 (`scripts/erzeuge_review_dokumente.py`) Zeilen, zusammen 1.402.
 
 Längste Funktionen (nur `orakel/`):
 
@@ -214,9 +215,10 @@ Längste Funktionen (nur `orakel/`):
   `review_paket`, `docker`, `text250`, `widerspruch_e2e`, `touch`, `ruff`,
   `mypy`, `coverage` (plus `changes`).
 - Der PR #310 hatte auf `4747a80` alle erforderlichen Check-Runs erfolgreich
-  (25 Checks grün: pytest, Coverage, Review-Paket, docker, text250, Touch,
-  Widerspruch-E2E, architektur, ruff, mypy, Doku). Auf `main` @ `7a3737e` ist
-  der Tests-Workflow erfolgreich (Lauf `46056316627`).
+  (25 Checks grün). Auf `main` @ `c86a1e1` ist der Tests-Workflow erfolgreich
+  (Lauf `46058165925`).
+- PR #312 ergänzt die Prüfung deutscher Testzahlen; sein letzter Check-Lauf
+  steht im Pull Request.
 - Offene GitHub-Issues: **keine** (Stand 27.11.2026).
 - Bei der Messung keine uncommitteten Änderungen; `main` = `origin/main`.
 
@@ -449,8 +451,8 @@ Linux/macOS im Projekt:
 git diff --check
 ```
 
-Erwartete Größenordnung auf dieser Maschine: 816 Tests in rund 120 s,
-Gesamt-Coverage 77,06 %, Kern 93,71 %. Abweichungen sind möglich und selbst
+Erwartete Größenordnung auf dieser Maschine: 818 Tests in rund 115 s,
+Gesamt-Coverage 77,08 %, Kern 93,71 %. Abweichungen sind möglich und selbst
 ein Prüfpunkt.
 
 ## 9. Offene Datenlücken

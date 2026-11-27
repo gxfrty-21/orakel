@@ -698,7 +698,7 @@ stehen ihre Hashes im Manifest und die Dateien im ZIP. Der Generator liest
 den fertigen Dateisatz und ändert nichts, solange der Stand aus dem Manifest
 kommt. `--pruefen` bestätigt danach ohne weiteren Build Hashes, ZIP-Inhalt und
 die Zahlen in den Dokumenten. Dazu gehören auch deutsche Testzahlen wie
-«816 bestanden» in allen Markdown-Dateien des Pakets; sie müssen mit
+«N bestanden» in allen Markdown-Dateien des Pakets; sie müssen mit
 `EVIDENZ.json` übereinstimmen. Ein einzelner Evidenz-Build ohne anschliessende
 Prüfung reicht für den Bau, aber nicht als Nachweis.
 
