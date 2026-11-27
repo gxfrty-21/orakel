@@ -422,7 +422,7 @@ Reset-NetzState
 | N6 | Stub `--modus 507` | `--once` | 2 | 2 | wie N5 | `wartend`, `grund=server_507`, `http_status=507`, `versuche=2` |
 | N7 | Stub `--modus 429` | `--once` | 2 | 2 | wie N5 | `wartend`, `grund=server_429`, `http_status=429`, `versuche=2`; zweiter Request mindestens 1 s später |
 | N8 | Stub `--modus 409` | `--once` | 2 | 2 | wie N5 | `wartend`, `grund=import_belegt`, `http_status=409`, `versuche=2`; zweiter Request mindestens 1 s später |
-| N9 | Stub `--modus 401` | `--once` | 1 | 3 | `status=blockiert`, `grund=auth`, `details` ohne `codes` (globaler Stopp) | `status=blockiert`, `grund=auth`, `http_status=401`, `server_code=auth`, `versuche=1` |
+| N9 | Stub `--modus 401` | `--once` | 1 | 3 | `status=blockiert`, `grund=auth`, `details` ohne `codes` (globaler Stopp) | `status=blockiert`, `grund=auth`, `http_status=401`, `server_code=token_ungueltig`, `versuche=1` |
 | N10 | Stub `--modus 503` | `--once` | 1 | 3 | `status=blockiert`, `grund=transport_deaktiviert` | `blockiert`, `grund=transport_deaktiviert`, `http_status=503`, `versuche=1` |
 | N11 | Stub `--modus 400` | `--once` | 1 | 3 | `status=blockiert`, `grund=null` | `status=quarantaene`, `grund=hash_mismatch`, `staged_path=quarantine/...`; `.error.json` vorhanden |
 | N12 | Stub `--modus ok` | `--once` | 1 | 0 | `status=erfolg`, `grund=null` | `status=erfolgreich`, `http_status=200`, `server_code=importiert`; Datei unter `sent/` |
