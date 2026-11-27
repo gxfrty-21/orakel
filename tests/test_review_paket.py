@@ -119,6 +119,52 @@ def test_konsistenz_akzeptiert_deutsche_testzahl_und_verhaeltnisse(tmp_path):
     modul.pruefe_konsistenz(str(tmp_path), "a" * 40, evidenz)
 
 
+def test_messwerte_werden_gegen_das_dossier_geprueft(tmp_path):
+    modul = _modul()
+    evidenz = _evidenz(tmp_path)
+    evidenz["messwerte"] = {
+        "coverage": {"statements": 100, "verfehlt": 20, "prozent": 80.0,
+                     "kern_statements": 50, "kern_verfehlt": 5,
+                     "kern_prozent": 90.0},
+        "python": {"dateien": 2, "zeilen": 120,
+                   "dateien_zeilen": {"scripts/baue_review_paket.py": 100,
+                                      "scripts/erzeuge_review_dokumente.py": 20}},
+    }
+    ziel = tmp_path / "dateien" / "docs"
+    ziel.mkdir(parents=True)
+    (ziel / "REVIEW-DOSSIER.md").write_text(
+        "| Statements gesamt (`orakel/` + `scripts/`) | 100 |\n"
+        "| Coverage gesamt | **80,00 %** |\n"
+        "| Coverage der vier Kernmodule zusammen | **90,00 %** |\n"
+        "| Python-Zeilen | 120 |\n"
+        "| `scripts/baue_review_paket.py` | 100 |\n"
+        "Die beiden Paketskripte haben 100 (`scripts/baue_review_paket.py`) und\n"
+        "20 (`scripts/erzeuge_review_dokumente.py`) Zeilen, zusammen 120.\n",
+        encoding="utf-8")
+
+    modul.pruefe_konsistenz(str(tmp_path), "a" * 40, evidenz)
+
+
+def test_konsistenz_bricht_bei_abweichender_coverage(tmp_path):
+    modul = _modul()
+    evidenz = _evidenz(tmp_path)
+    evidenz["messwerte"] = {
+        "coverage": {"statements": 100, "verfehlt": 20, "prozent": 80.0,
+                     "kern_statements": 50, "kern_verfehlt": 5,
+                     "kern_prozent": 90.0},
+    }
+    ziel = tmp_path / "dateien" / "docs"
+    ziel.mkdir(parents=True)
+    (ziel / "REVIEW-DOSSIER.md").write_text(
+        "| Statements gesamt (`orakel/` + `scripts/`) | 100 |\n"
+        "| Coverage gesamt | **79,00 %** |\n"
+        "| Coverage der vier Kernmodule zusammen | **90,00 %** |\n",
+        encoding="utf-8")
+
+    with pytest.raises(modul.Abweichung, match="Coverage gesamt"):
+        modul.pruefe_konsistenz(str(tmp_path), "a" * 40, evidenz)
+
+
 def test_konsistenz_bricht_bei_falschem_hash(tmp_path):
     modul = _modul()
     evidenz = _evidenz(tmp_path)
@@ -346,6 +392,8 @@ def test_evidenz_uebernimmt_das_ci_protokoll(tmp_path, monkeypatch):
     monkeypatch.setattr(modul, "PRUEFUNGEN", (
         ("pytest", ("-m", "pytest", "-q", "tests"), "belege/evidenz-pytest.log"),))
     monkeypatch.setattr(modul, "subprocess", _NichtStarten)
+    monkeypatch.setattr(modul, "messe_python_zeilen", lambda: {
+        "dateien": 0, "zeilen": 0, "dateien_zeilen": {}})
 
     evidenz = modul.fuehre_evidenz_aus(str(tmp_path / "paket"), "a" * 40, "main",
                                        pytest_log=str(log), pytest_exit_code=str(code))
@@ -432,6 +480,8 @@ def test_evidenz_zaehlt_skips_zur_gesamtzahl(tmp_path, monkeypatch):
     monkeypatch.setattr(modul, "PRUEFUNGEN", (
         ("pytest", ("-m", "pytest", "-q", "tests"), "belege/evidenz-pytest.log"),))
     monkeypatch.setattr(modul, "subprocess", _NichtStarten)
+    monkeypatch.setattr(modul, "messe_python_zeilen", lambda: {
+        "dateien": 0, "zeilen": 0, "dateien_zeilen": {}})
 
     evidenz = modul.fuehre_evidenz_aus(str(tmp_path / "paket"), "a" * 40, "main",
                                        junit=str(junit), pytest_log=str(log),

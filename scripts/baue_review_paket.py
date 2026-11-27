@@ -62,6 +62,15 @@ MUSTER_TESTZAHL = re.compile(r'(\d+)\s+passed')
 MUSTER_TESTZAHL_DE = re.compile(
     r'(?im)^(?=[^\n]*\b(?:Tests?|Testzahl)\b)[^\n]*?'
     r'(?<!von )(?<![/\d.])(\d+)\s+bestanden\b')
+MUSTER_COV_TOTAL = re.compile(r'^TOTAL\s+(\d+)\s+(\d+)\s+\d+%', re.MULTILINE)
+MUSTER_COV_KERN = re.compile(
+    r'^\s*orakel[\\/]kern[\\/](?:paper|risk|backtest|judge)\.py\s+(\d+)\s+(\d+)',
+    re.MULTILINE)
+MUSTER_DOSSIER_ZEILE = re.compile(
+    r'^\|\s*`([\w./-]+\.py)`\s*\|\s*([\d.]+)\s*\|\s*$', re.MULTILINE)
+MUSTER_PAKETSKRIPTE = re.compile(
+    r'Die beiden Paketskripte haben\s+([\d.]+)\s+\(`([^`]+)`\)\s+und\s+'
+    r'([\d.]+)\s+\(`([^`]+)`\)\s+Zeilen,\s+zusammen\s+([\d.]+)\.')
 MUSTER_ERGEBNIS = re.compile(r'(\d+)\s+(passed|failed|errors?|skipped|xfailed|xpassed)\b')
 MUSTER_JUNIT = re.compile(r'<testsuite\b[^>]*\btests="(\d+)"')
 MUSTER_EVIDENZ_HASH = re.compile(r'`((?:belege|dateien)/[^`]+)`\s*\(`([0-9a-f]{8,64})')
@@ -78,7 +87,8 @@ API_BASIS = 'https://api.github.com'
 
 # Nachweise, die der Generator selbst ausführt. Reihenfolge = Reihenfolge im Bericht.
 PRUEFUNGEN = (
-    ('pytest', ('-m', 'pytest', '-q', 'tests'), 'belege/evidenz-pytest.log'),
+    ('pytest', ('-m', 'pytest', '-q', 'tests', '--cov=orakel', '--cov=scripts',
+                '--cov-report=term-missing'), 'belege/evidenz-pytest.log'),
     ('doku', ('scripts/pruefe_doku.py',), 'belege/evidenz-doku.log'),
 )
 
@@ -432,6 +442,47 @@ def letzte_zeile(text: str) -> str:
     return zeilen[-1] if zeilen else ''
 
 
+def prozent(statements: int, verfehlt: int) -> float:
+    """Coverage in Prozent, kaufmännisch auf zwei Stellen gerundet."""
+    if not statements:
+        return 0.0
+    return round((statements - verfehlt) / statements * 100, 2)
+
+
+def messe_coverage(text: str) -> dict | None:
+    """Liest Statements und Coverage aus dem ``term-missing``-Bericht."""
+    gesamt = MUSTER_COV_TOTAL.search(text)
+    kern = MUSTER_COV_KERN.findall(text)
+    if not gesamt or len(kern) != 4:
+        return None
+    statements, verfehlt = int(gesamt.group(1)), int(gesamt.group(2))
+    kern_statements = sum(int(s) for s, _ in kern)
+    kern_verfehlt = sum(int(v) for _, v in kern)
+    return {
+        'statements': statements,
+        'verfehlt': verfehlt,
+        'prozent': prozent(statements, verfehlt),
+        'kern_statements': kern_statements,
+        'kern_verfehlt': kern_verfehlt,
+        'kern_prozent': prozent(kern_statements, kern_verfehlt),
+    }
+
+
+def messe_python_zeilen() -> dict:
+    """Zählt Zeilen aller versionierten Python-Dateien im Arbeitsbaum."""
+    roh = git('ls-files', '-z', '*.py')
+    if isinstance(roh, bytes):
+        roh = roh.decode('utf-8')
+    zeilen = {}
+    for pfad in roh.split('\0'):
+        if not pfad:
+            continue
+        with open(os.path.join(WURZEL, pfad), 'rb') as f:
+            zeilen[pfad] = f.read().count(b'\n')
+    return {'dateien': len(zeilen), 'zeilen': sum(zeilen.values()),
+            'dateien_zeilen': zeilen}
+
+
 def testzahl_aus_log(text: str) -> int | None:
     """Liest die Testzahl aus der pytest-Schlusszeile (``402 passed``)."""
     treffer = MUSTER_TESTZAHL.findall(text)
@@ -566,6 +617,15 @@ def fuehre_evidenz_aus(ausgabe: str, commit: str, branch: str,
         'gesamt': gesamt,
         'dateien': dateien,
     }
+    messwerte = {'python': messe_python_zeilen()}
+    coverage = messe_coverage(protokoll)
+    if coverage:
+        messwerte['coverage'] = coverage
+    else:
+        print('Hinweis: ohne eigenen pytest-Lauf fehlen Coverage-Messwerte; '
+              'Coverage und Statements im Dossier werden nicht geprüft.',
+              file=sys.stderr)
+    evidenz['messwerte'] = messwerte
     with open(os.path.join(ausgabe, 'EVIDENZ.json'), 'w', encoding='utf-8') as f:
         json.dump(evidenz, f, ensure_ascii=False, indent=2)
         f.write('\n')
@@ -723,6 +783,74 @@ def ci_lauf_ids(text: str) -> set[str]:
     return set(MUSTER_RUN.findall(text)) | set(MUSTER_RUN_NUMMER.findall(text))
 
 
+def _dossier_zahl(text: str, label: str) -> int:
+    """Liest einen ganzzahligen Tabellenwert aus dem Dossier."""
+    treffer = re.search(rf'^\|\s*{re.escape(label)}[^|]*\|\s*([\d.]+)\s*\|\s*$',
+                        text, re.MULTILINE)
+    if not treffer:
+        raise Abweichung(f'Dossier-Zeile {label!r} fehlt; Messwerte nicht prüfbar.')
+    return int(treffer.group(1).replace('.', ''))
+
+
+def _dossier_prozent(text: str, label: str) -> float:
+    """Liest einen Prozentwert der Form ``**77,08 %**`` aus dem Dossier."""
+    treffer = re.search(rf'^\|\s*{re.escape(label)}\s*\|\s*\*\*([\d,]+)\s*%\*\*\s*\|',
+                        text, re.MULTILINE)
+    if not treffer:
+        raise Abweichung(f'Dossier-Zeile {label!r} fehlt; Messwerte nicht prüfbar.')
+    return float(treffer.group(1).replace(',', '.'))
+
+
+def _pruefe_dateizeile(name: str, wert: str, dateien: dict[str, int]) -> None:
+    """Vergleicht eine Dossier-Zeilenzahl mit der gemessenen Datei."""
+    if name not in dateien:
+        raise Abweichung(f'Dossier nennt {name}, das nicht im gemessenen Dateisatz liegt.')
+    gemessen = dateien[name]
+    if int(wert.replace('.', '')) != gemessen:
+        raise Abweichung(f'Dossier nennt {wert} Zeilen für {name}, gemessen sind {gemessen}.')
+
+
+def pruefe_messwerte(ausgabe: str, evidenz: dict | None) -> None:
+    """Prüft Coverage, Statements und Zeilenzahlen im Dossier gegen EVIDENZ.json."""
+    messwerte = (evidenz or {}).get('messwerte') or {}
+    if not messwerte:
+        print('Hinweis: EVIDENZ.json enthält keine Messwerte; Dossier-Zahlen werden '
+              'nicht geprüft.', file=sys.stderr)
+        return
+    pfad = os.path.join(ausgabe, 'dateien', 'docs', 'REVIEW-DOSSIER.md')
+    if not os.path.exists(pfad):
+        return
+    text = open(pfad, encoding='utf-8').read()
+    coverage = messwerte.get('coverage')
+    if coverage:
+        if _dossier_zahl(text, 'Statements gesamt') != coverage['statements']:
+            raise Abweichung('Dossier nennt andere Statements als die Messung '
+                             f"({coverage['statements']}).")
+        for label, soll in (('Coverage gesamt', coverage['prozent']),
+                            ('Coverage der vier Kernmodule zusammen',
+                             coverage['kern_prozent'])):
+            if abs(_dossier_prozent(text, label) - soll) > 0.005:
+                raise Abweichung(f'Dossier nennt für {label} einen anderen Wert als '
+                                 f'{soll:.2f} %.')
+    python = messwerte.get('python') or {}
+    if python:
+        if _dossier_zahl(text, 'Python-Zeilen') != python['zeilen']:
+            raise Abweichung('Dossier nennt andere Python-Zeilen als die Messung '
+                             f"({python['zeilen']}).")
+        dateien = python.get('dateien_zeilen') or {}
+        for name, wert in MUSTER_DOSSIER_ZEILE.findall(text):
+            _pruefe_dateizeile(name, wert, dateien)
+        treffer = MUSTER_PAKETSKRIPTE.search(text)
+        if treffer:
+            for wert, name in ((treffer.group(1), treffer.group(2)),
+                               (treffer.group(3), treffer.group(4))):
+                _pruefe_dateizeile(name, wert, dateien)
+            if int(treffer.group(5).replace('.', '')) != (
+                    int(treffer.group(1).replace('.', ''))
+                    + int(treffer.group(3).replace('.', ''))):
+                raise Abweichung('Dossier nennt eine falsche Summe der Paketskript-Zeilen.')
+
+
 def pruefe_konsistenz(ausgabe: str, commit: str, evidenz: dict | None,
                       quellen: dict[str, str] | None = None,
                       lauf=None) -> None:
@@ -788,6 +916,7 @@ def pruefe_konsistenz(ausgabe: str, commit: str, evidenz: dict | None,
                     if int(zahl) != evidenz['testzahl']:
                         raise Abweichung(f'{relativ} nennt {zahl} bestandene Tests, '
                                          f'gemessen sind {evidenz["testzahl"]}.')
+    pruefe_messwerte(ausgabe, evidenz)
 
 
 def schreibe_pruefbericht(ausgabe: str, commit: str, branch: str,
