@@ -1117,6 +1117,30 @@
     {
       "quelle": "tests/test_windows_transport_task.py",
       "ziel": "dateien/tests/test_windows_transport_task.py"
+    },
+    {
+      "quelle": "orakel/kern/mt5_orders.py",
+      "ziel": "dateien/orakel/kern/mt5_orders.py"
+    },
+    {
+      "quelle": "tests/test_mt5_orders.py",
+      "ziel": "dateien/tests/test_mt5_orders.py"
+    },
+    {
+      "quelle": "tests/test_symbol_mapping.py",
+      "ziel": "dateien/tests/test_symbol_mapping.py"
+    },
+    {
+      "quelle": "docs/MT5-ORDERPFAD.md",
+      "ziel": "dateien/docs/MT5-ORDERPFAD.md"
+    },
+    {
+      "quelle": "docs/STRATEGIE-BEFUND.md",
+      "ziel": "dateien/docs/STRATEGIE-BEFUND.md"
+    },
+    {
+      "quelle": "pytest.ini",
+      "ziel": "dateien/pytest.ini"
     }
   ],
   "dokumente": [
