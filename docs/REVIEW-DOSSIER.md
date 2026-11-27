@@ -1,6 +1,6 @@
 # Review-Dossier Orakel
 
-**Stand:** 27. November 2026, Commit `43c110c8caed738f1bb454d014ead7d669347ba7`
+**Stand:** 27. November 2026, Commit `b1857c68e1efe7022ee095e86de3c3c7843df32a`
 (`main`; die Messung lief bei sauberem Arbeitsbaum).
 **Zweck:** Eine externe KI soll das Repository realistisch einschätzen und die
 schwächsten Bereiche identifizieren. Dieses Dossier liefert dafür Architektur,
@@ -8,13 +8,10 @@ Randbedingungen, gemessene Zahlen, Dateipfade und konkrete Prüfaufträge.
 **Keine Note, keine Selbstbewertung:** Die Rangfolge in Abschnitt 6 ist eine
 belegte Kandidatenliste, keine feststehende Wahrheit. Prüfe sie gegen den Code.
 
-> **Aktualisierung 27.11.2026:** Die Messungen in Abschnitt 4 beziehen sich
-> weiterhin auf `43c110c` und sind dort als historischer Stand zu lesen. Seit
-> diesem Commit wurde der Handelskern gehärtet (atomare Paper-Buchungen,
-> Stop-Pflicht im Risiko, gesperrter MT5-Orderpfad, Symbolzuordnung,
-> `trend_regime`). Aktueller Stand auf Basis `aa945d5` plus diesem Branch:
-> **815 Tests bestanden**, Coverage der vier Kernmodule **93,71 %**, Ruff,
-> mypy im CI-Umfang, Doku-Prüfung und `git diff --check` grün. Der
+> **Aktualisierung 27.11.2026:** Dieses Dossier beschreibt jetzt den Stand
+> `b1857c6` (Squash-Merge aus PR #307). Gegenüber `43c110c` kamen atomare
+> Paper-Buchungen, die Stop-Pflicht im Risiko, der gesperrte MT5-Orderpfad,
+> die Symbolzuordnung und der Kandidat `trend_regime` hinzu. Der
 > Strategie-Befund mit zehn Kandidaten und null Bestandenen steht in
 > [STRATEGIE-BEFUND.md](STRATEGIE-BEFUND.md).
 
@@ -90,8 +87,8 @@ Details: [ARCHITEKTUR-KERN.md](ARCHITEKTUR-KERN.md).
 | Betriebssystem | Windows 11 (Build 10.0.26300), AMD64 |
 | Python | 3.12.10 im lokalen `.venv` |
 | CPUs | 14 |
-| Messzeitpunkt | 27.11.2026, Commit `43c110c` |
-| Suite | 797 Tests, 151,84 s Wanduhrzeit |
+| Messzeitpunkt | 27.11.2026, Commit `b1857c6` |
+| Suite | 815 Tests, 131,52 s Wanduhrzeit |
 | Datenbank | SQLite, WAL, ein schreibender Prozess |
 
 Die Laufzeit ist maschinen- und cacheabhängig. Sie ist keine Zusage für CI
@@ -106,11 +103,11 @@ erhoben. Coverage zählt Statements, nicht Verhalten.
 
 | Kennzahl | Wert |
 |---|---|
-| Tests | **797 bestanden**, 0 fehlgeschlagen, 0 übersprungen |
-| Testdateien | 72 |
-| Statements gesamt (`orakel/` + `scripts/`) | 14.412 |
-| Coverage gesamt | **76,93 %** |
-| Coverage der vier Kernmodule zusammen | **93,03 %** |
+| Tests | **815 bestanden**, 0 fehlgeschlagen, 0 übersprungen |
+| Testdateien | 75 |
+| Statements gesamt (`orakel/` + `scripts/`) | 14.737 |
+| Coverage gesamt | **77,16 %** |
+| Coverage der vier Kernmodule zusammen | **93,71 %** |
 | CI-Untergrenze Kern | 85 % |
 | Skip-/Xfail-Marker in Tests | 0 |
 
@@ -118,30 +115,30 @@ Kernmodule im Einzelnen:
 
 | Modul | Coverage | Statements |
 |---|---:|---:|
-| `orakel/kern/paper.py` | 94,9 % | 256 |
-| `orakel/kern/risk.py` | 89,7 % | 87 |
-| `orakel/kern/backtest.py` | 96,8 % | 156 |
-| `orakel/kern/judge.py` | 90,3 % | 290 |
+| `orakel/kern/paper.py` | 95,0 % | 267 |
+| `orakel/kern/risk.py` | 88,0 % | 99 |
+| `orakel/kern/backtest.py` | 97,0 % | 158 |
+| `orakel/kern/judge.py` | 93,0 % | 287 |
 
 Niedrige Coverage außerhalb des Kerns (nur Dateien ab 40 Statements):
 
 | Datei | Coverage | Statements | fehlende Zeilen |
 |---|---:|---:|---:|
-| `scripts/seed_widerspruch.py` | 0,0 % | 53 | 53 |
 | `scripts/backoff_fehlerfall.py` | 0,0 % | 86 | 86 |
-| `scripts/soak_monitor.py` | 41,8 % | 232 | 135 |
-| `orakel/scheduler.py` | 42,9 % | 70 | 40 |
-| `scripts/soak_abnahme.py` | 46,2 % | 238 | 128 |
+| `scripts/seed_widerspruch.py` | 0,0 % | 53 | 53 |
+| `scripts/soak_monitor.py` | 42,0 % | 232 | 135 |
+| `orakel/scheduler.py` | 43,0 % | 70 | 40 |
+| `scripts/soak_abnahme.py` | 46,0 % | 238 | 128 |
 | `orakel/web.py` | 47,0 % | 568 | 301 |
-| `orakel/sekretariat.py` | 48,7 % | 450 | 231 |
+| `orakel/sekretariat.py` | 49,0 % | 450 | 231 |
 | `scripts/messe_synthetisch.py` | 50,0 % | 274 | 137 |
-| `scripts/pruefe_doku.py` | 54,3 % | 337 | 154 |
-| `orakel/watchdog.py` | 54,8 % | 93 | 42 |
-| `orakel/agents.py` | 61,6 % | 268 | 103 |
-| `orakel/pipeline.py` | 65,2 % | 287 | 100 |
-| `orakel/company/handlers.py` | 68,7 % | 246 | 77 |
-| `scripts/transport_client.py` | 76,7 % | 970 | 226 |
-| `orakel/transport.py` | 85,1 % | 276 | 41 |
+| `scripts/pruefe_doku.py` | 54,0 % | 337 | 154 |
+| `orakel/watchdog.py` | 55,0 % | 93 | 42 |
+| `orakel/agents.py` | 62,0 % | 268 | 103 |
+| `orakel/pipeline.py` | 65,0 % | 287 | 100 |
+| `orakel/company/handlers.py` | 69,0 % | 246 | 77 |
+| `scripts/transport_client.py` | 77,0 % | 970 | 226 |
+| `orakel/transport.py` | 85,0 % | 277 | 41 |
 
 Sieben Dateien mit mindestens 40 Statements liegen unter 50 % Coverage.
 
@@ -151,7 +148,7 @@ Sieben Dateien mit mindestens 40 Statements liegen unter 50 % Coverage.
 |---|---|
 | `ruff check .` | **All checks passed** (Exit 0) |
 | `mypy` | **Success: no issues found in 4 source files** (Exit 0) |
-| Doku-Prüfung | **OK**: 36 Dateien inkl. diesem Dossier, 108 relative Links, 8 Ankerlinks, 0 Befunde |
+| Doku-Prüfung | **OK**: 38 Dateien inkl. diesem Dossier, 114 relative Links, 8 Ankerlinks, 0 Befunde |
 | `git diff --check` | Exit 0 |
 
 Die grünen Prüfungen sind kein Beweis für Typ- oder Fehlerfreiheit:
@@ -169,28 +166,28 @@ Die grünen Prüfungen sind kein Beweis für Typ- oder Fehlerfreiheit:
 
 | Kennzahl | Wert |
 |---|---|
-| Versionierte Dateien (Mess-Commit) | 282 |
-| Python-Dateien | 148 |
-| Python-Zeilen | 43.129 |
-| Testdateien | 72 |
+| Versionierte Dateien (Mess-Commit) | 291 |
+| Python-Dateien | 153 |
+| Python-Zeilen | 44.255 |
+| Testdateien | 75 |
 | JavaScript / ES-Module | 21 / 9 |
 | CSS / HTML | 10 / 1 |
 | SQL-Migrationen | 12 (6 hoch, 6 zurück) |
-| Markdown-Dateien (Mess-Commit) | 35 |
+| Markdown-Dateien (Mess-Commit) | 38 |
 
 Größte Python-Dateien:
 
 | Datei | Zeilen |
 |---|---:|
-| `orakel/kern/db.py` | 1.544 |
-| `scripts/transport_client.py` | 1.349 |
+| `orakel/kern/db.py` | 1.563 |
+| `scripts/transport_client.py` | 1.350 |
 | `tests/test_data.py` | 1.218 |
 | `scripts/baue_review_paket.py` | 1.056 |
 | `orakel/web.py` | 930 |
-| `orakel/__main__.py` | 826 |
+| `orakel/__main__.py` | 827 |
+| `tests/test_company.py` | 811 |
 | `orakel/sekretariat.py` | 783 |
 | `orakel/company/api.py` | 764 |
-| `orakel/kern/data.py` | 752 |
 
 Längste Funktionen (nur `orakel/`):
 
@@ -199,21 +196,22 @@ Längste Funktionen (nur `orakel/`):
 | `create_app()` | 751 | `orakel/web.py:180` |
 | `baue_globe()` | 383 | `orakel/globe.py:259` |
 | `lauf()` | 273 | `orakel/pipeline.py:237` |
-| `tick()` | 251 | `orakel/kern/paper.py:243` |
-| `backtest()` | 212 | `orakel/kern/backtest.py:28` |
+| `tick()` | 265 | `orakel/kern/paper.py:249` |
+| `backtest()` | 215 | `orakel/kern/backtest.py:28` |
 | `sicherstellen_daten()` | 179 | `orakel/pipeline.py:37` |
 | `nachtlauf()` | 167 | `orakel/nexus/nacht.py:196` |
 
-29 Funktionen in `orakel/` sind mindestens 80 Zeilen lang.
+32 Funktionen in `orakel/` sind mindestens 80 Zeilen lang.
 
 ### 4.4 CI und Repository-Zustand
 
 - CI-Jobs in `.github/workflows/tests.yml`: `pytest`, `architektur`, `doku`,
   `review_paket`, `docker`, `text250`, `widerspruch_e2e`, `touch`, `ruff`,
   `mypy`, `coverage` (plus `changes`).
-- Der PR #304 hatte auf `285b232` **25/25 erfolgreiche Check-Runs**
-  (0 übersprungen, 0 Fehler). Auf `main` @ `43c110c` ist der Tests-Workflow
-  erfolgreich.
+- Der PR #307 hatte auf `7419293` alle erforderlichen Check-Runs erfolgreich
+  (pytest, Coverage, Review-Paket, docker, text250, Touch, Widerspruch-E2E,
+  architektur, ruff, mypy, Doku; 0 Fehler). Auf `main` @ `b1857c6` ist der
+  Tests-Workflow erfolgreich (Lauf `46017442482`).
 - Offene GitHub-Issues: **keine** (Stand 27.11.2026).
 - Bei der Messung keine uncommitteten Änderungen; `main` = `origin/main`.
 
@@ -221,7 +219,7 @@ Längste Funktionen (nur `orakel/`):
 
 Diese Bereiche sind nicht perfekt, aber deutlich besser belegt als der Rest:
 
-- **Handelskern:** 93,03 % Coverage, mypy, Architekturvertrag und gezielte
+- **Handelskern:** 93,71 % Coverage, mypy, Architekturvertrag und gezielte
   Tests für Backtest, Richter, Risiko und Paper-Takt.
 - **Datenbankmigrationen:** Anwenden, Teilstände, Rollback, Sicherung und
   Altbestände sind in [MIGRATIONEN.md](MIGRATIONEN.md) und
@@ -245,8 +243,8 @@ Reihenfolge nach Schaden bei Fehlverhalten, Größe der unbelegten Fläche und
 
 ### 6.1 Reale Datenstrecke Windows/MT5 — höchstes Risiko
 
-**Befund:** Der Transportclient ist mit 1.349 Zeilen und 970 Statements der
-zweitgrößte Python-Baustein, hat 76,7 % Coverage und ist nur mit Fake-MT5,
+**Befund:** Der Transportclient ist mit 1.350 Zeilen und 970 Statements der
+zweitgrößte Python-Baustein, hat 77,0 % Coverage und ist nur mit Fake-MT5,
 injiziertem HTTP und einem Loopback-Stub getestet. Die reale Abnahme auf
 Windows mit MT5, Broker-Symbolen, Zeitzonen und Abnahme-Server ist **nicht
 ausgeführt**. Das steht offen in [ABNAHME-PR-302.md](ABNAHME-PR-302.md).
@@ -446,8 +444,8 @@ Linux/macOS im Projekt:
 git diff --check
 ```
 
-Erwartete Größenordnung auf dieser Maschine: 797 Tests in rund 150 s,
-Gesamt-Coverage 76,93 %, Kern 93,03 %. Abweichungen sind möglich und selbst
+Erwartete Größenordnung auf dieser Maschine: 815 Tests in rund 130 s,
+Gesamt-Coverage 77,16 %, Kern 93,71 %. Abweichungen sind möglich und selbst
 ein Prüfpunkt.
 
 ## 9. Offene Datenlücken
