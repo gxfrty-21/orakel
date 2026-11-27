@@ -56,6 +56,9 @@ FESTE_ZEIT = (2026, 11, 18, 0, 0, 0)
 NEBEN_DATEIEN = {MANIFEST_NAME, PROVENIENZ_NAME, ZIP_NAME, ZIP_NAME + '.sha256'}
 EVIDENZ_MD = 'EVIDENZ.md'
 MUSTER_TESTZAHL = re.compile(r'(\d+)\s+passed')
+# Deutsche Testzahl ("816 bestanden"). Verhaeltnisse wie "3/3 bestanden" und
+# Tausenderpunkte werden nicht als Testzahl gelesen.
+MUSTER_TESTZAHL_DE = re.compile(r'(?<![/\d.])(\d+)\s+bestanden\b')
 MUSTER_ERGEBNIS = re.compile(r'(\d+)\s+(passed|failed|errors?|skipped|xfailed|xpassed)\b')
 MUSTER_JUNIT = re.compile(r'<testsuite\b[^>]*\btests="(\d+)"')
 MUSTER_EVIDENZ_HASH = re.compile(r'`((?:belege|dateien)/[^`]+)`\s*\(`([0-9a-f]{8,64})')
@@ -768,6 +771,20 @@ def pruefe_konsistenz(ausgabe: str, commit: str, evidenz: dict | None,
             if ergebnis['head_sha'] != commit:
                 raise Abweichung(f'{name} nennt CI-Lauf {run_id} auf '
                                  f'{ergebnis["head_sha"][:7]}, Paket-Commit ist {commit[:7]}.')
+    if evidenz:
+        # Auch die Doku unter ``dateien/`` muss die gemessene Testzahl nennen.
+        # Die frueheren Muster oben gelten nur fuer die Dokumente im Paketwurzel.
+        for wurzel, _, dateien in os.walk(ausgabe):
+            for datei in sorted(dateien):
+                if not datei.endswith('.md'):
+                    continue
+                pfad = os.path.join(wurzel, datei)
+                relativ = os.path.relpath(pfad, ausgabe).replace(os.sep, '/')
+                text = open(pfad, encoding='utf-8').read()
+                for zahl in MUSTER_TESTZAHL_DE.findall(text):
+                    if int(zahl) != evidenz['testzahl']:
+                        raise Abweichung(f'{relativ} nennt {zahl} bestandene Tests, '
+                                         f'gemessen sind {evidenz["testzahl"]}.')
 
 
 def schreibe_pruefbericht(ausgabe: str, commit: str, branch: str,
