@@ -455,9 +455,9 @@ Zugangsdaten braucht das Skript nicht, und es gibt keinen Weg zu einer Order.
 
 ### Automatischer HTTPS-Transport zum Server
 
-Phase 1 des Transportplans ist der Server-Endpunkt `POST /api/daten/import`.
-Der Windows-Scheduler und der automatische Abruf sind noch **nicht**
-umgesetzt; ein Windows-Client kann denselben Endpunkt später nutzen.
+Der Server-Endpunkt `POST /api/daten/import` ist gemergt.
+Der Windows-Client und der Task-Scheduler sind implementiert; die
+Inbetriebnahme mit echtem MT5 steht noch aus. Anleitung: [docs/TRANSPORT-WINDOWS.md](docs/TRANSPORT-WINDOWS.md).
 
 Der Endpunkt nimmt rohe MT5-CSV-Daten als `text/csv` oder
 `application/octet-stream` an. Er ist standardmässig deaktiviert und braucht
@@ -516,8 +516,8 @@ wird nie protokolliert.
 Grenzen: Es kommen nur Kerzen, die das Terminal geladen hat — „Max. bars in
 chart" und die Broker-Historie begrenzen die Tiefe, fehlende Bereiche werden
 übersprungen statt erfunden. Broker-Symbole können abweichen (`EURUSD.a`), und
-der Server-Endpunkt steht bereit; der Windows-Scheduler für den automatischen
-Upload fehlt noch (siehe unten).
+der Server-Endpunkt, der Windows-Client und der Task-Scheduler
+stehen bereit. Details: [docs/TRANSPORT-WINDOWS.md](docs/TRANSPORT-WINDOWS.md).
 
 Nach dem Import prüft der Befehl die **zusammengeführte** Reihe je Symbol und
 Zeitrahmen (einzelne Blöcke dürfen kürzer als `min_kerzen` sein): Mindestzahl
@@ -546,8 +546,8 @@ Lückenschwelle maßgeblich. Fehler und Warnungen stehen im Terminal und im Erei
 bei einem Fehler endet der Befehl mit Exit-Code 1, importiert bleibt die Reihe
 trotzdem.
 
-Noch nicht unterstützt: der Windows-Scheduler und der automatische
-Transportlauf (der Server-Endpunkt und der Bootstrap sind vorhanden), die
+Der Windows-Client und der automatische
+Transportlauf sind implementiert; die manuelle Windows-Abnahme steht aus. Die
 automatische Erkennung der Broker-Zeitzone (sie muss als IANA-Zone oder fester
 Versatz angegeben werden), Tick-Daten, Dezimalkommas und eine Bewertung anderer Zeitrahmen
 als M15 im Paper-Takt; der Richter kann über `[basis] richter_zeitrahmen`
@@ -629,8 +629,8 @@ tests/           Risiko, Backtest, Daten, Bericht
 
 1. **Echte Daten**: CSV-Import und direkter Abruf aus dem Terminal auf deinem
 Windows-Rechner stehen (siehe [Kursdaten aus MT5](#kursdaten-aus-mt5)); der
-HTTPS-Endpunkt mit Bootstrap und Ledger-Reconciliation steht, der
-Windows-Scheduler für den automatischen Transport fehlt noch.
+HTTPS-Endpunkt mit Bootstrap und Ledger-Reconciliation steht; der
+Windows-Client und der Task-Scheduler stehen; die manuelle Windows-Abnahme steht aus.
 2. **Spider Intelligence**: Netz-Recherche mit Quellenprüfung, robots.txt und Limits.
 3. **3D-Ausbau**: begehbare Decks und First-Person-Navigation sind zurückgestellt;
    die aktuelle 2D-Welt ist umgesetzt und an echte Daten gekoppelt.

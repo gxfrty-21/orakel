@@ -1073,6 +1073,38 @@
     {
       "quelle": "tests/test_robustheit_cli.py",
       "ziel": "dateien/tests/test_robustheit_cli.py"
+    },
+    {
+      "quelle": "docs/TRANSPORT-WINDOWS.md",
+      "ziel": "dateien/docs/TRANSPORT-WINDOWS.md"
+    },
+    {
+      "quelle": "docs/ABNAHME-PR-302.md",
+      "ziel": "dateien/docs/ABNAHME-PR-302.md"
+    },
+    {
+      "quelle": "scripts/transport_client.py",
+      "ziel": "dateien/scripts/transport_client.py"
+    },
+    {
+      "quelle": "scripts/transport_client.example.toml",
+      "ziel": "dateien/scripts/transport_client.example.toml"
+    },
+    {
+      "quelle": "scripts/windows_transport_task.ps1",
+      "ziel": "dateien/scripts/windows_transport_task.ps1"
+    },
+    {
+      "quelle": "tests/test_transport_client.py",
+      "ziel": "dateien/tests/test_transport_client.py"
+    },
+    {
+      "quelle": "tests/test_transport_client_state.py",
+      "ziel": "dateien/tests/test_transport_client_state.py"
+    },
+    {
+      "quelle": "tests/test_windows_transport_task.py",
+      "ziel": "dateien/tests/test_windows_transport_task.py"
     }
   ],
   "dokumente": [
