@@ -190,6 +190,23 @@ def validiere_config(daten: dict[str, Any]) -> None:
         _zahl(daten, 'daten', 'max_sprung_pct', minimum=0.0, standard=25.0)
         _zahl(daten, 'daten', 'max_alter_tage', minimum=0.000001, standard=5.0)
         daten_abschnitt = daten.get('daten') or {}
+        symbol_map = daten_abschnitt.get('symbol_map') or {}
+        if not isinstance(symbol_map, dict):
+            raise ValueError('config.toml: [daten.symbol_map] muss eine Tabelle sein')
+        normalisiert: dict[str, str] = {}
+        for broker, intern in symbol_map.items():
+            if not isinstance(broker, str) or not broker.strip():
+                raise ValueError('config.toml: [daten.symbol_map] Broker-Symbol muss '
+                                 'ein nicht-leerer Text sein')
+            if not isinstance(intern, str) or not intern.strip():
+                raise ValueError(f'config.toml: [daten.symbol_map] Ziel für {broker!r} '
+                                 'muss ein nicht-leerer Text sein')
+            schluessel = broker.strip().upper()
+            ziel = intern.strip().upper()
+            if normalisiert.get(schluessel, ziel) != ziel:
+                raise ValueError(f'config.toml: [daten.symbol_map] {broker!r} ist nach '
+                                 'Gross-/Kleinschreibung doppelt mit verschiedenen Zielen')
+            normalisiert[schluessel] = ziel
         if daten_abschnitt.get('server_versatz_stunden') is not None:
             _zahl(daten, 'daten', 'server_versatz_stunden', minimum=-24.0, maximum=24.0)
             if daten_abschnitt.get('server_zeitzone'):

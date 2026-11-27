@@ -146,22 +146,28 @@ def _positionswert(p: Any, kurs_map: dict[str, float],
 
 
 def _verkauf(db: Facts, cfg: Config, p: Any, preis: float, status: str,
-             grund: str, ereignis: str) -> float:
-    """Bucht einen vollständigen Verkauf und liefert den Cash-Zufluss.
+             grund: str, ereignis: str, *, cash: float,
+             zustand: dict[str, Any]) -> float:
+    """Bucht einen vollständigen Verkauf atomar und liefert den neuen Cash-Stand.
 
     Ein Teilverkauf existiert im Paper-Takt nicht: Eine Position wird immer
-    ganz geschlossen.
+    ganz geschlossen. Position, Entscheid, Ereignis und der neue Cash-Stand
+    werden in **einer** Transaktion geschrieben; ein Absturz dazwischen lässt
+    die Position und den alten Kontostand unverändert.
     """
     menge = float(p["menge"])
     prov = kosten_je_seite(menge, cfg, p["symbol"], kurs=preis)
     netto = (menge * (preis - float(p["einstieg"])) - prov
              - kosten_je_seite(menge, cfg, p["symbol"], kurs=preis))
-    db.position_loeschen(p["symbol"])
-    db.entscheid_speichern(p["symbol"], "verkaufen", menge, preis, p["strategie"],
-                           status, True, [grund, f"Netto {netto:.2f}"])
-    db.ereignis("info", "Trading Floor",
-                f"{p['symbol']}: {ereignis} bei {preis:.5f}, Netto {netto:.2f}")
-    return menge * preis - prov
+    neuer_cash = cash + menge * preis - prov
+    with db.conn() as c:
+        db.position_loeschen(p["symbol"], c=c)
+        db.entscheid_speichern(p["symbol"], "verkaufen", menge, preis, p["strategie"],
+                               status, True, [grund, f"Netto {netto:.2f}"], c=c)
+        db.ereignis("info", "Trading Floor",
+                    f"{p['symbol']}: {ereignis} bei {preis:.5f}, Netto {netto:.2f}", c=c)
+        db.zustand_setzen("paper_konto", {**zustand, "cash": neuer_cash}, c=c)
+    return neuer_cash
 
 
 def _kerze_gueltig(zeile: Any) -> bool:
@@ -255,6 +261,7 @@ def tick(cfg: Config, db: Facts, zeitpunkt: datetime | None = None) -> dict[str,
     freigabe_takte = int(cfg.abschnitt("risiko").get("risiko_stopp_freigabe_takte", 2))
 
     zustand = db.zustand("paper_konto") or {}
+    konto_zustand = dict(zustand)
     cash = float(zustand.get("cash", cfg.start_kapital))
     hoechst = float(zustand.get("hoechststand", cfg.start_kapital))
     tagesstart = float(zustand.get("tagesstart", cfg.start_kapital))
@@ -287,10 +294,11 @@ def tick(cfg: Config, db: Facts, zeitpunkt: datetime | None = None) -> dict[str,
                 "Tagesstart ohne aktuelle Kurse für alle Positionen; "
                 "Bewertung als unsicher markiert",
             )
-        db.zustand_setzen("paper_konto", {
-            **zustand, "datum": heute, "tagesstart": tagesstart,
+        konto_zustand.update({
+            "datum": heute, "tagesstart": tagesstart,
             "tagesstart_unsicher": tagesstart_unsicher,
         })
+        db.zustand_setzen("paper_konto", konto_zustand)
 
     def konto_aktualisieren(cash_wert: float) -> tuple[float, bool, KontoZustand]:
         positionen = db.positionen()
@@ -329,8 +337,10 @@ def tick(cfg: Config, db: Facts, zeitpunkt: datetime | None = None) -> dict[str,
         # Kerze genügt.
         if float(letzte["low"]) <= stop:
             preis = _fill(min(float(letzte["open"]), stop), -1.0, cfg)
-            cash += _verkauf(db, cfg, p, preis, "ausgeführt (Paper, Stop)",
-                             f"Stop bei {stop:.5f} erreicht", "Stop ausgelöst")
+            cash = _verkauf(db, cfg, p, preis, "ausgeführt (Paper, Stop)",
+                            f"Stop bei {stop:.5f} erreicht", "Stop ausgelöst",
+                            cash=cash, zustand=konto_zustand)
+            konto_zustand["cash"] = cash
             gesperrt.add(symbol)
             continue
 
@@ -349,8 +359,10 @@ def tick(cfg: Config, db: Facts, zeitpunkt: datetime | None = None) -> dict[str,
         if signal <= 0:
             gesperrt.add(symbol)
             preis = _fill(float(letzte["open"]), -1.0, cfg)
-            cash += _verkauf(db, cfg, p, preis, "ausgeführt (Paper, Signal)",
-                             "Strategiesignal ist neutral", "Ausstieg per Signal")
+            cash = _verkauf(db, cfg, p, preis, "ausgeführt (Paper, Signal)",
+                            "Strategiesignal ist neutral", "Ausstieg per Signal",
+                            cash=cash, zustand=konto_zustand)
+            konto_zustand["cash"] = cash
 
     # ---------- 2) Konto neu bewerten ----------
     equity, equity_unsicher, konto = konto_aktualisieren(cash)
@@ -450,21 +462,29 @@ def tick(cfg: Config, db: Facts, zeitpunkt: datetime | None = None) -> dict[str,
             continue
 
         prov = kosten_je_seite(menge, cfg, symbol, kurs=kurs)
-        if menge * kurs + prov > cash:
+        neuer_cash = cash - (menge * kurs + prov)
+        if neuer_cash < 0:
             continue
-        cash -= menge * kurs + prov
         kurs_map[symbol] = kurs
-        db.position_setzen(
-            symbol, menge, kurs, stop,
-            json.dumps({"schluessel": wahl["schluessel"],
-                        "validierung_id": int(wahl["validierung_id"])}, ensure_ascii=False),
-            jetzt(),
-        )
-        db.entscheid_speichern(symbol, "kaufen", menge, kurs, wahl["schluessel"],
-                               "ausgeführt (Paper)", True,
-                               pruefung.gruende + [f"Stop bei {stop:.5f}"])
-        db.ereignis("info", "Trading Floor",
-                    f"{symbol}: Paper-Kauf {menge:.0f} Stück zu {kurs:.5f}, Stop {stop:.5f}")
+        # Kauf, Entscheid, Ereignis und Cash-Stand sind eine Buchung. Ohne
+        # diese Transaktion könnte ein Absturz eine Position ohne die
+        # zugehörige Cash-Belastung hinterlassen.
+        with db.conn() as c:
+            db.position_setzen(
+                symbol, menge, kurs, stop,
+                json.dumps({"schluessel": wahl["schluessel"],
+                            "validierung_id": int(wahl["validierung_id"])}, ensure_ascii=False),
+                jetzt(), c=c,
+            )
+            db.entscheid_speichern(symbol, "kaufen", menge, kurs, wahl["schluessel"],
+                                   "ausgeführt (Paper)", True,
+                                   pruefung.gruende + [f"Stop bei {stop:.5f}"], c=c)
+            db.ereignis("info", "Trading Floor",
+                        f"{symbol}: Paper-Kauf {menge:.0f} Stück zu {kurs:.5f}, Stop {stop:.5f}",
+                        c=c)
+            db.zustand_setzen("paper_konto", {**konto_zustand, "cash": neuer_cash}, c=c)
+        cash = neuer_cash
+        konto_zustand["cash"] = cash
         ereignisse.append(f"{symbol}: gekauft {menge:.0f}")
         equity, equity_unsicher, konto = konto_aktualisieren(cash)
         hoechst = konto.hoechststand

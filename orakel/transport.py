@@ -38,6 +38,7 @@ from .kern.datenimport import (
     FrischeFehler,
     ParallelerImport,
     importiere_datei,
+    internes_symbol,
     versatz_schluessel,
 )
 
@@ -397,6 +398,7 @@ async def verarbeite_anfrage(request: Request, cfg: Config) -> JSONResponse:
         key_id = _autorisieren(request, konfiguration)
         dateiname = str(request.headers.get("x-orakel-dateiname", "")).strip()
         symbol, zeitrahmen, _datum = zerlege_transport_dateiname(dateiname)
+        symbol = internes_symbol(symbol, cfg["daten"])
         erwartete_summe = str(
             request.headers.get("x-orakel-content-sha256", "")
         ).strip().lower()

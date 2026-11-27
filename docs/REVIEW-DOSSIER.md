@@ -8,6 +8,16 @@ Randbedingungen, gemessene Zahlen, Dateipfade und konkrete Prüfaufträge.
 **Keine Note, keine Selbstbewertung:** Die Rangfolge in Abschnitt 6 ist eine
 belegte Kandidatenliste, keine feststehende Wahrheit. Prüfe sie gegen den Code.
 
+> **Aktualisierung 27.11.2026:** Die Messungen in Abschnitt 4 beziehen sich
+> weiterhin auf `43c110c` und sind dort als historischer Stand zu lesen. Seit
+> diesem Commit wurde der Handelskern gehärtet (atomare Paper-Buchungen,
+> Stop-Pflicht im Risiko, gesperrter MT5-Orderpfad, Symbolzuordnung,
+> `trend_regime`). Aktueller Stand auf Basis `aa945d5` plus diesem Branch:
+> **815 Tests bestanden**, Coverage der vier Kernmodule **93,71 %**, Ruff,
+> mypy im CI-Umfang, Doku-Prüfung und `git diff --check` grün. Der
+> Strategie-Befund mit zehn Kandidaten und null Bestandenen steht in
+> [STRATEGIE-BEFUND.md](STRATEGIE-BEFUND.md).
+
 ## 0. Auftrag an die reviewende KI
 
 Lies zuerst dieses Dossier, dann die in Abschnitt 7 genannten Dateien. Bewerte

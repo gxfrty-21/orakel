@@ -86,6 +86,7 @@ def backtest(
     einstieg = stop = 0.0
     einstieg_prov = 0.0
     einstieg_ts = ""
+    einstieg_bar = 0
     gebuehren = 0.0
     finanzierung = 0.0
     finanzierung_handel = 0.0
@@ -159,6 +160,7 @@ def backtest(
             "stueck": round(stueck, 2),
             "netto": round(netto, 2),
             "rendite_pct": round(netto / basis * 100, 2) if basis else 0.0,
+            "bars": max(0, int(bar) - int(einstieg_bar)),
             "grund": grund,
         })
         stueck = 0.0
@@ -189,6 +191,7 @@ def backtest(
                             stop = stop_preis
                             einstieg_prov = prov
                             einstieg_ts = str(ts[fill])
+                            einstieg_bar = fill
                             finanzierung_handel = 0.0
                             finanzierung_notional = notional
                             letzter_finanzierungstag = (

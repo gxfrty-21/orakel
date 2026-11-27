@@ -25,6 +25,7 @@ erzwungen:
 | Kern | `orakel/kern/kosten.py` | Kosten je Seite: Kommission pro Stück oder halber Spread |
 | Kern | `orakel/kern/judge.py` | Walk-Forward, Holdout, Robustheit |
 | Kern | `orakel/kern/risk.py` | Positionsgrösse, Risikostopp |
+| Kern | `orakel/kern/mt5_orders.py` | MT5-Orderplanung, Volumenschritt, Stop-Level, bewusst gesperrtes Senden |
 | Kern | `orakel/kern/paper.py` | Paper-Takt, Paper-Sperre |
 | Kern | `orakel/kern/metrics.py` | Kennzahlen, Drawdown |
 | Kern | `orakel/kern/db.py` | Fakten, Abfragen, Startinitialisierung |
@@ -94,3 +95,8 @@ Beleg im Review-Paket liegen, nicht nur als Behauptung.
 Wird der Nachweis nicht erbracht, bleibt der Feature-Stopp bestehen und wird
 im Bericht ausdrücklich als Ergebnis festgehalten. Ein negativer Befund ist ein
 gültiges Ergebnis; ein weitergebautes UI ohne Nachweis ist es nicht.
+
+Die MT5-Orderplanung in `orakel/kern/mt5_orders.py` ist ausdrücklich kein
+Durchbruch dieses Stopps: Sie baut und prüft nur einen Request, sendet ihn
+nicht und ersetzt keinen Strategienachweis. Details und die Grenzen der
+Abnahme stehen in [MT5-ORDERPFAD.md](MT5-ORDERPFAD.md).

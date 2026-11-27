@@ -103,8 +103,23 @@ class Risikomanager:
         if stopp:
             return Pruefung(False, [f"Handelsstopp: {stopp}"])
 
-        if order.menge <= 0:
+        if order.stop is None or not math.isfinite(float(order.stop)) or float(order.stop) <= 0:
+            return Pruefung(False, ["Kein gültiger Stop-Loss — Kauf ohne Stop ist nicht erlaubt"])
+        if not math.isfinite(float(order.kurs)) or float(order.kurs) <= 0:
+            return Pruefung(False, [f"Ungültiger Kurs {order.kurs!r}"])
+        if float(order.stop) >= float(order.kurs):
+            return Pruefung(False, ["Stop-Loss liegt nicht unter dem Einstiegskurs"])
+        if not math.isfinite(float(order.menge)) or order.menge <= 0:
             return Pruefung(False, ["Menge ist null (Stop-Abstand zu gross oder Bargeld zu knapp)"])
+        if konto.equity <= 0:
+            return Pruefung(False, ["Kontowert ist null oder negativ"])
+        risiko = order.menge * (order.kurs - order.stop)
+        risikogrenze = konto.equity * self.g.risk_per_trade_pct / 100.0
+        if risiko > risikogrenze + 1e-9:
+            return Pruefung(False, [
+                f"Risiko {risiko:.2f} überschreitet die Grenze {risikogrenze:.2f} "
+                f"({self.g.risk_per_trade_pct} % des Kontos)"
+            ])
 
         if len(konto.positionen) >= self.g.max_open_positions:
             gruende.append(f"Zu viele offene Positionen ({len(konto.positionen)} von max. "

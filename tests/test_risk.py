@@ -51,9 +51,29 @@ def test_kein_kauf_bei_15_offenen_positionen(cfg):
     g = RisikoGrenzen.aus_config(cfg)
     manager = Risikomanager(g)
     voll = [{"menge": 10, "kurs": 100.0} for _ in range(15)]
-    pruefung = manager.pruefe(Order("EURUSD", "kaufen", 10, 100.0), konto(positionen=voll))
+    pruefung = manager.pruefe(Order("EURUSD", "kaufen", 10, 100.0, stop=95.0),
+                              konto(positionen=voll))
     assert not pruefung.genehmigt
     assert any("Zu viele offene Positionen" in g for g in pruefung.gruende)
+
+
+def test_kauf_ohne_stop_wird_abgelehnt(cfg):
+    """Das Risiko pro Trade ist ohne Stop nicht bestimmbar; der Kauf ist gesperrt."""
+    manager = Risikomanager(RisikoGrenzen.aus_config(cfg))
+    pruefung = manager.pruefe(Order("EURUSD", "kaufen", 10, 100.0), konto())
+
+    assert not pruefung.genehmigt
+    assert any("Stop-Loss" in grund for grund in pruefung.gruende)
+
+
+def test_kauf_ueber_risikobudget_wird_abgelehnt(cfg):
+    """Ein direkter Aufrufer kann die Positionsgrösse nicht am Risiko vorbeiführen."""
+    manager = Risikomanager(RisikoGrenzen.aus_config(cfg))
+    # 300 Stück × 5 Stop-Abstand = 1'500 > 1'000 (1 % von 100'000)
+    pruefung = manager.pruefe(Order("EURUSD", "kaufen", 300, 100.0, stop=95.0), konto())
+
+    assert not pruefung.genehmigt
+    assert any("Risiko" in grund for grund in pruefung.gruende)
 
 
 def test_verkauf_ist_immer_erlaubt(cfg):
@@ -72,7 +92,7 @@ def test_not_stop_bei_zehn_prozent_drawdown(cfg):
 
 def test_korrelation_ueber_grenze_lehnt_kauf_ab(cfg):
     manager = Risikomanager(RisikoGrenzen.aus_config(cfg))
-    pruefung = manager.pruefe(Order("US500", "kaufen", 10, 100.0),
+    pruefung = manager.pruefe(Order("US500", "kaufen", 10, 100.0, stop=95.0),
                               konto(letzte_korrelation=0.92))
     assert not pruefung.genehmigt
     assert any("Korrelation" in g for g in pruefung.gruende)
@@ -80,10 +100,10 @@ def test_korrelation_ueber_grenze_lehnt_kauf_ab(cfg):
 
 def test_korrelation_im_betrag_und_unter_grenze(cfg):
     manager = Risikomanager(RisikoGrenzen.aus_config(cfg))
-    assert manager.pruefe(Order("US500", "kaufen", 10, 100.0),
+    assert manager.pruefe(Order("US500", "kaufen", 10, 100.0, stop=95.0),
                           konto(letzte_korrelation=0.20)).genehmigt
     # Starke Gegenbewegung ist ebenfalls Klumpenrisiko
-    assert not manager.pruefe(Order("US500", "kaufen", 10, 100.0),
+    assert not manager.pruefe(Order("US500", "kaufen", 10, 100.0, stop=95.0),
                               konto(letzte_korrelation=-0.90)).genehmigt
 
 
@@ -91,7 +111,7 @@ def test_engagement_deckel_wird_geprueft(cfg):
     manager = Risikomanager(RisikoGrenzen.aus_config(cfg))
     # 90 % des Kontos bereits investiert -> weiterer Kauf von 20'000 würde 110 % ergeben
     offen = [{"menge": 900, "kurs": 100.0}]
-    pruefung = manager.pruefe(Order("EURUSD", "kaufen", 200, 100.0),
+    pruefung = manager.pruefe(Order("EURUSD", "kaufen", 200, 100.0, stop=95.0),
                               konto(cash=10_000.0, positionen=offen))
     assert not pruefung.genehmigt
     assert any("Gesamtengagement" in g for g in pruefung.gruende)

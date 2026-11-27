@@ -364,10 +364,10 @@ def _pruefe_entwicklung(
             u.erfuellt.append(f"{name} ({detail})")
         else:
             u.gruende.append(f"{name} — {detail}")
-    if u.gruende:
-        u.urteil = "abgelehnt"
-        return
-
+    # Auch abgelehnte Kandidaten erhalten Robustheits-, Monte-Carlo- und
+    # Zufallsdiagnostik. Sonst fehlen die Werte genau dort, wo ein Review
+    # wissen muss, ob die Ablehnung nur an der Stichprobengrösse oder an
+    # fehlender Robustheit liegt. Der Holdout bleibt weiterhin versiegelt.
     # Diese Prüfungen sehen ausschliesslich den Entwicklungsteil, nie den Holdout.
     u.robustheit_anteil = _robustheit(
         df.iloc[:dev_n].reset_index(drop=True), strategie, u.parameter, cfg, grenzen,
@@ -495,6 +495,8 @@ def pruefe_holdout(
     )
     oos = erg.kennzahlen
     min_trades = int(v.get("min_holdout_trades", 10))
+    basis = float(df["close"].iloc[dev_n])
+    benchmark = (float(df["close"].iloc[-1]) / basis - 1) * 100 if basis > 0 else 0.0
     gruende: list[str] = []
     checks = [
         (f"Mindestens {min_trades} Holdout-Trades", int(oos.get("trades", 0)) >= min_trades,
@@ -511,6 +513,10 @@ def pruefe_holdout(
         ("Gebühren durch Holdout-Netto gedeckt",
          float(oos.get("gebuehren", 0.0)) < abs(float(oos.get("netto", 0.0))) + 1e-9,
          f"Gebühren {float(oos.get('gebuehren', 0.0)):.2f}"),
+        ("Holdout schlägt Kaufen-und-Halten",
+         benchmark <= 0 or float(oos.get("rendite_pct", 0.0)) > benchmark,
+         f"Strategie {float(oos.get('rendite_pct', 0.0)):.2f} % vs. "
+         f"Kaufen-und-Halten {benchmark:.2f} %"),
     ]
     sharpe_wert = oos.get("sharpe")
     if sharpe_wert is not None:
@@ -521,8 +527,6 @@ def pruefe_holdout(
         if not ok:
             gruende.append(f"{name} — {detail}")
 
-    basis = float(df["close"].iloc[dev_n])
-    benchmark = (float(df["close"].iloc[-1]) / basis - 1) * 100 if basis > 0 else 0.0
     u.holdout = {
         "von": str(df["ts"].iloc[dev_n])[:19],
         "bis": str(df["ts"].iloc[-1])[:19],
