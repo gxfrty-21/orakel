@@ -394,9 +394,21 @@ def test_evidenz_uebernimmt_das_ci_protokoll(tmp_path, monkeypatch):
     monkeypatch.setattr(modul, "subprocess", _NichtStarten)
     monkeypatch.setattr(modul, "messe_python_zeilen", lambda: {
         "dateien": 0, "zeilen": 0, "dateien_zeilen": {}})
+    coverage = tmp_path / "artefakt" / "coverage.json"
+    coverage.write_text(json.dumps({
+        "totals": {"num_statements": 100, "missing_lines": 20},
+        "files": {f"orakel/kern/{name}.py": {"summary": {"num_statements": 10,
+                                                          "missing_lines": 1}}
+                  for name in ("paper", "risk", "backtest", "judge")},
+    }), encoding="utf-8")
 
     evidenz = modul.fuehre_evidenz_aus(str(tmp_path / "paket"), "a" * 40, "main",
-                                       pytest_log=str(log), pytest_exit_code=str(code))
+                                       pytest_log=str(log), pytest_exit_code=str(code),
+                                       coverage_bericht=str(coverage))
+
+    assert evidenz["messwerte"]["coverage"] == {
+        "statements": 100, "verfehlt": 20, "prozent": 80.0,
+        "kern_statements": 40, "kern_verfehlt": 4, "kern_prozent": 90.0}
 
     kopie = tmp_path / "paket" / "belege" / "evidenz-pytest.log"
     assert evidenz["testzahl"] == 7

@@ -468,6 +468,39 @@ def messe_coverage(text: str) -> dict | None:
     }
 
 
+def messe_coverage_bericht(pfad: str) -> dict:
+    """Liest Statements und Coverage aus dem JSON-Bericht des Coverage-Jobs."""
+    try:
+        daten = json.load(open(pfad, encoding='utf-8'))
+    except (OSError, json.JSONDecodeError) as fehler:
+        raise Abweichung(f'Coverage-Bericht nicht lesbar: {pfad} ({fehler}).') from fehler
+    totals = daten.get('totals') or {}
+    try:
+        statements = int(totals['num_statements'])
+        verfehlt = int(totals['missing_lines'])
+    except (KeyError, TypeError, ValueError) as fehler:
+        raise Abweichung(f'Coverage-Bericht {pfad} nennt keine Statements.') from fehler
+    kern_statements = kern_verfehlt = 0
+    dateien = daten.get('files') or {}
+    for name in ('paper', 'risk', 'backtest', 'judge'):
+        eintrag = dateien.get(f'orakel/kern/{name}.py') or {}
+        summary = eintrag.get('summary') or {}
+        try:
+            kern_statements += int(summary['num_statements'])
+            kern_verfehlt += int(summary['missing_lines'])
+        except (KeyError, TypeError, ValueError) as fehler:
+            raise Abweichung(f'Coverage-Bericht {pfad} nennt kein Modul '
+                             f'orakel/kern/{name}.py.') from fehler
+    return {
+        'statements': statements,
+        'verfehlt': verfehlt,
+        'prozent': prozent(statements, verfehlt),
+        'kern_statements': kern_statements,
+        'kern_verfehlt': kern_verfehlt,
+        'kern_prozent': prozent(kern_statements, kern_verfehlt),
+    }
+
+
 def messe_python_zeilen() -> dict:
     """Zählt Zeilen aller versionierten Python-Dateien im Arbeitsbaum."""
     roh = git('ls-files', '-z', '*.py')
@@ -546,7 +579,8 @@ PYTEST_ARTEFAKT_BEFEHL = 'python -m pytest -q tests --junitxml=artifacts/pytest/
 def fuehre_evidenz_aus(ausgabe: str, commit: str, branch: str,
                        junit: str | None = None,
                        pytest_log: str | None = None,
-                       pytest_exit_code: str | None = None) -> dict:
+                       pytest_exit_code: str | None = None,
+                       coverage_bericht: str | None = None) -> dict:
     """Führt die Nachweise aus und schreibt Protokolle, EVIDENZ.json und EVIDENZ.md.
 
     Die Testzahl stammt aus dem Protokoll bzw. dem JUnit-Bericht; sie wird nirgends
@@ -618,11 +652,14 @@ def fuehre_evidenz_aus(ausgabe: str, commit: str, branch: str,
         'dateien': dateien,
     }
     messwerte = {'python': messe_python_zeilen()}
-    coverage = messe_coverage(protokoll)
+    if coverage_bericht:
+        coverage = messe_coverage_bericht(coverage_bericht)
+    else:
+        coverage = messe_coverage(protokoll)
     if coverage:
         messwerte['coverage'] = coverage
     else:
-        print('Hinweis: ohne eigenen pytest-Lauf fehlen Coverage-Messwerte; '
+        print('Hinweis: ohne Coverage-Bericht fehlen Coverage-Messwerte; '
               'Coverage und Statements im Dossier werden nicht geprüft.',
               file=sys.stderr)
     evidenz['messwerte'] = messwerte
@@ -1070,7 +1107,8 @@ def baue(freigabe: dict, commit: str, branch: str, ausgabe: str,
          evidenz_bauen: bool = False,
          junit: str | None = None, ci: dict | None = None,
          pytest_log: str | None = None,
-         pytest_exit_code: str | None = None) -> tuple[list[dict], str]:
+         pytest_exit_code: str | None = None,
+         coverage_bericht: str | None = None) -> tuple[list[dict], str]:
     quellen = quell_eintraege(freigabe, commit)
     schreibe_kopien(quellen, ausgabe)
     for e in quellen:
@@ -1080,7 +1118,8 @@ def baue(freigabe: dict, commit: str, branch: str, ausgabe: str,
     if evidenz_bauen:
         evidenz = fuehre_evidenz_aus(ausgabe, commit, branch, junit,
                                      pytest_log=pytest_log,
-                                     pytest_exit_code=pytest_exit_code)
+                                     pytest_exit_code=pytest_exit_code,
+                                     coverage_bericht=coverage_bericht)
     if evidenz is None and os.path.exists(os.path.join(ausgabe, 'EVIDENZ.json')):
         evidenz = json.load(open(os.path.join(ausgabe, 'EVIDENZ.json'), encoding='utf-8'))
     if evidenz is None:
@@ -1190,6 +1229,8 @@ def main() -> int:
                          'die Suite erneut zu starten')
     ap.add_argument('--pytest-exit-code', default=None,
                     help='Datei mit dem Exit-Code des Laufs, zu dem --pytest-log gehört')
+    ap.add_argument('--coverage-bericht', default=None,
+                    help='coverage-JSON des Coverage-Jobs für Statements und Kern-Coverage')
     ap.add_argument('--ci-run', default=None, help='CI-Lauf-ID, deren Head-Commit geprüft wird')
     args = ap.parse_args()
 
@@ -1215,7 +1256,8 @@ def main() -> int:
                 eintraege, zip_sha = baue(freigabe, commit, branch, temp,
                                           evidenz_bauen=True, junit=args.junit, ci=ci,
                                           pytest_log=args.pytest_log,
-                                          pytest_exit_code=args.pytest_exit_code)
+                                          pytest_exit_code=args.pytest_exit_code,
+                                          coverage_bericht=args.coverage_bericht)
                 # Ohne Paketdokumente hätte ``pruefe_konsistenz`` nichts zu prüfen.
                 # Der Bericht entsteht aus den gerade gemessenen Werten und wird
                 # anschliessend mit denselben Prüfungen wie ein echtes Paket geprüft.
@@ -1236,7 +1278,8 @@ def main() -> int:
             eintraege, zip_sha = baue(freigabe, commit, branch, ausgabe,
                                       evidenz_bauen=args.evidenz, junit=args.junit, ci=ci,
                                       pytest_log=args.pytest_log,
-                                      pytest_exit_code=args.pytest_exit_code)
+                                      pytest_exit_code=args.pytest_exit_code,
+                                      coverage_bericht=args.coverage_bericht)
     except Abweichung as fehler:
         print(f'Review-Paket FEHLER: {fehler}', file=sys.stderr)
         return 1

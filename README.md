@@ -702,9 +702,10 @@ die Zahlen in den Dokumenten. Dazu gehören auch deutsche Testzahlen wie
 aller Markdown-Dateien; sie müssen mit `EVIDENZ.json` übereinstimmen.
 Verhältnisse wie «3/3 bestanden» oder «3 von 3 bestanden» zählen nicht.
 Der Evidenz-Build misst ausserdem Coverage, Statements und Zeilenzahlen und
-vergleicht sie mit den Tabellen im Dossier. Wird nur ein übernommenes
-pytest-Protokoll verwendet (CI), entfällt die Coverage-Messung; Zeilenzahlen
-werden weiterhin geprüft. Ein einzelner Evidenz-Build ohne anschliessende
+vergleicht sie mit den Tabellen im Dossier. Im CI übernimmt er den
+Coverage-Bericht (`--coverage-bericht`) aus dem Coverage-Job; ohne Bericht
+entfällt die Coverage-Teilprüfung mit Hinweis, Zeilenzahlen werden weiterhin
+geprüft. Ein einzelner Evidenz-Build ohne anschliessende
 Prüfung reicht für den Bau, aber nicht als Nachweis.
 
 Reine Meta-Dateien bleiben draußen: `.gitignore` und `.dockerignore` regeln

@@ -152,7 +152,7 @@ jobs:
   # weil aus dem Commit in ein temporäres Verzeichnis gebaut wird.
   review_paket:
     name: Review-Paket
-    needs: pytest
+    needs: [pytest, coverage]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -183,6 +183,14 @@ jobs:
           name: pytest-evidenz
           path: artifacts/pytest
 
+      # Der Coverage-Bericht kommt aus dem Coverage-Job: derselbe Lauf wie die
+      # Kern-Untergrenze, ohne die Suite im Review-Paket erneut zu starten.
+      - name: Coverage-Evidenz übernehmen
+        uses: actions/download-artifact@v6
+        with:
+          name: coverage-evidenz
+          path: artifacts/coverage
+
       # Fehlende Evidenz, ein fremder Exit-Code oder ein Widerspruch zwischen
       # Protokoll und JUnit-Bericht ist ein Fehler.
       - name: Freigabe, Kopien, Hashes, Testzahl und ZIP prüfen
@@ -190,7 +198,8 @@ jobs:
           python scripts/baue_review_paket.py --pruefen --evidenz \
             --pytest-log artifacts/pytest/pytest.log \
             --pytest-exit-code artifacts/pytest/exit_code \
-            --junit artifacts/pytest/junit.xml
+            --junit artifacts/pytest/junit.xml \
+            --coverage-bericht artifacts/coverage/coverage.json
 
   # Stellt sicher, dass das Dockerfile inklusive Seed-DB weiterhin baut.
   docker:
@@ -870,9 +879,22 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
 
-      - name: Coverage der vier Kernmodule messen
+      # Ein Lauf liefert die volle Coverage für das Review-Paket und prüft
+      # danach separat die 85-%-Untergrenze der vier Kernmodule.
+      - name: Coverage messen und Kern-Untergrenze prüfen
         run: |
+          mkdir -p artifacts/coverage
           python -m pytest -q \
-            --cov=orakel.kern.paper --cov=orakel.kern.risk \
-            --cov=orakel.kern.backtest --cov=orakel.kern.judge \
-            --cov-report=term-missing --cov-fail-under=85
+            --cov=orakel --cov=scripts \
+            --cov-report=term-missing \
+            --cov-report=json:artifacts/coverage/coverage.json
+          python -m coverage report --fail-under=85 \
+            --include='orakel/kern/paper.py,orakel/kern/risk.py,orakel/kern/backtest.py,orakel/kern/judge.py'
+
+      - name: Coverage-Evidenz hochladen
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-evidenz
+          path: artifacts/coverage/coverage.json
+          if-no-files-found: error
+          retention-days: 7
