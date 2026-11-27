@@ -11,8 +11,14 @@ Abweichung — fremde Datei, fehlende Freigabe, Hash-Differenz, Manifest- oder
 ZIP-Lücke — beendet den Lauf mit Exit-Code 1.
 
 Aufrufe:
-    python scripts/baue_review_paket.py            # Paket bauen und prüfen
+    python scripts/baue_review_paket.py --evidenz  # Nachweise messen und Paket bauen
+    python scripts/erzeuge_review_dokumente.py     # Begleitdokumente byte-gleich neu
     python scripts/baue_review_paket.py --pruefen  # nur prüfen (CI)
+
+Der Evidenz-Build erzeugt die Begleitdokumente, bevor Manifest und ZIP
+entstehen; ihre Hashes stehen damit im Manifest und die Dokumente im ZIP.
+Der Generator schreibt sie anschliessend aus dem fertigen Manifest byte-gleich
+neu, ``--pruefen`` bestätigt Hashes, ZIP-Inhalt und Zahlen.
 
 ``--pytest-log PFAD`` übernimmt ein vorhandenes pytest-Protokoll (CI-Artefakt)
 statt die Suite erneut zu starten; ``--pytest-exit-code PFAD`` nennt dazu die
@@ -27,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -167,7 +174,22 @@ def quell_eintraege(freigabe: dict, commit: str) -> list[dict]:
     return eintraege
 
 
-def beleg_eintraege(freigabe: dict, ausgabe: str) -> list[dict]:
+def _lade_dokumentgenerator():
+    """Lädt ``scripts/erzeuge_review_dokumente.py`` ohne Paketinstallation."""
+    name = 'erzeuge_review_dokumente'
+    if name in sys.modules:
+        return sys.modules[name]
+    pfad = os.path.join(WURZEL, 'scripts', name + '.py')
+    spec = importlib.util.spec_from_file_location(name, pfad)
+    if spec is None or spec.loader is None:
+        raise Abweichung(f'{pfad} ist nicht ladbar.')
+    modul = importlib.util.module_from_spec(spec)
+    sys.modules[name] = modul
+    spec.loader.exec_module(modul)
+    return modul
+
+
+def beleg_eintraege(freigabe: dict, ausgabe: str, melden: bool = True) -> list[dict]:
     eintraege, fehlend = [], []
     for name in (freigabe.get('belege') or []) + (freigabe.get('dokumente') or []):
         pfad = os.path.join(ausgabe, name)
@@ -180,7 +202,7 @@ def beleg_eintraege(freigabe: dict, ausgabe: str) -> list[dict]:
             'bytes': os.path.getsize(pfad),
             'herkunft': 'beleg' if name.startswith('belege/') else 'paketdokument',
         })
-    if fehlend:
+    if fehlend and melden:
         print('Hinweis: nicht vorhanden und daher nicht im Paket: '
               + ', '.join(sorted(fehlend)), file=sys.stderr)
     return eintraege
@@ -230,9 +252,24 @@ def pruefe_unerlaubte_dateien(freigabe: dict, ausgabe: str) -> None:
         raise Abweichung('Nicht freigegebene Dateien im Paket: ' + ', '.join(sorted(unerlaubt)[:8]))
 
 
+def quellgruppen(freigabe: dict, eintraege: list[dict]) -> list[dict]:
+    """Zählt Dateien und Bytes je Freigabegruppe aus dem geprüften Dateisatz."""
+    gruppen = []
+    for gruppe in freigabe.get('gruppen') or []:
+        passend = [e for e in eintraege if e['target'].startswith(gruppe['praefix'])]
+        gruppen.append({
+            'name': gruppe['name'],
+            'praefix': gruppe['praefix'],
+            'zweck': gruppe['zweck'],
+            'dateien': len(passend),
+            'bytes': sum(e.get('bytes', 0) for e in passend),
+        })
+    return gruppen
+
+
 def schreibe_manifest(eintraege: list[dict], ausgabe: str, commit: str, branch: str,
                       freigabe: dict, evidenz: dict | None = None,
-                      ci: dict | None = None) -> None:
+                      ci: dict | None = None, stand: str | None = None) -> None:
     status = {
         'commit': 'geprüfte Quelle aus dem Commit',
         'beleg': 'Belegprotokoll im Paket',
@@ -258,26 +295,17 @@ def schreibe_manifest(eintraege: list[dict], ausgabe: str, commit: str, branch: 
                 'log': eintrag['target'],
                 'log_sha256': eintrag['sha256'],
             })
-    gruppen = []
-    for gruppe in freigabe.get('gruppen') or []:
-        passend = [e for e in eintraege if e['target'].startswith(gruppe['praefix'])]
-        gruppen.append({
-            'name': gruppe['name'],
-            'praefix': gruppe['praefix'],
-            'zweck': gruppe['zweck'],
-            'dateien': len(passend),
-            'bytes': sum(e['bytes'] for e in passend),
-        })
     manifest = {
         'schema': 'review-paket.v6',
         'commit': commit,
         'branch': branch,
         'dirty': False,
         'arbeitsbaum': 'sauber',
+        'stand': stand,
         'freigabe': 'scripts/review-paket-freigabe.json',
         'builder': 'scripts/baue_review_paket.py',
         'generated_at': '2026-11-18T00:00:00Z',
-        'quellgruppen': gruppen,
+        'quellgruppen': quellgruppen(freigabe, eintraege),
         'testzahl': (evidenz or {}).get('testzahl'),
         'ci': ci,
         'pruefungen': sorted(pruefungen, key=lambda p: p['name']),
@@ -904,18 +932,38 @@ def baue(freigabe: dict, commit: str, branch: str, ausgabe: str,
         evidenz = fuehre_evidenz_aus(ausgabe, commit, branch, junit,
                                      pytest_log=pytest_log,
                                      pytest_exit_code=pytest_exit_code)
-    weitere = beleg_eintraege(freigabe, ausgabe)
-    eintraege = quellen + weitere
-    pruefe_unerlaubte_dateien(freigabe, ausgabe)
-    if os.path.exists(os.path.join(ausgabe, 'EVIDENZ.json')):
-        pruefe_evidenz(ausgabe, commit)
     if evidenz is None and os.path.exists(os.path.join(ausgabe, 'EVIDENZ.json')):
         evidenz = json.load(open(os.path.join(ausgabe, 'EVIDENZ.json'), encoding='utf-8'))
-    if evidenz:
-        pruefe_evidenz_dateien(ausgabe, evidenz)
+    if evidenz is None:
+        raise Abweichung('EVIDENZ.json fehlt; ohne Evidenz lassen sich die '
+                         'Begleitdokumente nicht belegen (--evidenz verwenden).')
+    generator = _lade_dokumentgenerator()
+    stand = generator.datum_de()
+    # Vor dem Manifest fehlen die Begleitdokumente noch; der Generator
+    # erzeugt sie gleich. Ein "nicht im Paket"-Hinweis wäre hier falsch.
+    vorhandene = beleg_eintraege(freigabe, ausgabe, melden=False)
+    begleitdokumente = freigabe.get('dokumente') or []
+    geplant = quellen + vorhandene
+    bekannt = {e['target'] for e in geplant}
+    for name in begleitdokumente:
+        if name not in bekannt:
+            # Zahlenfest, aber noch ohne Inhalt: der Generator schreibt die
+            # Datei vor dem Manifest; gezaehlt wird sie schon hier.
+            geplant.append({'target': name, 'herkunft': 'paketdokument'})
+    geplant.append({'target': PROVENIENZ_NAME, 'herkunft': 'paketdokument'})
+    generator.schreibe(ausgabe, freigabe, sys.modules[__name__], geplant,
+                       len(geplant) + 1, evidenz, commit, branch, stand=stand)
+    # Nach der Erzeugung neu hashen: Vorhandene Dokumente koennen aus einem
+    # frueheren Lauf stammen und werden gerade ueberschrieben.
+    weitere = beleg_eintraege(freigabe, ausgabe, melden=False)
+    eintraege = quellen + weitere
+    pruefe_unerlaubte_dateien(freigabe, ausgabe)
+    pruefe_evidenz(ausgabe, commit)
+    pruefe_evidenz_dateien(ausgabe, evidenz)
     schreibe_provenienz(eintraege, ausgabe, commit, branch, len(eintraege) + 2)
     eintraege.append(datei_eintrag(ausgabe, PROVENIENZ_NAME))
-    schreibe_manifest(eintraege, ausgabe, commit, branch, freigabe, evidenz, ci)
+    schreibe_manifest(eintraege, ausgabe, commit, branch, freigabe, evidenz, ci,
+                      stand=stand)
     manifest_eintrag = datei_eintrag(ausgabe, MANIFEST_NAME)
     baue_zip(eintraege + [manifest_eintrag], ausgabe)
     pruefe_verbotene_inhalte(os.path.join(ausgabe, ZIP_NAME))
