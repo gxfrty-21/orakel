@@ -697,7 +697,9 @@ Der Evidenz-Build erzeugt die Begleitdokumente vor Manifest und ZIP; nur so
 stehen ihre Hashes im Manifest und die Dateien im ZIP. Der Generator liest
 den fertigen Dateisatz und ändert nichts, solange der Stand aus dem Manifest
 kommt. `--pruefen` bestätigt danach ohne weiteren Build Hashes, ZIP-Inhalt und
-die Zahlen in den Dokumenten. Ein einzelner Evidenz-Build ohne anschliessende
+die Zahlen in den Dokumenten. Dazu gehören auch deutsche Testzahlen wie
+«N bestanden» in allen Markdown-Dateien des Pakets; sie müssen mit
+`EVIDENZ.json` übereinstimmen. Ein einzelner Evidenz-Build ohne anschliessende
 Prüfung reicht für den Bau, aber nicht als Nachweis.
 
 Reine Meta-Dateien bleiben draußen: `.gitignore` und `.dockerignore` regeln

@@ -92,6 +92,30 @@ def test_konsistenz_bricht_bei_abweichender_testzahl(tmp_path):
         modul.pruefe_konsistenz(str(tmp_path), "a" * 40, evidenz)
 
 
+def test_konsistenz_bricht_bei_abweichender_deutscher_testzahl(tmp_path):
+    modul = _modul()
+    evidenz = _evidenz(tmp_path)
+    ziel = tmp_path / "dateien" / "docs"
+    ziel.mkdir(parents=True)
+    (ziel / "REVIEW-DOSSIER.md").write_text(
+        "| Tests | **380 bestanden**, 0 fehlgeschlagen |\n", encoding="utf-8")
+
+    with pytest.raises(modul.Abweichung, match="380"):
+        modul.pruefe_konsistenz(str(tmp_path), "a" * 40, evidenz)
+
+
+def test_konsistenz_akzeptiert_deutsche_testzahl_und_verhaeltnisse(tmp_path):
+    modul = _modul()
+    evidenz = _evidenz(tmp_path)
+    ziel = tmp_path / "dateien" / "docs"
+    ziel.mkdir(parents=True)
+    (ziel / "REVIEW-DOSSIER.md").write_text(
+        "| Tests | **402 bestanden**, 0 fehlgeschlagen |\n"
+        "Widerspruch-E2E-Negativtest: 3/3 bestanden.\n", encoding="utf-8")
+
+    modul.pruefe_konsistenz(str(tmp_path), "a" * 40, evidenz)
+
+
 def test_konsistenz_bricht_bei_falschem_hash(tmp_path):
     modul = _modul()
     evidenz = _evidenz(tmp_path)
