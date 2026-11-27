@@ -102,6 +102,25 @@ def test_dokumente_nennen_dieselben_zahlen_wie_manifest_und_zip(tmp_path):
     assert "`belege/vorhanden.log`" not in fehlend
 
 
+def test_generator_schreibt_nach_dem_bau_byte_gleiche_dokumente(tmp_path):
+    """Der Stand kommt aus dem Manifest; ein zweiter Lauf ändert nichts."""
+    paket = _paket(tmp_path)
+    generator = _lade(GENERATOR, "erzeuge_review_dokumente_test")
+    builder = _lade(BUILDER, "baue_review_paket_dokumente_test")
+    manifest = json.loads((paket / "MANIFEST.json").read_text(encoding="utf-8"))
+    manifest["stand"] = "1. Januar 2026"
+    (paket / "MANIFEST.json").write_text(json.dumps(manifest), encoding="utf-8")
+    namen = ("QUICKSTART.md", "QUELLEN-DECKUNG.md", "DELTA-CHANGELOG.md",
+             "ORAKEL-REVIEW-PAKET.md")
+
+    generator.erzeuge(paket, _freigabe(), builder)
+    erste = {name: (paket / name).read_bytes() for name in namen}
+
+    assert "1. Januar 2026" in (paket / "QUICKSTART.md").read_text(encoding="utf-8")
+    generator.erzeuge(paket, _freigabe(), builder)
+    assert erste == {name: (paket / name).read_bytes() for name in namen}
+
+
 def test_fehlende_belege_zaehlen_nicht_die_berichtsdatei_mit(tmp_path):
     """Der Bericht selbst ist kein fehlender Beleg; die Zahl bleibt stabil."""
     paket = _paket(tmp_path)

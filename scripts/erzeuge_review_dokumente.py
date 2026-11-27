@@ -6,6 +6,10 @@ tatsächliche ZIP-Eintrag des Pakets. Der Generator zählt keine Werte, die er
 nicht in diesen Dateien nachweisen kann; die Dokumente nennen damit dieselbe
 Datei-, ZIP- und Belegzahl wie das Paket selbst.
 
+Der Bau ruft ``schreibe`` bereits vor Manifest und ZIP auf, damit die Hashes
+der Dokumente im Manifest stehen. Ein späterer Aufruf dieses Skripts liest
+denselben Dateisatz aus dem fertigen Paket und erzeugt byte-gleiche Dateien.
+
 Aufruf:
     python scripts/erzeuge_review_dokumente.py
 """
@@ -46,22 +50,23 @@ def _belege_text(anzahl: int) -> str:
     return "1 älterer Beleg" if anzahl == 1 else f"{anzahl} ältere Belege"
 
 
-def erzeuge(ausgabe: str | Path, freigabe: dict, builder,
-            stand: str | None = None) -> dict[str, int]:
-    """Schreibt die vier Begleitdokumente und liefert die geprüften Zahlen."""
-    ausgabe = Path(ausgabe)
-    manifest = json.loads((ausgabe / "MANIFEST.json").read_text(encoding="utf-8"))
-    evidenz = json.loads((ausgabe / "EVIDENZ.json").read_text(encoding="utf-8"))
-    with zipfile.ZipFile(ausgabe / builder.ZIP_NAME) as archiv:
-        zip_anzahl = len(archiv.namelist())
+def schreibe(ausgabe: str | Path, freigabe: dict, builder,
+             dateien: list[dict], zip_anzahl: int, evidenz: dict,
+             commit: str, branch: str,
+             stand: str | None = None) -> dict[str, int]:
+    """Schreibt die vier Begleitdokumente aus feststehenden Zahlen.
 
-    dateien = manifest["files"]
+    Beim Bau stehen ``dateien`` und ``zip_anzahl`` schon vor Manifest und ZIP
+    fest: alle Quellen, Belege und Paketdokumente, die das Paket enthalten
+    wird. Ein späterer Lauf liest dieselben Zahlen aus ``MANIFEST.json`` und
+    dem ZIP. Solange beide Wege denselben Dateisatz beschreiben, entstehen
+    byte-gleiche Dokumente; ``stand`` kommt deshalb aus dem Manifest.
+    """
+    ausgabe = Path(ausgabe)
     quellen = [d for d in dateien if d["herkunft"] == "commit"]
     belege = [d for d in dateien if d["herkunft"] == "beleg"]
     dateien_anzahl = len(dateien)
     testzahl = evidenz["testzahl"]
-    commit = manifest["commit"]
-    branch = manifest["branch"]
     stand = stand or datum_de()
 
     quickstart = f"""# Reviewer-Quickstart
@@ -152,7 +157,7 @@ Die Zahlen stammen aus `MANIFEST.json` dieses Pakets.
 | Gruppe | Präfix | Dateien | Bytes |
 |---|---|---:|---:|
 """
-    for g in manifest.get("quellgruppen", []):
+    for g in builder.quellgruppen(freigabe, dateien):
         quellen_deckung += (f"| `{g['name']}` | `{g['praefix']}` | {g['dateien']} | "
                             f"{g['bytes']} |\n")
 
@@ -223,13 +228,33 @@ dem Merge des Review-Dossiers gebaut.
     fehlend = fehlende_belege + [
         n for n in (freigabe.get("dokumente") or [])
         if n != builder.HAUPTDOKUMENT and not (ausgabe / n).exists()]
-    eintraege = [{"target": d["target"], "sha256": d["sha256"], "bytes": d["bytes"],
-                  "herkunft": d["herkunft"]} for d in dateien]
+    eintraege = [{"target": d["target"], "sha256": d.get("sha256", ""),
+                  "bytes": d.get("bytes", 0), "herkunft": d["herkunft"]}
+                 for d in dateien]
     builder.schreibe_pruefbericht(str(ausgabe), commit, branch, eintraege, evidenz,
                                   fehlend=fehlend,
                                   ausnahmen=freigabe.get("ausnahmen"))
     return {"dateien": dateien_anzahl, "zip_eintraege": zip_anzahl,
             "fehlende": len(fehlend)}
+
+
+def erzeuge(ausgabe: str | Path, freigabe: dict, builder,
+            stand: str | None = None) -> dict[str, int]:
+    """Schreibt die Begleitdokumente aus dem fertigen Paket neu.
+
+    Der Bau erzeugt sie bereits vor Manifest und ZIP; dieser Aufruf liest die
+    Zahlen aus beiden Dateien und liefert byte-gleiche Dokumente, solange der
+    Dateisatz unverändert ist. Der Stand kommt aus dem Manifest, damit ein
+    späterer Lauf nicht unbemerkt ein neues Datum einsetzt.
+    """
+    ausgabe = Path(ausgabe)
+    manifest = json.loads((ausgabe / "MANIFEST.json").read_text(encoding="utf-8"))
+    evidenz = json.loads((ausgabe / "EVIDENZ.json").read_text(encoding="utf-8"))
+    with zipfile.ZipFile(ausgabe / builder.ZIP_NAME) as archiv:
+        zip_anzahl = len(archiv.namelist())
+    return schreibe(ausgabe, freigabe, builder, manifest["files"], zip_anzahl,
+                    evidenz, manifest["commit"], manifest["branch"],
+                    stand=stand or manifest.get("stand"))
 
 
 def main() -> int:

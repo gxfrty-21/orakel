@@ -683,6 +683,23 @@ Konfiguration, die das Verhalten bestimmt (`config.toml`, `seed/`,
 `.githooks/pre-commit`), die CI-Workflows und die Deployment-Dateien
 (`Dockerfile`, `docker-compose.yml`, `docker-entrypoint.sh`, `deploy/`).
 
+### Bau und Prüfung
+
+Die Reihenfolge ist fest; Zwischen-Builds sind nicht nötig:
+
+```bash
+python scripts/baue_review_paket.py --evidenz   # Nachweise messen, Dokumente erzeugen, Manifest und ZIP bauen
+python scripts/erzeuge_review_dokumente.py      # Dokumente aus dem Manifest byte-gleich neu schreiben
+python scripts/baue_review_paket.py --pruefen   # Manifest, ZIP, Dokumente und Hashes prüfen
+```
+
+Der Evidenz-Build erzeugt die Begleitdokumente vor Manifest und ZIP; nur so
+stehen ihre Hashes im Manifest und die Dateien im ZIP. Der Generator liest
+den fertigen Dateisatz und ändert nichts, solange der Stand aus dem Manifest
+kommt. `--pruefen` bestätigt danach ohne weiteren Build Hashes, ZIP-Inhalt und
+die Zahlen in den Dokumenten. Ein einzelner Evidenz-Build ohne anschliessende
+Prüfung reicht für den Bau, aber nicht als Nachweis.
+
 Reine Meta-Dateien bleiben draußen: `.gitignore` und `.dockerignore` regeln
 Repository- und Build-Hygiene, `.env.example` ist eine Platzhalter-Vorlage (die
 wirksame Konfiguration steht in `config.toml`), `railway.json` beschreibt die
