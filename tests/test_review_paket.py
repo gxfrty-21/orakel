@@ -111,7 +111,10 @@ def test_konsistenz_akzeptiert_deutsche_testzahl_und_verhaeltnisse(tmp_path):
     ziel.mkdir(parents=True)
     (ziel / "REVIEW-DOSSIER.md").write_text(
         "| Tests | **402 bestanden**, 0 fehlgeschlagen |\n"
-        "Widerspruch-E2E-Negativtest: 3/3 bestanden.\n", encoding="utf-8")
+        "Widerspruch-E2E-Negativtest: 3/3 bestanden.\n"
+        "Tests: 3 von 3 bestanden.\n"
+        "Abnahme: 3 von 3 bestanden.\n"
+        "Ohne Testzeile: 380 bestanden.\n", encoding="utf-8")
 
     modul.pruefe_konsistenz(str(tmp_path), "a" * 40, evidenz)
 
