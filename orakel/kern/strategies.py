@@ -62,6 +62,21 @@ def _momentum(df: pd.DataFrame, p: dict[str, Any]) -> pd.Series:
     return _zustand(roc > float(p.get("schwelle", 0.0)), roc < 0.0)
 
 
+def _trend_regime(df: pd.DataFrame, _p: dict[str, Any]) -> pd.Series:
+    """Vorab festgelegter Trendfilter ohne Parameteroptimierung.
+
+    Long nur, wenn der Schlusskurs über EMA200 liegt **und** EMA50 über EMA200
+    liegt. Ausstieg, sobald der Schlusskurs unter EMA50 fällt. Die beiden
+    Perioden sind bewusst fest und nicht Teil des Research-Rasters: Damit ist
+    dieser Kandidat ein einzelner, vorab registrierter Test und keine weitere
+    Optimierungsachse.
+    """
+    close = df["close"]
+    schnell = _ema(close, 50)
+    langsam = _ema(close, 200)
+    return _zustand((close > langsam) & (schnell > langsam), close < schnell)
+
+
 @dataclass(frozen=True, slots=True)
 class Signalplan:
     """Kausaler Plan für eine Long-Position.
@@ -251,6 +266,14 @@ def strategien(cfg: Any, *, zeitrahmen: str | None = None) -> dict[str, Strategi
             warmup=50,
             rechner=_momentum,
             grid=tuple(roc_grid),
+        ),
+        "trend_regime": Strategie(
+            name="trend_regime",
+            beschreibung="Trendregime: Long nur über EMA200 und mit EMA50 über EMA200; "
+                         "Ausstieg unter EMA50. Feste Perioden, keine Optimierung.",
+            warmup=250,
+            rechner=_trend_regime,
+            grid=(({"fast": 50, "slow": 200}),),
         ),
     }
     if retest_grid:

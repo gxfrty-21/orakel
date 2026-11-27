@@ -492,35 +492,46 @@ class Facts:
     # ---------- Entscheide ----------
     def entscheid_speichern(self, symbol: str, aktion: str, menge: float | None, kurs: float | None,
                             strategie: str | None, status: str, genehmigt: bool,
-                            gruende: Sequence[str]) -> int:
-        with self.conn() as c:
-            cur = c.execute(
-                "INSERT INTO entscheide(zeit,symbol,aktion,menge,kurs,strategie,status,genehmigt,gruende)"
-                " VALUES (?,?,?,?,?,?,?,?,?)",
-                (jetzt(), symbol, aktion, menge, kurs, strategie, status, int(genehmigt),
-                 json.dumps(list(gruende), ensure_ascii=False)),
-            )
-            return int(cur.lastrowid or 0)
+                            gruende: Sequence[str], *,
+                            c: sqlite3.Connection | None = None) -> int:
+        sql = ("INSERT INTO entscheide(zeit,symbol,aktion,menge,kurs,strategie,status,genehmigt,gruende)"
+               " VALUES (?,?,?,?,?,?,?,?,?)")
+        werte = (jetzt(), symbol, aktion, menge, kurs, strategie, status, int(genehmigt),
+                 json.dumps(list(gruende), ensure_ascii=False))
+        if c is not None:
+            return int(c.execute(sql, werte).lastrowid or 0)
+        with self.conn() as verbindung:
+            return int(verbindung.execute(sql, werte).lastrowid or 0)
 
     def entscheide(self, limit: int = 100) -> list[sqlite3.Row]:
         with self.conn() as c:
             return list(c.execute("SELECT * FROM entscheide ORDER BY id DESC LIMIT ?", (limit,)))
 
     # ---------- Ereignisse ----------
-    def ereignis(self, stufe: str, quelle: str, text: str) -> None:
-        with self.conn() as c:
-            c.execute("INSERT INTO ereignisse(zeit,stufe,quelle,text) VALUES (?,?,?,?)",
-                      (jetzt(), stufe, quelle, text))
+    def ereignis(self, stufe: str, quelle: str, text: str, *,
+                 c: sqlite3.Connection | None = None) -> None:
+        sql = "INSERT INTO ereignisse(zeit,stufe,quelle,text) VALUES (?,?,?,?)"
+        werte = (jetzt(), stufe, quelle, text)
+        if c is not None:
+            c.execute(sql, werte)
+            return
+        with self.conn() as verbindung:
+            verbindung.execute(sql, werte)
 
     def ereignisse(self, limit: int = 50) -> list[sqlite3.Row]:
         with self.conn() as c:
             return list(c.execute("SELECT * FROM ereignisse ORDER BY id DESC LIMIT ?", (limit,)))
 
     # ---------- Konto ----------
-    def konto_speichern(self, equity: float, cash: float, positionen: int, hoechststand: float) -> None:
-        with self.conn() as c:
-            c.execute("INSERT INTO konto(zeit,equity,cash,positionen,hoechststand) VALUES (?,?,?,?,?)",
-                      (jetzt(), equity, cash, positionen, hoechststand))
+    def konto_speichern(self, equity: float, cash: float, positionen: int, hoechststand: float,
+                        *, c: sqlite3.Connection | None = None) -> None:
+        sql = "INSERT INTO konto(zeit,equity,cash,positionen,hoechststand) VALUES (?,?,?,?,?)"
+        werte = (jetzt(), equity, cash, positionen, hoechststand)
+        if c is not None:
+            c.execute(sql, werte)
+            return
+        with self.conn() as verbindung:
+            verbindung.execute(sql, werte)
 
     def letztes_konto(self) -> sqlite3.Row | None:
         with self.conn() as c:
@@ -556,26 +567,34 @@ class Facts:
             return list(c.execute("SELECT * FROM positionen ORDER BY symbol"))
 
     def position_setzen(self, symbol: str, menge: float, einstieg: float, stop: float,
-                        strategie: str, eroeffnet: str) -> None:
+                        strategie: str, eroeffnet: str, *,
+                        c: sqlite3.Connection | None = None) -> None:
         """Legt eine Long-Position an.
 
         Der Paper-Takt und der Backtest sind Long-only. Eine Menge <= 0 würde
         eine Short-Position ohne Richtungslogik erzeugen und wird deshalb
-        abgelehnt, statt sie stillschweigend als Long zu buchen.
+        abgelehnt, statt sie stillschweigend als Long zu buchen. Mit ``c``
+        läuft der Insert in der bereits offenen Buchungstransaktion.
         """
         if not math.isfinite(float(menge)) or float(menge) <= 0:
             raise ValueError(f'Position {symbol}: Menge muss positiv und endlich sein, '
                              f'ist aber {menge!r}')
-        with self.conn() as c:
-            c.execute(
-                "INSERT OR REPLACE INTO positionen(symbol,menge,einstieg,stop,strategie,eroeffnet)"
-                " VALUES (?,?,?,?,?,?)",
-                (symbol, menge, einstieg, stop, strategie, eroeffnet),
-            )
+        sql = ("INSERT OR REPLACE INTO positionen(symbol,menge,einstieg,stop,strategie,eroeffnet)"
+               " VALUES (?,?,?,?,?,?)")
+        werte = (symbol, menge, einstieg, stop, strategie, eroeffnet)
+        if c is not None:
+            c.execute(sql, werte)
+            return
+        with self.conn() as verbindung:
+            verbindung.execute(sql, werte)
 
-    def position_loeschen(self, symbol: str) -> None:
-        with self.conn() as c:
+    def position_loeschen(self, symbol: str, *,
+                          c: sqlite3.Connection | None = None) -> None:
+        if c is not None:
             c.execute("DELETE FROM positionen WHERE symbol=?", (symbol,))
+            return
+        with self.conn() as verbindung:
+            verbindung.execute("DELETE FROM positionen WHERE symbol=?", (symbol,))
 
     def validierung(self, vid: int) -> sqlite3.Row | None:
         with self.conn() as c:

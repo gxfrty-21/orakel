@@ -15,6 +15,7 @@ p-Wert wird zusätzlich nach Bonferroni über diese Kombinationen korrigiert.
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +23,7 @@ import pandas as pd
 
 from .config import Config, RisikoGrenzen
 from .kern.judge import aufteilung, beurteile_walk_forward, pruefe_holdout
-from .kern.strategies import Strategie, strategien
+from .kern.strategies import Strategie, atr, strategien
 
 SCHEMA = "strategie-bericht.v1"
 
@@ -43,6 +44,87 @@ def _zeitraum(df: pd.DataFrame, von: int, bis: int) -> dict[str, str]:
     return {"von": str(df["ts"].iloc[von])[:19], "bis": str(df["ts"].iloc[bis - 1])[:19]}
 
 
+def _regime_serien(df: pd.DataFrame) -> tuple[list[str], list[str]]:
+    """Trend- und Volatilitätsregime je Kerze, ausschliesslich kausal.
+
+    Trend = Schlusskurs über/unter EMA200. Volatilität = ATR(14) relativ zum
+    Schlusskurs, verglichen mit dem rollierenden Median der letzten 250 Kerzen.
+    Die ersten 200 bzw. 50 Kerzen bleiben «unklar», statt eine Richtung zu
+    erfinden.
+    """
+    close = df["close"].astype(float)
+    ema = close.ewm(span=200, min_periods=200).mean()
+    atr_pct = atr(df, 14) / close.replace(0.0, float("nan"))
+    median = atr_pct.rolling(250, min_periods=50).median()
+    trend: list[str] = []
+    volatilitaet: list[str] = []
+    for kurs, mittel, wert, grenze in zip(close, ema, atr_pct, median):
+        if pd.isna(mittel):
+            trend.append("unklar")
+        elif kurs > mittel:
+            trend.append("aufwärts")
+        elif kurs < mittel:
+            trend.append("abwärts")
+        else:
+            trend.append("neutral")
+        if pd.isna(wert) or pd.isna(grenze):
+            volatilitaet.append("unklar")
+        elif wert > grenze:
+            volatilitaet.append("hoch")
+        else:
+            volatilitaet.append("niedrig")
+    return trend, volatilitaet
+
+
+def _regime_aggregat(df: pd.DataFrame, trades: list[dict[str, Any]],
+                    art: str) -> dict[str, dict[str, Any]]:
+    """Nettorendite und Trefferquote je Trend- oder Volatilitätsregime."""
+    if not trades:
+        return {}
+    trend, volatilitaet = _regime_serien(df)
+    serie = trend if art == "trend" else volatilitaet
+    index = {str(ts)[:19]: i for i, ts in enumerate(df["ts"])}
+    gruppen: dict[str, dict[str, Any]] = {}
+    for trade in trades:
+        i = index.get(str(trade.get("einstieg", ""))[:19])
+        if i is None or i >= len(serie):
+            continue
+        name = serie[i]
+        gruppe = gruppen.setdefault(name, {"trades": 0, "netto": 0.0, "gewinner": 0})
+        gruppe["trades"] += 1
+        gruppe["netto"] += float(trade.get("netto", 0.0))
+        if float(trade.get("netto", 0.0)) > 0:
+            gruppe["gewinner"] += 1
+    for gruppe in gruppen.values():
+        gruppe["netto"] = round(gruppe["netto"], 2)
+        gruppe["trefferquote_pct"] = (
+            round(gruppe["gewinner"] / gruppe["trades"] * 100, 1)
+            if gruppe["trades"] else 0.0
+        )
+    return dict(sorted(gruppen.items()))
+
+
+def _diagnose(df: pd.DataFrame, trades: list[dict[str, Any]]) -> dict[str, Any]:
+    """Warum die Trades endeten und wie sie über Marktregime verteilt waren.
+
+    Die Zahlen sind eine Diagnose, keine zusätzliche Bestehensbedingung. Sie
+    machen sichtbar, ob eine Strategie vor allem an Stops, an Signalen, an
+    einem Regime oder an zu wenigen Trades scheitert.
+    """
+    gruende = Counter(str(t.get("grund", "unbekannt")) for t in trades)
+    bars = [float(t["bars"]) for t in trades if t.get("bars") is not None]
+    return {
+        "ausstiege": dict(sorted(gruende.items(), key=lambda paar: (-paar[1], paar[0]))),
+        "gewinner": sum(1 for t in trades if float(t.get("netto", 0.0)) > 0),
+        "verlierer": sum(1 for t in trades if float(t.get("netto", 0.0)) < 0),
+        "avg_bars": round(sum(bars) / len(bars), 1) if bars else None,
+        "min_bars": int(min(bars)) if bars else None,
+        "max_bars": int(max(bars)) if bars else None,
+        "regime_trend": _regime_aggregat(df, trades, "trend"),
+        "regime_volatilitaet": _regime_aggregat(df, trades, "volatilitaet"),
+    }
+
+
 def _eintrag(u: Any, df: pd.DataFrame, strategie: Strategie, cfg: Config) -> dict[str, Any]:
     """Ein Kandidat mit Entwicklungs-, Walk-Forward- und Holdout-Zahlen."""
     auf = aufteilung(len(df), cfg)
@@ -54,6 +136,9 @@ def _eintrag(u: Any, df: pd.DataFrame, strategie: Strategie, cfg: Config) -> dic
 
     holdout = dict(u.holdout or {})
     holdout_k = dict(holdout.get("kennzahlen") or {})
+    wf_k = dict(u.out_of_sample or {})
+    wf_benchmark = kaufen_halten_pct(df, wf_start, dev_n) if auf else 0.0
+    holdout_benchmark = holdout.get("kaufen_halten_pct")
     return {
         "symbol": u.symbol,
         "strategie": u.strategie,
@@ -70,8 +155,12 @@ def _eintrag(u: Any, df: pd.DataFrame, strategie: Strategie, cfg: Config) -> dic
         },
         "walk_forward": {
             "zeitraum": _zeitraum(df, wf_start, dev_n),
-            "kennzahlen": dict(u.out_of_sample or {}),
-            "kaufen_halten_pct": kaufen_halten_pct(df, wf_start, dev_n),
+            "kennzahlen": wf_k,
+            "kaufen_halten_pct": wf_benchmark,
+            "mehrwert_gegen_kaufen_halten_pct": (
+                round(float(wf_k["rendite_pct"]) - float(wf_benchmark), 2)
+                if wf_k.get("rendite_pct") is not None else None
+            ),
             "fenster_bestanden_pct": (
                 None if u.walk_forward_bestanden is None
                 else round(float(u.walk_forward_bestanden) * 100, 0)
@@ -81,10 +170,16 @@ def _eintrag(u: Any, df: pd.DataFrame, strategie: Strategie, cfg: Config) -> dic
         "holdout": {
             "zeitraum": {"von": holdout.get("von", u.holdout_ab), "bis": holdout.get("bis", "")},
             "kennzahlen": holdout_k,
-            "kaufen_halten_pct": holdout.get("kaufen_halten_pct"),
+            "kaufen_halten_pct": holdout_benchmark,
+            "mehrwert_gegen_kaufen_halten_pct": (
+                round(float(holdout_k["rendite_pct"]) - float(holdout_benchmark), 2)
+                if holdout_k.get("rendite_pct") is not None
+                and holdout_benchmark is not None else None
+            ),
             "bestanden": holdout.get("bestanden"),
             "gruende": list(holdout.get("gruende") or []),
         },
+        "diagnose": _diagnose(df, list(u.trades or [])),
         "robustheit_anteil": u.robustheit_anteil,
         "zufall_p_wert": p_wert,
         "zufall_p_wert_bonferroni": p_bonferroni,
@@ -106,6 +201,11 @@ def erstelle_bericht(
             eintraege.append(_eintrag(u, df, strategie, cfg))
 
     bestanden = [e for e in eintraege if e["urteil"] == "bestanden"]
+    benchmark_geschlagen = sum(
+        1 for e in eintraege
+        if e["holdout"].get("mehrwert_gegen_kaufen_halten_pct") is not None
+        and float(e["holdout"]["mehrwert_gegen_kaufen_halten_pct"]) > 0
+    )
     return {
         "schema": SCHEMA,
         "commit": commit,
@@ -125,6 +225,7 @@ def erstelle_bericht(
             ),
             "strategien": sorted({e["strategie"] for e in eintraege}),
             "parameterkombinationen": sum(e["parameterkombinationen"] for e in eintraege),
+            "holdout_benchmark_geschlagen": benchmark_geschlagen,
         },
         "kandidaten": eintraege,
     }
@@ -151,14 +252,15 @@ def rendere_markdown(bericht: dict[str, Any]) -> str:
         f"Geprüft: **{z['kandidaten']}** Kandidaten aus {len(z['strategien'])} Strategien auf "
         f"{len(bericht['symbole'])} Symbolen, **{z['parameterkombinationen']}** "
         f"Parameterkombinationen. Bestanden: **{z['bestanden']}**, abgelehnt: "
-        f"**{z['abgelehnt']}**, ohne ausreichende Daten: **{z['ohne_ausreichende_daten']}**.",
+        f"**{z['abgelehnt']}**, ohne ausreichende Daten: **{z['ohne_ausreichende_daten']}**. "
+        f"Holdout-Benchmark geschlagen: **{z.get('holdout_benchmark_geschlagen', 0)}**.",
         "",
         "## Walk-Forward und versiegelter Holdout",
         "",
-        "| Symbol | Strategie | Parameter | Trades | Netto % | PF | Sharpe | max. DD % | "
-        "Gebühren | K&H % | Holdout Netto % | Holdout K&H % | p | p (Bonferroni) | "
-        "MC-DD p95 % | Urteil |",
-        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| Symbol | Strategie | Parameter | Trades | Netto % | PF | Sharpe | Sortino | "
+        "max. DD % | Gebühren | Kosten % | EW $ | Ø Bars | K&H % | Holdout Netto % | "
+        "Holdout K&H % | Mehrwert % | p | p (Bonferroni) | MC-DD p95 % | Urteil |",
+        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for e in sorted(bericht["kandidaten"], key=lambda x: (x["symbol"], x["strategie"])):
         parameter = ", ".join(f"{k}={v}" for k, v in sorted((e["parameter"] or {}).items())) or "–"
@@ -168,11 +270,16 @@ def rendere_markdown(bericht: dict[str, Any]) -> str:
             f"{_prozent(_kennzahl(e, 'walk_forward', 'rendite_pct'))} | "
             f"{_prozent(_kennzahl(e, 'walk_forward', 'profit_factor'))} | "
             f"{_prozent(_kennzahl(e, 'walk_forward', 'sharpe'))} | "
+            f"{_prozent(_kennzahl(e, 'walk_forward', 'sortino'))} | "
             f"{_prozent(_kennzahl(e, 'walk_forward', 'max_drawdown_pct'))} | "
             f"{_prozent(_kennzahl(e, 'walk_forward', 'gebuehren'))} | "
+            f"{_prozent(_kennzahl(e, 'walk_forward', 'kosten_anteil_pct'))} | "
+            f"{_prozent(_kennzahl(e, 'walk_forward', 'erwartungswert'))} | "
+            f"{_prozent(_kennzahl(e, 'walk_forward', 'avg_halte_bars'))} | "
             f"{_prozent(e['walk_forward']['kaufen_halten_pct'])} | "
             f"{_prozent((e['holdout']['kennzahlen'] or {}).get('rendite_pct'))} | "
             f"{_prozent(e['holdout']['kaufen_halten_pct'])} | "
+            f"{_prozent(e['holdout'].get('mehrwert_gegen_kaufen_halten_pct'))} | "
             f"{_prozent(e['zufall_p_wert'])} | {_prozent(e['zufall_p_wert_bonferroni'])} | "
             f"{_prozent(e['monte_carlo_dd_p95'])} | {e['urteil']} |"
         )
@@ -187,6 +294,34 @@ def rendere_markdown(bericht: dict[str, Any]) -> str:
             f"{_prozent(_kennzahl(e, 'entwicklung', 'profit_factor'))} | "
             f"{int(_kennzahl(e, 'entwicklung', 'trades') or 0)} | "
             f"{_prozent(_kennzahl(e, 'entwicklung', 'gebuehren'))} |"
+        )
+    zeilen += ["", "## Ausstiege der Walk-Forward-Trades", "",
+               "| Symbol | Strategie | Trades | Gewinner | Verlierer | Ø Bars | Ausstiegsgründe |",
+               "|---|---|---:|---:|---:|---:|---|"]
+    for e in sorted(bericht["kandidaten"], key=lambda x: (x["symbol"], x["strategie"])):
+        d = e.get("diagnose") or {}
+        gruende = ", ".join(f"{name}: {zahl}" for name, zahl in (d.get("ausstiege") or {}).items()) or "–"
+        zeilen.append(
+            f"| {e['symbol']} | {e['strategie']} | "
+            f"{int(_kennzahl(e, 'walk_forward', 'trades') or 0)} | "
+            f"{int(d.get('gewinner') or 0)} | {int(d.get('verlierer') or 0)} | "
+            f"{_prozent(d.get('avg_bars'))} | {gruende} |"
+        )
+    zeilen += ["", "## Marktregime der Walk-Forward-Trades", "",
+               "| Symbol | Strategie | Trend-Regime | Volatilitäts-Regime |",
+               "|---|---|---|---|"]
+    for e in sorted(bericht["kandidaten"], key=lambda x: (x["symbol"], x["strategie"])):
+        d = e.get("diagnose") or {}
+        def _regime_text(gruppen: dict[str, Any]) -> str:
+            return "; ".join(
+                f"{name}: {wert['trades']} Trades, {wert['netto']:.2f} USD, "
+                f"{wert['trefferquote_pct']:.0f} % Treffer"
+                for name, wert in (gruppen or {}).items()
+            ) or "–"
+        zeilen.append(
+            f"| {e['symbol']} | {e['strategie']} | "
+            f"{_regime_text(d.get('regime_trend') or {})} | "
+            f"{_regime_text(d.get('regime_volatilitaet') or {})} |"
         )
     zeilen += ["", "## Urteile und Gründe", ""]
     for e in sorted(bericht["kandidaten"], key=lambda x: (x["urteil"] != "bestanden",

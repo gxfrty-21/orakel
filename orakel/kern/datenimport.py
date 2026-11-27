@@ -24,6 +24,23 @@ class FrischeFehler(ValueError):
     """Die jüngste Kerze einer Datei ist älter als die Frischegrenze."""
 
 
+def internes_symbol(symbol: str, daten_cfg: dict[str, Any]) -> str:
+    """Bildet einen Broker-Namen explizit auf das interne Symbol ab.
+
+    Broker hängen oft Suffixe an (``EURUSDm``, ``EURUSD.a``). Eine automatische
+    Suffix-Erkennung wäre gefährlich, weil sie verschiedene Instrumente
+    vermischen kann. Deshalb gilt ausschliesslich die in ``[daten.symbol_map]``
+    hinterlegte, explizite Zuordnung; ohne Eintrag bleibt der Name unverändert.
+    """
+    roh = str(symbol).strip().upper()
+    mapping = {
+        str(broker).strip().upper(): str(intern).strip().upper()
+        for broker, intern in (daten_cfg.get("symbol_map") or {}).items()
+    }
+    ziel = mapping.get(roh, roh)
+    return ziel or roh
+
+
 class ParallelerImport(RuntimeError):
     """Eine andere Transaktion hat dieselbe Quelle gleichzeitig gebucht."""
 

@@ -237,9 +237,9 @@ der erzeugte Rohbericht liegt nach dem Lauf unter
 
 Der Richter schreibt jede Bewertung mit ihren Trades in die Fakten-DB. Läuft er über unveränderte Kerzen erneut, entsteht kein zweiter Datensatz: gleiche Konfiguration, gleiche Trades und dasselbe Urteil werden erkannt und dem aktuellen Lauf zugeordnet, wobei Erstellungszeitpunkt und Lauf gemeinsam wandern. Ein geändertes Urteil bleibt eine eigene Zeile; die frühere Bewertung wird nicht überschrieben. Sonst würde jede Auswertung dieselben Trades mehrfach zählen, und `trades` wüchse mit jedem Takt.
 
-Seit dem Walk-Forward-Umbau prüft der Richter je Strategie und Symbol genau einen Kandidaten: den Parameter wählt er in den Trainingsfenstern selbst, statt mehrere Rasterpunkte nacheinander zu bewerten. Ein vollständiger Lauf erzeugt damit eine Zeile je Paar — mit den vier freigegebenen Strategien und den zwei Symbolen des Seeds sind das acht Zeilen. Der mitgelieferte Seed enthält genau diese acht Zeilen aus einem Lauf mit dem aktuellen Raster; ältere Stände mit 24 Zeilen stammten aus dem Raster, das je Strategie zwei bis vier Punkte einzeln bewertete.
+Seit dem Walk-Forward-Umbau prüft der Richter je Strategie und Symbol genau einen Kandidaten: den Parameter wählt er in den Trainingsfenstern selbst, statt mehrere Rasterpunkte nacheinander zu bewerten. Ein vollständiger Lauf erzeugt damit eine Zeile je Paar — mit den fünf Strategien und den zwei Symbolen des Seeds sind das zehn Zeilen. Der mitgelieferte Seed enthält noch die acht Zeilen des Laufs vom 26.11. (vier Strategien); ein neuer Lauf ergänzt `trend_regime` je Symbol. Ältere Stände mit 24 Zeilen stammten aus dem Raster, das je Strategie zwei bis vier Punkte einzeln bewertete.
 
-Im Seed besteht keine Strategie: alle acht Kandidaten sind abgelehnt, die Auswahl ist leer. Die Ansichten sind darauf vorbereitet und verlangen keine gewählte Strategie. Die Übersicht nennt «0 ausgewählt» und «Keine Strategie ausgewählt»; die Strategien-Ansicht schreibt «Der Richter hat keine Strategie freigegeben. Deshalb wird nicht gehandelt.»; das Lab listet die acht abgelehnten Kandidaten mit Begründung, Kennzahlen und Kurve, und ein leerer Filter (etwa «Bestanden») erklärt im Detail, warum dort nichts steht; die Labor-Abteilung des Raumschiffs und der Betrieb zeigen weiterhin ihre Agenten und Jobs aus SQLite. Fehlende Grundlagen bleiben leer — es werden keine Kurven, Kennzahlen oder Auswahlen ergänzt. Der Seed ist ein Ein-Lauf-Stand: Er enthält nur die Zeilen des Laufs vom 26.11.; Ereignisse, Konferenzprotokolle, Agentenläufe, Konto, Paper-Tick sowie Spider- und Intel-Daten älterer Läufe entfernt `orakel-seed --ein-lauf` beim Neuaufbau. Die Konferenz-Ansicht zeigt deshalb «Noch keine Konferenz abgehalten», die Ereignisliste nur den Abschluss des letzten Laufs.
+Im Seed besteht keine Strategie: alle acht Kandidaten sind abgelehnt, die Auswahl ist leer. Die Ansichten sind darauf vorbereitet und verlangen keine gewählte Strategie. Die Übersicht nennt «0 ausgewählt» und «Keine Strategie ausgewählt»; die Strategien-Ansicht schreibt «Der Richter hat keine Strategie freigegeben. Deshalb wird nicht gehandelt.»; das Lab listet die acht abgelehnten Kandidaten mit Begründung, Kennzahlen und Kurve, und ein leerer Filter (etwa «Bestanden») erklärt im Detail, warum dort nichts steht; die Labor-Abteilung des Raumschiffs und der Betrieb zeigen weiterhin ihre Agenten und Jobs aus SQLite. Fehlende Grundlagen bleiben leer — es werden keine Kurven, Kennzahlen oder Auswahlen ergänzt. Der Seed ist ein Ein-Lauf-Stand: Er enthält nur die Zeilen des Laufs vom 26.11.; Ereignisse, Konferenzprotokolle, Agentenläufe, Konto, Paper-Tick sowie Spider- und Intel-Daten älterer Läufe entfernt `orakel-seed --ein-lauf` beim Neuaufbau. Die Konferenz-Ansicht zeigt deshalb «Noch keine Konferenz abgehalten», die Ereignisliste nur den Abschluss des letzten Laufs. Den aus dem Seed reproduzierbaren Strategie-Befund hält [docs/STRATEGIE-BEFUND.md](docs/STRATEGIE-BEFUND.md) fest.
 
 ### Navigation und Deep-Links
 
@@ -452,6 +452,14 @@ Danach wie oben importieren, inklusive `--server-zeitzone` oder
 `--server-versatz`. Voraussetzung: Das
 Terminal läuft, ist angemeldet und das Symbol steht im Market Watch;
 Zugangsdaten braucht das Skript nicht, und es gibt keinen Weg zu einer Order.
+
+Broker-Symbole mit Suffix werden nicht automatisch umbenannt. Die explizite
+Zuordnung steht in `[daten.symbol_map]` (zum Beispiel `EURUSDm = "EURUSD"`)
+und gilt für den CSV-Import und den HTTPS-Transport. Ohne Eintrag bleibt der
+Broker-Name unverändert. Die Orderplanung (`orakel/kern/mt5_orders.py`) prüft
+Volumenschritt, Stop-Level und Risikobudget und baut einen MT5-Request, sendet
+ihn aber nie; die Paper-Sperre bleibt bestehen. Details und die ehrliche
+Abnahmelage: [docs/MT5-ORDERPFAD.md](docs/MT5-ORDERPFAD.md).
 
 ### Automatischer HTTPS-Transport zum Server
 

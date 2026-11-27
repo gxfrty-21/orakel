@@ -126,7 +126,8 @@ def test_kaufen_halten_rechnet_ueber_den_zeitraum():
 def test_bericht_enthaelt_jede_strategie_mit_holdout(bericht):
     strategien = [e["strategie"] for e in bericht["kandidaten"]]
 
-    assert sorted(strategien) == ["donchian", "ema_cross", "momentum", "rsi_reversion"]
+    assert sorted(strategien) == ["donchian", "ema_cross", "momentum", "rsi_reversion",
+                                  "trend_regime"]
     for eintrag in bericht["kandidaten"]:
         assert eintrag["urteil"] in {"bestanden", "abgelehnt", "zu wenig Daten"}
         assert "kennzahlen" in eintrag["holdout"]

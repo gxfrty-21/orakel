@@ -177,6 +177,55 @@ def test_stop_schliesst_position(cfg):
     assert any("Stop ausgelöst" in r["text"] for r in db.ereignisse(10))
 
 
+def test_kauf_ist_atomar_bei_schreibfehler(cfg, monkeypatch):
+    """Ein Fehler nach dem Positions-Insert darf keine halbe Kaufbuchung lassen."""
+    db, _ = aufbau(cfg)
+    original = db.position_setzen
+
+    def kaputt(*args, **kwargs):
+        original(*args, **kwargs)
+        raise RuntimeError("Absturz nach Positions-Insert")
+
+    monkeypatch.setattr(db, "position_setzen", kaputt)
+
+    with pytest.raises(RuntimeError, match="Absturz nach Positions-Insert"):
+        tick(cfg, db)
+
+    assert db.positionen() == []
+    assert not (db.zustand("paper_konto") or {}).get("cash")
+    assert db.letztes_konto() is None
+
+
+def test_verkauf_ist_atomar_bei_schreibfehler(cfg, monkeypatch):
+    """Ein Fehler nach dem Positions-Delete darf die Position nicht entfernen."""
+    db, _ = aufbau(cfg)
+    tick(cfg, db)
+    position = db.positionen()[0]
+    stop = float(position["stop"])
+    cash_vorher = float(db.zustand("paper_konto")["cash"])
+
+    df = steigende_kerzen()
+    letzte = df.iloc[-1].to_dict()
+    letzte["low"] = stop * 0.95
+    letzte["open"] = stop * 0.99
+    db.kerzen_speichern("TEST", "M15", [letzte])
+
+    original = db.entscheid_speichern
+
+    def kaputt(*args, **kwargs):
+        original(*args, **kwargs)
+        raise RuntimeError("Absturz nach Entscheid-Insert")
+
+    monkeypatch.setattr(db, "entscheid_speichern", kaputt)
+
+    with pytest.raises(RuntimeError, match="Absturz nach Entscheid-Insert"):
+        tick(cfg, db)
+
+    assert len(db.positionen()) == 1
+    assert db.positionen()[0]["symbol"] == "TEST"
+    assert float(db.zustand("paper_konto")["cash"]) == cash_vorher
+
+
 def test_kein_zweiter_kauf_bei_offener_position(cfg):
     db, _ = aufbau(cfg)
     tick(cfg, db)

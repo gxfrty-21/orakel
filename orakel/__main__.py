@@ -23,6 +23,7 @@ from .kern.datenimport import (
     ParallelerImport,
     frische_text,
     importiere_datei,
+    internes_symbol,
     vorhandener_import,
 )
 from .kern.db import Facts, Kerzenkonflikte
@@ -126,7 +127,7 @@ def _importiere_csv(cfg, db: Facts, args: argparse.Namespace) -> int:
             print(f"FEHLER {datei.name}: {exc}", file=sys.stderr)
             db.ereignis("fehler", "Daten", f"{datei.name}: {exc}")
             return 2
-        symbol = vorgabe or symbol
+        symbol = internes_symbol(vorgabe or symbol, cfg["daten"])
         zeitrahmen = args.zeitrahmen or zeitrahmen
         konflikte = Kerzenkonflikte()
         try:
