@@ -733,6 +733,21 @@ Die Abnahme gilt nur als bestanden, wenn:
 
 Nicht bestanden ist die Abnahme insbesondere dann, wenn nur die automatisierten Tests grün sind, aber kein realer MT5-Export und kein echter Upload auf der Abnahme-Serverinstanz stattfand. Die automatisierte CI kann die Windows-/MT5-Hardwareabnahme nicht ersetzen.
 
+### 8.4 Ergebnisprotokoll
+
+Nach dem Lauf ausfüllen und zusammen mit Transcript und Evidenzdateien ablegen. Leere Felder gelten als **offen**, nicht als bestanden.
+
+| Feld | Eintrag |
+|---|---|
+| Umgebung | Windows-Build, MT5-Build, Broker und Server, Symbol inkl. Suffix, Zeitrahmen, Abnahme-Server (nur Host, ohne Token), Datum und Prüfer |
+| A1 — Erstlauf | Datum/Zeit, Exit, `status`, `http_status`, `server_code`, Ledger-Buchung (neu oder `bereits_vorhanden`), Datei-SHA-256 |
+| A2 — Wiederholung | Datum/Zeit, Exit, Upload-Anzahl vor/nach, Server-Ledger unverändert (ja/nein) |
+| N — Netzwerkfälle | Bestandene IDs aus N1–N14; je Abweichung die ID und der beobachtete Wert |
+| F — Fail-closed | Bestandene IDs aus F1–F8; je Abweichung die ID und der beobachtete Wert |
+| Abweichungen | Befund, betroffene ID, Evidenzpfad und ob ein Abbruchkriterium aus Abschnitt 7 ausgelöst wurde; „keine“ ohne Befund |
+
+Das Gesamtergebnis ergibt sich aus Abschnitt 8.3.
+
 ## 9. Automatisiert geprüft vs. manuell offen
 
 **Bereits automatisiert geprüft (PR #302, Stand `ed8d31c`):** 797 Tests gesamt, 29 fokussierte Transport-/State-Tests, Ruff auf den geänderten Python-Dateien, Doku-Prüfung und `git diff --check`; CI mit 25/25 erfolgreichen Check-Runs.
