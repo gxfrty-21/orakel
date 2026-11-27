@@ -56,9 +56,12 @@ FESTE_ZEIT = (2026, 11, 18, 0, 0, 0)
 NEBEN_DATEIEN = {MANIFEST_NAME, PROVENIENZ_NAME, ZIP_NAME, ZIP_NAME + '.sha256'}
 EVIDENZ_MD = 'EVIDENZ.md'
 MUSTER_TESTZAHL = re.compile(r'(\d+)\s+passed')
-# Deutsche Testzahl ("816 bestanden"). Verhaeltnisse wie "3/3 bestanden" und
-# Tausenderpunkte werden nicht als Testzahl gelesen.
-MUSTER_TESTZAHL_DE = re.compile(r'(?<![/\d.])(\d+)\s+bestanden\b')
+# Deutsche Testzahl nur in einer Testzeile: Die Zeile muss "Test", "Tests"
+# oder "Testzahl" nennen. Verhaeltnisse wie "3/3 bestanden" oder
+# "3 von 3 bestanden" und Tausenderpunkte gelten nicht als Testzahl.
+MUSTER_TESTZAHL_DE = re.compile(
+    r'(?im)^(?=[^\n]*\b(?:Tests?|Testzahl)\b)[^\n]*?'
+    r'(?<!von )(?<![/\d.])(\d+)\s+bestanden\b')
 MUSTER_ERGEBNIS = re.compile(r'(\d+)\s+(passed|failed|errors?|skipped|xfailed|xpassed)\b')
 MUSTER_JUNIT = re.compile(r'<testsuite\b[^>]*\btests="(\d+)"')
 MUSTER_EVIDENZ_HASH = re.compile(r'`((?:belege|dateien)/[^`]+)`\s*\(`([0-9a-f]{8,64})')
