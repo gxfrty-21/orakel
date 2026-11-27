@@ -481,7 +481,8 @@ def messe_coverage_bericht(pfad: str) -> dict:
     except (KeyError, TypeError, ValueError) as fehler:
         raise Abweichung(f'Coverage-Bericht {pfad} nennt keine Statements.') from fehler
     kern_statements = kern_verfehlt = 0
-    dateien = daten.get('files') or {}
+    dateien = {str(name).replace('\\', '/'): eintrag
+               for name, eintrag in (daten.get('files') or {}).items()}
     for name in ('paper', 'risk', 'backtest', 'judge'):
         eintrag = dateien.get(f'orakel/kern/{name}.py') or {}
         summary = eintrag.get('summary') or {}
