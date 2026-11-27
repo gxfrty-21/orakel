@@ -1,6 +1,6 @@
 # Manuelle Windows-/MT5-Abnahme für PR #302
 
-**Gegenstand:** Windows-Transportclient und Task-Scheduler aus PR [#302](https://github.com/gxfrty-21/orakel/pull/302), Stand `ed8d31c`.
+**Gegenstand:** Windows-Transportclient und Task-Scheduler aus PR [#302](https://github.com/gxfrty-21/orakel/pull/302), Stand Merge-Commit `6917377`.
 
 **Ziel:** Den realen Export aus MetaTrader 5, den HTTPS-Upload, die Retry-/Netzwerkpfade, die Fail-closed-Grenzen und die Scheduler-Planung nachvollziehbar abnehmen.
 
@@ -750,6 +750,6 @@ Das Gesamtergebnis ergibt sich aus Abschnitt 8.3.
 
 ## 9. Automatisiert geprüft vs. manuell offen
 
-**Bereits automatisiert geprüft (PR #302, Stand `ed8d31c`):** 797 Tests gesamt, 29 fokussierte Transport-/State-Tests, Ruff auf den geänderten Python-Dateien, Doku-Prüfung und `git diff --check`; CI mit 25/25 erfolgreichen Check-Runs.
+**Bereits automatisiert geprüft (PR #302, gemergt als `6917377`):** 797 Tests gesamt, 29 fokussierte Transport-/State-Tests, Ruff auf den geänderten Python-Dateien, Doku-Prüfung und `git diff --check`; CI auf dem finalen PR-Head `8991480` mit **25/25 erfolgreichen Check-Runs** (0 übersprungen, 0 Fehler).
 
 **Diese Checkliste muss noch manuell auf echter Windows-/MT5-Hardware durchgeführt werden.** Der reale Broker-Export, die lokale MT5-Installation, der echte Abnahme-Server und die Windows-Aufgabenplanung sind nicht durch die CI abgedeckt. Ein Scheduled Task wurde für diese Checkliste **nicht registriert**; der Scheduler wird ausschließlich mit `-WhatIf` geprüft.
