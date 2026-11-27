@@ -134,7 +134,8 @@ def test_messwerte_werden_gegen_das_dossier_geprueft(tmp_path):
     ziel.mkdir(parents=True)
     (ziel / "REVIEW-DOSSIER.md").write_text(
         "| Statements gesamt (`orakel/` + `scripts/`) | 100 |\n"
-        "| Coverage gesamt | **80,00 %** |\n"
+        "| Coverage gesamt (Linux/CI) | **80,00 %** |\n"
+        "| Coverage gesamt (Windows/lokal) | **80,00 %** |\n"
         "| Coverage der vier Kernmodule zusammen | **90,00 %** |\n"
         "| Python-Zeilen | 120 |\n"
         "| `scripts/baue_review_paket.py` | 100 |\n"
@@ -157,7 +158,8 @@ def test_konsistenz_bricht_bei_abweichender_coverage(tmp_path):
     ziel.mkdir(parents=True)
     (ziel / "REVIEW-DOSSIER.md").write_text(
         "| Statements gesamt (`orakel/` + `scripts/`) | 100 |\n"
-        "| Coverage gesamt | **79,00 %** |\n"
+        "| Coverage gesamt (Linux/CI) | **79,00 %** |\n"
+        "| Coverage gesamt (Windows/lokal) | **79,00 %** |\n"
         "| Coverage der vier Kernmodule zusammen | **90,00 %** |\n",
         encoding="utf-8")
 

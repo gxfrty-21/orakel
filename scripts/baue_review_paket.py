@@ -864,9 +864,11 @@ def pruefe_messwerte(ausgabe: str, evidenz: dict | None) -> None:
         if _dossier_zahl(text, 'Statements gesamt') != coverage['statements']:
             raise Abweichung('Dossier nennt andere Statements als die Messung '
                              f"({coverage['statements']}).")
-        for label, soll in (('Coverage gesamt', coverage['prozent']),
-                            ('Coverage der vier Kernmodule zusammen',
-                             coverage['kern_prozent'])):
+        for label, soll in ((
+                'Coverage gesamt (Windows/lokal)' if sys.platform == 'win32'
+                else 'Coverage gesamt (Linux/CI)', coverage['prozent']),
+                ('Coverage der vier Kernmodule zusammen',
+                 coverage['kern_prozent'])):
             if abs(_dossier_prozent(text, label) - soll) > 0.005:
                 raise Abweichung(f'Dossier nennt für {label} einen anderen Wert als '
                                  f'{soll:.2f} %.')
