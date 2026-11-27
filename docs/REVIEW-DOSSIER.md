@@ -1,6 +1,6 @@
 # Review-Dossier Orakel
 
-**Stand:** 27. November 2026, Commit `b1857c68e1efe7022ee095e86de3c3c7843df32a`
+**Stand:** 27. November 2026, Commit `7a3737eca901870bb56cc5b6f98df70dcf226e21`
 (`main`; die Messung lief bei sauberem Arbeitsbaum).
 **Zweck:** Eine externe KI soll das Repository realistisch einschätzen und die
 schwächsten Bereiche identifizieren. Dieses Dossier liefert dafür Architektur,
@@ -9,11 +9,13 @@ Randbedingungen, gemessene Zahlen, Dateipfade und konkrete Prüfaufträge.
 belegte Kandidatenliste, keine feststehende Wahrheit. Prüfe sie gegen den Code.
 
 > **Aktualisierung 27.11.2026:** Dieses Dossier beschreibt jetzt den Stand
-> `b1857c6` (Squash-Merge aus PR #307). Gegenüber `43c110c` kamen atomare
-> Paper-Buchungen, die Stop-Pflicht im Risiko, der gesperrte MT5-Orderpfad,
-> die Symbolzuordnung und der Kandidat `trend_regime` hinzu. Der
-> Strategie-Befund mit zehn Kandidaten und null Bestandenen steht in
-> [STRATEGIE-BEFUND.md](STRATEGIE-BEFUND.md).
+> `7a3737e` (Squash-Merge aus PR #310). Gegenüber `b1857c6` kam der
+> deterministische Bau des Review-Pakets hinzu: Die Begleitdokumente entstehen
+> vor Manifest und ZIP, der Generator schreibt sie aus dem Manifest byte-gleich
+> neu. Die fachlichen Änderungen aus `b1857c6` (atomare Paper-Buchungen,
+> Stop-Pflicht im Risiko, gesperrter MT5-Orderpfad, Symbolzuordnung,
+> `trend_regime`) bleiben gültig. Der Strategie-Befund mit zehn Kandidaten und
+> null Bestandenen steht in [STRATEGIE-BEFUND.md](STRATEGIE-BEFUND.md).
 
 ## 0. Auftrag an die reviewende KI
 
@@ -87,8 +89,8 @@ Details: [ARCHITEKTUR-KERN.md](ARCHITEKTUR-KERN.md).
 | Betriebssystem | Windows 11 (Build 10.0.26300), AMD64 |
 | Python | 3.12.10 im lokalen `.venv` |
 | CPUs | 14 |
-| Messzeitpunkt | 27.11.2026, Commit `b1857c6` |
-| Suite | 815 Tests, 131,52 s Wanduhrzeit |
+| Messzeitpunkt | 27.11.2026, Commit `7a3737e` |
+| Suite | 816 Tests, 118,42 s Wanduhrzeit |
 | Datenbank | SQLite, WAL, ein schreibender Prozess |
 
 Die Laufzeit ist maschinen- und cacheabhängig. Sie ist keine Zusage für CI
@@ -103,10 +105,10 @@ erhoben. Coverage zählt Statements, nicht Verhalten.
 
 | Kennzahl | Wert |
 |---|---|
-| Tests | **815 bestanden**, 0 fehlgeschlagen, 0 übersprungen |
+| Tests | **816 bestanden**, 0 fehlgeschlagen, 0 übersprungen |
 | Testdateien | 75 |
-| Statements gesamt (`orakel/` + `scripts/`) | 14.737 |
-| Coverage gesamt | **77,16 %** |
+| Statements gesamt (`orakel/` + `scripts/`) | 14.763 |
+| Coverage gesamt | **77,06 %** |
 | Coverage der vier Kernmodule zusammen | **93,71 %** |
 | CI-Untergrenze Kern | 85 % |
 | Skip-/Xfail-Marker in Tests | 0 |
@@ -168,7 +170,7 @@ Die grünen Prüfungen sind kein Beweis für Typ- oder Fehlerfreiheit:
 |---|---|
 | Versionierte Dateien (Mess-Commit) | 291 |
 | Python-Dateien | 153 |
-| Python-Zeilen | 44.255 |
+| Python-Zeilen | 44.343 |
 | Testdateien | 75 |
 | JavaScript / ES-Module | 21 / 9 |
 | CSS / HTML | 10 / 1 |
@@ -182,12 +184,15 @@ Größte Python-Dateien:
 | `orakel/kern/db.py` | 1.563 |
 | `scripts/transport_client.py` | 1.350 |
 | `tests/test_data.py` | 1.218 |
-| `scripts/baue_review_paket.py` | 1.056 |
+| `scripts/baue_review_paket.py` | 1.104 |
 | `orakel/web.py` | 930 |
 | `orakel/__main__.py` | 827 |
 | `tests/test_company.py` | 811 |
 | `orakel/sekretariat.py` | 783 |
 | `orakel/company/api.py` | 764 |
+
+Die beiden Paketskripte haben 1.104 (`scripts/baue_review_paket.py`) und
+281 (`scripts/erzeuge_review_dokumente.py`) Zeilen, zusammen 1.385.
 
 Längste Funktionen (nur `orakel/`):
 
@@ -208,10 +213,10 @@ Längste Funktionen (nur `orakel/`):
 - CI-Jobs in `.github/workflows/tests.yml`: `pytest`, `architektur`, `doku`,
   `review_paket`, `docker`, `text250`, `widerspruch_e2e`, `touch`, `ruff`,
   `mypy`, `coverage` (plus `changes`).
-- Der PR #307 hatte auf `7419293` alle erforderlichen Check-Runs erfolgreich
-  (pytest, Coverage, Review-Paket, docker, text250, Touch, Widerspruch-E2E,
-  architektur, ruff, mypy, Doku; 0 Fehler). Auf `main` @ `b1857c6` ist der
-  Tests-Workflow erfolgreich (Lauf `46017442482`).
+- Der PR #310 hatte auf `4747a80` alle erforderlichen Check-Runs erfolgreich
+  (25 Checks grün: pytest, Coverage, Review-Paket, docker, text250, Touch,
+  Widerspruch-E2E, architektur, ruff, mypy, Doku). Auf `main` @ `7a3737e` ist
+  der Tests-Workflow erfolgreich (Lauf `46056316627`).
 - Offene GitHub-Issues: **keine** (Stand 27.11.2026).
 - Bei der Messung keine uncommitteten Änderungen; `main` = `origin/main`.
 
@@ -444,8 +449,8 @@ Linux/macOS im Projekt:
 git diff --check
 ```
 
-Erwartete Größenordnung auf dieser Maschine: 815 Tests in rund 130 s,
-Gesamt-Coverage 77,16 %, Kern 93,71 %. Abweichungen sind möglich und selbst
+Erwartete Größenordnung auf dieser Maschine: 816 Tests in rund 120 s,
+Gesamt-Coverage 77,06 %, Kern 93,71 %. Abweichungen sind möglich und selbst
 ein Prüfpunkt.
 
 ## 9. Offene Datenlücken
