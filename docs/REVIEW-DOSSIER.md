@@ -1,6 +1,6 @@
 # Review-Dossier Orakel
 
-**Stand:** 27. November 2026, Messstand Commit `c2cdeb4e80251ddac96cbfd75d151e1d20825329`
+**Stand:** 27. November 2026, Messstand Commit `1e1282fe83e6ca39c8461e80f633c5a014ee6e2e`
 (`main`; die Messung lief bei sauberem Arbeitsbaum).
 **Zweck:** Eine externe KI soll das Repository realistisch einschätzen und die
 schwächsten Bereiche identifizieren. Dieses Dossier liefert dafür Architektur,
@@ -9,10 +9,11 @@ Randbedingungen, gemessene Zahlen, Dateipfade und konkrete Prüfaufträge.
 belegte Kandidatenliste, keine feststehende Wahrheit. Prüfe sie gegen den Code.
 
 > **Aktualisierung 27.11.2026:** Dieses Dossier beschreibt den Messstand
-> `c2cdeb4` (Branch `messwerte/review-paket`, PR #314). Gegenüber `f02e5e5`
-> misst der Evidenz-Build Coverage, Statements und Zeilenzahlen und prüft die
-> Dossier-Tabellen dagegen; deutsche Testzahlen werden weiterhin nur in
-> Testzeilen geprüft. Die Begleitdokumente entstehen weiterhin vor Manifest
+> `0624727` (Branch `ci/coverage-artefakt`, PR #315). Gegenüber `af08c7f`
+> liefert der Coverage-Job seinen JSON-Bericht als Artefakt an das
+> Review-Paket; dadurch greifen Statements- und Coverage-Prüfung auch im CI
+> bei übernommenem pytest-Protokoll. Deutsche Testzahlen werden weiterhin nur
+> in Testzeilen geprüft. Die Begleitdokumente entstehen weiterhin vor Manifest
 > und ZIP; die fachlichen Änderungen aus `b1857c6` (atomare Paper-Buchungen,
 > Stop-Pflicht im Risiko, gesperrter MT5-Orderpfad, Symbolzuordnung,
 > `trend_regime`) bleiben gültig. Der Strategie-Befund mit zehn Kandidaten und
@@ -90,8 +91,8 @@ Details: [ARCHITEKTUR-KERN.md](ARCHITEKTUR-KERN.md).
 | Betriebssystem | Windows 11 (Build 10.0.26300), AMD64 |
 | Python | 3.12.10 im lokalen `.venv` |
 | CPUs | 14 |
-| Messzeitpunkt | 27.11.2026, Commit `c2cdeb4` |
-| Suite | 820 Tests, 114,70 s Wanduhrzeit |
+| Messzeitpunkt | 27.11.2026, Commit `0624727` |
+| Suite | 820 Tests, 114,81 s Wanduhrzeit |
 | Datenbank | SQLite, WAL, ein schreibender Prozess |
 
 Die Laufzeit ist maschinen- und cacheabhängig. Sie ist keine Zusage für CI
@@ -108,11 +109,17 @@ erhoben. Coverage zählt Statements, nicht Verhalten.
 |---|---|
 | Tests | **820 bestanden**, 0 fehlgeschlagen, 0 übersprungen |
 | Testdateien | 75 |
-| Statements gesamt (`orakel/` + `scripts/`) | 14.855 |
-| Coverage gesamt | **77,02 %** |
+| Statements gesamt (`orakel/` + `scripts/`) | 14.880 |
+| Coverage gesamt (Linux/CI) | **77,01 %** |
+| Coverage gesamt (Windows/lokal) | **77,04 %** |
 | Coverage der vier Kernmodule zusammen | **93,71 %** |
 | CI-Untergrenze Kern | 85 % |
 | Skip-/Xfail-Marker in Tests | 0 |
+
+Die Gesamt-Coverage unterscheidet sich zwischen Linux (CI) und Windows (lokal)
+um 0,03 Prozentpunkte, weil einzelne Plattformzweige nur auf einer Seite
+ausgeführt werden. Beide Werte sind gemessen; geprüft wird der zur Laufzeit
+passende.
 
 Kernmodule im Einzelnen:
 
@@ -171,7 +178,7 @@ Die grünen Prüfungen sind kein Beweis für Typ- oder Fehlerfreiheit:
 |---|---|
 | Versionierte Dateien (Mess-Commit) | 291 |
 | Python-Dateien | 153 |
-| Python-Zeilen | 44.569 |
+| Python-Zeilen | 44.629 |
 | Testdateien | 75 |
 | JavaScript / ES-Module | 21 / 9 |
 | CSS / HTML | 10 / 1 |
@@ -185,15 +192,15 @@ Größte Python-Dateien:
 | `orakel/kern/db.py` | 1.563 |
 | `scripts/transport_client.py` | 1.349 |
 | `tests/test_data.py` | 1.218 |
-| `scripts/baue_review_paket.py` | 1.253 |
+| `scripts/baue_review_paket.py` | 1.299 |
 | `orakel/web.py` | 930 |
 | `orakel/__main__.py` | 827 |
 | `tests/test_company.py` | 811 |
 | `orakel/sekretariat.py` | 783 |
 | `orakel/company/api.py` | 764 |
 
-Die beiden Paketskripte haben 1.253 (`scripts/baue_review_paket.py`) und
-281 (`scripts/erzeuge_review_dokumente.py`) Zeilen, zusammen 1.534.
+Die beiden Paketskripte haben 1.299 (`scripts/baue_review_paket.py`) und
+281 (`scripts/erzeuge_review_dokumente.py`) Zeilen, zusammen 1.580.
 
 Längste Funktionen (nur `orakel/`):
 
@@ -215,11 +222,11 @@ Längste Funktionen (nur `orakel/`):
   `review_paket`, `docker`, `text250`, `widerspruch_e2e`, `touch`, `ruff`,
   `mypy`, `coverage` (plus `changes`).
 - Der PR #310 hatte auf `4747a80` alle erforderlichen Check-Runs erfolgreich
-  (25 Checks grün). Auf `main` @ `f02e5e5` ist der Tests-Workflow erfolgreich
-  (Lauf `46062416751`).
-- PR #312 ergänzte die Prüfung deutscher Testzahlen, PR #314 misst zusätzlich
-  Coverage, Statements und Zeilenzahlen; der letzte Check-Lauf steht im
-  jeweiligen Pull Request.
+  (25 Checks grün). Auf `main` @ `af08c7f` ist der Tests-Workflow erfolgreich
+  (Lauf `46064791081`).
+- PR #312 ergänzte die Prüfung deutscher Testzahlen, PR #314 die Messwerte im
+  Dossier und PR #315 den Coverage-Bericht im CI; der letzte Check-Lauf steht
+  im jeweiligen Pull Request.
 - Offene GitHub-Issues: **keine** (Stand 27.11.2026).
 - Bei der Messung keine uncommitteten Änderungen; `main` = `origin/main`.
 
@@ -453,7 +460,7 @@ git diff --check
 ```
 
 Erwartete Größenordnung auf dieser Maschine: 820 Tests in rund 115 s,
-Gesamt-Coverage 77,02 %, Kern 93,71 %. Abweichungen sind möglich und selbst
+Gesamt-Coverage 77,04 %, Kern 93,71 %. Abweichungen sind möglich und selbst
 ein Prüfpunkt.
 
 ## 9. Offene Datenlücken
