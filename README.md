@@ -703,7 +703,8 @@ aller Markdown-Dateien; sie müssen mit `EVIDENZ.json` übereinstimmen.
 Verhältnisse wie «3/3 bestanden» oder «3 von 3 bestanden» zählen nicht.
 Der Evidenz-Build misst ausserdem Coverage, Statements und Zeilenzahlen und
 vergleicht sie mit den Tabellen im Dossier. Im CI übernimmt er den
-Coverage-Bericht (`--coverage-bericht`) aus dem Coverage-Job; ohne Bericht
+Coverage-Bericht (`--coverage-bericht`) aus dem Coverage-Job und verlangt ihn
+mit `--coverage-pflicht`; fehlt er, bricht der Lauf ab. Ohne diese Pflicht
 entfällt die Coverage-Teilprüfung mit Hinweis, Zeilenzahlen werden weiterhin
 geprüft. Weil einzelne Plattformzweige die Gesamt-Coverage um wenige
 Hundertstel verschieben, führt das Dossier den CI- und den lokalen Wert

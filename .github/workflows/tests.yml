@@ -185,6 +185,8 @@ jobs:
 
       # Der Coverage-Bericht kommt aus dem Coverage-Job: derselbe Lauf wie die
       # Kern-Untergrenze, ohne die Suite im Review-Paket erneut zu starten.
+      # --coverage-pflicht macht einen fehlenden Bericht zum Fehler; die
+      # Coverage-Prüfung darf hier nicht stillschweigend entfallen.
       - name: Coverage-Evidenz übernehmen
         uses: actions/download-artifact@v6
         with:
@@ -199,7 +201,8 @@ jobs:
             --pytest-log artifacts/pytest/pytest.log \
             --pytest-exit-code artifacts/pytest/exit_code \
             --junit artifacts/pytest/junit.xml \
-            --coverage-bericht artifacts/coverage/coverage.json
+            --coverage-bericht artifacts/coverage/coverage.json \
+            --coverage-pflicht
 
   # Stellt sicher, dass das Dockerfile inklusive Seed-DB weiterhin baut.
   docker:
