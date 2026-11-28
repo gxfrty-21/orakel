@@ -720,3 +720,49 @@ def test_fehlendes_hauptdokument_bricht_die_pruefung_nicht_ab(tmp_path):
     _paketordner(tmp_path)
 
     modul.pruefe_dokumente(str(tmp_path), "a" * 40, _freigabe("README.md"))
+
+
+WORKFLOW = ROOT / ".github" / "workflows" / "tests.yml"
+
+
+def _job_block(name: str) -> str:
+    """Schneidet einen Job aus dem Workflow, ohne eine YAML-Abhängigkeit einzuführen."""
+    zeilen = WORKFLOW.read_text(encoding="utf-8").splitlines()
+    start = next((i for i, z in enumerate(zeilen) if z.rstrip() == f"  {name}:"), None)
+    assert start is not None, f"Job {name} fehlt in {WORKFLOW.relative_to(ROOT)}"
+    block = []
+    for zeile in zeilen[start + 1:]:
+        if (zeile.strip() and not zeile.startswith("    ")
+                and not zeile.lstrip().startswith("#")):
+            break
+        block.append(zeile)
+    return "\n".join(block)
+
+
+def _schritt(job: str, name: str) -> str:
+    """Schneidet einen benannten Schritt aus einem Jobblock."""
+    zeilen = job.splitlines()
+    start = next((i for i, z in enumerate(zeilen) if z.strip() == f"- name: {name}"), None)
+    assert start is not None, f"Schritt {name} fehlt im Job"
+    block = [zeilen[start]]
+    for zeile in zeilen[start + 1:]:
+        if zeile.lstrip().startswith("- name:"):
+            break
+        block.append(zeile)
+    return "\n".join(block)
+
+
+def test_review_job_bindet_das_coverage_artefakt_an_die_pflicht():
+    """Ein stilles Entfernen von Artefakt oder --coverage-pflicht bricht die Suite."""
+    job = _job_block("review_paket")
+    assert "name: Review-Paket" in job
+
+    abruf = _schritt(job, "Coverage-Evidenz übernehmen")
+    assert "name: coverage-evidenz" in abruf
+    pfad = next(z.split("path:", 1)[1].strip()
+                for z in abruf.splitlines() if z.strip().startswith("path:"))
+    assert pfad == "artifacts/coverage"
+
+    befehl = _schritt(job, "Freigabe, Kopien, Hashes, Testzahl und ZIP prüfen")
+    assert f"--coverage-bericht {pfad}/coverage.json" in befehl
+    assert "--coverage-pflicht" in befehl

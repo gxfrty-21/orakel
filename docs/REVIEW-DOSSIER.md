@@ -91,8 +91,8 @@ Details: [ARCHITEKTUR-KERN.md](ARCHITEKTUR-KERN.md).
 | Betriebssystem | Windows 11 (Build 10.0.26300), AMD64 |
 | Python | 3.12.10 im lokalen `.venv` |
 | CPUs | 14 |
-| Messzeitpunkt | 28.11.2026, Commit `c35e862` |
-| Suite | 822 Tests, 139,11 s Wanduhrzeit |
+| Messzeitpunkt | 28.11.2026, Commit `b05cd8e` |
+| Suite | 823 Tests, 139,33 s Wanduhrzeit |
 | Datenbank | SQLite, WAL, ein schreibender Prozess |
 
 Die Laufzeit ist maschinen- und cacheabhängig. Sie ist keine Zusage für CI
@@ -107,7 +107,7 @@ erhoben. Coverage zählt Statements, nicht Verhalten.
 
 | Kennzahl | Wert |
 |---|---|
-| Tests | **822 bestanden**, 0 fehlgeschlagen, 0 übersprungen |
+| Tests | **823 bestanden**, 0 fehlgeschlagen, 0 übersprungen |
 | Testdateien | 75 |
 | Statements gesamt (`orakel/` + `scripts/`) | 14.883 |
 | Coverage gesamt (Linux/CI) | **77,01 %** |
@@ -178,7 +178,7 @@ Die grünen Prüfungen sind kein Beweis für Typ- oder Fehlerfreiheit:
 |---|---|
 | Versionierte Dateien (Mess-Commit) | 291 |
 | Python-Dateien | 153 |
-| Python-Zeilen | 44.682 |
+| Python-Zeilen | 44.728 |
 | Testdateien | 75 |
 | JavaScript / ES-Module | 21 / 9 |
 | CSS / HTML | 10 / 1 |
@@ -459,7 +459,7 @@ Linux/macOS im Projekt:
 git diff --check
 ```
 
-Erwartete Größenordnung auf dieser Maschine: 822 Tests in rund 139 s,
+Erwartete Größenordnung auf dieser Maschine: 823 Tests in rund 139 s,
 Gesamt-Coverage 77,05 %, Kern 93,71 %. Abweichungen sind möglich und selbst
 ein Prüfpunkt.
 
