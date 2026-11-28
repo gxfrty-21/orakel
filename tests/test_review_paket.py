@@ -423,6 +423,46 @@ def test_evidenz_uebernimmt_das_ci_protokoll(tmp_path, monkeypatch):
         tmp_path / "paket" / "EVIDENZ.md").read_text(encoding="utf-8")
 
 
+def test_evidenz_verlangt_bei_pflicht_den_coverage_bericht(tmp_path, monkeypatch):
+    """--coverage-pflicht macht einen fehlenden Bericht zum Abbruch, nicht zum Hinweis."""
+    modul = _modul()
+    log, code = _artefakt(tmp_path)
+    monkeypatch.setattr(modul, "PRUEFUNGEN", (
+        ("pytest", ("-m", "pytest", "-q", "tests"), "belege/evidenz-pytest.log"),))
+    monkeypatch.setattr(modul, "subprocess", _NichtStarten)
+    monkeypatch.setattr(modul, "messe_python_zeilen", lambda: {
+        "dateien": 0, "zeilen": 0, "dateien_zeilen": {}})
+
+    with pytest.raises(modul.Abweichung, match="Coverage-Bericht"):
+        modul.fuehre_evidenz_aus(str(tmp_path / "paket"), "a" * 40, "main",
+                                 pytest_log=str(log), pytest_exit_code=str(code),
+                                 coverage_pflicht=True)
+
+
+def test_prueflauf_setzt_die_coverage_pflicht(tmp_path, monkeypatch):
+    """Der CI-Aufruf reicht --coverage-pflicht bis in den Evidenzbau durch."""
+    modul = _modul()
+    aufrufe: list[dict] = []
+
+    def bau_merken(freigabe, commit, branch, ausgabe, **kwargs):
+        aufrufe.append(kwargs)
+        Path(ausgabe).mkdir(parents=True, exist_ok=True)
+        (Path(ausgabe) / "EVIDENZ.json").write_text(
+            json.dumps({"testzahl": 7, "dateien": []}), encoding="utf-8")
+        return [], "0" * 64
+
+    monkeypatch.setattr(modul, "lade_freigabe", lambda: {
+        "quellen": [{"quelle": "README.md", "ziel": "dateien/README.md"}]})
+    monkeypatch.setattr(modul, "pruefe_commit", lambda _commit: ("a" * 40, "main"))
+    monkeypatch.setattr(modul, "baue", bau_merken)
+    monkeypatch.setattr(sys, "argv", ["baue_review_paket.py", "--pruefen",
+                                      "--coverage-pflicht",
+                                      "--ausgabe", str(tmp_path / "paket")])
+
+    assert modul.main() == 0
+    assert aufrufe and aufrufe[0]["coverage_pflicht"] is True
+
+
 def test_evidenz_verweigert_fremden_exit_code(tmp_path, monkeypatch):
     """Ein Protokoll mit Exit 1 ist kein bestandener Nachweis."""
     modul = _modul()

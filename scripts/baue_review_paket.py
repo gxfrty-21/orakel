@@ -581,14 +581,17 @@ def fuehre_evidenz_aus(ausgabe: str, commit: str, branch: str,
                        junit: str | None = None,
                        pytest_log: str | None = None,
                        pytest_exit_code: str | None = None,
-                       coverage_bericht: str | None = None) -> dict:
+                       coverage_bericht: str | None = None,
+                       coverage_pflicht: bool = False) -> dict:
     """Führt die Nachweise aus und schreibt Protokolle, EVIDENZ.json und EVIDENZ.md.
 
     Die Testzahl stammt aus dem Protokoll bzw. dem JUnit-Bericht; sie wird nirgends
     von Hand eingetragen. Mit ``pytest_log`` wird ein vorhandenes Protokoll aus dem
     CI-Job übernommen, statt die Suite erneut zu starten; der Exit-Code kommt dann
     aus ``pytest_exit_code``. Schlägt ein Nachweis fehl oder widersprechen sich Log
-    und JUnit-Bericht, bricht der Bau ab.
+    und JUnit-Bericht, bricht der Bau ab. Mit ``coverage_pflicht`` ist der
+    JSON-Bericht Pflicht: Fehlt er, bricht der Lauf ab, statt die Coverage-Prüfung
+    stillschweigend zu überspringen.
     """
     dateien, protokolle = [], {}
     for name, argv, ziel in PRUEFUNGEN:
@@ -655,6 +658,9 @@ def fuehre_evidenz_aus(ausgabe: str, commit: str, branch: str,
     messwerte = {'python': messe_python_zeilen()}
     if coverage_bericht:
         coverage = messe_coverage_bericht(coverage_bericht)
+    elif coverage_pflicht:
+        raise Abweichung('Coverage-Bericht fehlt: --coverage-pflicht verlangt den '
+                         'JSON-Bericht des Coverage-Jobs (--coverage-bericht).')
     else:
         coverage = messe_coverage(protokoll)
     if coverage:
@@ -1111,7 +1117,8 @@ def baue(freigabe: dict, commit: str, branch: str, ausgabe: str,
          junit: str | None = None, ci: dict | None = None,
          pytest_log: str | None = None,
          pytest_exit_code: str | None = None,
-         coverage_bericht: str | None = None) -> tuple[list[dict], str]:
+         coverage_bericht: str | None = None,
+         coverage_pflicht: bool = False) -> tuple[list[dict], str]:
     quellen = quell_eintraege(freigabe, commit)
     schreibe_kopien(quellen, ausgabe)
     for e in quellen:
@@ -1122,7 +1129,8 @@ def baue(freigabe: dict, commit: str, branch: str, ausgabe: str,
         evidenz = fuehre_evidenz_aus(ausgabe, commit, branch, junit,
                                      pytest_log=pytest_log,
                                      pytest_exit_code=pytest_exit_code,
-                                     coverage_bericht=coverage_bericht)
+                                     coverage_bericht=coverage_bericht,
+                                     coverage_pflicht=coverage_pflicht)
     if evidenz is None and os.path.exists(os.path.join(ausgabe, 'EVIDENZ.json')):
         evidenz = json.load(open(os.path.join(ausgabe, 'EVIDENZ.json'), encoding='utf-8'))
     if evidenz is None:
@@ -1234,6 +1242,9 @@ def main() -> int:
                     help='Datei mit dem Exit-Code des Laufs, zu dem --pytest-log gehört')
     ap.add_argument('--coverage-bericht', default=None,
                     help='coverage-JSON des Coverage-Jobs für Statements und Kern-Coverage')
+    ap.add_argument('--coverage-pflicht', action='store_true',
+                    help='verlangt den Coverage-Bericht; fehlt er, bricht der Lauf ab, '
+                         'statt die Coverage-Prüfung zu überspringen')
     ap.add_argument('--ci-run', default=None, help='CI-Lauf-ID, deren Head-Commit geprüft wird')
     args = ap.parse_args()
 
@@ -1260,7 +1271,8 @@ def main() -> int:
                                           evidenz_bauen=True, junit=args.junit, ci=ci,
                                           pytest_log=args.pytest_log,
                                           pytest_exit_code=args.pytest_exit_code,
-                                          coverage_bericht=args.coverage_bericht)
+                                          coverage_bericht=args.coverage_bericht,
+                                          coverage_pflicht=args.coverage_pflicht)
                 # Ohne Paketdokumente hätte ``pruefe_konsistenz`` nichts zu prüfen.
                 # Der Bericht entsteht aus den gerade gemessenen Werten und wird
                 # anschliessend mit denselben Prüfungen wie ein echtes Paket geprüft.
@@ -1282,7 +1294,8 @@ def main() -> int:
                                       evidenz_bauen=args.evidenz, junit=args.junit, ci=ci,
                                       pytest_log=args.pytest_log,
                                       pytest_exit_code=args.pytest_exit_code,
-                                      coverage_bericht=args.coverage_bericht)
+                                      coverage_bericht=args.coverage_bericht,
+                                      coverage_pflicht=args.coverage_pflicht)
     except Abweichung as fehler:
         print(f'Review-Paket FEHLER: {fehler}', file=sys.stderr)
         return 1
