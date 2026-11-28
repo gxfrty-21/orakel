@@ -91,8 +91,8 @@ Details: [ARCHITEKTUR-KERN.md](ARCHITEKTUR-KERN.md).
 | Betriebssystem | Windows 11 (Build 10.0.26300), AMD64 |
 | Python | 3.12.10 im lokalen `.venv` |
 | CPUs | 14 |
-| Messzeitpunkt | 27.11.2026, Commit `0624727` |
-| Suite | 820 Tests, 114,81 s Wanduhrzeit |
+| Messzeitpunkt | 28.11.2026, Commit `c35e862` |
+| Suite | 822 Tests, 139,11 s Wanduhrzeit |
 | Datenbank | SQLite, WAL, ein schreibender Prozess |
 
 Die Laufzeit ist maschinen- und cacheabhängig. Sie ist keine Zusage für CI
@@ -107,17 +107,17 @@ erhoben. Coverage zählt Statements, nicht Verhalten.
 
 | Kennzahl | Wert |
 |---|---|
-| Tests | **820 bestanden**, 0 fehlgeschlagen, 0 übersprungen |
+| Tests | **822 bestanden**, 0 fehlgeschlagen, 0 übersprungen |
 | Testdateien | 75 |
-| Statements gesamt (`orakel/` + `scripts/`) | 14.880 |
+| Statements gesamt (`orakel/` + `scripts/`) | 14.883 |
 | Coverage gesamt (Linux/CI) | **77,01 %** |
-| Coverage gesamt (Windows/lokal) | **77,04 %** |
+| Coverage gesamt (Windows/lokal) | **77,05 %** |
 | Coverage der vier Kernmodule zusammen | **93,71 %** |
 | CI-Untergrenze Kern | 85 % |
 | Skip-/Xfail-Marker in Tests | 0 |
 
 Die Gesamt-Coverage unterscheidet sich zwischen Linux (CI) und Windows (lokal)
-um 0,03 Prozentpunkte, weil einzelne Plattformzweige nur auf einer Seite
+um 0,04 Prozentpunkte, weil einzelne Plattformzweige nur auf einer Seite
 ausgeführt werden. Beide Werte sind gemessen; geprüft wird der zur Laufzeit
 passende.
 
@@ -178,7 +178,7 @@ Die grünen Prüfungen sind kein Beweis für Typ- oder Fehlerfreiheit:
 |---|---|
 | Versionierte Dateien (Mess-Commit) | 291 |
 | Python-Dateien | 153 |
-| Python-Zeilen | 44.629 |
+| Python-Zeilen | 44.682 |
 | Testdateien | 75 |
 | JavaScript / ES-Module | 21 / 9 |
 | CSS / HTML | 10 / 1 |
@@ -192,15 +192,15 @@ Größte Python-Dateien:
 | `orakel/kern/db.py` | 1.563 |
 | `scripts/transport_client.py` | 1.349 |
 | `tests/test_data.py` | 1.218 |
-| `scripts/baue_review_paket.py` | 1.299 |
+| `scripts/baue_review_paket.py` | 1.312 |
 | `orakel/web.py` | 930 |
 | `orakel/__main__.py` | 827 |
 | `tests/test_company.py` | 811 |
 | `orakel/sekretariat.py` | 783 |
 | `orakel/company/api.py` | 764 |
 
-Die beiden Paketskripte haben 1.299 (`scripts/baue_review_paket.py`) und
-281 (`scripts/erzeuge_review_dokumente.py`) Zeilen, zusammen 1.580.
+Die beiden Paketskripte haben 1.312 (`scripts/baue_review_paket.py`) und
+281 (`scripts/erzeuge_review_dokumente.py`) Zeilen, zusammen 1.593.
 
 Längste Funktionen (nur `orakel/`):
 
@@ -459,8 +459,8 @@ Linux/macOS im Projekt:
 git diff --check
 ```
 
-Erwartete Größenordnung auf dieser Maschine: 820 Tests in rund 115 s,
-Gesamt-Coverage 77,04 %, Kern 93,71 %. Abweichungen sind möglich und selbst
+Erwartete Größenordnung auf dieser Maschine: 822 Tests in rund 139 s,
+Gesamt-Coverage 77,05 %, Kern 93,71 %. Abweichungen sind möglich und selbst
 ein Prüfpunkt.
 
 ## 9. Offene Datenlücken
